@@ -8,10 +8,9 @@ use std::process::Command;
 // ── Session identity ──────────────────────────────────────────────────────────
 
 /// Derive the zellij session name from a workspace name.
-/// Lowercases and replaces spaces/slashes with hyphens for a clean shell name.
 pub fn session_name(workspace_name: &str) -> String {
     format!(
-        "tenx-{}",
+        "tenx:{}",
         workspace_name
             .to_lowercase()
             .replace(['/', ' ', '_'], "-")
@@ -33,16 +32,45 @@ pub fn is_inside_session() -> bool {
 /// Output is one session per line; active session may be marked with a suffix.
 pub fn list_sessions() -> Result<Vec<String>> {
     let out = Command::new("zellij")
-        .args(["list-sessions", "--short"])
+        .args(["list-sessions"])
         .output()
         .context("run zellij list-sessions")?;
+    // zellij writes session info to stdout; strip ANSI codes before parsing
+    // since some versions emit colour even when output is piped.
     let text = String::from_utf8_lossy(&out.stdout);
     let sessions = text
         .lines()
-        .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
-        .filter(|s| !s.is_empty())
+        .filter_map(|l| {
+            let clean = strip_ansi(l);
+            // Each line: "session-name [Created N ago] (current)"
+            // Take the first whitespace-delimited token = session name.
+            clean
+                .split_whitespace()
+                .next()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        })
         .collect();
     Ok(sessions)
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+            // consume until a letter (the SGR terminator)
+            for c2 in chars.by_ref() {
+                if c2.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 pub fn session_exists(name: &str) -> Result<bool> {
@@ -58,53 +86,51 @@ pub fn attach_session(name: &str) -> Result<()> {
     Err(err).context(format!("exec zellij attach {name}"))
 }
 
-/// Create a new named session and attach to it, using a layout that opens
-/// the tenx TUI as the first tab. The layout file is written to the tenx
-/// cache dir and left there (cheap, idempotent).
+/// Create a new named session with the TUI as the first (and only) tab, then attach.
+///
+/// Uses `--new-session-with-layout` which always creates a fresh session from a
+/// layout file — unlike `--layout-string`/`--layout` which *append* tabs to an
+/// existing session and still produce a default shell tab on new session creation.
 pub fn create_and_attach_session(session: &str, tenx_bin: &str, workspace_dir: &str) -> Result<()> {
     use std::os::unix::process::CommandExt;
 
-    let layout_path = session_layout_path(session)?;
-    let layout = make_session_layout(tenx_bin, workspace_dir);
-    if let Some(parent) = layout_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&layout_path, &layout)
-        .with_context(|| format!("write session layout to {}", layout_path.display()))?;
+    // Write the layout to the zellij layouts dir so --new-session-with-layout can find it.
+    let home = env::var("HOME").context("HOME not set")?;
+    let layouts_dir = PathBuf::from(&home).join(".config/zellij/layouts");
+    fs::create_dir_all(&layouts_dir).context("create zellij layouts dir")?;
+    let layout_name = session.replace(':', "-");
+    let layout_path = layouts_dir.join(format!("{layout_name}.kdl"));
+    fs::write(&layout_path, full_session_layout(tenx_bin, workspace_dir))
+        .context("write session layout file")?;
 
     let err = Command::new("zellij")
-        .args(["--session", session, "--layout", &layout_path.to_string_lossy()])
+        .args(["--session", session, "--new-session-with-layout", &layout_name])
         .exec();
     Err(err).context(format!("exec zellij --session {session}"))
 }
 
-fn session_layout_path(session: &str) -> Result<PathBuf> {
-    let home = env::var("HOME").context("$HOME not set")?;
-    Ok(PathBuf::from(home)
-        .join(".cache")
-        .join("tenx")
-        .join(format!("{session}.kdl")))
-}
-
-fn make_session_layout(tenx_bin: &str, workspace_dir: &str) -> String {
+fn full_session_layout(tenx_bin: &str, workspace_dir: &str) -> String {
+    // tab-bar and status-bar are explicit panes inside the tab, not a template.
+    // This matches what `zellij action dump-layout` outputs.
     format!(
         r#"layout {{
-    default_tab_template {{
+    tab name="tenx" focus=true {{
         pane size=1 borderless=true {{
             plugin location="zellij:tab-bar"
         }}
-        children
+        pane split_direction="vertical" {{
+            pane command="{tenx_bin}" cwd="{workspace_dir}" size="65%" {{
+                args "tasks"
+            }}
+            pane command="{tenx_bin}" cwd="{workspace_dir}" size="35%" {{
+                args "repos"
+            }}
+        }}
         pane size=2 borderless=true {{
             plugin location="zellij:status-bar"
         }}
     }}
-    tab name="tenx" cwd="{workspace_dir}" focus=true {{
-        pane command="{tenx_bin}" {{
-            args "tui"
-        }}
-    }}
-}}
-"#
+}}"#
     )
 }
 
@@ -176,7 +202,7 @@ pub fn open_tui_tab(tenx_bin: &str, workspace_dir: &str) -> Result<()> {
     let layout = format!(
         r#"layout {{
     tab name="{TAB}" cwd="{workspace_dir}" focus=true {{
-        pane command="{tenx_bin}" {{
+        pane command="{tenx_bin}" borderless=true {{
             args "tui"
         }}
     }}

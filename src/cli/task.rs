@@ -1,8 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::env;
 use std::io::{self, BufRead, Write};
 
 pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
+    let name = crate::workspace::slugify(name);
+    let name = name.as_str();
+
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
     let global = crate::workspace::load_global()?;
@@ -28,18 +31,11 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
             crate::workspace::WorkspaceError::RepoNotFound(repo_name.clone())
         })?;
         let bare_path = crate::git::bare_repo_path(&bare_dir, &repo.name);
-        if !bare_path.exists() {
-            bail!("repo '{}' not cloned — run: tenx repo add {}", repo.name, repo.url);
-        }
-        eprintln!("  fetching {} ...", repo.name);
-        crate::git::fetch(&bare_path)?;
+        crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name)?;
 
         let worktree_path = task_dir.join(&repo.name);
-        eprintln!("  worktree add {} → {}", repo.name, worktree_path.display());
         crate::git::add_worktree(&bare_path, &worktree_path, name)?;
     }
-
-    eprintln!("✓ task '{}' created at {}", name, task_dir.display());
 
     if !no_open {
         if !crate::zellij::is_inside_session() {
@@ -127,12 +123,13 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
         let bare_path = crate::git::bare_repo_path(&bare_dir, repo_name);
         let worktree_path = task.path.join(repo_name);
         if bare_path.exists() && worktree_path.exists() {
-            eprintln!("  removing worktree {} ...", repo_name);
-            crate::git::remove_worktree(&bare_path, &worktree_path)?;
+            // Best-effort: if the worktree was never registered (e.g. creation
+            // failed mid-way), git remove will error but we still clean the dir.
+            let _ = crate::git::remove_worktree(&bare_path, &worktree_path);
         }
     }
 
-    std::fs::remove_dir_all(&task.path)?;
-    eprintln!("✓ task '{}' deleted", name);
+    std::fs::remove_dir_all(&task.path)
+        .with_context(|| format!("remove task directory {}", task.path.display()))?;
     Ok(())
 }

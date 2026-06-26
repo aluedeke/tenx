@@ -252,6 +252,15 @@ fn home_dir() -> Result<PathBuf> {
     std::env::var("HOME").map(PathBuf::from).context("$HOME not set")
 }
 
+/// Convert a user-supplied task name into a filesystem/branch-safe slug:
+/// lowercase, spaces and underscores replaced with dashes.
+pub fn slugify(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .map(|c| if c == ' ' || c == '_' { '-' } else { c })
+        .collect()
+}
+
 pub fn format_age(t: SystemTime) -> String {
     let secs = t.elapsed().unwrap_or_default().as_secs();
     if secs < 3600 {
