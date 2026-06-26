@@ -236,7 +236,11 @@ const DEFAULT_TASK_LAYOUT: &str = r#"layout {
     }
     tab name="{name}" cwd="{cwd}" focus=true {
         pane split_direction="vertical" {
-            pane name="claude" command="claude" size="50%" close_on_exit=true
+            pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true {
+                env {
+                    TENX_TASK_NAME "{name}"
+                }
+            }
             pane split_direction="horizontal" size="50%" {
                 pane name="nvim" command="nvim"
                 pane name="shell"
