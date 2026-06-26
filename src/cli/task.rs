@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::env;
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 
 pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     let name = crate::workspace::slugify(name);
@@ -25,6 +26,7 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     let bare_dir = ws.bare_dir(&global);
     let task_dir = ws.tasks_dir().join(name);
     std::fs::create_dir_all(&task_dir)?;
+    write_claude_hooks(&task_dir)?;
 
     for repo_name in &repo_names {
         let repo = ws.find_repo(repo_name).ok_or_else(|| {
@@ -131,5 +133,54 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
 
     std::fs::remove_dir_all(&task.path)
         .with_context(|| format!("remove task directory {}", task.path.display()))?;
+    Ok(())
+}
+
+fn write_claude_hooks(task_dir: &Path) -> Result<()> {
+    // Write task name marker so hook scripts can find the task name even when
+    // Claude has navigated into a repo subdirectory before Stop fires.
+    let task_name = task_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    std::fs::write(task_dir.join(".tenx-task-name"), &task_name)?;
+
+    let hooks_dir = task_dir.join(".claude");
+    std::fs::create_dir_all(&hooks_dir)?;
+    let settings_path = hooks_dir.join("settings.local.json");
+    // Only write if not already present so manual edits are preserved.
+    if settings_path.exists() {
+        return Ok(());
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let content = format!(
+        r#"{{
+  "hooks": {{
+    "Stop": [
+      {{
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "{home}/.config/tenx/hooks/notify.sh"
+          }}
+        ]
+      }}
+    ],
+    "PreToolUse": [
+      {{
+        "matcher": "",
+        "hooks": [
+          {{
+            "type": "command",
+            "command": "{home}/.config/tenx/hooks/notify-clear.sh"
+          }}
+        ]
+      }}
+    ]
+  }}
+}}
+"#
+    );
+    std::fs::write(&settings_path, content)?;
     Ok(())
 }
