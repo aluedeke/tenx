@@ -22,7 +22,6 @@ pub fn add(url: &str, name: Option<&str>) -> Result<()> {
         bail!("bare repo already exists at {}", bare_path.display());
     }
 
-    eprintln!("Cloning {} → {}", url, bare_path.display());
     crate::git::bare_clone(url, &bare_dir, &repo_name)?;
 
     ws.add_repo(crate::workspace::RepoConfig {
@@ -30,7 +29,6 @@ pub fn add(url: &str, name: Option<&str>) -> Result<()> {
         url: url.to_string(),
     })?;
 
-    eprintln!("✓ repo '{}' added", repo_name);
     Ok(())
 }
 

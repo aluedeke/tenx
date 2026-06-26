@@ -30,6 +30,12 @@ pub enum Commands {
     },
     /// Launch the TUI directly (used by the zellij management tab)
     Tui,
+    /// Launch the task-list TUI pane (used by the zellij management tab)
+    #[command(hide = true)]
+    Tasks,
+    /// Launch the repo-list TUI pane (used by the zellij management tab)
+    #[command(hide = true)]
+    Repos,
 }
 
 #[derive(Subcommand)]

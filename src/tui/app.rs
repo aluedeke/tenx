@@ -2,15 +2,10 @@ use std::collections::HashSet;
 use crate::workspace::{Task, Workspace};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum View {
-    List,
-    Create,
-}
+pub enum View { List, Create }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ConfirmAction {
-    Delete(String),
-}
+pub enum ConfirmAction { Delete(String) }
 
 pub struct App {
     pub workspace: Workspace,
@@ -20,21 +15,16 @@ pub struct App {
     pub zellij_tabs: HashSet<String>,
     pub status_msg: Option<String>,
 
-    // Create view state
     pub create_name: String,
-    pub create_repos: Vec<(String, bool)>, // (name, checked)
-    pub create_focus: usize,               // 0=name, 1..=n=repo checkboxes
+    pub create_repos: Vec<(String, bool)>,
+    pub create_focus: usize,
 
-    // Confirm action
     pub confirm: Option<ConfirmAction>,
 }
 
 impl App {
     pub fn new(workspace: Workspace) -> Self {
-        let create_repos = workspace
-            .config
-            .repos
-            .iter()
+        let create_repos = workspace.config.repos.iter()
             .map(|r| (r.name.clone(), true))
             .collect();
         App {
@@ -56,7 +46,6 @@ impl App {
             Ok(tasks) => self.tasks = tasks,
             Err(e) => self.status_msg = Some(format!("error: {e}")),
         }
-        // Clamp selection
         if !self.tasks.is_empty() && self.selected >= self.tasks.len() {
             self.selected = self.tasks.len() - 1;
         }
@@ -79,23 +68,24 @@ impl App {
     }
 
     pub fn move_up(&mut self) {
-        if self.selected > 0 {
-            self.selected -= 1;
-        }
+        if self.selected > 0 { self.selected -= 1; }
     }
 
     pub fn move_down(&mut self) {
-        if self.selected + 1 < self.tasks.len() {
-            self.selected += 1;
-        }
+        if self.selected + 1 < self.tasks.len() { self.selected += 1; }
     }
 
     pub fn enter_create(&mut self) {
         self.create_name.clear();
         self.create_focus = 0;
-        // Reset repos to all-checked
-        for (_, checked) in &mut self.create_repos {
-            *checked = true;
+        // Reload repos in case they changed since we started
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Ok(ws) = crate::workspace::find(&cwd) {
+                self.create_repos = ws.config.repos.iter()
+                    .map(|r| (r.name.clone(), true))
+                    .collect();
+                self.workspace = ws;
+            }
         }
         self.status_msg = None;
         self.view = View::Create;
@@ -107,25 +97,20 @@ impl App {
     }
 
     pub fn selected_repo_names(&self) -> Vec<String> {
-        self.create_repos
-            .iter()
+        self.create_repos.iter()
             .filter(|(_, checked)| *checked)
             .map(|(name, _)| name.clone())
             .collect()
     }
 
     pub fn create_focus_next(&mut self) {
-        let max = self.create_repos.len(); // 0=name, 1..=n=repos
+        let max = self.create_repos.len();
         self.create_focus = (self.create_focus + 1) % (max + 1);
     }
 
     pub fn create_focus_prev(&mut self) {
         let max = self.create_repos.len();
-        if self.create_focus == 0 {
-            self.create_focus = max;
-        } else {
-            self.create_focus -= 1;
-        }
+        self.create_focus = if self.create_focus == 0 { max } else { self.create_focus - 1 };
     }
 
     pub fn toggle_repo(&mut self) {
@@ -135,17 +120,11 @@ impl App {
         }
     }
 
-    /// Execute the create task action. Returns error message if failed.
     pub fn do_create(&mut self) -> Result<(), String> {
         let name = self.create_name.trim().to_string();
-        if name.is_empty() {
-            return Err("task name cannot be empty".into());
-        }
+        if name.is_empty() { return Err("task name cannot be empty".into()); }
         let repos = self.selected_repo_names();
-        if repos.is_empty() {
-            return Err("select at least one repo".into());
-        }
-        // Delegate to CLI task::new (no-open=false to open zellij tab)
+        if repos.is_empty() { return Err("select at least one repo".into()); }
         match crate::cli::task::new(&name, Some(&repos), false) {
             Ok(_) => {
                 self.view = View::List;
@@ -157,42 +136,34 @@ impl App {
         }
     }
 
-    /// Open or switch to the selected task's zellij tab.
     pub fn do_open(&mut self) -> Result<(), String> {
         let task = match self.selected_task() {
             Some(t) => t.clone(),
             None => return Err("no task selected".into()),
         };
         match crate::cli::task::open(&task.name) {
-            Ok(_) => {
-                self.reload_tabs();
-                Ok(())
-            }
+            Ok(_) => { self.reload_tabs(); Ok(()) }
             Err(e) => Err(e.to_string()),
         }
     }
 
-    /// Close the selected task's zellij tab (keep worktrees).
     pub fn do_close(&mut self) -> Result<(), String> {
         let name = match self.selected_task() {
             Some(t) => t.name.clone(),
             None => return Err("no task selected".into()),
         };
         match crate::zellij::close_tab(&name) {
-            Ok(_) => {
-                self.reload_tabs();
-                Ok(())
-            }
+            Ok(_) => { self.reload_tabs(); Ok(()) }
             Err(e) => Err(e.to_string()),
         }
     }
 
-    /// Delete the selected task (remove worktrees + dir).
     pub fn do_delete(&mut self) -> Result<(), String> {
         let name = match self.confirm.take() {
             Some(ConfirmAction::Delete(n)) => n,
             None => return Err("no pending delete".into()),
         };
+        if self.task_is_open(&name) { let _ = crate::zellij::close_tab(&name); }
         match crate::cli::task::rm(&name, true) {
             Ok(_) => {
                 self.reload_tasks();

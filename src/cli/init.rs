@@ -37,13 +37,21 @@ pub fn run(name: Option<&str>) -> Result<()> {
     }
     ws.save_config()?;
 
+    // Clone all repos immediately
+    if !ws.config.repos.is_empty() {
+        let global = crate::workspace::load_global()?;
+        let bare_dir = ws.bare_dir(&global);
+        eprintln!();
+        eprintln!("Syncing repos:");
+        for repo in &ws.config.repos {
+            crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name)?;
+        }
+    }
+
     eprintln!();
     eprintln!("✓ workspace '{}' created at {}", ws.config.name, ws.dir.display());
     if ws.dir != cwd {
         eprintln!("  cd {}", ws.dir.display());
-    }
-    if !ws.config.repos.is_empty() {
-        eprintln!("  {} repo(s) configured — run: tenx repo fetch", ws.config.repos.len());
     }
     Ok(())
 }
