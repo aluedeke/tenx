@@ -49,6 +49,7 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
         let opts = crate::zellij::TabOptions {
             name,
             cwd: &task_dir.to_string_lossy(),
+            workspace_dir: &ws.dir.to_string_lossy(),
             layout_file: if layout.is_empty() { None } else { Some(layout) },
         };
         crate::zellij::open_or_switch(&opts)?;
@@ -69,6 +70,7 @@ pub fn open(name: &str) -> Result<()> {
     let opts = crate::zellij::TabOptions {
         name,
         cwd: &task.path.to_string_lossy(),
+        workspace_dir: &ws.dir.to_string_lossy(),
         layout_file: if layout.is_empty() { None } else { Some(layout) },
     };
     crate::zellij::open_or_switch(&opts)?;
@@ -137,50 +139,109 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
 }
 
 fn write_claude_hooks(task_dir: &Path) -> Result<()> {
-    // Write task name marker so hook scripts can find the task name even when
-    // Claude has navigated into a repo subdirectory before Stop fires.
-    let task_name = task_dir
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    std::fs::write(task_dir.join(".tenx-task-name"), &task_name)?;
+    let workspace_dir = task_dir
+        .parent()  // tasks/
+        .and_then(|p| p.parent())  // workspace/
+        .with_context(|| format!("cannot determine workspace dir from {}", task_dir.display()))?;
+    ensure_workspace_claude_settings(workspace_dir)?;
 
-    let hooks_dir = task_dir.join(".claude");
+    // Symlink task_dir/.claude -> ../../.claude so Claude Code discovers the
+    // workspace settings without a per-task copy.
+    let link = task_dir.join(".claude");
+    if !link.exists() && !link.is_symlink() {
+        std::os::unix::fs::symlink("../../.claude", &link)
+            .with_context(|| format!("symlink .claude in {}", task_dir.display()))?;
+    }
+    Ok(())
+}
+
+fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
+    let claude_dir = workspace_dir.join(".claude");
+    let hooks_dir = claude_dir.join("hooks");
     std::fs::create_dir_all(&hooks_dir)?;
-    let settings_path = hooks_dir.join("settings.local.json");
-    // Only write if not already present so manual edits are preserved.
-    if settings_path.exists() {
+
+    let settings_path = claude_dir.join("settings.json");
+    if !settings_path.exists() {
+        let content = r#"{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/notify.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/notify-clear.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+"#;
+        std::fs::write(&settings_path, content)?;
+    }
+
+    write_hook_script(
+        &hooks_dir.join("notify.sh"),
+        "#!/bin/sh\n\
+         [ -n \"$ZELLIJ\" ] || exit 0\n\
+         TASK=$(basename \"$CLAUDE_PROJECT_DIR\")\n\
+         [ -n \"$TASK\" ] || exit 0\n\
+         ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
+         if [ -z \"$ZELLIJ_BIN\" ]; then\n\
+         \tfor p in \"$HOME/.local/bin\" /opt/homebrew/bin /usr/local/bin; do\n\
+         \t\t[ -x \"$p/zellij\" ] && ZELLIJ_BIN=\"$p/zellij\" && break\n\
+         \tdone\n\
+         fi\n\
+         [ -n \"$ZELLIJ_BIN\" ] || exit 0\n\
+         TAB_ID=$(\"$ZELLIJ_BIN\" action list-tabs --json 2>/dev/null \\\n\
+         \t| jq -r --arg n \"$TASK\" '.[] | select(.name == $n) | .tab_id' 2>/dev/null)\n\
+         [ -n \"$TAB_ID\" ] || exit 0\n\
+         \"$ZELLIJ_BIN\" action rename-tab --tab-id \"$TAB_ID\" \"\u{1F4AC} $TASK\" 2>/dev/null\n",
+    )?;
+
+    write_hook_script(
+        &hooks_dir.join("notify-clear.sh"),
+        "#!/bin/sh\n\
+         [ -n \"$ZELLIJ\" ] || exit 0\n\
+         TASK=$(basename \"$CLAUDE_PROJECT_DIR\")\n\
+         [ -n \"$TASK\" ] || exit 0\n\
+         ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
+         if [ -z \"$ZELLIJ_BIN\" ]; then\n\
+         \tfor p in \"$HOME/.local/bin\" /opt/homebrew/bin /usr/local/bin; do\n\
+         \t\t[ -x \"$p/zellij\" ] && ZELLIJ_BIN=\"$p/zellij\" && break\n\
+         \tdone\n\
+         fi\n\
+         [ -n \"$ZELLIJ_BIN\" ] || exit 0\n\
+         TAB_ID=$(\"$ZELLIJ_BIN\" action list-tabs --json 2>/dev/null \\\n\
+         \t| jq -r --arg n \"\u{1F4AC} $TASK\" '.[] | select(.name == $n) | .tab_id' 2>/dev/null)\n\
+         [ -n \"$TAB_ID\" ] || exit 0\n\
+         \"$ZELLIJ_BIN\" action rename-tab --tab-id \"$TAB_ID\" \"$TASK\" 2>/dev/null\n",
+    )?;
+
+    Ok(())
+}
+
+fn write_hook_script(path: &Path, content: &str) -> Result<()> {
+    if path.exists() {
         return Ok(());
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    let content = format!(
-        r#"{{
-  "hooks": {{
-    "Stop": [
-      {{
-        "hooks": [
-          {{
-            "type": "command",
-            "command": "{home}/.config/tenx/hooks/notify.sh"
-          }}
-        ]
-      }}
-    ],
-    "PreToolUse": [
-      {{
-        "matcher": "",
-        "hooks": [
-          {{
-            "type": "command",
-            "command": "{home}/.config/tenx/hooks/notify-clear.sh"
-          }}
-        ]
-      }}
-    ]
-  }}
-}}
-"#
-    );
-    std::fs::write(&settings_path, content)?;
+    std::fs::write(path, content)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path)?.permissions();
+        perms.set_mode(perms.mode() | 0o111);
+        std::fs::set_permissions(path, perms)?;
+    }
     Ok(())
 }

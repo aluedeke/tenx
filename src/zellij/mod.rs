@@ -221,10 +221,22 @@ pub fn open_tui_tab(tenx_bin: &str, workspace_dir: &str) -> Result<()> {
 pub struct TabOptions<'a> {
     pub name: &'a str,
     pub cwd: &'a str,
+    pub workspace_dir: &'a str,
     pub layout_file: Option<&'a str>,
 }
 
-const DEFAULT_TASK_LAYOUT: &str = r#"layout {
+pub fn render_layout(opts: &TabOptions) -> Result<String> {
+    let tmpl = if let Some(layout_file) = opts.layout_file {
+        fs::read_to_string(layout_file)
+            .with_context(|| format!("read layout file {layout_file}"))?
+    } else {
+        default_task_layout(opts.workspace_dir)
+    };
+    Ok(tmpl.replace("{name}", opts.name).replace("{cwd}", opts.cwd))
+}
+
+fn default_task_layout(_workspace_dir: &str) -> String {
+    r#"layout {
     default_tab_template {
         pane size=1 borderless=true {
             plugin location="zellij:tab-bar"
@@ -236,28 +248,14 @@ const DEFAULT_TASK_LAYOUT: &str = r#"layout {
     }
     tab name="{name}" cwd="{cwd}" focus=true {
         pane split_direction="vertical" {
-            pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true {
-                env {
-                    TENX_TASK_NAME "{name}"
-                }
-            }
+            pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true
             pane split_direction="horizontal" size="50%" {
                 pane name="nvim" command="nvim"
                 pane name="shell"
             }
         }
     }
-}
-"#;
-
-pub fn render_layout(opts: &TabOptions) -> Result<String> {
-    let tmpl = if let Some(layout_file) = opts.layout_file {
-        fs::read_to_string(layout_file)
-            .with_context(|| format!("read layout file {layout_file}"))?
-    } else {
-        DEFAULT_TASK_LAYOUT.to_string()
-    };
-    Ok(tmpl.replace("{name}", opts.name).replace("{cwd}", opts.cwd))
+}"#.to_string()
 }
 
 /// Open a task tab or switch to it if already open.
