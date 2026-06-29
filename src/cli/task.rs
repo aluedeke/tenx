@@ -63,7 +63,8 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_file: if layout.is_empty() { None } else { Some(layout) },
         };
-        crate::zellij::open_or_switch(&opts)?;
+        let tab_id = crate::zellij::open_or_switch(&opts)?;
+        std::fs::write(task_dir.join(".tenx-tab-id"), tab_id.to_string())?;
     }
     Ok(())
 }
@@ -79,6 +80,24 @@ pub fn open(name: &str) -> Result<()> {
         bail!("not inside a zellij session — start zellij first");
     }
 
+    // Try to find the tab by its stored id first.
+    let tab_id_file = task.path.join(".tenx-tab-id");
+    let existing_id = std::fs::read_to_string(&tab_id_file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+
+    if let Some(id) = existing_id {
+        if let Some(tab) = crate::zellij::find_tab_by_id(id)? {
+            // Tab is still open — rename if TASK.md title changed, then switch.
+            if tab.name != display_name {
+                crate::zellij::rename_tab_by_id(id, &display_name)?;
+            }
+            crate::zellij::go_to_tab_position(tab.position)?;
+            return Ok(());
+        }
+    }
+
+    // Tab not open — create it and record the new id.
     let layout = ws.config.layout.as_str();
     let opts = crate::zellij::TabOptions {
         name: &display_name,
@@ -86,7 +105,8 @@ pub fn open(name: &str) -> Result<()> {
         workspace_dir: &ws.dir.to_string_lossy(),
         layout_file: if layout.is_empty() { None } else { Some(layout) },
     };
-    crate::zellij::open_or_switch(&opts)?;
+    let tab_id = crate::zellij::open_or_switch(&opts)?;
+    std::fs::write(&tab_id_file, tab_id.to_string())?;
     Ok(())
 }
 
