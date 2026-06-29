@@ -138,10 +138,9 @@ fn full_session_layout(tenx_bin: &str, workspace_dir: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct Tab {
-    #[allow(dead_code)]
+    pub tab_id: u32,
     pub position: usize,
     pub name: String,
-    #[allow(dead_code)]
     pub active: bool,
 }
 
@@ -159,6 +158,33 @@ pub fn list_tabs() -> Result<Vec<Tab>> {
 
 pub fn tab_exists(name: &str) -> Result<bool> {
     Ok(list_tabs()?.iter().any(|t| t.name == name))
+}
+
+pub fn find_tab_by_id(id: u32) -> Result<Option<Tab>> {
+    Ok(list_tabs()?.into_iter().find(|t| t.tab_id == id))
+}
+
+pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
+    let status = Command::new("zellij")
+        .args(["action", "rename-tab", "--tab-id", &id.to_string(), name])
+        .status()
+        .context("run zellij action rename-tab")?;
+    if !status.success() {
+        bail!("rename-tab failed for tab id {id}");
+    }
+    Ok(())
+}
+
+pub fn go_to_tab_position(position: usize) -> Result<()> {
+    // zellij go-to-tab takes a 1-based index
+    let status = Command::new("zellij")
+        .args(["action", "go-to-tab", &(position + 1).to_string()])
+        .status()
+        .context("run zellij action go-to-tab")?;
+    if !status.success() {
+        bail!("go-to-tab failed for position {position}");
+    }
+    Ok(())
 }
 
 pub fn go_to_tab(name: &str) -> Result<()> {
@@ -260,13 +286,10 @@ fn default_task_layout(_workspace_dir: &str) -> String {
 }"#.to_string()
 }
 
-/// Open a task tab or switch to it if already open.
-pub fn open_or_switch(opts: &TabOptions) -> Result<()> {
+/// Open a new task tab and return its stable tab_id.
+pub fn open_or_switch(opts: &TabOptions) -> Result<u32> {
     if !is_inside_session() {
         bail!("not inside a zellij session — start zellij or use --no-open");
-    }
-    if tab_exists(opts.name)? {
-        return go_to_tab(opts.name);
     }
     let kdl = render_layout(opts)?;
     let status = Command::new("zellij")
@@ -276,5 +299,10 @@ pub fn open_or_switch(opts: &TabOptions) -> Result<()> {
     if !status.success() {
         bail!("zellij new-tab failed for '{}'", opts.name);
     }
-    Ok(())
+    // The new tab becomes active — find it to get its stable tab_id.
+    let tab = list_tabs()?
+        .into_iter()
+        .find(|t| t.active)
+        .ok_or_else(|| anyhow::anyhow!("cannot find newly created tab"))?;
+    Ok(tab.tab_id)
 }
