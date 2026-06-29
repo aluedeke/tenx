@@ -1,5 +1,6 @@
 mod cli;
 mod git;
+mod github;
 mod tui;
 mod workspace;
 mod zellij;
