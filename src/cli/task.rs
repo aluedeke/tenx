@@ -34,10 +34,19 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
             crate::workspace::WorkspaceError::RepoNotFound(repo_name.clone())
         })?;
         let bare_path = crate::git::bare_repo_path(&bare_dir, &repo.name);
-        crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name)?;
+        let verb = if bare_path.exists() { "fetching" } else { "cloning" };
+        let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
+        match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name) {
+            Ok(_) => spinner.done(),
+            Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
+        }
 
         let worktree_path = task_dir.join(&repo.name);
-        crate::git::add_worktree(&bare_path, &worktree_path, name)?;
+        let spinner = crate::progress::Spinner::new(format!("worktree {}", repo.name));
+        match crate::git::add_worktree(&bare_path, &worktree_path, name) {
+            Ok(_) => spinner.done(),
+            Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
+        }
     }
 
     if !no_open {
