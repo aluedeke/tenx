@@ -44,7 +44,19 @@ pub fn run(name: Option<&str>) -> Result<()> {
         eprintln!();
         eprintln!("Syncing repos:");
         for repo in &ws.config.repos {
-            crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name)?;
+            let verb = if crate::git::bare_repo_path(&bare_dir, &repo.name).exists() {
+                "fetching"
+            } else {
+                "cloning"
+            };
+            let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
+            match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name) {
+                Ok(_) => spinner.done(),
+                Err(e) => {
+                    spinner.fail(&e.to_string());
+                    return Err(e);
+                }
+            }
         }
     }
 
