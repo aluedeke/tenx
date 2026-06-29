@@ -26,6 +26,7 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     let bare_dir = ws.bare_dir(&global);
     let task_dir = ws.tasks_dir().join(name);
     std::fs::create_dir_all(&task_dir)?;
+    write_task_md(&task_dir, name)?;
     write_claude_hooks(&task_dir)?;
 
     for repo_name in &repo_names {
@@ -135,6 +136,29 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
 
     std::fs::remove_dir_all(&task.path)
         .with_context(|| format!("remove task directory {}", task.path.display()))?;
+    Ok(())
+}
+
+fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
+    let path = task_dir.join("TASK.md");
+    if path.exists() {
+        return Ok(());
+    }
+    let content = format!(
+        "# {name}\n\
+         \n\
+         ## Description\n\
+         \n\
+         \n\
+         ## Links\n\
+         \n\
+         - Linear:\n\
+         - PR:\n\
+         \n\
+         ## Notes\n\
+         \n"
+    );
+    std::fs::write(&path, content)?;
     Ok(())
 }
 
