@@ -27,7 +27,6 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     let bare_dir = ws.bare_dir(&global);
     let task_dir = ws.tasks_dir().join(slug);
     std::fs::create_dir_all(&task_dir)?;
-    std::fs::write(task_dir.join(".tenx-display-name"), &display_name)?;
     write_task_md(&task_dir, &display_name)?;
     write_claude_hooks(&task_dir)?;
 
@@ -153,10 +152,12 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
 }
 
 fn read_display_name(task_dir: &Path) -> String {
-    if let Ok(s) = std::fs::read_to_string(task_dir.join(".tenx-display-name")) {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            return s;
+    if let Ok(content) = std::fs::read_to_string(task_dir.join("TASK.md")) {
+        if let Some(first) = content.lines().next() {
+            let title = first.trim_start_matches('#').trim().to_string();
+            if !title.is_empty() {
+                return title;
+            }
         }
     }
     task_dir
@@ -248,8 +249,8 @@ fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
         &hooks_dir.join("notify.sh"),
         "#!/bin/sh\n\
          [ -n \"$ZELLIJ\" ] || exit 0\n\
-         DISPLAY=$(cat \"$CLAUDE_PROJECT_DIR/.tenx-display-name\" 2>/dev/null)\n\
-         TASK=\"${DISPLAY:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
+         TASK=$(head -1 \"$CLAUDE_PROJECT_DIR/TASK.md\" 2>/dev/null | sed 's/^# *//')\n\
+         TASK=\"${TASK:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
          [ -n \"$TASK\" ] || exit 0\n\
          ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
          if [ -z \"$ZELLIJ_BIN\" ]; then\n\
@@ -268,8 +269,8 @@ fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
         &hooks_dir.join("notify-clear.sh"),
         "#!/bin/sh\n\
          [ -n \"$ZELLIJ\" ] || exit 0\n\
-         DISPLAY=$(cat \"$CLAUDE_PROJECT_DIR/.tenx-display-name\" 2>/dev/null)\n\
-         TASK=\"${DISPLAY:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
+         TASK=$(head -1 \"$CLAUDE_PROJECT_DIR/TASK.md\" 2>/dev/null | sed 's/^# *//')\n\
+         TASK=\"${TASK:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
          [ -n \"$TASK\" ] || exit 0\n\
          ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
          if [ -z \"$ZELLIJ_BIN\" ]; then\n\
