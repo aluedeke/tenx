@@ -250,7 +250,9 @@ fn default_task_layout(_workspace_dir: &str) -> String {
         pane split_direction="vertical" {
             pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true
             pane split_direction="horizontal" size="50%" {
-                pane name="nvim" command="nvim"
+                pane name="nvim" command="nvim" {
+                    args "TASK.md"
+                }
                 pane name="shell"
             }
         }
