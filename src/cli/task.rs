@@ -4,14 +4,15 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
-    let name = crate::workspace::slugify(name);
-    let name = name.as_str();
+    let display_name = name.to_string();
+    let slug = crate::workspace::slugify(name);
+    let slug = slug.as_str();
 
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
     let global = crate::workspace::load_global()?;
 
-    ws.check_task_new(name)?;
+    ws.check_task_new(slug)?;
 
     // Determine which repos to include
     let repo_names: Vec<String> = match repos {
@@ -24,9 +25,10 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     }
 
     let bare_dir = ws.bare_dir(&global);
-    let task_dir = ws.tasks_dir().join(name);
+    let task_dir = ws.tasks_dir().join(slug);
     std::fs::create_dir_all(&task_dir)?;
-    write_task_md(&task_dir, name)?;
+    std::fs::write(task_dir.join(".tenx-display-name"), &display_name)?;
+    write_task_md(&task_dir, &display_name)?;
     write_claude_hooks(&task_dir)?;
 
     for repo_name in &repo_names {
@@ -43,7 +45,7 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
 
         let worktree_path = task_dir.join(&repo.name);
         let spinner = crate::progress::Spinner::new(format!("worktree {}", repo.name));
-        match crate::git::add_worktree(&bare_path, &worktree_path, name) {
+        match crate::git::add_worktree(&bare_path, &worktree_path, slug) {
             Ok(_) => spinner.done(),
             Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
         }
@@ -52,12 +54,12 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     if !no_open {
         if !crate::zellij::is_inside_session() {
             eprintln!("! not inside a zellij session — run: zellij");
-            eprintln!("  to open later: tenx task open {}", name);
+            eprintln!("  to open later: tenx task open {}", slug);
             return Ok(());
         }
         let layout = ws.config.layout.as_str();
         let opts = crate::zellij::TabOptions {
-            name,
+            name: &display_name,
             cwd: &task_dir.to_string_lossy(),
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_file: if layout.is_empty() { None } else { Some(layout) },
@@ -70,7 +72,9 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
 pub fn open(name: &str) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
-    let task = ws.find_task(name)?;
+    let slug = crate::workspace::slugify(name);
+    let task = ws.find_task(&slug)?;
+    let display_name = read_display_name(&task.path);
 
     if !crate::zellij::is_inside_session() {
         bail!("not inside a zellij session — start zellij first");
@@ -78,7 +82,7 @@ pub fn open(name: &str) -> Result<()> {
 
     let layout = ws.config.layout.as_str();
     let opts = crate::zellij::TabOptions {
-        name,
+        name: &display_name,
         cwd: &task.path.to_string_lossy(),
         workspace_dir: &ws.dir.to_string_lossy(),
         layout_file: if layout.is_empty() { None } else { Some(layout) },
@@ -146,6 +150,19 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
     std::fs::remove_dir_all(&task.path)
         .with_context(|| format!("remove task directory {}", task.path.display()))?;
     Ok(())
+}
+
+fn read_display_name(task_dir: &Path) -> String {
+    if let Ok(s) = std::fs::read_to_string(task_dir.join(".tenx-display-name")) {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            return s;
+        }
+    }
+    task_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
@@ -231,7 +248,8 @@ fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
         &hooks_dir.join("notify.sh"),
         "#!/bin/sh\n\
          [ -n \"$ZELLIJ\" ] || exit 0\n\
-         TASK=$(basename \"$CLAUDE_PROJECT_DIR\")\n\
+         DISPLAY=$(cat \"$CLAUDE_PROJECT_DIR/.tenx-display-name\" 2>/dev/null)\n\
+         TASK=\"${DISPLAY:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
          [ -n \"$TASK\" ] || exit 0\n\
          ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
          if [ -z \"$ZELLIJ_BIN\" ]; then\n\
@@ -250,7 +268,8 @@ fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
         &hooks_dir.join("notify-clear.sh"),
         "#!/bin/sh\n\
          [ -n \"$ZELLIJ\" ] || exit 0\n\
-         TASK=$(basename \"$CLAUDE_PROJECT_DIR\")\n\
+         DISPLAY=$(cat \"$CLAUDE_PROJECT_DIR/.tenx-display-name\" 2>/dev/null)\n\
+         TASK=\"${DISPLAY:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
          [ -n \"$TASK\" ] || exit 0\n\
          ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
          if [ -z \"$ZELLIJ_BIN\" ]; then\n\
