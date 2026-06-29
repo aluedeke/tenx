@@ -48,6 +48,12 @@ pub fn run(name: Option<&str>) -> Result<()> {
         }
     }
 
+    // Offer to install the /tenx skill into .claude/skills/
+    if prompt_yes_no("Install /tenx skill for Claude Code sessions?")? {
+        install_tenx_skill(&ws_dir)?;
+        eprintln!("  ✓ skill installed — type /tenx in any task session");
+    }
+
     eprintln!();
     eprintln!("✓ workspace '{}' created at {}", ws.config.name, ws.dir.display());
     if ws.dir != cwd {
@@ -77,6 +83,62 @@ fn prompt_layout() -> Result<String> {
     let input = prompt("  Layout KDL path")?;
     Ok(input)
 }
+
+fn prompt_yes_no(question: &str) -> Result<bool> {
+    let answer = prompt(&format!("{question} [Y/n]"))?;
+    Ok(!answer.eq_ignore_ascii_case("n"))
+}
+
+fn install_tenx_skill(ws_dir: &std::path::Path) -> Result<()> {
+    let skill_dir = ws_dir.join(".claude").join("skills").join("tenx");
+    std::fs::create_dir_all(&skill_dir)?;
+    let skill_path = skill_dir.join("SKILL.md");
+    if skill_path.exists() {
+        return Ok(());
+    }
+    std::fs::write(&skill_path, TENX_SKILL_MD)?;
+    Ok(())
+}
+
+const TENX_SKILL_MD: &str = r#"---
+description: Show tenx workspace status and task list. Use when the user asks about tasks, workspace structure, active work, or how to migrate existing work into tenx.
+allowed-tools: Bash Read
+---
+
+## Active tasks
+
+!`tenx task list 2>/dev/null || echo "(no tasks yet — run: tenx task new <name>)"`
+
+## Workspace structure
+
+- `tasks/<name>/` — task dir: git worktrees, TASK.md, .claude symlink
+- `.bare/<repo>.git` — shared bare clones (one per repo)
+- `.claude/` — shared hooks, settings, skills (inherited by all tasks via symlink)
+
+## TASK.md conventions
+
+Keep TASK.md current at all times:
+- Check off `## Todo` items as you complete them; add new ones as you discover sub-tasks
+- After `gh pr create`, add the PR URL under `## Links` → `PR:`
+- After linking a Linear issue, add the URL under `## Links` → `Linear:`
+- Add decisions and gotchas to `## Notes`
+
+## Common commands
+
+    tenx task new <name>       create task with worktrees + TASK.md
+    tenx task open <name>      switch to task's zellij tab
+    tenx task list             list all tasks and open tabs
+    tenx task rm <name>        remove task and worktrees
+    tenx repo add <url>        add a repo to the workspace
+
+## Migrating existing work
+
+Push your current branch to remote, then:
+
+    tenx task new <name>
+
+and copy or move existing work into `tasks/<name>/<repo>/`.
+"#;
 
 fn prompt(label: &str) -> Result<String> {
     let mut stdout = io::stdout();
