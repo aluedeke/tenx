@@ -150,6 +150,10 @@ fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
          ## Description\n\
          \n\
          \n\
+         ## Todo\n\
+         \n\
+         - [ ] \n\
+         \n\
          ## Links\n\
          \n\
          - Linear:\n\
