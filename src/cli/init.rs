@@ -63,7 +63,8 @@ pub fn run(name: Option<&str>) -> Result<()> {
     // Offer to install the /tenx skill into .claude/skills/
     if prompt_yes_no("Install /tenx skill for Claude Code sessions?")? {
         install_tenx_skill(&ws_dir)?;
-        eprintln!("  ✓ skill installed — type /tenx in any task session");
+        install_standup_skill(&ws_dir)?;
+        eprintln!("  ✓ skills installed — type /tenx or /standup in any task session");
     }
 
     eprintln!();
@@ -150,6 +151,74 @@ Push your current branch to remote, then:
     tenx task new <name>
 
 and copy or move existing work into `tasks/<name>/<repo>/`.
+"#;
+
+fn install_standup_skill(ws_dir: &std::path::Path) -> Result<()> {
+    let skill_dir = ws_dir.join(".claude").join("skills").join("standup");
+    std::fs::create_dir_all(&skill_dir)?;
+    let skill_path = skill_dir.join("SKILL.md");
+    if !skill_path.exists() {
+        std::fs::write(&skill_path, STANDUP_SKILL_MD)?;
+    }
+    Ok(())
+}
+
+const STANDUP_SKILL_MD: &str = r#"---
+description: Generate a daily standup report from yesterday's Claude Code activity and workspace task files. Use when the user asks for a standup, daily summary, or what was done yesterday.
+allowed-tools: Bash
+---
+
+Generate a standup report for yesterday.
+
+## Step 1 — collect data
+
+```bash
+tenx standup
+```
+
+This outputs two sections: `=== TASK FILES ===` (authoritative source for PR links, Linear tickets, descriptions) and `=== ACTIVITY LOG (since <timestamp>) ===` (user prompts and git commits since the last standup).
+
+To override the period: `tenx standup --since 2026-06-29T00:00:00Z`
+
+## Step 2 — generate the standup
+
+Using the output, produce this format:
+
+**Achieved:**
+
+For each task that had activity:
+> #### <Task name>
+> PR: <links from task file, or "none">
+> Linear: <ticket from task file, or "none">
+> 1-2 sentences only. What was completed or meaningfully progressed.
+
+**Planned today:**
+One sentence per task inferred from open todos, unresolved threads, or incomplete work.
+
+**Blockers:**
+One sentence per blocker. Failed commands, stuck design decisions, unanswered questions.
+
+Rules:
+- PR and Linear lines are mandatory for every task — write "none" if absent, never omit.
+- Maximum 2 sentences per task in the achieved section.
+- Skip tasks with no meaningful activity (tool noise only).
+
+## Step 3 — log it
+
+Prepend the standup to `daily.local.md`, directly after the `<!-- last-standup: ... -->` marker on line 1. Use this format:
+
+```
+<!-- last-standup: ... -->
+
+---
+## <YYYY-MM-DD HH:MM>
+
+<standup content>
+
+<existing content below>
+```
+
+Read the current `daily.local.md` first, then write the updated version with the new entry at the top.
 "#;
 
 fn prompt(label: &str) -> Result<String> {
