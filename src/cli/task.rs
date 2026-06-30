@@ -22,6 +22,7 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     let bare_dir = ws.bare_dir(&global);
     let task_dir = ws.tasks_dir().join(name);
     std::fs::create_dir_all(&task_dir)?;
+    write_task_md(&task_dir, name)?;
 
     for repo_name in &repo_names {
         let repo = ws.find_repo(repo_name).ok_or_else(|| {
@@ -102,6 +103,35 @@ pub fn list() -> Result<()> {
             task.name, repos, task.branch, age, open
         );
     }
+    Ok(())
+}
+
+fn write_task_md(task_dir: &std::path::Path, name: &str) -> Result<()> {
+    let path = task_dir.join("TASK.md");
+    if path.exists() {
+        return Ok(());
+    }
+    let content = format!(
+        "# {name}\n\
+         \n\
+         ## Description\n\
+         \n\
+         \n\
+         ## Todo\n\
+         \n\
+         - [ ] \n\
+         \n\
+         ## Links\n\
+         \n\
+         - Linear Project:\n\
+         - Linear Milestone:\n\
+         - Linear:\n\
+         - PR:\n\
+         \n\
+         ## Notes\n\
+         \n"
+    );
+    std::fs::write(&path, content)?;
     Ok(())
 }
 

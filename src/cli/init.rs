@@ -38,6 +38,13 @@ pub fn run(name: Option<&str>) -> Result<()> {
     ws.save_config()?;
 
     eprintln!();
+    // Offer to install the /tenx skill into .claude/skills/
+    if prompt_yes_no("Install /tenx skill for Claude Code sessions?")? {
+        install_tenx_skill(&ws_dir)?;
+        eprintln!("  ✓ skill installed — type /tenx in any task session");
+    }
+
+    eprintln!();
     eprintln!("✓ workspace '{}' created at {}", ws.config.name, ws.dir.display());
     if ws.dir != cwd {
         eprintln!("  cd {}", ws.dir.display());
@@ -47,6 +54,24 @@ pub fn run(name: Option<&str>) -> Result<()> {
     }
     Ok(())
 }
+
+fn prompt_yes_no(question: &str) -> Result<bool> {
+    let answer = prompt(&format!("{question} [Y/n]"))?;
+    Ok(!answer.eq_ignore_ascii_case("n"))
+}
+
+fn install_tenx_skill(ws_dir: &std::path::Path) -> Result<()> {
+    let skill_dir = ws_dir.join(".claude").join("skills").join("tenx");
+    std::fs::create_dir_all(&skill_dir)?;
+    let skill_path = skill_dir.join("SKILL.md");
+    if skill_path.exists() {
+        return Ok(());
+    }
+    std::fs::write(&skill_path, TENX_SKILL_MD)?;
+    Ok(())
+}
+
+const TENX_SKILL_MD: &str = include_str!("skills/tenx.md");
 
 fn prompt_repos() -> Result<Vec<crate::workspace::RepoConfig>> {
     let mut repos = Vec::new();
