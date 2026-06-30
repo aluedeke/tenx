@@ -56,6 +56,7 @@ fn render_list(f: &mut Frame, app: &App) {
         f.render_widget(Paragraph::new(guide), chunks[1]);
     } else {
         let header = Line::from(vec![
+            Span::raw("  "),
             Span::styled(format!("{:<24}", "NAME"),   Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(format!("{:<24}", "BRANCH"), Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(format!("{:<6}",  "AGE"),    Style::default().add_modifier(Modifier::BOLD)),
@@ -65,13 +66,13 @@ fn render_list(f: &mut Frame, app: &App) {
 
         let items: Vec<ListItem> = app.tasks.iter().map(|task| {
             let age  = format_age(task.created_at);
-            let open = if app.task_is_open(&task.name) {
+            let open = if app.task_is_open(&task.display_name) {
                 Span::styled("●", Style::default().fg(Color::Green))
             } else {
                 Span::raw(" ")
             };
             ListItem::new(Line::from(vec![
-                Span::raw(format!("{:<24}", truncate(&task.name, 23))),
+                Span::raw(format!("{:<24}", truncate(&task.display_name, 23))),
                 Span::styled(format!("{:<24}", truncate(&task.branch, 23)), Style::default().fg(Color::Gray)),
                 Span::styled(format!("{:<6}", age), Style::default().fg(Color::DarkGray)),
                 open,
@@ -87,8 +88,12 @@ fn render_list(f: &mut Frame, app: &App) {
         f.render_stateful_widget(list, chunks[1], &mut state);
     }
 
-    let (help, style) = if let Some(ConfirmAction::Delete(ref name)) = app.confirm {
-        (format!(" delete '{}'? [y/N] ", name), Style::default().fg(Color::Yellow))
+    let (help, style) = if let Some(ConfirmAction::Delete(ref slug)) = app.confirm {
+        let display = app.tasks.iter()
+            .find(|t| t.name == *slug)
+            .map(|t| t.display_name.as_str())
+            .unwrap_or(slug.as_str());
+        (format!(" delete '{}'? [y/N] ", display), Style::default().fg(Color::Yellow))
     } else if let Some(ref msg) = app.status_msg {
         (format!(" {} ", msg), Style::default().fg(Color::Red))
     } else {
@@ -168,7 +173,13 @@ fn render_create(f: &mut Frame, app: &App) {
 }
 
 fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
+    if s.len() <= max {
+        return s;
+    }
+    match s.char_indices().nth(max) {
+        Some((i, _)) => &s[..i],
+        None => s,
+    }
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

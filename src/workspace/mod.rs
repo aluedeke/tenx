@@ -45,7 +45,8 @@ pub struct WorkspaceConfig {
 
 #[derive(Debug, Clone)]
 pub struct Task {
-    pub name: String,
+    pub name: String,         // slug (directory name)
+    pub display_name: String, // human-readable title from TASK.md
     pub path: PathBuf,
     pub repos: Vec<String>,
     pub branch: String,
@@ -193,6 +194,7 @@ impl Workspace {
 
 fn discover_task(task_dir: &Path) -> Result<Task> {
     let name = task_dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let display_name = read_task_display_name(task_dir);
     let meta = fs::metadata(task_dir)?;
     let created_at = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
 
@@ -214,7 +216,19 @@ fn discover_task(task_dir: &Path) -> Result<Task> {
     }
     repos.sort();
 
-    Ok(Task { name, path: task_dir.to_path_buf(), repos, branch, created_at })
+    Ok(Task { name, display_name, path: task_dir.to_path_buf(), repos, branch, created_at })
+}
+
+pub fn read_task_display_name(task_dir: &Path) -> String {
+    if let Ok(content) = fs::read_to_string(task_dir.join("TASK.md")) {
+        if let Some(first) = content.lines().next() {
+            let title = first.trim_start_matches('#').trim().to_string();
+            if !title.is_empty() {
+                return title;
+            }
+        }
+    }
+    task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 fn read_branch(worktree_dir: &Path) -> Option<String> {
