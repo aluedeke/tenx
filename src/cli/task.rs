@@ -171,7 +171,6 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
-
 fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
     let path = task_dir.join("TASK.md");
     if path.exists() {

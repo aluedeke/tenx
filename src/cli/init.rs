@@ -75,28 +75,6 @@ pub fn run(name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn prompt_repos() -> Result<Vec<crate::workspace::RepoConfig>> {
-    let mut repos = Vec::new();
-    eprintln!("Repos (enter a git URL per line, empty line to finish):");
-    loop {
-        let url = prompt("  URL")?;
-        if url.is_empty() {
-            break;
-        }
-        let default_name = infer_name(&url);
-        let input = prompt(&format!("  Name [{default_name}]"))?;
-        let name = if input.is_empty() { default_name } else { input };
-        repos.push(crate::workspace::RepoConfig { name, url });
-    }
-    Ok(repos)
-}
-
-fn prompt_layout() -> Result<String> {
-    eprintln!("Zellij layout file for task tabs (optional, enter to use built-in default):");
-    let input = prompt("  Layout KDL path")?;
-    Ok(input)
-}
-
 fn prompt_yes_no(question: &str) -> Result<bool> {
     let answer = prompt(&format!("{question} [Y/n]"))?;
     Ok(!answer.eq_ignore_ascii_case("n"))
@@ -113,45 +91,7 @@ fn install_tenx_skill(ws_dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-const TENX_SKILL_MD: &str = r#"---
-description: Show tenx workspace status and task list. Use when the user asks about tasks, workspace structure, active work, or how to migrate existing work into tenx.
-allowed-tools: Bash Read
----
-
-## Active tasks
-
-!`tenx task list 2>/dev/null || echo "(no tasks yet — run: tenx task new <name>)"`
-
-## Workspace structure
-
-- `tasks/<name>/` — task dir: git worktrees, TASK.md, .claude symlink
-- `.bare/<repo>.git` — shared bare clones (one per repo)
-- `.claude/` — shared hooks, settings, skills (inherited by all tasks via symlink)
-
-## TASK.md conventions
-
-Keep TASK.md current at all times:
-- Check off `## Todo` items as you complete them; add new ones as you discover sub-tasks
-- After `gh pr create`, add the PR URL under `## Links` → `PR:`
-- After linking a Linear issue, add the URL under `## Links` → `Linear:`
-- Add decisions and gotchas to `## Notes`
-
-## Common commands
-
-    tenx task new <name>       create task with worktrees + TASK.md
-    tenx task open <name>      switch to task's zellij tab
-    tenx task list             list all tasks and open tabs
-    tenx task rm <name>        remove task and worktrees
-    tenx repo add <url>        add a repo to the workspace
-
-## Migrating existing work
-
-Push your current branch to remote, then:
-
-    tenx task new <name>
-
-and copy or move existing work into `tasks/<name>/<repo>/`.
-"#;
+const TENX_SKILL_MD: &str = include_str!("skills/tenx.md");
 
 fn install_standup_skill(ws_dir: &std::path::Path) -> Result<()> {
     let skill_dir = ws_dir.join(".claude").join("skills").join("standup");
@@ -220,6 +160,28 @@ Prepend the standup to `daily.local.md`, directly after the `<!-- last-standup: 
 
 Read the current `daily.local.md` first, then write the updated version with the new entry at the top.
 "#;
+
+fn prompt_repos() -> Result<Vec<crate::workspace::RepoConfig>> {
+    let mut repos = Vec::new();
+    eprintln!("Repos (enter a git URL per line, empty line to finish):");
+    loop {
+        let url = prompt("  URL")?;
+        if url.is_empty() {
+            break;
+        }
+        let default_name = infer_name(&url);
+        let input = prompt(&format!("  Name [{default_name}]"))?;
+        let name = if input.is_empty() { default_name } else { input };
+        repos.push(crate::workspace::RepoConfig { name, url });
+    }
+    Ok(repos)
+}
+
+fn prompt_layout() -> Result<String> {
+    eprintln!("Zellij layout file for task tabs (optional, enter to use built-in default):");
+    let input = prompt("  Layout KDL path")?;
+    Ok(input)
+}
 
 fn prompt(label: &str) -> Result<String> {
     let mut stdout = io::stdout();
