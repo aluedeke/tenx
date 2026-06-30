@@ -8,7 +8,7 @@ mod zellij;
 
 use anyhow::{bail, Result};
 use clap::Parser;
-use cli::{Cli, Commands, RepoCommands, TaskCommands};
+use cli::{Cli, Commands, HooksCommands, RepoCommands, TabCommands, TaskCommands};
 use std::env;
 
 fn main() {
@@ -34,6 +34,10 @@ fn run() -> Result<()> {
             cli::init::run(name.as_deref())?;
         }
 
+        Some(Commands::Standup { since }) => {
+            cli::standup::run(since.as_deref())?;
+        }
+
         Some(Commands::Repo { command }) => match command {
             RepoCommands::Add { url, name } => {
                 cli::repo::add(&url, name.as_deref())?;
@@ -44,6 +48,17 @@ fn run() -> Result<()> {
             RepoCommands::Fetch { name } => {
                 cli::repo::fetch(name.as_deref())?;
             }
+        },
+
+        Some(Commands::Hooks { command }) => match command {
+            HooksCommands::Install => {
+                cli::hooks::install()?;
+            }
+        },
+
+        Some(Commands::Tab { command }) => match command {
+            TabCommands::Notify => cli::tab::notify()?,
+            TabCommands::NotifyClear => cli::tab::notify_clear()?,
         },
 
         Some(Commands::Task { command }) => match command {

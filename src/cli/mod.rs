@@ -1,5 +1,8 @@
+pub mod hooks;
 pub mod init;
 pub mod repo;
+pub mod standup;
+pub mod tab;
 pub mod task;
 
 use clap::{Parser, Subcommand};
@@ -36,6 +39,37 @@ pub enum Commands {
     /// Launch the repo-list TUI pane (used by the zellij management tab)
     #[command(hide = true)]
     Repos,
+    /// Generate a daily standup from recent activity and task files
+    Standup {
+        /// Collect activity since this ISO timestamp (default: last standup, or start of yesterday)
+        #[arg(long)]
+        since: Option<String>,
+    },
+    /// Manage Claude Code hooks for the active workspace
+    Hooks {
+        #[command(subcommand)]
+        command: HooksCommands,
+    },
+    /// Tab operations invoked by Claude Code hooks
+    #[command(hide = true)]
+    Tab {
+        #[command(subcommand)]
+        command: TabCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum HooksCommands {
+    /// (Re)install Claude Code hooks, overwriting any existing versions
+    Install,
+}
+
+#[derive(Subcommand)]
+pub enum TabCommands {
+    /// Add the 💬 indicator to the task's zellij tab (runs from task cwd)
+    Notify,
+    /// Remove the 💬 indicator from the task's zellij tab (runs from task cwd)
+    NotifyClear,
 }
 
 #[derive(Subcommand)]
