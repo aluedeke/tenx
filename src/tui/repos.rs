@@ -16,13 +16,21 @@ use std::{
     collections::HashMap,
     io,
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::github::Pr;
 use crate::workspace::Workspace;
 
 pub fn run(workspace: Workspace) -> Result<()> {
+    // Restore terminal on panic so the error message is readable.
+    let orig = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
+        orig(info);
+    }));
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -73,6 +81,7 @@ struct App {
     pr_selected: usize,
     mine_only: bool,
     github_user: Option<String>,
+    last_pr_fetch: Option<Instant>,
     tx: mpsc::Sender<Msg>,
     rx: mpsc::Receiver<Msg>,
 }
@@ -99,8 +108,9 @@ impl App {
             add_focus: 0,
             pr_cache: HashMap::new(),
             pr_selected: 0,
-            mine_only: false,
+            mine_only: true,
             github_user: None,
+            last_pr_fetch: None,
             tx,
             rx,
         }
@@ -211,6 +221,30 @@ impl App {
         });
     }
 
+    fn refresh_all_prs(&mut self) {
+        for repo in &self.workspace.config.repos {
+            if matches!(self.pr_cache.get(&repo.name), Some(PrState::Loading)) {
+                continue;
+            }
+            self.pr_cache.insert(repo.name.clone(), PrState::Loading);
+            let tx = self.tx.clone();
+            let repo_name = repo.name.clone();
+            let repo_url = repo.url.clone();
+            std::thread::spawn(move || {
+                let result = crate::github::list_prs(&repo_url).map_err(|e| e.to_string());
+                let _ = tx.send(Msg::PrResult { repo_name, result });
+            });
+        }
+        self.last_pr_fetch = Some(Instant::now());
+    }
+
+    fn should_auto_refresh(&self) -> bool {
+        match self.last_pr_fetch {
+            None => true,
+            Some(t) => t.elapsed() >= REFRESH_INTERVAL,
+        }
+    }
+
     fn visible_prs(&self) -> Vec<&Pr> {
         let repo = match self.workspace.config.repos.get(self.selected) {
             Some(r) => r,
@@ -252,6 +286,7 @@ impl App {
 // ── Event loop ────────────────────────────────────────────────────────────────
 
 const TICK: Duration = Duration::from_millis(250);
+const REFRESH_INTERVAL: Duration = Duration::from_secs(300);
 
 fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     loop {
@@ -276,6 +311,9 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App
                     View::Add => handle_add_key(app, key),
                 }
             }
+        } else if app.should_auto_refresh() {
+            app.reload();
+            app.refresh_all_prs();
         }
 
         // Drain background messages.
@@ -429,14 +467,25 @@ fn render_list(f: &mut Frame, app: &App) {
 
             // Show cached PR count if available.
             let pr_hint = match app.pr_cache.get(&repo.name) {
+                Some(PrState::Loading) => Line::from(Span::styled(
+                    "  fetching…",
+                    Style::default().fg(Color::DarkGray),
+                )),
                 Some(PrState::Loaded(prs)) if !prs.is_empty() => {
-                    let n = prs.len();
+                    let total = prs.len();
+                    let mine_count = app.github_user.as_deref()
+                        .map(|u| prs.iter().filter(|p| p.author == u).count())
+                        .unwrap_or(0);
+                    let label = if mine_count > 0 {
+                        format!("  {} open · {} mine", total, mine_count)
+                    } else {
+                        format!("  {} open", total)
+                    };
                     Line::from(Span::styled(
-                        format!("  {} open PR{}", n, if n == 1 { "" } else { "s" }),
+                        label,
                         Style::default().fg(if i == app.selected { Color::Yellow } else { Color::DarkGray }),
                     ))
                 }
-                Some(PrState::Loaded(_)) => Line::from(""),
                 _ => Line::from(""),
             };
 
@@ -455,8 +504,16 @@ fn render_list(f: &mut Frame, app: &App) {
     let (help, style) = if let Some(ref msg) = app.status_msg {
         (format!(" {} ", msg), Style::default().fg(Color::Red))
     } else {
+        let age = match app.last_pr_fetch {
+            None => " fetching…".into(),
+            Some(t) => {
+                let s = t.elapsed().as_secs();
+                if s < 60 { " ↻ just now".into() }
+                else { format!(" ↻ {}m ago", s / 60) }
+            }
+        };
         (
-            " a add · Enter PRs · r refresh · j/k · q quit".into(),
+            format!(" a add · Enter PRs · r refresh · j/k · q quit  {age}"),
             Style::default().fg(Color::DarkGray),
         )
     };
@@ -660,9 +717,11 @@ fn render_add_popup(f: &mut Frame, app: &App) {
 
 fn truncate(s: &str, max: usize) -> &str {
     if s.len() <= max {
-        s
-    } else {
-        &s[..max]
+        return s;
+    }
+    match s.char_indices().nth(max) {
+        Some((i, _)) => &s[..i],
+        None => s,
     }
 }
 

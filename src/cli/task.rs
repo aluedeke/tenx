@@ -74,7 +74,7 @@ pub fn open(name: &str) -> Result<()> {
     let ws = crate::workspace::find(&cwd)?;
     let slug = crate::workspace::slugify(name);
     let task = ws.find_task(&slug)?;
-    let display_name = read_display_name(&task.path);
+    let display_name = crate::workspace::read_task_display_name(&task.path);
 
     if !crate::zellij::is_inside_session() {
         bail!("not inside a zellij session — start zellij first");
@@ -129,10 +129,10 @@ pub fn list() -> Result<()> {
     for task in &tasks {
         let repos = task.repos.join(", ");
         let age = crate::workspace::format_age(task.created_at);
-        let open = if open_tabs.contains(&task.name) { "●" } else { "" };
+        let open = if open_tabs.contains(&task.display_name) { "●" } else { "" };
         println!(
             "{:<20} {:<25} {:<20} {:<6} {}",
-            task.name, repos, task.branch, age, open
+            task.display_name, repos, task.branch, age, open
         );
     }
     Ok(())
@@ -171,20 +171,6 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn read_display_name(task_dir: &Path) -> String {
-    if let Ok(content) = std::fs::read_to_string(task_dir.join("TASK.md")) {
-        if let Some(first) = content.lines().next() {
-            let title = first.trim_start_matches('#').trim().to_string();
-            if !title.is_empty() {
-                return title;
-            }
-        }
-    }
-    task_dir
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
 
 fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
     let path = task_dir.join("TASK.md");
@@ -203,6 +189,8 @@ fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
          \n\
          ## Links\n\
          \n\
+         - Linear Project:\n\
+         - Linear Milestone:\n\
          - Linear:\n\
          - PR:\n\
          \n\
@@ -231,6 +219,10 @@ fn write_claude_hooks(task_dir: &Path) -> Result<()> {
 }
 
 fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
+    ensure_workspace_claude_settings_inner(workspace_dir, false)
+}
+
+fn ensure_workspace_claude_settings_inner(workspace_dir: &Path, force: bool) -> Result<()> {
     let claude_dir = workspace_dir.join(".claude");
     let hooks_dir = claude_dir.join("hooks");
     std::fs::create_dir_all(&hooks_dir)?;
@@ -265,51 +257,26 @@ fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
         std::fs::write(&settings_path, content)?;
     }
 
+    let tenx = std::env::current_exe().context("cannot determine tenx binary path")?;
+    let tenx = tenx.display();
+
     write_hook_script(
         &hooks_dir.join("notify.sh"),
-        "#!/bin/sh\n\
-         [ -n \"$ZELLIJ\" ] || exit 0\n\
-         TASK=$(head -1 \"$CLAUDE_PROJECT_DIR/TASK.md\" 2>/dev/null | sed 's/^# *//')\n\
-         TASK=\"${TASK:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
-         [ -n \"$TASK\" ] || exit 0\n\
-         ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
-         if [ -z \"$ZELLIJ_BIN\" ]; then\n\
-         \tfor p in \"$HOME/.local/bin\" /opt/homebrew/bin /usr/local/bin; do\n\
-         \t\t[ -x \"$p/zellij\" ] && ZELLIJ_BIN=\"$p/zellij\" && break\n\
-         \tdone\n\
-         fi\n\
-         [ -n \"$ZELLIJ_BIN\" ] || exit 0\n\
-         TAB_ID=$(\"$ZELLIJ_BIN\" action list-tabs --json 2>/dev/null \\\n\
-         \t| jq -r --arg n \"$TASK\" '.[] | select(.name == $n) | .tab_id' 2>/dev/null)\n\
-         [ -n \"$TAB_ID\" ] || exit 0\n\
-         \"$ZELLIJ_BIN\" action rename-tab --tab-id \"$TAB_ID\" \"\u{1F4AC} $TASK\" 2>/dev/null\n",
+        &format!("#!/bin/sh\ncd \"$CLAUDE_PROJECT_DIR\" || exit 0\nexec \"{tenx}\" tab notify\n"),
+        force,
     )?;
 
     write_hook_script(
         &hooks_dir.join("notify-clear.sh"),
-        "#!/bin/sh\n\
-         [ -n \"$ZELLIJ\" ] || exit 0\n\
-         TASK=$(head -1 \"$CLAUDE_PROJECT_DIR/TASK.md\" 2>/dev/null | sed 's/^# *//')\n\
-         TASK=\"${TASK:-$(basename \"$CLAUDE_PROJECT_DIR\")}\"\n\
-         [ -n \"$TASK\" ] || exit 0\n\
-         ZELLIJ_BIN=$(command -v zellij 2>/dev/null)\n\
-         if [ -z \"$ZELLIJ_BIN\" ]; then\n\
-         \tfor p in \"$HOME/.local/bin\" /opt/homebrew/bin /usr/local/bin; do\n\
-         \t\t[ -x \"$p/zellij\" ] && ZELLIJ_BIN=\"$p/zellij\" && break\n\
-         \tdone\n\
-         fi\n\
-         [ -n \"$ZELLIJ_BIN\" ] || exit 0\n\
-         TAB_ID=$(\"$ZELLIJ_BIN\" action list-tabs --json 2>/dev/null \\\n\
-         \t| jq -r --arg n \"\u{1F4AC} $TASK\" '.[] | select(.name == $n) | .tab_id' 2>/dev/null)\n\
-         [ -n \"$TAB_ID\" ] || exit 0\n\
-         \"$ZELLIJ_BIN\" action rename-tab --tab-id \"$TAB_ID\" \"$TASK\" 2>/dev/null\n",
+        &format!("#!/bin/sh\ncd \"$CLAUDE_PROJECT_DIR\" || exit 0\nexec \"{tenx}\" tab notify-clear\n"),
+        force,
     )?;
 
     Ok(())
 }
 
-fn write_hook_script(path: &Path, content: &str) -> Result<()> {
-    if path.exists() {
+fn write_hook_script(path: &Path, content: &str, force: bool) -> Result<()> {
+    if !force && path.exists() {
         return Ok(());
     }
     std::fs::write(path, content)?;
@@ -321,4 +288,10 @@ fn write_hook_script(path: &Path, content: &str) -> Result<()> {
         std::fs::set_permissions(path, perms)?;
     }
     Ok(())
+}
+
+/// (Re)write the Claude hook scripts for the given workspace directory.
+/// Pass `force = true` to overwrite existing scripts (e.g. after a tenx upgrade).
+pub fn install_hooks(workspace_dir: &Path, force: bool) -> Result<()> {
+    ensure_workspace_claude_settings_inner(workspace_dir, force)
 }

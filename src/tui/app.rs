@@ -148,23 +148,27 @@ impl App {
     }
 
     pub fn do_close(&mut self) -> Result<(), String> {
-        let name = match self.selected_task() {
-            Some(t) => t.name.clone(),
+        let display_name = match self.selected_task() {
+            Some(t) => t.display_name.clone(),
             None => return Err("no task selected".into()),
         };
-        match crate::zellij::close_tab(&name) {
+        match crate::zellij::close_tab(&display_name) {
             Ok(_) => { self.reload_tabs(); Ok(()) }
             Err(e) => Err(e.to_string()),
         }
     }
 
     pub fn do_delete(&mut self) -> Result<(), String> {
-        let name = match self.confirm.take() {
+        let slug = match self.confirm.take() {
             Some(ConfirmAction::Delete(n)) => n,
             None => return Err("no pending delete".into()),
         };
-        if self.task_is_open(&name) { let _ = crate::zellij::close_tab(&name); }
-        match crate::cli::task::rm(&name, true) {
+        let display_name = self.tasks.iter()
+            .find(|t| t.name == slug)
+            .map(|t| t.display_name.clone())
+            .unwrap_or_else(|| slug.clone());
+        if self.task_is_open(&display_name) { let _ = crate::zellij::close_tab(&display_name); }
+        match crate::cli::task::rm(&slug, true) {
             Ok(_) => {
                 self.reload_tasks();
                 self.reload_tabs();

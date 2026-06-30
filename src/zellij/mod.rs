@@ -5,6 +5,29 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Find the zellij binary by searching common install locations.
+/// Falls back to bare "zellij" (relies on PATH) if nothing is found.
+pub fn find_bin() -> Option<PathBuf> {
+    let home = env::var("HOME").unwrap_or_default();
+    for dir in [
+        format!("{home}/.cargo/bin"),
+        format!("{home}/.local/bin"),
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/bin".to_string(),
+    ] {
+        let p = PathBuf::from(dir).join("zellij");
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn cmd() -> Command {
+    Command::new(find_bin().unwrap_or_else(|| PathBuf::from("zellij")))
+}
+
 // ── Session identity ──────────────────────────────────────────────────────────
 
 /// Derive the zellij session name from a workspace name.
@@ -31,7 +54,7 @@ pub fn is_inside_session() -> bool {
 /// Parse session names from `zellij list-sessions` output.
 /// Output is one session per line; active session may be marked with a suffix.
 pub fn list_sessions() -> Result<Vec<String>> {
-    let out = Command::new("zellij")
+    let out = cmd()
         .args(["list-sessions"])
         .output()
         .context("run zellij list-sessions")?;
@@ -81,7 +104,7 @@ pub fn session_exists(name: &str) -> Result<bool> {
 /// This is blocking — zellij takes over the terminal.
 pub fn attach_session(name: &str) -> Result<()> {
     use std::os::unix::process::CommandExt;
-    let err = Command::new("zellij").args(["attach", name]).exec();
+    let err = cmd().args(["attach", name]).exec();
     // exec() only returns on error
     Err(err).context(format!("exec zellij attach {name}"))
 }
@@ -103,7 +126,7 @@ pub fn create_and_attach_session(session: &str, tenx_bin: &str, workspace_dir: &
     fs::write(&layout_path, full_session_layout(tenx_bin, workspace_dir))
         .context("write session layout file")?;
 
-    let err = Command::new("zellij")
+    let err = cmd()
         .args(["--session", session, "--new-session-with-layout", &layout_name])
         .exec();
     Err(err).context(format!("exec zellij --session {session}"))
@@ -148,7 +171,7 @@ pub fn list_tabs() -> Result<Vec<Tab>> {
     if !is_inside_session() {
         bail!("not inside a zellij session");
     }
-    let out = Command::new("zellij")
+    let out = cmd()
         .args(["action", "list-tabs", "--json"])
         .output()
         .context("run zellij action list-tabs")?;
@@ -165,7 +188,7 @@ pub fn find_tab_by_id(id: u32) -> Result<Option<Tab>> {
 }
 
 pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
-    let status = Command::new("zellij")
+    let status = cmd()
         .args(["action", "rename-tab", "--tab-id", &id.to_string(), name])
         .status()
         .context("run zellij action rename-tab")?;
@@ -177,7 +200,7 @@ pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
 
 pub fn go_to_tab_position(position: usize) -> Result<()> {
     // zellij go-to-tab takes a 1-based index
-    let status = Command::new("zellij")
+    let status = cmd()
         .args(["action", "go-to-tab", &(position + 1).to_string()])
         .status()
         .context("run zellij action go-to-tab")?;
@@ -191,7 +214,7 @@ pub fn go_to_tab(name: &str) -> Result<()> {
     if !is_inside_session() {
         bail!("not inside a zellij session");
     }
-    let status = Command::new("zellij")
+    let status = cmd()
         .args(["action", "go-to-tab-name", name])
         .status()
         .context("run zellij action go-to-tab-name")?;
@@ -206,7 +229,7 @@ pub fn close_tab(name: &str) -> Result<()> {
         bail!("not inside a zellij session");
     }
     go_to_tab(name)?;
-    let status = Command::new("zellij")
+    let status = cmd()
         .args(["action", "close-tab"])
         .status()
         .context("run zellij action close-tab")?;
@@ -234,7 +257,7 @@ pub fn open_tui_tab(tenx_bin: &str, workspace_dir: &str) -> Result<()> {
     }}
 }}"#
     );
-    let status = Command::new("zellij")
+    let status = cmd()
         .args(["action", "new-tab", "--name", TAB, "--cwd", workspace_dir, "--layout-string", &layout])
         .status()
         .context("open tenx TUI tab")?;
@@ -292,7 +315,7 @@ pub fn open_or_switch(opts: &TabOptions) -> Result<u32> {
         bail!("not inside a zellij session — start zellij or use --no-open");
     }
     let kdl = render_layout(opts)?;
-    let status = Command::new("zellij")
+    let status = cmd()
         .args(["action", "new-tab", "--name", opts.name, "--cwd", opts.cwd, "--layout-string", &kdl])
         .status()
         .context("run zellij action new-tab")?;

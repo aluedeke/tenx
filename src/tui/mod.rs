@@ -17,6 +17,14 @@ use std::time::Duration;
 use app::{ConfirmAction, View};
 
 pub fn run(workspace: crate::workspace::Workspace) -> Result<()> {
+    // Restore terminal on panic so the error message is readable.
+    let orig = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
+        orig(info);
+    }));
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
