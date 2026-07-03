@@ -76,12 +76,6 @@ pub fn load_global() -> Result<GlobalConfig> {
     Ok(cfg)
 }
 
-pub fn save_global(cfg: &GlobalConfig) -> Result<()> {
-    let path = global_config_path()?;
-    fs::create_dir_all(path.parent().unwrap())?;
-    atomic_write_toml(&path, cfg)
-}
-
 // ── Workspace discovery ───────────────────────────────────────────────────────
 
 /// Walk up from `dir` until a directory containing config.toml is found.
