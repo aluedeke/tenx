@@ -108,8 +108,14 @@ pub enum TaskCommands {
     Open {
         name: String,
     },
+    /// Close a task's zellij tab and stop its processes, keeping the worktree
+    Close {
+        name: String,
+    },
     /// List all tasks
     List,
+    /// Reap leftover processes from closed tasks (leaked MCP servers, etc.)
+    Gc,
     /// Delete a task and its worktrees
     Rm {
         name: String,

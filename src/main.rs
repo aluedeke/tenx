@@ -68,8 +68,14 @@ fn run() -> Result<()> {
             TaskCommands::Open { name } => {
                 cli::task::open(&name)?;
             }
+            TaskCommands::Close { name } => {
+                cli::task::close(&name)?;
+            }
             TaskCommands::List => {
                 cli::task::list()?;
+            }
+            TaskCommands::Gc => {
+                cli::task::gc()?;
             }
             TaskCommands::Rm { name, force } => {
                 cli::task::rm(&name, force)?;

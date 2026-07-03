@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::env;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+use std::process::Command;
 
 pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     let display_name = name.to_string();
@@ -108,6 +109,108 @@ pub fn open(name: &str) -> Result<()> {
     let tab_id = crate::zellij::open_or_switch(&opts)?;
     std::fs::write(&tab_id_file, tab_id.to_string())?;
     Ok(())
+}
+
+/// Close a task's zellij tab (stopping its claude/nvim/MCP processes) while
+/// leaving the worktree on disk intact. This is the non-destructive counterpart
+/// to `rm` — the task can be reopened later with `open`, which recreates the tab.
+pub fn close(name: &str) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = crate::workspace::find(&cwd)?;
+    let slug = crate::workspace::slugify(name);
+    let task = ws.find_task(&slug)?;
+
+    if !crate::zellij::is_inside_session() {
+        bail!("not inside a zellij session");
+    }
+
+    let tab_id_file = task.path.join(".tenx-tab-id");
+    let id = std::fs::read_to_string(&tab_id_file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+
+    // Close the tab only if the stored id still maps to a live tab, so we never
+    // close an unrelated tab that happens to have inherited a recycled id.
+    if let Some(id) = id {
+        if crate::zellij::find_tab_by_id(id)?.is_some() {
+            crate::zellij::close_tab_by_id(id)?;
+        }
+    }
+    // Tab is gone → clear the stale id so the next `open` creates a fresh tab.
+    let _ = std::fs::remove_file(&tab_id_file);
+    // Zellij kills the pane's foreground process, but claude's MCP-server
+    // children can be reparented and leak — reap any that outlived the tab.
+    reap_worktree_procs(&task.path);
+    Ok(())
+}
+
+/// Reap leftover processes rooted in the worktrees of tasks that are NOT
+/// currently open in a zellij tab. Cleans up MCP servers and other children
+/// that leaked from previously-closed tabs. Never touches an open task's live
+/// session. Best-effort; skips tasks whose tab is still open.
+pub fn gc() -> Result<()> {
+    // Require being inside the session: without the live tab list we can't tell
+    // which tasks are open, and would risk reaping a running session's processes.
+    if !crate::zellij::is_inside_session() {
+        bail!("run `tenx task gc` from inside the workspace's zellij session");
+    }
+
+    let cwd = env::current_dir()?;
+    let ws = crate::workspace::find(&cwd)?;
+    let tasks = ws.tasks()?;
+
+    let open_ids: std::collections::HashSet<u32> = crate::zellij::list_tabs()
+        .map(|tabs| tabs.into_iter().map(|t| t.tab_id).collect())
+        .unwrap_or_default();
+
+    let mut reaped = 0usize;
+    for task in &tasks {
+        let id = std::fs::read_to_string(task.path.join(".tenx-tab-id"))
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok());
+        // Skip tasks whose tab is currently open — those procs are alive on purpose.
+        if let Some(id) = id {
+            if open_ids.contains(&id) {
+                continue;
+            }
+        }
+        reaped += reap_worktree_procs(&task.path);
+    }
+    println!("reaped {reaped} leftover process(es)");
+    Ok(())
+}
+
+/// Best-effort: SIGTERM processes whose current working directory is inside the
+/// given worktree. Uses `lsof` to map cwd → pid. Returns how many were signalled.
+/// Silently no-ops if `lsof` is unavailable or finds nothing.
+fn reap_worktree_procs(worktree: &Path) -> usize {
+    let out = match Command::new("lsof")
+        .args(["-a", "-d", "cwd", "-F", "pn"])
+        .arg("+D")
+        .arg(worktree.as_os_str())
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return 0,
+    };
+
+    let self_pid = std::process::id();
+    let mut pids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.strip_prefix('p').and_then(|r| r.trim().parse::<u32>().ok()))
+        .filter(|p| *p != self_pid)
+        .collect();
+    pids.sort_unstable();
+    pids.dedup();
+
+    let mut n = 0;
+    for pid in pids {
+        // SIGTERM; ignore failures (already gone / not permitted).
+        if Command::new("kill").arg(pid.to_string()).status().is_ok() {
+            n += 1;
+        }
+    }
+    n
 }
 
 pub fn list() -> Result<()> {

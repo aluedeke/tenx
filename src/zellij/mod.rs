@@ -224,17 +224,22 @@ pub fn go_to_tab(name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn close_tab(name: &str) -> Result<()> {
+/// Close a tab by its stable zellij tab id.
+///
+/// Unlike the older focus-based approach (`go-to-tab-name` + `close-tab`), this
+/// does NOT move the session's focus — so a long-lived TUI pane can close other
+/// tabs without navigating away from (or accidentally closing) itself. Requires
+/// zellij ≥ 0.42, which added `close-tab-by-id`.
+pub fn close_tab_by_id(id: u32) -> Result<()> {
     if !is_inside_session() {
         bail!("not inside a zellij session");
     }
-    go_to_tab(name)?;
     let status = cmd()
-        .args(["action", "close-tab"])
+        .args(["action", "close-tab-by-id", &id.to_string()])
         .status()
-        .context("run zellij action close-tab")?;
+        .context("run zellij action close-tab-by-id")?;
     if !status.success() {
-        bail!("close-tab failed for tab '{name}'");
+        bail!("close-tab-by-id failed for tab id {id}");
     }
     Ok(())
 }

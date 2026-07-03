@@ -148,11 +148,12 @@ impl App {
     }
 
     pub fn do_close(&mut self) -> Result<(), String> {
-        let display_name = match self.selected_task() {
-            Some(t) => t.display_name.clone(),
+        let name = match self.selected_task() {
+            Some(t) => t.name.clone(),
             None => return Err("no task selected".into()),
         };
-        match crate::zellij::close_tab(&display_name) {
+        // Closes the tab by stable id without moving focus, so the TUI stays put.
+        match crate::cli::task::close(&name) {
             Ok(_) => { self.reload_tabs(); Ok(()) }
             Err(e) => Err(e.to_string()),
         }
@@ -163,11 +164,8 @@ impl App {
             Some(ConfirmAction::Delete(n)) => n,
             None => return Err("no pending delete".into()),
         };
-        let display_name = self.tasks.iter()
-            .find(|t| t.name == slug)
-            .map(|t| t.display_name.clone())
-            .unwrap_or_else(|| slug.clone());
-        if self.task_is_open(&display_name) { let _ = crate::zellij::close_tab(&display_name); }
+        // Close the tab (and reap stragglers) before deleting the worktree.
+        let _ = crate::cli::task::close(&slug);
         match crate::cli::task::rm(&slug, true) {
             Ok(_) => {
                 self.reload_tasks();
