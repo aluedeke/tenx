@@ -159,10 +159,16 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
     for repo_name in &task.repos {
         let bare_path = crate::git::bare_repo_path(&bare_dir, repo_name);
         let worktree_path = task.path.join(repo_name);
-        if bare_path.exists() && worktree_path.exists() {
+        if bare_path.exists() {
             // Best-effort: if the worktree was never registered (e.g. creation
             // failed mid-way), git remove will error but we still clean the dir.
-            let _ = crate::git::remove_worktree(&bare_path, &worktree_path);
+            if worktree_path.exists() {
+                let _ = crate::git::remove_worktree(&bare_path, &worktree_path);
+            }
+            // Remove the task branch too so it doesn't linger and shadow a
+            // future task of the same name with a stale tip. (task.name is the
+            // slug, i.e. the branch name used at creation.)
+            let _ = crate::git::delete_branch(&bare_path, &task.name);
         }
     }
 
