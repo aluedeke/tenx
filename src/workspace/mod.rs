@@ -151,7 +151,7 @@ impl Workspace {
         if !global.bare_dir.is_empty() {
             return PathBuf::from(expand_home(&global.bare_dir));
         }
-        self.dir.parent().unwrap_or(&self.dir).join(".bare")
+        self.dir.join(".bare")
     }
 
     /// Discover all tasks from the filesystem.
