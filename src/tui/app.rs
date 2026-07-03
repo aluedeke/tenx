@@ -60,7 +60,11 @@ impl App {
     }
 
     pub fn task_is_open(&self, name: &str) -> bool {
-        self.zellij_tabs.contains(name)
+        // Compare ignoring a leading 💬 notification prefix, which the Stop hook
+        // adds to an active tab's name.
+        self.zellij_tabs
+            .iter()
+            .any(|t| t.trim_start_matches('\u{1F4AC}').trim() == name)
     }
 
     pub fn selected_task(&self) -> Option<&Task> {
@@ -148,13 +152,13 @@ impl App {
     }
 
     pub fn do_close(&mut self) -> Result<(), String> {
-        let display_name = match self.selected_task() {
-            Some(t) => t.display_name.clone(),
+        let task = match self.selected_task() {
+            Some(t) => t.clone(),
             None => return Err("no task selected".into()),
         };
-        match crate::zellij::close_tab(&display_name) {
+        match close_task_tab(&task.path, &task.display_name) {
             Ok(_) => { self.reload_tabs(); Ok(()) }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(e),
         }
     }
 
@@ -163,11 +167,11 @@ impl App {
             Some(ConfirmAction::Delete(n)) => n,
             None => return Err("no pending delete".into()),
         };
-        let display_name = self.tasks.iter()
-            .find(|t| t.name == slug)
-            .map(|t| t.display_name.clone())
-            .unwrap_or_else(|| slug.clone());
-        if self.task_is_open(&display_name) { let _ = crate::zellij::close_tab(&display_name); }
+        // Close the tab before rm removes the task dir (and its .tenx-tab-id).
+        // Best-effort: a task with no open tab just no-ops.
+        if let Some(task) = self.tasks.iter().find(|t| t.name == slug) {
+            let _ = close_task_tab(&task.path, &task.display_name);
+        }
         match crate::cli::task::rm(&slug, true) {
             Ok(_) => {
                 self.reload_tasks();
@@ -177,4 +181,19 @@ impl App {
             Err(e) => Err(e.to_string()),
         }
     }
+}
+
+/// Close a task's zellij tab, preferring the stable `.tenx-tab-id` so a tab
+/// carrying the 💬 notification prefix still gets closed. Falls back to
+/// (emoji-tolerant) name matching if the id file is missing or stale.
+fn close_task_tab(task_path: &std::path::Path, display_name: &str) -> Result<(), String> {
+    let id = std::fs::read_to_string(task_path.join(".tenx-tab-id"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+    if let Some(id) = id {
+        if crate::zellij::close_tab_by_id(id).is_ok() {
+            return Ok(());
+        }
+    }
+    crate::zellij::close_tab(display_name).map_err(|e| e.to_string())
 }

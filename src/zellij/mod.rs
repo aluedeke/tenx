@@ -203,18 +203,6 @@ pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn go_to_tab_position(position: usize) -> Result<()> {
-    // zellij go-to-tab takes a 1-based index
-    let status = cmd()
-        .args(["action", "go-to-tab", &(position + 1).to_string()])
-        .status()
-        .context("run zellij action go-to-tab")?;
-    if !status.success() {
-        bail!("go-to-tab failed for position {position}");
-    }
-    Ok(())
-}
-
 pub fn go_to_tab(name: &str) -> Result<()> {
     if !is_inside_session() {
         bail!("not inside a zellij session");
@@ -229,11 +217,50 @@ pub fn go_to_tab(name: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn go_to_tab_position(position: usize) -> Result<()> {
+    // zellij go-to-tab takes a 1-based index
+    let status = cmd()
+        .args(["action", "go-to-tab", &(position + 1).to_string()])
+        .status()
+        .context("run zellij action go-to-tab")?;
+    if !status.success() {
+        bail!("go-to-tab failed for position {position}");
+    }
+    Ok(())
+}
+
+/// Close a tab by its stable tab id, regardless of the tab's current name.
+/// Robust against notification renames (e.g. a leading 💬 indicator), which
+/// change the tab name but not its id.
+pub fn close_tab_by_id(id: u32) -> Result<()> {
+    if !is_inside_session() {
+        bail!("not inside a zellij session");
+    }
+    let tab = find_tab_by_id(id)?.with_context(|| format!("no tab with id {id}"))?;
+    go_to_tab_position(tab.position)?;
+    let status = cmd()
+        .args(["action", "close-tab"])
+        .status()
+        .context("run zellij action close-tab")?;
+    if !status.success() {
+        bail!("close-tab failed for tab id {id}");
+    }
+    Ok(())
+}
+
 pub fn close_tab(name: &str) -> Result<()> {
     if !is_inside_session() {
         bail!("not inside a zellij session");
     }
-    go_to_tab(name)?;
+    // Match by name ignoring a leading notification indicator, since the Stop
+    // hook renames active tabs to "💬 <title>". Close by position so we don't
+    // depend on go-to-tab-name matching the (possibly prefixed) live name.
+    let bare = name.trim_start_matches('\u{1F4AC}').trim();
+    let tab = list_tabs()?
+        .into_iter()
+        .find(|t| t.name.trim_start_matches('\u{1F4AC}').trim() == bare)
+        .with_context(|| format!("no tab matching '{name}'"))?;
+    go_to_tab_position(tab.position)?;
     let status = cmd()
         .args(["action", "close-tab"])
         .status()
