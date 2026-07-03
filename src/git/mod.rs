@@ -101,26 +101,47 @@ fn default_remote_branch(bare_repo_path: &Path) -> Result<String> {
     bail!("cannot determine default branch in {}", bare_repo_path.display())
 }
 
-/// Create a git worktree from the bare repo, branching off the default remote branch.
-pub fn add_worktree(bare_repo_path: &Path, worktree_path: &Path, branch_name: &str) -> Result<()> {
-    let check = Command::new("git")
-        .args(["-C", &bare_repo_path.to_string_lossy(), "branch", "--list", branch_name])
+/// Resolve the ref a new task branch should be based on: the freshly-fetched
+/// remote default branch.
+///
+/// Depending on how the bare repo was created, "freshly fetched" lives in
+/// different refs:
+///   - `git clone --bare` (heads↔heads): fetch advances `refs/heads/<default>`.
+///   - a mirror-style clone (`+refs/heads/*:refs/remotes/origin/*`): fetch only
+///     advances `refs/remotes/origin/<default>`, while `refs/heads/<default>`
+///     stays frozen at clone time and goes stale.
+///
+/// So prefer the remote-tracking ref (`origin/<default>`) when it exists, and
+/// only fall back to the local head when there is no remote-tracking ref.
+fn base_ref(bare_repo_path: &Path) -> Result<String> {
+    let bare = bare_repo_path.to_string_lossy();
+    let default = default_remote_branch(bare_repo_path)?;
+    let remote_ref = format!("refs/remotes/origin/{default}");
+    let exists = Command::new("git")
+        .args(["-C", &bare, "rev-parse", "--verify", "--quiet", &remote_ref])
         .output()
-        .context("check branch")?;
+        .context("check remote-tracking ref")?
+        .status
+        .success();
+    Ok(if exists { format!("origin/{default}") } else { default })
+}
 
+/// Create a git worktree for a new task branch, always based on the
+/// freshly-fetched default remote branch (e.g. main).
+///
+/// `-B` (re)points the branch at the default branch even if a stale local
+/// branch of the same name was left behind by a previously-deleted task
+/// (`task rm` removes the worktree but not the branch). It still refuses to
+/// reset a branch that is currently checked out in another live worktree, so
+/// active tasks are safe.
+pub fn add_worktree(bare_repo_path: &Path, worktree_path: &Path, branch_name: &str) -> Result<()> {
     let bare = bare_repo_path.to_string_lossy();
     let wt = worktree_path.to_string_lossy();
-    let out = if check.stdout.is_empty() {
-        let base = default_remote_branch(bare_repo_path)?;
-        Command::new("git")
-            .args(["-C", &bare, "worktree", "add", "-b", branch_name, &wt, &base])
-            .output()
-    } else {
-        Command::new("git")
-            .args(["-C", &bare, "worktree", "add", &wt, branch_name])
-            .output()
-    }
-    .context("run git worktree add")?;
+    let base = base_ref(bare_repo_path)?;
+    let out = Command::new("git")
+        .args(["-C", &bare, "worktree", "add", "-B", branch_name, &wt, &base])
+        .output()
+        .context("run git worktree add")?;
 
     if !out.status.success() {
         bail!(
@@ -146,4 +167,25 @@ pub fn remove_worktree(bare_repo_path: &Path, worktree_path: &Path) -> Result<()
         );
     }
     Ok(())
+}
+
+/// Force-delete a local branch from the bare repo, if it exists.
+///
+/// Called after the worktree is removed so leftover task branches don't
+/// accumulate in the bare repo. A missing branch is not an error.
+pub fn delete_branch(bare_repo_path: &Path, branch_name: &str) -> Result<()> {
+    let out = Command::new("git")
+        .args(["-C", &bare_repo_path.to_string_lossy(), "branch", "-D", branch_name])
+        .output()
+        .context("run git branch -D")?;
+
+    if out.status.success() {
+        return Ok(());
+    }
+    // A branch that was never created (e.g. worktree add failed) is fine to skip.
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if stderr.contains("not found") {
+        return Ok(());
+    }
+    bail!("git branch -D {branch_name} failed: {}", stderr.trim());
 }
