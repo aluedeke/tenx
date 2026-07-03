@@ -184,10 +184,6 @@ pub fn list_tabs() -> Result<Vec<Tab>> {
     Ok(tabs)
 }
 
-pub fn tab_exists(name: &str) -> Result<bool> {
-    Ok(list_tabs()?.iter().any(|t| t.name == name))
-}
-
 pub fn find_tab_by_id(id: u32) -> Result<Option<Tab>> {
     Ok(list_tabs()?.into_iter().find(|t| t.tab_id == id))
 }
@@ -199,20 +195,6 @@ pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
         .context("run zellij action rename-tab")?;
     if !status.success() {
         bail!("rename-tab failed for tab id {id}");
-    }
-    Ok(())
-}
-
-pub fn go_to_tab(name: &str) -> Result<()> {
-    if !is_inside_session() {
-        bail!("not inside a zellij session");
-    }
-    let status = cmd()
-        .args(["action", "go-to-tab-name", name])
-        .status()
-        .context("run zellij action go-to-tab-name")?;
-    if !status.success() {
-        bail!("go-to-tab-name failed for tab '{name}'");
     }
     Ok(())
 }
@@ -271,34 +253,6 @@ pub fn close_tab(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Open or switch to the tenx TUI tab within the current session.
-pub fn open_tui_tab(tenx_bin: &str, workspace_dir: &str) -> Result<()> {
-    if !is_inside_session() {
-        bail!("not inside a zellij session");
-    }
-    const TAB: &str = "tenx";
-    if tab_exists(TAB)? {
-        return go_to_tab(TAB);
-    }
-    let layout = format!(
-        r#"layout {{
-    tab name="{TAB}" cwd="{workspace_dir}" focus=true {{
-        pane command="{tenx_bin}" borderless=true {{
-            args "tui"
-        }}
-    }}
-}}"#
-    );
-    let status = cmd()
-        .args(["action", "new-tab", "--name", TAB, "--cwd", workspace_dir, "--layout-string", &layout])
-        .status()
-        .context("open tenx TUI tab")?;
-    if !status.success() {
-        bail!("failed to open tenx tab");
-    }
-    Ok(())
-}
-
 pub struct TabOptions<'a> {
     pub name: &'a str,
     pub cwd: &'a str,
@@ -329,7 +283,11 @@ fn default_task_layout(_workspace_dir: &str) -> String {
     }
     tab name="{name}" cwd="{cwd}" focus=true {
         pane split_direction="vertical" {
-            pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true
+            pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true {
+                // Resume the task's most recent conversation in this cwd (starts a
+                // fresh session on first open). --name sets the display name / title.
+                args "--name" "{name}" "--continue"
+            }
             pane split_direction="horizontal" size="50%" {
                 pane name="nvim" command="nvim" {
                     args "TASK.md"
