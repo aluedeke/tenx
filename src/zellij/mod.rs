@@ -133,14 +133,22 @@ pub fn create_and_attach_session(session: &str, tenx_bin: &str, workspace_dir: &
 }
 
 fn full_session_layout(tenx_bin: &str, workspace_dir: &str) -> String {
-    // tab-bar and status-bar are explicit panes inside the tab, not a template.
-    // This matches what `zellij action dump-layout` outputs.
+    // tab-bar and status-bar live in a default_tab_template so that manually
+    // created tabs (e.g. zellij's Ctrl+t n) inherit the same chrome. Without a
+    // template, zellij registers an empty new_tab_template and a manual new tab
+    // opens as a bare full-screen pane with no tab/status bar.
     format!(
         r#"layout {{
-    tab name="tenx" focus=true {{
+    default_tab_template {{
         pane size=1 borderless=true {{
             plugin location="zellij:tab-bar"
         }}
+        children
+        pane size=2 borderless=true {{
+            plugin location="zellij:status-bar"
+        }}
+    }}
+    tab name="tenx" focus=true {{
         pane split_direction="vertical" {{
             pane command="{tenx_bin}" cwd="{workspace_dir}" size="65%" {{
                 args "tasks"
@@ -148,9 +156,6 @@ fn full_session_layout(tenx_bin: &str, workspace_dir: &str) -> String {
             pane command="{tenx_bin}" cwd="{workspace_dir}" size="35%" {{
                 args "repos"
             }}
-        }}
-        pane size=2 borderless=true {{
-            plugin location="zellij:status-bar"
         }}
     }}
 }}"#
