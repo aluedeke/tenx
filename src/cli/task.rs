@@ -73,7 +73,14 @@ pub fn open(name: &str) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
     let slug = crate::workspace::slugify(name);
-    let task = ws.find_task(&slug)?;
+    open_in(&ws, &slug)
+}
+
+/// Focus a task's zellij tab within the current session (creating it if needed),
+/// given an explicit workspace and slug. Used by `open` and the overlay, neither
+/// of which can rely on cwd matching the task.
+pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
+    let task = ws.find_task(slug)?;
     let display_name = crate::workspace::read_task_display_name(&task.path);
 
     if !crate::zellij::is_inside_session() {

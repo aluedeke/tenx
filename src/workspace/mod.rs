@@ -76,6 +76,69 @@ pub fn load_global() -> Result<GlobalConfig> {
     Ok(cfg)
 }
 
+// ── Workspace registry ────────────────────────────────────────────────────────
+//
+// A global list of all workspace directories, so tools that span workspaces
+// (the overlay) can enumerate them without walking the filesystem. Written on
+// `tenx init` and self-healed whenever a workspace is opened. Dead paths are
+// pruned lazily on read.
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Registry {
+    #[serde(default)]
+    paths: Vec<String>,
+}
+
+fn registry_path() -> Result<PathBuf> {
+    let home = home_dir()?;
+    Ok(home.join(".config").join("tenx").join("workspaces.toml"))
+}
+
+fn read_registry(path: &Path) -> Registry {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|t| toml::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// Record `dir` in the global workspace registry (idempotent).
+pub fn register_workspace(dir: &Path) -> Result<()> {
+    let canon = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let entry = canon.to_string_lossy().into_owned();
+    let path = registry_path()?;
+    let mut reg = read_registry(&path);
+    if reg.paths.iter().any(|p| p == &entry) {
+        return Ok(());
+    }
+    reg.paths.push(entry);
+    reg.paths.sort();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).context("create tenx config dir")?;
+    }
+    atomic_write_toml(&path, &reg)
+}
+
+/// Load every registered workspace, pruning entries that no longer resolve.
+pub fn registered_workspaces() -> Vec<Workspace> {
+    let path = match registry_path() {
+        Ok(p) => p,
+        Err(_) => return vec![],
+    };
+    let reg = read_registry(&path);
+    let mut workspaces = Vec::new();
+    let mut alive = Vec::new();
+    for p in &reg.paths {
+        if let Ok(ws) = load(Path::new(p)) {
+            alive.push(p.clone());
+            workspaces.push(ws);
+        }
+    }
+    if alive.len() != reg.paths.len() {
+        let _ = atomic_write_toml(&path, &Registry { paths: alive });
+    }
+    workspaces
+}
+
 // ── Workspace discovery ───────────────────────────────────────────────────────
 
 /// Walk up from `dir` until a directory containing config.toml is found.
@@ -223,6 +286,28 @@ pub fn read_task_display_name(task_dir: &Path) -> String {
         }
     }
     task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// The Claude-activity status of a task, mirrored from the zellij tab indicator.
+/// Written by the Stop / UserPromptSubmit hooks via `tenx tab notify[-clear]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskStatus {
+    /// Claude finished a turn — the ball is in your court (the 💬 indicator).
+    Attention,
+    /// A prompt is in flight / Claude is working, or no signal yet.
+    Idle,
+}
+
+/// Read a task's `.tenx-status` file, returning the status and when it last
+/// changed. Absent file → `Idle` with no timestamp.
+pub fn read_task_status(task_dir: &Path) -> (TaskStatus, Option<SystemTime>) {
+    let path = task_dir.join(".tenx-status");
+    let modified = fs::metadata(&path).and_then(|m| m.modified()).ok();
+    let status = match fs::read_to_string(&path) {
+        Ok(s) if s.trim() == "attention" => TaskStatus::Attention,
+        _ => TaskStatus::Idle,
+    };
+    (status, modified)
 }
 
 fn read_branch(worktree_dir: &Path) -> Option<String> {

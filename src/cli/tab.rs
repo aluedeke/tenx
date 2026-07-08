@@ -9,11 +9,21 @@ pub fn notify_clear() -> Result<()> {
 }
 
 fn rename(add_indicator: bool) -> Result<()> {
+    let task_dir = std::env::current_dir()?;
+
+    // Mirror the attention state into a status file the overlay reads across
+    // workspaces. Do this even outside zellij so status stays accurate.
+    let status_file = task_dir.join(".tenx-status");
+    if add_indicator {
+        let _ = std::fs::write(&status_file, "attention");
+    } else {
+        let _ = std::fs::remove_file(&status_file);
+    }
+
     if !crate::zellij::is_inside_session() {
         return Ok(());
     }
 
-    let task_dir = std::env::current_dir()?;
     let title = crate::workspace::read_task_display_name(&task_dir);
     let new_name = if add_indicator {
         format!("\u{1F4AC} {title}")

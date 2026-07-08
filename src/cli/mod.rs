@@ -33,6 +33,8 @@ pub enum Commands {
     },
     /// Launch the TUI directly (used by the zellij management tab)
     Tui,
+    /// Toggle the global switch overlay (all tasks across all workspaces)
+    Overlay,
     /// Launch the task-list TUI pane (used by the zellij management tab)
     #[command(hide = true)]
     Tasks,
