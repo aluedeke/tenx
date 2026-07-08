@@ -1,8 +1,13 @@
 mod app;
+mod overlay;
 mod repos;
 mod ui;
 
 pub use app::App;
+
+pub fn run_overlay() -> Result<()> {
+    overlay::run()
+}
 
 use anyhow::Result;
 use crossterm::{

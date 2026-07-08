@@ -24,6 +24,8 @@ fn run() -> Result<()> {
     match cli.command {
         None | Some(Commands::Tui) | Some(Commands::Tasks) => open_workspace()?,
 
+        Some(Commands::Overlay) => tui::run_overlay()?,
+
         Some(Commands::Repos) => {
             let cwd = env::current_dir()?;
             let ws = workspace::find(&cwd)?;
@@ -85,6 +87,8 @@ fn run() -> Result<()> {
 fn open_workspace() -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
+    // Self-heal the registry so pre-existing workspaces show up in the overlay.
+    let _ = workspace::register_workspace(&ws.dir);
     let session = zellij::session_name(&ws.config.name);
 
     match zellij::current_session().as_deref() {

@@ -37,6 +37,9 @@ pub fn run(name: Option<&str>) -> Result<()> {
     }
     ws.save_config()?;
 
+    // Register in the global workspace list so the overlay can find it.
+    crate::workspace::register_workspace(&ws.dir)?;
+
     // Clone all repos immediately
     if !ws.config.repos.is_empty() {
         let global = crate::workspace::load_global()?;

@@ -100,6 +100,60 @@ pub fn session_exists(name: &str) -> Result<bool> {
     Ok(list_sessions()?.iter().any(|s| s == name))
 }
 
+/// List the tabs of another (possibly detached) session by name. Read-only and
+/// works cross-session.
+pub fn list_tabs_in(session: &str) -> Result<Vec<Tab>> {
+    let out = cmd()
+        .args(["-s", session, "action", "list-tabs", "--json"])
+        .output()
+        .context("run zellij -s <session> list-tabs")?;
+    let tabs: Vec<Tab> = serde_json::from_slice(&out.stdout).context("parse list-tabs json")?;
+    Ok(tabs)
+}
+
+/// Jump to a task that lives in *another* workspace's session: focus its tab in
+/// that session (by stable id, falling back to title), then switch the current
+/// client to that session in place — landing on the exact tab. If the tab can't
+/// be resolved (stale id / not open there), degrades to a plain session switch
+/// that lands on the session's last-focused tab.
+pub fn switch_to_task(session: &str, tab_id: Option<u32>, tab_title: &str) -> Result<()> {
+    if !is_inside_session() {
+        bail!("not inside a zellij session");
+    }
+
+    // Resolve the tab in the target session, then pre-focus it there.
+    if let Some(id) = resolve_tab_in(session, tab_id, tab_title) {
+        let _ = cmd()
+            .args(["-s", session, "action", "go-to-tab-by-id", &id.to_string()])
+            .status();
+    }
+
+    // `switch-session` takes the target session as a positional arg, not --name.
+    let status = cmd()
+        .args(["action", "switch-session", session])
+        .status()
+        .context("run zellij action switch-session")?;
+    if !status.success() {
+        bail!("switch-session failed (zellij may be too old) for '{session}'");
+    }
+    Ok(())
+}
+
+/// Find a task's tab id in `session`: prefer the stored id if it's still present,
+/// otherwise match by bare title (ignoring a leading 💬 notification indicator).
+fn resolve_tab_in(session: &str, tab_id: Option<u32>, title: &str) -> Option<u32> {
+    let tabs = list_tabs_in(session).ok()?;
+    if let Some(id) = tab_id
+        && tabs.iter().any(|t| t.tab_id == id)
+    {
+        return Some(id);
+    }
+    let bare = title.trim_start_matches('\u{1F4AC}').trim();
+    tabs.iter()
+        .find(|t| t.name.trim_start_matches('\u{1F4AC}').trim() == bare)
+        .map(|t| t.tab_id)
+}
+
 /// Attach to an existing session, replacing the current process.
 /// This is blocking — zellij takes over the terminal.
 pub fn attach_session(name: &str) -> Result<()> {
