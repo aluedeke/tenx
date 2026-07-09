@@ -4,12 +4,23 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = crate::workspace::find(&cwd)?;
+    new_in(&ws, name, repos, no_open)
+}
+
+/// Create a task in an explicit workspace (no cwd dependency). Used by `new` and
+/// the overlay's create flow, which targets a workspace the user picks.
+pub fn new_in(
+    ws: &crate::workspace::Workspace,
+    name: &str,
+    repos: Option<&[String]>,
+    no_open: bool,
+) -> Result<()> {
     let display_name = name.to_string();
     let slug = crate::workspace::slugify(name);
     let slug = slug.as_str();
 
-    let cwd = env::current_dir()?;
-    let ws = crate::workspace::find(&cwd)?;
     let global = crate::workspace::load_global()?;
 
     ws.check_task_new(slug)?;
@@ -62,6 +73,7 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
             cwd: &task_dir.to_string_lossy(),
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_file: if layout.is_empty() { None } else { Some(layout) },
+            resume: false, // brand-new task — no conversation to continue
         };
         let tab_id = crate::zellij::open_or_switch(&opts)?;
         std::fs::write(task_dir.join(".tenx-tab-id"), tab_id.to_string())?;
@@ -111,10 +123,30 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
         cwd: &task.path.to_string_lossy(),
         workspace_dir: &ws.dir.to_string_lossy(),
         layout_file: if layout.is_empty() { None } else { Some(layout) },
+        // Only `--continue` if claude actually has a conversation for this cwd;
+        // otherwise it exits 1 and the close_on_exit pane vanishes.
+        resume: has_claude_conversation(&task.path),
     };
     let tab_id = crate::zellij::open_or_switch(&opts)?;
     std::fs::write(&tab_id_file, tab_id.to_string())?;
     Ok(())
+}
+
+/// Whether claude has stored a conversation for `cwd` (so `--continue` will
+/// resume instead of exiting 1). Claude encodes each project dir as its path
+/// with `/` → `-` under `~/.claude/projects/`.
+fn has_claude_conversation(cwd: &Path) -> bool {
+    let Some(home) = env::var_os("HOME") else {
+        return false;
+    };
+    let encoded = cwd.to_string_lossy().replace('/', "-");
+    let project_dir = Path::new(&home).join(".claude/projects").join(encoded);
+    match std::fs::read_dir(&project_dir) {
+        Ok(entries) => entries
+            .flatten()
+            .any(|e| e.path().extension().is_some_and(|ext| ext == "jsonl")),
+        Err(_) => false,
+    }
 }
 
 pub fn list() -> Result<()> {
@@ -148,6 +180,12 @@ pub fn list() -> Result<()> {
 pub fn rm(name: &str, force: bool) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
+    rm_in(&ws, name, force)
+}
+
+/// Delete a task (worktrees, branches, directory) in an explicit workspace.
+/// The overlay calls this with `force = true` and does its own confirmation.
+pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Result<()> {
     let global = crate::workspace::load_global()?;
     let task = ws.find_task(name)?;
     let bare_dir = ws.bare_dir(&global);

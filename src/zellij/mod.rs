@@ -139,6 +139,42 @@ pub fn switch_to_task(session: &str, tab_id: Option<u32>, tab_title: &str) -> Re
     Ok(())
 }
 
+/// Close a tab by id in a specific session (works cross-session).
+pub fn close_tab_in(session: &str, tab_id: u32) -> Result<()> {
+    let status = cmd()
+        .args(["-s", session, "action", "close-tab-by-id", &tab_id.to_string()])
+        .status()
+        .context("run zellij -s <session> close-tab-by-id")?;
+    if !status.success() {
+        bail!("close-tab-by-id failed for tab {tab_id} in '{session}'");
+    }
+    Ok(())
+}
+
+/// Rename a tab by id in a specific session (works cross-session).
+pub fn rename_tab_in(session: &str, tab_id: u32, name: &str) -> Result<()> {
+    let status = cmd()
+        .args(["-s", session, "action", "rename-tab", "--tab-id", &tab_id.to_string(), name])
+        .status()
+        .context("run zellij -s <session> rename-tab")?;
+    if !status.success() {
+        bail!("rename-tab failed for tab {tab_id} in '{session}'");
+    }
+    Ok(())
+}
+
+/// Best-effort: pre-focus a task's tab in `session` so a subsequent `attach`
+/// lands on it. Used by the overlay when jumping from *outside* zellij, where we
+/// can't `switch-session` in place and must attach instead. Silently no-ops if
+/// the tab can't be resolved (stale id / not open) — attach still succeeds.
+pub fn pre_focus_tab(session: &str, tab_id: Option<u32>, tab_title: &str) {
+    if let Some(id) = resolve_tab_in(session, tab_id, tab_title) {
+        let _ = cmd()
+            .args(["-s", session, "action", "go-to-tab-by-id", &id.to_string()])
+            .status();
+    }
+}
+
 /// Find a task's tab id in `session`: prefer the stored id if it's still present,
 /// otherwise match by bare title (ignoring a leading 💬 notification indicator).
 fn resolve_tab_in(session: &str, tab_id: Option<u32>, title: &str) -> Option<u32> {
@@ -312,6 +348,13 @@ pub struct TabOptions<'a> {
     pub cwd: &'a str,
     pub workspace_dir: &'a str,
     pub layout_file: Option<&'a str>,
+    /// Resume the task's most recent claude conversation (`--continue`). Only
+    /// safe when one exists: with no prior conversation, interactive
+    /// `claude --continue` exits 1 ("No conversation found to continue"), which
+    /// silently closes the `close_on_exit` pane. Callers must set this false for
+    /// a task's first open. Ignored when `layout_file` is set (custom layouts
+    /// spell out their own claude command).
+    pub resume: bool,
 }
 
 pub fn render_layout(opts: &TabOptions) -> Result<String> {
@@ -321,7 +364,16 @@ pub fn render_layout(opts: &TabOptions) -> Result<String> {
     } else {
         default_task_layout(opts.workspace_dir)
     };
-    Ok(tmpl.replace("{name}", opts.name).replace("{cwd}", opts.cwd))
+    let claude_args = if opts.resume {
+        r#"args "--name" "{name}" "--continue""#
+    } else {
+        r#"args "--name" "{name}""#
+    };
+    // {claude_args} first: it embeds {name}, which the next replace fills in.
+    Ok(tmpl
+        .replace("{claude_args}", claude_args)
+        .replace("{name}", opts.name)
+        .replace("{cwd}", opts.cwd))
 }
 
 fn default_task_layout(_workspace_dir: &str) -> String {
@@ -338,9 +390,9 @@ fn default_task_layout(_workspace_dir: &str) -> String {
     tab name="{name}" cwd="{cwd}" focus=true {
         pane split_direction="vertical" {
             pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true {
-                // Resume the task's most recent conversation in this cwd (starts a
-                // fresh session on first open). --name sets the display name / title.
-                args "--name" "{name}" "--continue"
+                // {claude_args}: "--name {name}" plus "--continue" only when a prior
+                // conversation exists (see TabOptions::resume).
+                {claude_args}
             }
             pane split_direction="horizontal" size="50%" {
                 pane name="nvim" command="nvim" {
