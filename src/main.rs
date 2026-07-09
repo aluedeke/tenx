@@ -83,10 +83,15 @@ fn run() -> Result<()> {
 }
 
 /// Open the workspace: run the TUI if already in the right session, otherwise
-/// create or attach to the workspace's zellij session first.
+/// create or attach to the workspace's zellij session first. If cwd isn't inside
+/// any workspace, fall back to the global overlay so the user can pick a task
+/// from any registered workspace to jump/attach to.
 fn open_workspace() -> Result<()> {
     let cwd = env::current_dir()?;
-    let ws = workspace::find(&cwd)?;
+    let ws = match workspace::find_opt(&cwd)? {
+        Some(ws) => ws,
+        None => return tui::run_overlay(),
+    };
     // Self-heal the registry so pre-existing workspaces show up in the overlay.
     let _ = workspace::register_workspace(&ws.dir);
     let session = zellij::session_name(&ws.config.name);

@@ -12,6 +12,12 @@ fn infer_name(url: &str) -> String {
 pub fn add(url: &str, name: Option<&str>) -> Result<()> {
     let cwd = env::current_dir()?;
     let mut ws = crate::workspace::find(&cwd)?;
+    add_in(&mut ws, url, name)
+}
+
+/// Add a repo to an explicit workspace (bare clone + config). Used by `add` and
+/// the overlay's Repos tab, which targets the selected repo's workspace.
+pub fn add_in(ws: &mut crate::workspace::Workspace, url: &str, name: Option<&str>) -> Result<()> {
     let global = crate::workspace::load_global()?;
 
     let repo_name = name.map(|s| s.to_string()).unwrap_or_else(|| infer_name(url));

@@ -156,6 +156,22 @@ pub fn find(dir: &Path) -> Result<Workspace> {
     }
 }
 
+/// Like `find`, but distinguishes "no enclosing workspace" (`Ok(None)`) from a
+/// real error (unreadable/malformed `config.toml`). Used by the no-arg launch
+/// path, which falls back to the global overlay when cwd isn't in a workspace.
+pub fn find_opt(dir: &Path) -> Result<Option<Workspace>> {
+    match find(dir) {
+        Ok(ws) => Ok(Some(ws)),
+        Err(e)
+            if e.downcast_ref::<WorkspaceError>()
+                .is_some_and(|w| matches!(w, WorkspaceError::NotFound)) =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Load a workspace from an explicit directory.
 pub fn load(dir: &Path) -> Result<Workspace> {
     let cfg_path = dir.join("config.toml");
@@ -274,6 +290,26 @@ fn discover_task(task_dir: &Path) -> Result<Task> {
     repos.sort();
 
     Ok(Task { name, display_name, path: task_dir.to_path_buf(), repos, branch, created_at })
+}
+
+/// Rewrite a task's display name — the first `# ` heading line of TASK.md.
+/// Creates the file with just the heading if it doesn't exist.
+pub fn set_task_title(task_dir: &Path, title: &str) -> Result<()> {
+    let path = task_dir.join("TASK.md");
+    let new = match fs::read_to_string(&path) {
+        Ok(content) => {
+            let mut lines: Vec<&str> = content.lines().collect();
+            let heading = format!("# {title}");
+            if lines.first().map(|l| l.trim_start().starts_with('#')).unwrap_or(false) {
+                lines[0] = heading.as_str();
+                lines.join("\n") + "\n"
+            } else {
+                format!("{heading}\n{content}")
+            }
+        }
+        Err(_) => format!("# {title}\n"),
+    };
+    fs::write(&path, new).with_context(|| format!("write {}", path.display()))
 }
 
 pub fn read_task_display_name(task_dir: &Path) -> String {
