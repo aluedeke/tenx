@@ -2,14 +2,14 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
     Frame,
 };
 
 use super::app::{App, ConfirmAction, View};
 use crate::workspace::format_age;
 
-pub fn render(f: &mut Frame, app: &App) {
+pub fn render(f: &mut Frame, app: &mut App) {
     match app.view {
         View::List   => render_list(f, app),
         View::Create => {
@@ -19,7 +19,7 @@ pub fn render(f: &mut Frame, app: &App) {
     }
 }
 
-fn render_list(f: &mut Frame, app: &App) {
+fn render_list(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
     let chunks = Layout::default()
@@ -79,13 +79,13 @@ fn render_list(f: &mut Frame, app: &App) {
             ]))
         }).collect();
 
-        let mut state = ListState::default();
-        state.select(Some(app.selected));
+        app.list_area = chunks[1];
+        app.list_state.select(Some(app.selected));
 
         let list = List::new(items)
             .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
             .highlight_symbol("▶ ");
-        f.render_stateful_widget(list, chunks[1], &mut state);
+        f.render_stateful_widget(list, chunks[1], &mut app.list_state);
     }
 
     let (help, style) = if let Some(ConfirmAction::Delete(ref slug)) = app.confirm {
@@ -103,7 +103,7 @@ fn render_list(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(help).style(style), chunks[2]);
 }
 
-fn render_create(f: &mut Frame, app: &App) {
+fn render_create(f: &mut Frame, app: &mut App) {
     let area  = f.area();
     let popup = centered_rect(55, 60, area);
     f.render_widget(Clear, popup);
@@ -134,6 +134,10 @@ fn render_create(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(inner);
+
+    // Record clickable field areas for the mouse handler.
+    app.create_name_area = chunks[2];
+    app.create_repo_areas = (0..n_repos).map(|i| chunks[5 + i]).collect();
 
     f.render_widget(Paragraph::new("  Name:"), chunks[1]);
 

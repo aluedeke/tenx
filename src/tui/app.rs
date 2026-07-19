@@ -1,5 +1,7 @@
 use std::collections::HashSet;
+use ratatui::{layout::Rect, widgets::ListState};
 use crate::workspace::{Task, Workspace};
+use super::mouse::ClickTracker;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum View { List, Create }
@@ -20,6 +22,15 @@ pub struct App {
     pub create_focus: usize,
 
     pub confirm: Option<ConfirmAction>,
+
+    // Mouse support: the last-rendered list area + persisted scroll state let a
+    // click's row map back to a task index; the areas of the create-popup fields
+    // let a click focus/toggle them. Populated during render.
+    pub list_state: ListState,
+    pub list_area: Rect,
+    pub create_name_area: Rect,
+    pub create_repo_areas: Vec<Rect>,
+    pub click: ClickTracker,
 }
 
 impl App {
@@ -38,6 +49,11 @@ impl App {
             create_repos,
             create_focus: 0,
             confirm: None,
+            list_state: ListState::default(),
+            list_area: Rect::default(),
+            create_name_area: Rect::default(),
+            create_repo_areas: Vec::new(),
+            click: ClickTracker::new(),
         }
     }
 
