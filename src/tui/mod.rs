@@ -1,4 +1,5 @@
 mod app;
+mod mouse;
 mod overlay;
 mod repos;
 mod ui;
@@ -11,7 +12,10 @@ pub fn run_overlay() -> Result<()> {
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+        MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -59,18 +63,22 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App
         terminal.draw(|f| ui::render(f, app))?;
 
         if event::poll(TICK)? {
-            if let Event::Key(key) = event::read()? {
-                if app.status_msg.is_some() && key.code != KeyCode::Char('q') {
-                    app.status_msg = None;
-                }
-
-                match app.view {
-                    View::List => {
-                        if should_quit(app, key) { break; }
-                        handle_list_key(app, key);
+            match event::read()? {
+                Event::Key(key) => {
+                    if app.status_msg.is_some() && key.code != KeyCode::Char('q') {
+                        app.status_msg = None;
                     }
-                    View::Create => handle_create_key(app, key),
+
+                    match app.view {
+                        View::List => {
+                            if should_quit(app, key) { break; }
+                            handle_list_key(app, key);
+                        }
+                        View::Create => handle_create_key(app, key),
+                    }
                 }
+                Event::Mouse(m) => handle_mouse(app, m),
+                _ => {}
             }
         } else {
             app.reload_tabs();
@@ -114,6 +122,56 @@ fn handle_list_key(app: &mut App, key: crossterm::event::KeyEvent) {
         KeyCode::Char('n') => app.enter_create(),
         KeyCode::Char('r') => { app.reload_tasks(); app.reload_tabs(); }
         _ => {}
+    }
+}
+
+fn handle_mouse(app: &mut App, m: MouseEvent) {
+    match app.view {
+        View::List => {
+            // While a delete is pending, ignore clicks so a stray one can't
+            // confirm/dismiss it; wheel still scrolls the list underneath.
+            match m.kind {
+                MouseEventKind::ScrollDown => app.move_down(),
+                MouseEventKind::ScrollUp => app.move_up(),
+                MouseEventKind::Down(MouseButton::Left) if app.confirm.is_none() => {
+                    if let Some(idx) = mouse::item_at(
+                        app.list_area,
+                        0,
+                        app.list_state.offset(),
+                        1,
+                        m.column,
+                        m.row,
+                    ) && idx < app.tasks.len()
+                    {
+                        app.status_msg = None;
+                        app.selected = idx;
+                        if app.click.click(idx)
+                            && let Err(e) = app.do_open()
+                        {
+                            app.status_msg = Some(e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        View::Create => match m.kind {
+            MouseEventKind::ScrollDown => app.create_focus_next(),
+            MouseEventKind::ScrollUp => app.create_focus_prev(),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if mouse::hit(app.create_name_area, m.column, m.row) {
+                    app.create_focus = 0;
+                } else if let Some(i) = app
+                    .create_repo_areas
+                    .iter()
+                    .position(|a| mouse::hit(*a, m.column, m.row))
+                {
+                    app.create_focus = i + 1;
+                    app.toggle_repo();
+                }
+            }
+            _ => {}
+        },
     }
 }
 

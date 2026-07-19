@@ -10,13 +10,16 @@
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+        MouseButton, MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Tabs},
@@ -26,6 +29,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+use super::mouse::{self, ClickTracker};
 use crate::workspace::{self, TaskStatus, Workspace};
 
 /// One selectable task row, flattened across all workspaces.
@@ -165,6 +169,18 @@ struct Overlay {
     mode: Mode,
     /// Set when a jump from outside zellij should attach after teardown.
     attach: Option<AttachTarget>,
+
+    // Mouse support (list view only; the modal forms stay keyboard-only).
+    // `list_state` persists the scroll offset so a click's row maps to a list
+    // line; `line_to_pos` maps each rendered line back to its filtered position
+    // (None for workspace-group headers and blank separators). The three areas
+    // are the tab bar, search box, and list, recorded during render.
+    list_state: ListState,
+    line_to_pos: Vec<Option<usize>>,
+    tabs_area: Rect,
+    search_area: Rect,
+    list_area: Rect,
+    click: ClickTracker,
 }
 
 impl Overlay {
@@ -186,6 +202,12 @@ impl Overlay {
             status_msg: None,
             mode: Mode::List,
             attach: None,
+            list_state: ListState::default(),
+            line_to_pos: Vec::new(),
+            tabs_area: Rect::default(),
+            search_area: Rect::default(),
+            list_area: Rect::default(),
+            click: ClickTracker::new(),
         };
         o.rebuild_rows();
         o
@@ -370,6 +392,52 @@ impl Overlay {
 
     fn selected_row(&self) -> Option<&Row> {
         self.filtered.get(self.selected).and_then(|&i| self.rows.get(i))
+    }
+
+    // ── Mouse dispatch ────────────────────────────────────────────────────────
+
+    /// Handle a mouse event in the list view (the modal forms stay
+    /// keyboard-only). Wheel scrolls the selection; clicking a tab header, the
+    /// search box, or a task/repo row focuses it; a double-click on a row jumps.
+    /// Returns `Ok(true)` when the overlay should close (a jump completed).
+    fn handle_mouse(&mut self, m: MouseEvent) -> Result<bool> {
+        if !matches!(self.mode, Mode::List) {
+            return Ok(false);
+        }
+        match m.kind {
+            MouseEventKind::ScrollDown => self.nav_down(),
+            MouseEventKind::ScrollUp => self.nav_up(),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if mouse::hit(self.tabs_area, m.column, m.row) {
+                    // Two tabs split the bar width; left half = Tasks, right = Repos.
+                    let rel = m.column.saturating_sub(self.tabs_area.x);
+                    let want_repos = rel >= self.tabs_area.width / 2;
+                    match (want_repos, self.tab) {
+                        (true, Tab::Tasks) => self.select_repos_tab(),
+                        (false, Tab::Repos) => self.tab = Tab::Tasks,
+                        _ => {}
+                    }
+                } else if mouse::hit(self.search_area, m.column, m.row) {
+                    self.focus_search();
+                } else if let Some(line) = mouse::item_at(
+                    self.list_area,
+                    1,
+                    self.list_state.offset(),
+                    1,
+                    m.column,
+                    m.row,
+                ) && let Some(Some(pos)) = self.line_to_pos.get(line).copied()
+                {
+                    self.focus_list();
+                    self.set_cur_sel(pos);
+                    if self.click.click(pos) {
+                        return self.jump();
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
     }
 
     // ── Key dispatch ──────────────────────────────────────────────────────────
@@ -1083,10 +1151,18 @@ fn run_loop(
         terminal.draw(|f| render(f, overlay))?;
 
         if event::poll(TICK)? {
-            if let Event::Key(key) = event::read()?
-                && overlay.handle_key(key)?
-            {
-                break;
+            match event::read()? {
+                Event::Key(key) => {
+                    if overlay.handle_key(key)? {
+                        break;
+                    }
+                }
+                Event::Mouse(m) => {
+                    if overlay.handle_mouse(m)? {
+                        break;
+                    }
+                }
+                _ => {}
             }
         } else if matches!(overlay.mode, Mode::List) {
             // Idle tick — refresh status while preserving the selected task.
@@ -1105,15 +1181,19 @@ fn run_loop(
     Ok(())
 }
 
-fn render(f: &mut ratatui::Frame, overlay: &Overlay) {
-    match &overlay.mode {
-        Mode::Create(form) => render_create(f, overlay, form),
-        Mode::AddRepo(form) => render_addrepo(f, overlay, form),
-        _ => render_list(f, overlay),
+fn render(f: &mut ratatui::Frame, overlay: &mut Overlay) {
+    // Dispatch on a discriminant (not `match &overlay.mode`) so the list path can
+    // take `&mut overlay` without a live immutable borrow of `overlay.mode`.
+    if matches!(overlay.mode, Mode::Create(_)) {
+        render_create(f, overlay);
+    } else if matches!(overlay.mode, Mode::AddRepo(_)) {
+        render_addrepo(f, overlay);
+    } else {
+        render_list(f, overlay);
     }
 }
 
-fn render_list(f: &mut ratatui::Frame, overlay: &Overlay) {
+fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1123,6 +1203,11 @@ fn render_list(f: &mut ratatui::Frame, overlay: &Overlay) {
             Constraint::Length(1), // footer
         ])
         .split(f.area());
+
+    // Record clickable chrome/list areas for the mouse handler.
+    overlay.tabs_area = chunks[0];
+    overlay.search_area = chunks[1];
+    overlay.list_area = chunks[2];
 
     // ── Tab bar (its own row, not on a border) ────────────────────────────────
     let tabs = Tabs::new(vec![" Tasks ", " Repos "])
@@ -1154,14 +1239,16 @@ fn render_list(f: &mut ratatui::Frame, overlay: &Overlay) {
 
     // ── Body list (tasks or repos) ────────────────────────────────────────────
     let list_width = chunks[2].width.saturating_sub(2) as usize;
-    let (items, line_of_selected) = match overlay.tab {
+    let (items, line_of_selected, line_to_pos) = match overlay.tab {
         Tab::Tasks => task_items(overlay, list_width),
         Tab::Repos => repo_items(overlay, list_width),
     };
+    overlay.line_to_pos = line_to_pos;
 
-    let mut state = ListState::default();
     // Highlight a row only when the cursor is in the list (not the search field).
-    state.select(if overlay.focus == Focus::List { line_of_selected } else { None });
+    overlay
+        .list_state
+        .select(if overlay.focus == Focus::List { line_of_selected } else { None });
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL))
         .highlight_style(
@@ -1171,7 +1258,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &Overlay) {
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_spacing(HighlightSpacing::Never);
-    f.render_stateful_widget(list, chunks[2], &mut state);
+    f.render_stateful_widget(list, chunks[2], &mut overlay.list_state);
 
     // ── Footer / hints ────────────────────────────────────────────────────────
     let footer = match (&overlay.mode, &overlay.status_msg) {
@@ -1230,9 +1317,14 @@ fn render_list(f: &mut ratatui::Frame, overlay: &Overlay) {
     f.render_widget(Paragraph::new(footer), chunks[3]);
 }
 
-/// Build the grouped task list; returns items + the selected line index.
-fn task_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, Option<usize>) {
+/// Build the grouped task list; returns items, the selected line index, and a
+/// per-line map back to the filtered position (None for headers/separators).
+fn task_items(
+    overlay: &Overlay,
+    list_width: usize,
+) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {
     let mut items = Vec::new();
+    let mut line_to_pos: Vec<Option<usize>> = Vec::new();
     let mut selected_line = None;
     let mut last_ws: Option<usize> = None;
 
@@ -1241,11 +1333,13 @@ fn task_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, 
         if last_ws != Some(row.ws_idx) {
             if last_ws.is_some() {
                 items.push(ListItem::new(Line::from("")));
+                line_to_pos.push(None);
             }
             items.push(ListItem::new(Line::from(Span::styled(
                 row.ws_name.clone(),
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ))));
+            line_to_pos.push(None);
             last_ws = Some(row.ws_idx);
         }
         if pos == overlay.selected {
@@ -1289,6 +1383,7 @@ fn task_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, 
             spans.push(Span::styled(right, Style::default().fg(Color::DarkGray)));
         }
         items.push(ListItem::new(Line::from(spans)));
+        line_to_pos.push(Some(pos));
     }
 
     if items.is_empty() {
@@ -1296,13 +1391,18 @@ fn task_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, 
             "  no tasks — :n to create one",
             Style::default().fg(Color::DarkGray),
         ))));
+        line_to_pos.push(None);
     }
-    (items, selected_line)
+    (items, selected_line, line_to_pos)
 }
 
 /// Build the grouped repo list (lean: clone dot + last commit).
-fn repo_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, Option<usize>) {
+fn repo_items(
+    overlay: &Overlay,
+    list_width: usize,
+) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {
     let mut items = Vec::new();
+    let mut line_to_pos: Vec<Option<usize>> = Vec::new();
     let mut selected_line = None;
     let mut last_ws: Option<usize> = None;
 
@@ -1311,11 +1411,13 @@ fn repo_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, 
         if last_ws != Some(r.ws_idx) {
             if last_ws.is_some() {
                 items.push(ListItem::new(Line::from("")));
+                line_to_pos.push(None);
             }
             items.push(ListItem::new(Line::from(Span::styled(
                 r.ws_name.clone(),
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ))));
+            line_to_pos.push(None);
             last_ws = Some(r.ws_idx);
         }
         if pos == overlay.repo_selected {
@@ -1346,6 +1448,7 @@ fn repo_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, 
             Span::raw("   "),
             Span::styled(detail, Style::default().fg(Color::DarkGray)),
         ])));
+        line_to_pos.push(Some(pos));
     }
 
     if items.is_empty() {
@@ -1353,8 +1456,9 @@ fn repo_items(overlay: &Overlay, list_width: usize) -> (Vec<ListItem<'static>>, 
             "  no repos",
             Style::default().fg(Color::DarkGray),
         ))));
+        line_to_pos.push(None);
     }
-    (items, selected_line)
+    (items, selected_line, line_to_pos)
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -1369,7 +1473,8 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{cut}…")
 }
 
-fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay, form: &AddRepoForm) {
+fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay) {
+    let Mode::AddRepo(form) = &overlay.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -1419,7 +1524,8 @@ fn cursor(on: bool) -> &'static str {
     }
 }
 
-fn render_create(f: &mut ratatui::Frame, overlay: &Overlay, form: &CreateForm) {
+fn render_create(f: &mut ratatui::Frame, overlay: &Overlay) {
+    let Mode::Create(form) = &overlay.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])

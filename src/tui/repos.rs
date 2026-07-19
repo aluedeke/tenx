@@ -1,6 +1,9 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+        MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -19,6 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use super::mouse::{self, ClickTracker};
 use crate::github::Pr;
 use crate::workspace::Workspace;
 
@@ -84,7 +88,20 @@ struct App {
     last_pr_fetch: Option<Instant>,
     tx: mpsc::Sender<Msg>,
     rx: mpsc::Receiver<Msg>,
+    // Mouse support: last-rendered list areas + persisted scroll state, so a
+    // click's row maps back to a repo/PR index. Each repo item spans REPO_ROWS
+    // terminal lines; PR items are one line each.
+    list_area: Rect,
+    list_state: ListState,
+    list_click: ClickTracker,
+    pr_list_area: Rect,
+    pr_list_state: ListState,
+    pr_click: ClickTracker,
 }
+
+/// Terminal rows each repo item occupies in the list (name, url, commit,
+/// pr-hint, blank spacer).
+const REPO_ROWS: u16 = 5;
 
 impl App {
     fn new(workspace: Workspace) -> Self {
@@ -113,6 +130,12 @@ impl App {
             last_pr_fetch: None,
             tx,
             rx,
+            list_area: Rect::default(),
+            list_state: ListState::default(),
+            list_click: ClickTracker::new(),
+            pr_list_area: Rect::default(),
+            pr_list_state: ListState::default(),
+            pr_click: ClickTracker::new(),
         }
     }
 
@@ -293,23 +316,27 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App
         terminal.draw(|f| render(f, app))?;
 
         if event::poll(TICK)? {
-            if let Event::Key(key) = event::read()? {
-                if app.status_msg.is_some() {
-                    app.status_msg = None;
-                }
-
-                match app.view {
-                    View::List => {
-                        if key.modifiers == KeyModifiers::NONE
-                            && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
-                        {
-                            break;
-                        }
-                        handle_list_key(app, key);
+            match event::read()? {
+                Event::Key(key) => {
+                    if app.status_msg.is_some() {
+                        app.status_msg = None;
                     }
-                    View::Prs => handle_pr_key(app, key),
-                    View::Add => handle_add_key(app, key),
+
+                    match app.view {
+                        View::List => {
+                            if key.modifiers == KeyModifiers::NONE
+                                && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+                            {
+                                break;
+                            }
+                            handle_list_key(app, key);
+                        }
+                        View::Prs => handle_pr_key(app, key),
+                        View::Add => handle_add_key(app, key),
+                    }
                 }
+                Event::Mouse(m) => handle_mouse(app, m),
+                _ => {}
             }
         } else if app.should_auto_refresh() {
             app.reload();
@@ -361,6 +388,58 @@ fn handle_pr_key(app: &mut App, key: event::KeyEvent) {
     }
 }
 
+fn handle_mouse(app: &mut App, m: MouseEvent) {
+    match app.view {
+        View::List => match m.kind {
+            MouseEventKind::ScrollDown => app.move_down(),
+            MouseEventKind::ScrollUp => app.move_up(),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(idx) = mouse::item_at(
+                    app.list_area,
+                    0,
+                    app.list_state.offset(),
+                    REPO_ROWS,
+                    m.column,
+                    m.row,
+                ) && idx < app.workspace.config.repos.len()
+                {
+                    app.status_msg = None;
+                    app.selected = idx;
+                    // Double-click a repo opens its PR list, matching Enter.
+                    if app.list_click.click(idx) {
+                        app.enter_prs();
+                    }
+                }
+            }
+            _ => {}
+        },
+        View::Prs => match m.kind {
+            MouseEventKind::ScrollDown => app.move_pr_down(),
+            MouseEventKind::ScrollUp => app.move_pr_up(),
+            MouseEventKind::Down(MouseButton::Left) => {
+                let count = app.visible_prs().len();
+                if let Some(idx) = mouse::item_at(
+                    app.pr_list_area,
+                    0,
+                    app.pr_list_state.offset(),
+                    1,
+                    m.column,
+                    m.row,
+                ) && idx < count
+                {
+                    app.pr_selected = idx;
+                    // Double-click opens the PR in the browser, matching Enter.
+                    if app.pr_click.click(idx) {
+                        app.open_selected_pr();
+                    }
+                }
+            }
+            _ => {}
+        },
+        View::Add => {}
+    }
+}
+
 fn handle_add_key(app: &mut App, key: event::KeyEvent) {
     match key.code {
         KeyCode::Esc => app.cancel_add(),
@@ -393,7 +472,7 @@ fn handle_add_key(app: &mut App, key: event::KeyEvent) {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
-fn render(f: &mut Frame, app: &App) {
+fn render(f: &mut Frame, app: &mut App) {
     match app.view {
         View::List | View::Add => {
             render_list(f, app);
@@ -405,7 +484,7 @@ fn render(f: &mut Frame, app: &App) {
     }
 }
 
-fn render_list(f: &mut Frame, app: &App) {
+fn render_list(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
     let chunks = Layout::default()
@@ -492,13 +571,13 @@ fn render_list(f: &mut Frame, app: &App) {
             ListItem::new(vec![name_line, url_line, commit_line, pr_hint, Line::from("")])
         }).collect();
 
-        let mut state = ListState::default();
-        state.select(Some(app.selected));
+        app.list_area = chunks[0];
+        app.list_state.select(Some(app.selected));
 
         let list = List::new(items)
             .highlight_style(Style::default().add_modifier(Modifier::BOLD))
             .highlight_symbol("▶ ");
-        f.render_stateful_widget(list, chunks[0], &mut state);
+        f.render_stateful_widget(list, chunks[0], &mut app.list_state);
     }
 
     let (help, style) = if let Some(ref msg) = app.status_msg {
@@ -520,7 +599,7 @@ fn render_list(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(help).style(style), chunks[1]);
 }
 
-fn render_pr_popup(f: &mut Frame, app: &App) {
+fn render_pr_popup(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
     let repo_name = app
@@ -550,14 +629,28 @@ fn render_pr_popup(f: &mut Frame, app: &App) {
         .split(inner);
 
     let repo_name_owned = repo_name.to_string();
-    match app.pr_cache.get(&repo_name_owned) {
-        None | Some(PrState::Loading) => {
+
+    // Snapshot what to render without holding a borrow of `app.pr_cache`, so the
+    // Loaded branch can mutably borrow `app.pr_list_state` for the stateful list.
+    enum PrView {
+        Loading,
+        Error(String),
+        Loaded { total: usize },
+    }
+    let view = match app.pr_cache.get(&repo_name_owned) {
+        None | Some(PrState::Loading) => PrView::Loading,
+        Some(PrState::Error(e)) => PrView::Error(e.clone()),
+        Some(PrState::Loaded(all_prs)) => PrView::Loaded { total: all_prs.len() },
+    };
+
+    match view {
+        PrView::Loading => {
             f.render_widget(
                 Paragraph::new("  Loading…").style(Style::default().fg(Color::DarkGray)),
                 chunks[0],
             );
         }
-        Some(PrState::Error(e)) => {
+        PrView::Error(e) => {
             let msg = vec![
                 Line::from(""),
                 Line::from(Span::styled(
@@ -572,20 +665,13 @@ fn render_pr_popup(f: &mut Frame, app: &App) {
             ];
             f.render_widget(Paragraph::new(msg), chunks[0]);
         }
-        Some(PrState::Loaded(all_prs)) => {
-            let prs = app.visible_prs();
-            if prs.is_empty() {
-                let msg = if app.mine_only {
-                    "  No open PRs from you.  Press m to show all."
-                } else {
-                    "  No open PRs."
-                };
-                f.render_widget(
-                    Paragraph::new(msg).style(Style::default().fg(Color::DarkGray)),
-                    chunks[0],
-                );
-            } else {
-                let width = chunks[0].width as usize;
+        PrView::Loaded { total } => {
+            // Build the list items inside a block so the immutable borrow from
+            // `visible_prs` is released before we touch the mutable
+            // `pr_list_state` for the stateful render below.
+            let width = chunks[0].width as usize;
+            let (items, visible_count) = {
+                let prs = app.visible_prs();
                 let items: Vec<ListItem> = prs.iter().map(|pr| {
                     let draft = if pr.is_draft {
                         Span::styled("[draft] ", Style::default().fg(Color::DarkGray))
@@ -620,21 +706,31 @@ fn render_pr_popup(f: &mut Frame, app: &App) {
 
                     ListItem::new(Line::from(vec![draft, num, title, author, date]))
                 }).collect();
+                (items, prs.len())
+            };
 
-                let mut state = ListState::default();
-                state.select(Some(app.pr_selected));
-
+            if visible_count == 0 {
+                let msg = if app.mine_only {
+                    "  No open PRs from you.  Press m to show all."
+                } else {
+                    "  No open PRs."
+                };
+                f.render_widget(
+                    Paragraph::new(msg).style(Style::default().fg(Color::DarkGray)),
+                    chunks[0],
+                );
+            } else {
+                app.pr_list_area = chunks[0];
+                app.pr_list_state.select(Some(app.pr_selected));
                 let list = List::new(items)
                     .highlight_style(Style::default().add_modifier(Modifier::BOLD))
                     .highlight_symbol("▶ ");
-                f.render_stateful_widget(list, chunks[0], &mut state);
+                f.render_stateful_widget(list, chunks[0], &mut app.pr_list_state);
             }
 
             // Show total count when mine filter is active.
-            if app.mine_only && !all_prs.is_empty() {
-                let total = all_prs.len();
-                let visible = prs.len();
-                let note = format!(" showing {visible}/{total} PRs");
+            if app.mine_only && total > 0 {
+                let note = format!(" showing {visible_count}/{total} PRs");
                 f.render_widget(
                     Paragraph::new(note).style(Style::default().fg(Color::DarkGray)),
                     chunks[1],
