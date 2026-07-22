@@ -1023,81 +1023,13 @@ fn subseq_match(needle: &str, haystack: &str) -> bool {
     true
 }
 
-/// Removes the per-session lock file on drop (normal exit or unwind).
-struct InstanceGuard {
-    path: PathBuf,
-}
-
-impl Drop for InstanceGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-/// Toggle behaviour, one overlay per zellij session:
-/// - no live instance → acquire the lock and open (returns `Some`).
-/// - a live instance already open → terminate it and open nothing (returns
-///   `None`), so pressing the keybind again hides the overlay.
-fn acquire_or_toggle() -> Option<InstanceGuard> {
-    use std::io::Write;
-    let session = std::env::var("ZELLIJ_SESSION_NAME").unwrap_or_else(|_| "nosession".into());
-    let safe: String = session
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect();
-    let path = std::env::temp_dir().join(format!("tenx-overlay-{safe}.lock"));
-
-    for _ in 0..4 {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(mut f) => {
-                let _ = write!(f, "{}", std::process::id());
-                return Some(InstanceGuard { path });
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                let existing = std::fs::read_to_string(&path)
-                    .ok()
-                    .and_then(|s| s.trim().parse::<u32>().ok());
-                if let Some(pid) = existing
-                    && pid_alive(pid)
-                {
-                    // Toggle off: close the running overlay, open nothing.
-                    signal_term(pid);
-                    let _ = std::fs::remove_file(&path);
-                    return None;
-                }
-                let _ = std::fs::remove_file(&path); // stale lock — retry
-            }
-            // Filesystem trouble — don't block the overlay from opening.
-            Err(_) => return Some(InstanceGuard { path }),
-        }
-    }
-    Some(InstanceGuard { path })
-}
-
-fn pid_alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-/// Ask a process to terminate (SIGTERM). The target overlay has no handler, so
-/// it exits and its `close_on_exit` pane closes.
-fn signal_term(pid: u32) {
-    let _ = std::process::Command::new("kill")
-        .arg(pid.to_string())
-        .stderr(std::process::Stdio::null())
-        .status();
-}
+// Note: single-instance/toggle behaviour lives in the tenx-zellij plugin now
+// (it tracks the overlay pane it opened and closes it on the next toggle). The
+// old per-session lock-file toggle was removed: with the plugin owning the
+// lifecycle it could only misfire — a second spawn would SIGTERM the first and
+// exit, so the overlay flickered and vanished instead of opening.
 
 pub fn run() -> Result<()> {
-    // Toggle: if an overlay is already open in this session, close it and exit
-    // (before touching the terminal); otherwise take the lock and open.
-    let Some(_guard) = acquire_or_toggle() else {
-        return Ok(());
-    };
 
     let orig = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -1121,11 +1053,9 @@ pub fn run() -> Result<()> {
     result?;
 
     // The TUI is fully torn down now. If a jump from outside zellij was queued,
-    // attach to (or create) the task's session. attach/create exec() and replace
-    // this process, so the lock guard's Drop would never run — release it first,
-    // or the exec'd process (same PID, now alive) would look like a live overlay.
+    // attach to (or create) the task's session; attach/create exec() and
+    // replace this process.
     if let Some(t) = overlay.attach.take() {
-        drop(_guard);
         if crate::zellij::session_exists(&t.session)? {
             crate::zellij::pre_focus_tab(&t.session, t.tab_id, &t.title);
             crate::zellij::attach_session(&t.session)?;
@@ -1180,6 +1110,11 @@ fn run_loop(
     }
     Ok(())
 }
+
+// Responsive sizing note: the overlay pane's geometry is decided *before* this
+// process exists — the tenx-zellij plugin computes breakpoints from the screen
+// size and opens this TUI in a floating pane already at the right size. The TUI
+// therefore always renders full-pane (`f.area()`).
 
 fn render(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     // Dispatch on a discriminant (not `match &overlay.mode`) so the list path can

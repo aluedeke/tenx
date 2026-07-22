@@ -1,3 +1,8 @@
+# Root package + workspace: `tenx` is the native CLI/TUI binary; `tenx-zellij`
+# is the WASM launcher plugin (build with --target wasm32-wasip1).
+[workspace]
+members = ["tenx-zellij"]
+
 [package]
 name = "tenx"
 version = "0.1.0"
