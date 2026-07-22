@@ -1,0 +1,11 @@
+[package]
+name = "tenx-zellij"
+version = "0.1.0"
+edition = "2021"
+
+# WASM zellij plugin: the overlay *launcher*. It never renders the tenx TUI
+# (plugin panes have no PTY); it opens the native `tenx overlay` in a floating
+# terminal pane created at the responsive size for the current screen.
+
+[dependencies]
+zellij-tile = "0.44"
