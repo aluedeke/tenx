@@ -30,15 +30,9 @@ fn cmd() -> Command {
 
 // ── Session identity ──────────────────────────────────────────────────────────
 
-/// Derive the zellij session name from a workspace name.
-pub fn session_name(workspace_name: &str) -> String {
-    format!(
-        "tenx:{}",
-        workspace_name
-            .to_lowercase()
-            .replace(['/', ' ', '_'], "-")
-    )
-}
+/// The single global tenx session. All workspaces' tasks live here as
+/// (invisible) tabs; the overlay is the only task list/switcher.
+pub const SESSION: &str = "tenx";
 
 /// Returns the name of the current zellij session, if inside one.
 pub fn current_session() -> Option<String> {
@@ -175,8 +169,9 @@ pub fn pre_focus_tab(session: &str, tab_id: Option<u32>, tab_title: &str) {
     }
 }
 
-/// Find a task's tab id in `session`: prefer the stored id if it's still present,
-/// otherwise match by bare title (ignoring a leading 💬 notification indicator).
+/// Find a task's tab id in `session`: prefer the stored id if it's still
+/// present, otherwise match by title (tab names are stable — set at creation,
+/// changed only by an explicit rename).
 fn resolve_tab_in(session: &str, tab_id: Option<u32>, title: &str) -> Option<u32> {
     let tabs = list_tabs_in(session).ok()?;
     if let Some(id) = tab_id
@@ -184,10 +179,7 @@ fn resolve_tab_in(session: &str, tab_id: Option<u32>, title: &str) -> Option<u32
     {
         return Some(id);
     }
-    let bare = title.trim_start_matches('\u{1F4AC}').trim();
-    tabs.iter()
-        .find(|t| t.name.trim_start_matches('\u{1F4AC}').trim() == bare)
-        .map(|t| t.tab_id)
+    tabs.iter().find(|t| t.name == title).map(|t| t.tab_id)
 }
 
 /// Attach to an existing session, replacing the current process.
@@ -199,53 +191,71 @@ pub fn attach_session(name: &str) -> Result<()> {
     Err(err).context(format!("exec zellij attach {name}"))
 }
 
-/// Create a new named session with the TUI as the first (and only) tab, then attach.
+/// Write the home layout to the zellij layouts dir and return its layout name
+/// (usable with `--new-session-with-layout` / `switch-session --layout`).
+fn write_home_layout(tenx_bin: &str) -> Result<String> {
+    let home = env::var("HOME").context("HOME not set")?;
+    let layouts_dir = PathBuf::from(&home).join(".config/zellij/layouts");
+    fs::create_dir_all(&layouts_dir).context("create zellij layouts dir")?;
+    let layout_path = layouts_dir.join(format!("{SESSION}.kdl"));
+    fs::write(&layout_path, home_layout(tenx_bin)).context("write session layout file")?;
+    Ok(SESSION.to_string())
+}
+
+/// Create the global tenx session with the home overlay as its only tab, then
+/// attach.
 ///
 /// Uses `--new-session-with-layout` which always creates a fresh session from a
 /// layout file — unlike `--layout-string`/`--layout` which *append* tabs to an
 /// existing session and still produce a default shell tab on new session creation.
-pub fn create_and_attach_session(session: &str, tenx_bin: &str, workspace_dir: &str) -> Result<()> {
+pub fn create_and_attach_session(tenx_bin: &str) -> Result<()> {
     use std::os::unix::process::CommandExt;
-
-    // Write the layout to the zellij layouts dir so --new-session-with-layout can find it.
-    let home = env::var("HOME").context("HOME not set")?;
-    let layouts_dir = PathBuf::from(&home).join(".config/zellij/layouts");
-    fs::create_dir_all(&layouts_dir).context("create zellij layouts dir")?;
-    let layout_name = session.replace(':', "-");
-    let layout_path = layouts_dir.join(format!("{layout_name}.kdl"));
-    fs::write(&layout_path, full_session_layout(tenx_bin, workspace_dir))
-        .context("write session layout file")?;
-
+    let layout_name = write_home_layout(tenx_bin)?;
     let err = cmd()
-        .args(["--session", session, "--new-session-with-layout", &layout_name])
+        .args(["--session", SESSION, "--new-session-with-layout", &layout_name])
         .exec();
-    Err(err).context(format!("exec zellij --session {session}"))
+    Err(err).context(format!("exec zellij --session {SESSION}"))
 }
 
-fn full_session_layout(tenx_bin: &str, workspace_dir: &str) -> String {
-    // tab-bar and status-bar live in a default_tab_template so that manually
-    // created tabs (e.g. zellij's Ctrl+t n) inherit the same chrome. Without a
-    // template, zellij registers an empty new_tab_template and a manual new tab
-    // opens as a bare full-screen pane with no tab/status bar.
+/// Switch the current client to the tenx session in place (from inside a
+/// *different* zellij session), creating it from the home layout if it doesn't
+/// exist yet.
+pub fn switch_to_tenx_session(tenx_bin: &str) -> Result<()> {
+    if !is_inside_session() {
+        bail!("not inside a zellij session");
+    }
+    let mut args = vec!["action".to_string(), "switch-session".to_string(), SESSION.to_string()];
+    // Only pass --layout when the session doesn't exist yet: switch-session
+    // applies the layout on creation; for an existing session it must not
+    // append tabs.
+    if !session_exists(SESSION)? {
+        let layout_name = write_home_layout(tenx_bin)?;
+        args.push("--layout".to_string());
+        args.push(layout_name);
+    }
+    let status = cmd().args(&args).status().context("run zellij action switch-session")?;
+    if !status.success() {
+        bail!("switch-session to '{SESSION}' failed");
+    }
+    Ok(())
+}
+
+/// The single session's home tab: the overlay running full-screen as the base
+/// pane. No tab-bar anywhere — tasks live in invisible tabs and the overlay is
+/// the only switcher. The status-bar stays for zellij keybinding hints; the
+/// default_tab_template ensures manually created tabs (Ctrl+t n) inherit it.
+fn home_layout(tenx_bin: &str) -> String {
     format!(
         r#"layout {{
     default_tab_template {{
-        pane size=1 borderless=true {{
-            plugin location="zellij:tab-bar"
-        }}
         children
         pane size=2 borderless=true {{
             plugin location="zellij:status-bar"
         }}
     }}
-    tab name="tenx" focus=true {{
-        pane split_direction="vertical" {{
-            pane command="{tenx_bin}" cwd="{workspace_dir}" size="65%" {{
-                args "tasks"
-            }}
-            pane command="{tenx_bin}" cwd="{workspace_dir}" size="35%" {{
-                args "repos"
-            }}
+    tab name="home" focus=true {{
+        pane command="{tenx_bin}" {{
+            args "overlay" "--home"
         }}
     }}
 }}"#
@@ -301,48 +311,6 @@ pub fn go_to_tab_position(position: usize) -> Result<()> {
     Ok(())
 }
 
-/// Close a tab by its stable tab id, regardless of the tab's current name.
-/// Robust against notification renames (e.g. a leading 💬 indicator), which
-/// change the tab name but not its id.
-pub fn close_tab_by_id(id: u32) -> Result<()> {
-    if !is_inside_session() {
-        bail!("not inside a zellij session");
-    }
-    let tab = find_tab_by_id(id)?.with_context(|| format!("no tab with id {id}"))?;
-    go_to_tab_position(tab.position)?;
-    let status = cmd()
-        .args(["action", "close-tab"])
-        .status()
-        .context("run zellij action close-tab")?;
-    if !status.success() {
-        bail!("close-tab failed for tab id {id}");
-    }
-    Ok(())
-}
-
-pub fn close_tab(name: &str) -> Result<()> {
-    if !is_inside_session() {
-        bail!("not inside a zellij session");
-    }
-    // Match by name ignoring a leading notification indicator, since the Stop
-    // hook renames active tabs to "💬 <title>". Close by position so we don't
-    // depend on go-to-tab-name matching the (possibly prefixed) live name.
-    let bare = name.trim_start_matches('\u{1F4AC}').trim();
-    let tab = list_tabs()?
-        .into_iter()
-        .find(|t| t.name.trim_start_matches('\u{1F4AC}').trim() == bare)
-        .with_context(|| format!("no tab matching '{name}'"))?;
-    go_to_tab_position(tab.position)?;
-    let status = cmd()
-        .args(["action", "close-tab"])
-        .status()
-        .context("run zellij action close-tab")?;
-    if !status.success() {
-        bail!("close-tab failed for tab '{name}'");
-    }
-    Ok(())
-}
-
 pub struct TabOptions<'a> {
     pub name: &'a str,
     pub cwd: &'a str,
@@ -379,9 +347,6 @@ pub fn render_layout(opts: &TabOptions) -> Result<String> {
 fn default_task_layout(_workspace_dir: &str) -> String {
     r#"layout {
     default_tab_template {
-        pane size=1 borderless=true {
-            plugin location="zellij:tab-bar"
-        }
         children
         pane size=2 borderless=true {
             plugin location="zellij:status-bar"
