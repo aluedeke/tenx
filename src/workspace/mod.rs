@@ -83,59 +83,101 @@ pub fn load_global() -> Result<GlobalConfig> {
 // `tenx init` and self-healed whenever a workspace is opened. Dead paths are
 // pruned lazily on read.
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct Registry {
-    #[serde(default)]
-    paths: Vec<String>,
+/// One registry entry: a single file per workspace under `workspaces.d/`.
+/// Registration is an atomic single-file write (no shared read-modify-write, so
+/// concurrent tenx invocations can't lose each other's entries), and pruning is
+/// a per-file delete. Room for per-workspace metadata later.
+#[derive(Debug, Deserialize, Serialize)]
+struct RegistryEntry {
+    path: String,
 }
 
-fn registry_path() -> Result<PathBuf> {
+fn registry_dir() -> Result<PathBuf> {
+    let home = home_dir()?;
+    Ok(home.join(".config").join("tenx").join("workspaces.d"))
+}
+
+/// Legacy single-file registry, imported into `workspaces.d/` on first read.
+fn legacy_registry_path() -> Result<PathBuf> {
     let home = home_dir()?;
     Ok(home.join(".config").join("tenx").join("workspaces.toml"))
 }
 
-fn read_registry(path: &Path) -> Registry {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|t| toml::from_str(&t).ok())
-        .unwrap_or_default()
+/// Registry filename for a workspace: slugified directory name plus a short
+/// hash of the canonical path, so same-named workspaces don't collide.
+fn registry_key(canon: &Path) -> String {
+    let name = canon
+        .file_name()
+        .map(|n| slugify(&n.to_string_lossy()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "workspace".to_string());
+    let mut hash: u64 = 0xcbf29ce484222325; // FNV-1a
+    for b in canon.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{name}-{:08x}", (hash >> 32) as u32)
 }
 
 /// Record `dir` in the global workspace registry (idempotent).
 pub fn register_workspace(dir: &Path) -> Result<()> {
     let canon = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-    let entry = canon.to_string_lossy().into_owned();
-    let path = registry_path()?;
-    let mut reg = read_registry(&path);
-    if reg.paths.iter().any(|p| p == &entry) {
-        return Ok(());
+    let reg_dir = registry_dir()?;
+    fs::create_dir_all(&reg_dir).context("create tenx registry dir")?;
+    let file = reg_dir.join(format!("{}.toml", registry_key(&canon)));
+    let entry = RegistryEntry {
+        path: canon.to_string_lossy().into_owned(),
+    };
+    atomic_write_toml(&file, &entry)
+}
+
+/// Import the legacy single-file registry into `workspaces.d/`, then delete it.
+/// Best-effort; a partial import self-heals on the next workspace open.
+fn migrate_legacy_registry() {
+    let Ok(legacy) = legacy_registry_path() else { return };
+    let Ok(text) = fs::read_to_string(&legacy) else { return };
+    #[derive(Deserialize)]
+    struct Legacy {
+        #[serde(default)]
+        paths: Vec<String>,
     }
-    reg.paths.push(entry);
-    reg.paths.sort();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).context("create tenx config dir")?;
+    if let Ok(reg) = toml::from_str::<Legacy>(&text) {
+        for p in &reg.paths {
+            let _ = register_workspace(Path::new(p));
+        }
     }
-    atomic_write_toml(&path, &reg)
+    let _ = fs::remove_file(&legacy);
 }
 
 /// Load every registered workspace, pruning entries that no longer resolve.
 pub fn registered_workspaces() -> Vec<Workspace> {
-    let path = match registry_path() {
-        Ok(p) => p,
+    migrate_legacy_registry();
+    let dir = match registry_dir() {
+        Ok(d) => d,
         Err(_) => return vec![],
     };
-    let reg = read_registry(&path);
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return vec![];
+    };
     let mut workspaces = Vec::new();
-    let mut alive = Vec::new();
-    for p in &reg.paths {
-        if let Ok(ws) = load(Path::new(p)) {
-            alive.push(p.clone());
-            workspaces.push(ws);
+    for entry in entries.flatten() {
+        let file = entry.path();
+        if file.extension().is_none_or(|e| e != "toml") {
+            continue;
+        }
+        let ws = fs::read_to_string(&file)
+            .ok()
+            .and_then(|t| toml::from_str::<RegistryEntry>(&t).ok())
+            .and_then(|e| load(Path::new(&e.path)).ok());
+        match ws {
+            Some(ws) => workspaces.push(ws),
+            // Unparseable entry or dead workspace path — prune the file.
+            None => {
+                let _ = fs::remove_file(&file);
+            }
         }
     }
-    if alive.len() != reg.paths.len() {
-        let _ = atomic_write_toml(&path, &Registry { paths: alive });
-    }
+    workspaces.sort_by(|a, b| a.config.name.cmp(&b.config.name));
     workspaces
 }
 

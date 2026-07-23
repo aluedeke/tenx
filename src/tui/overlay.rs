@@ -1,12 +1,14 @@
-//! Global task overlay: a floating pane that lists every task across every
-//! registered workspace, grouped by workspace, with each task's Claude-activity
-//! status. It's both a switcher and a task manager — fuzzy-filter + Enter to
-//! jump, plus Ctrl-bindings to create, delete, close, and rename tasks from
-//! anywhere (plain typing always filters, so actions live on Ctrl).
+//! Global task overlay: lists every task across every registered workspace,
+//! grouped by workspace, with each task's Claude-activity status. It's both a
+//! switcher and a task manager — fuzzy-filter + Enter to jump, plus
+//! Ctrl-bindings to create, delete, close, and rename tasks from anywhere
+//! (plain typing always filters, so actions live on Ctrl).
 //!
-//! Multi-session model: jumping to a task in the *current* workspace focuses its
-//! tab; jumping to another workspace focuses that task's tab in its session then
-//! switches in place.
+//! Single-session model: all tasks live as (invisible) tabs in the one global
+//! `tenx` zellij session. The overlay runs in two modes: as the session's
+//! *home* base pane (`--home`, long-lived, jump switches tabs without exiting)
+//! and as the Ctrl+w *floating* pane (exits after a jump; the tenx-zellij
+//! plugin closes the pane).
 
 use anyhow::Result;
 use crossterm::{
@@ -36,7 +38,6 @@ use crate::workspace::{self, TaskStatus, Workspace};
 struct Row {
     ws_idx: usize,
     ws_name: String,
-    session: String,
     slug: String,
     title: String,
     path: PathBuf,
@@ -83,14 +84,12 @@ struct Confirm {
     ws_idx: usize,
     slug: String,
     title: String,
-    session: String,
     tab_id: Option<u32>,
 }
 
 /// Rename-title form.
 struct RenameForm {
     slug: String,
-    session: String,
     tab_id: Option<u32>,
     path: PathBuf,
     buffer: String,
@@ -139,17 +138,19 @@ enum Mode {
     Rename(RenameForm),
 }
 
-/// A task's session to attach to after the overlay tears down its TUI. Recorded
-/// when the user jumps while *outside* zellij (a plain terminal): we can't
-/// `switch-session` in place, so we exit the overlay cleanly and then attach.
+/// A task to land on after the overlay tears down its TUI. Recorded when the
+/// user jumps while *outside* zellij (a plain terminal): we can't
+/// `switch-session` in place, so we exit the overlay cleanly and then attach to
+/// the tenx session.
 struct AttachTarget {
-    session: String,
-    ws_dir: PathBuf,
     tab_id: Option<u32>,
     title: String,
 }
 
 struct Overlay {
+    /// Running as the session's home base pane (long-lived, never quits) rather
+    /// than the Ctrl+w floating pane (exits after a jump).
+    home: bool,
     workspaces: Vec<Workspace>,
     tab: Tab,
     input_mode: InputMode,
@@ -184,9 +185,10 @@ struct Overlay {
 }
 
 impl Overlay {
-    fn new() -> Self {
+    fn new(home: bool) -> Self {
         let workspaces = workspace::registered_workspaces();
         let mut o = Overlay {
+            home,
             workspaces,
             tab: Tab::Tasks,
             input_mode: InputMode::Insert,
@@ -260,7 +262,6 @@ impl Overlay {
     fn rebuild_rows(&mut self) {
         let mut rows = Vec::new();
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
-            let session = crate::zellij::session_name(&ws.config.name);
             let mut tasks = ws.tasks().unwrap_or_default();
             tasks.sort_by(|a, b| b.created_at.cmp(&a.created_at));
             for task in tasks {
@@ -271,7 +272,6 @@ impl Overlay {
                 rows.push(Row {
                     ws_idx,
                     ws_name: ws.config.name.clone(),
-                    session: session.clone(),
                     slug: task.name.clone(),
                     title: task.display_name.clone(),
                     path: task.path.clone(),
@@ -460,7 +460,7 @@ impl Overlay {
             Mode::Confirm(_) => Kind::Confirm,
             Mode::Rename(_) => Kind::Rename,
         };
-        match kind {
+        let close = match kind {
             Kind::List => self.handle_list_key(key),
             Kind::Command => self.handle_command_key(key),
             Kind::Create => self.handle_create_key(key),
@@ -470,7 +470,16 @@ impl Overlay {
                 Ok(false)
             }
             Kind::Rename => self.handle_rename_key(key),
+        }?;
+        // Home mode is the session's anchor pane — quitting would leave a dead
+        // pane/tab behind. Jumps already stay open in home mode (see `jump`),
+        // so any close reaching here is a quit key: swallow it with a hint.
+        if close && self.home {
+            self.status_msg =
+                Some("home overlay — jump to a task instead (Ctrl+w toggles the floating overlay)".into());
+            return Ok(false);
         }
+        Ok(close)
     }
 
     fn handle_list_key(&mut self, key: KeyEvent) -> Result<bool> {
@@ -658,37 +667,52 @@ impl Overlay {
         };
         let ws_idx = row.ws_idx;
         let slug = row.slug.clone();
-        let target = row.session.clone();
         let tab_id = row.tab_id;
         let title = row.title.clone();
-        let ws_dir = self.workspaces[ws_idx].dir.clone();
 
         match crate::zellij::current_session() {
-            Some(cur) if cur == target => {
+            Some(cur) if cur == crate::zellij::SESSION => {
                 let ws = &self.workspaces[ws_idx];
                 if let Err(e) = crate::cli::task::open_in(ws, &slug) {
                     self.status_msg = Some(e.to_string());
                     return Ok(false);
                 }
+                if self.home {
+                    // Stay alive as the session's home pane — zellij already
+                    // switched the visible tab to the task. Reset the filter so
+                    // the next visit starts fresh.
+                    self.filter.clear();
+                    self.apply_filter();
+                    self.focus_search();
+                    self.status_msg = None;
+                    return Ok(false);
+                }
                 Ok(true)
             }
-            Some(_) => match crate::zellij::switch_to_task(&target, tab_id, &title) {
-                Ok(()) => Ok(true),
-                Err(e) => {
-                    self.status_msg = Some(e.to_string());
-                    Ok(false)
+            // Inside a *foreign* zellij session: focus the task's tab in the
+            // tenx session and switch the client there in place. If the tenx
+            // session doesn't exist yet, create-and-switch to it (lands in the
+            // home overlay; the exact task is one Enter away there).
+            Some(_) => {
+                let res = if crate::zellij::session_exists(crate::zellij::SESSION).unwrap_or(false) {
+                    crate::zellij::switch_to_task(crate::zellij::SESSION, tab_id, &title)
+                } else {
+                    let bin = std::env::current_exe()?;
+                    crate::zellij::switch_to_tenx_session(&bin.to_string_lossy())
+                };
+                match res {
+                    Ok(()) => Ok(true),
+                    Err(e) => {
+                        self.status_msg = Some(e.to_string());
+                        Ok(false)
+                    }
                 }
-            },
+            }
             // Outside zellij entirely (a plain terminal) → can't switch in
             // place. Record the target and close; `run()` attaches after the TUI
             // tears down, so zellij gets a clean terminal.
             None => {
-                self.attach = Some(AttachTarget {
-                    session: target,
-                    ws_dir,
-                    tab_id,
-                    title,
-                });
+                self.attach = Some(AttachTarget { tab_id, title });
                 Ok(true)
             }
         }
@@ -886,7 +910,6 @@ impl Overlay {
                 ws_idx: r.ws_idx,
                 slug: r.slug.clone(),
                 title: r.title.clone(),
-                session: r.session.clone(),
                 tab_id: r.tab_id,
             });
         }
@@ -906,7 +929,7 @@ impl Overlay {
         }
         // Close the tab first (best-effort) so it doesn't linger after the dir goes.
         if let Some(id) = confirm.tab_id {
-            let _ = crate::zellij::close_tab_in(&confirm.session, id);
+            let _ = crate::zellij::close_tab_in(crate::zellij::SESSION, id);
         }
         let res = {
             let ws = &self.workspaces[confirm.ws_idx];
@@ -927,10 +950,9 @@ impl Overlay {
         let Some(r) = self.selected_row() else {
             return;
         };
-        let session = r.session.clone();
         let path = r.path.clone();
         match r.tab_id {
-            Some(id) => match crate::zellij::close_tab_in(&session, id) {
+            Some(id) => match crate::zellij::close_tab_in(crate::zellij::SESSION, id) {
                 Ok(()) => {
                     let _ = std::fs::remove_file(path.join(".tenx-tab-id"));
                     self.rebuild_rows();
@@ -948,7 +970,6 @@ impl Overlay {
         if let Some(r) = self.selected_row() {
             self.mode = Mode::Rename(RenameForm {
                 slug: r.slug.clone(),
-                session: r.session.clone(),
                 tab_id: r.tab_id,
                 path: r.path.clone(),
                 buffer: r.title.clone(),
@@ -976,7 +997,7 @@ impl Overlay {
                 match crate::workspace::set_task_title(&form.path, &title) {
                     Ok(()) => {
                         if let Some(id) = form.tab_id {
-                            let _ = crate::zellij::rename_tab_in(&form.session, id, &title);
+                            let _ = crate::zellij::rename_tab_in(crate::zellij::SESSION, id, &title);
                         }
                         let keep = form.slug.clone();
                         self.rebuild_rows();
@@ -1029,8 +1050,7 @@ fn subseq_match(needle: &str, haystack: &str) -> bool {
 // lifecycle it could only misfire — a second spawn would SIGTERM the first and
 // exit, so the overlay flickered and vanished instead of opening.
 
-pub fn run() -> Result<()> {
-
+pub fn run(home: bool) -> Result<()> {
     let orig = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -1044,7 +1064,7 @@ pub fn run() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut overlay = Overlay::new();
+    let mut overlay = Overlay::new(home);
     let result = run_loop(&mut terminal, &mut overlay);
 
     disable_raw_mode()?;
@@ -1053,19 +1073,15 @@ pub fn run() -> Result<()> {
     result?;
 
     // The TUI is fully torn down now. If a jump from outside zellij was queued,
-    // attach to (or create) the task's session; attach/create exec() and
-    // replace this process.
+    // attach to (or create) the tenx session; attach/create exec() and replace
+    // this process.
     if let Some(t) = overlay.attach.take() {
-        if crate::zellij::session_exists(&t.session)? {
-            crate::zellij::pre_focus_tab(&t.session, t.tab_id, &t.title);
-            crate::zellij::attach_session(&t.session)?;
+        if crate::zellij::session_exists(crate::zellij::SESSION)? {
+            crate::zellij::pre_focus_tab(crate::zellij::SESSION, t.tab_id, &t.title);
+            crate::zellij::attach_session(crate::zellij::SESSION)?;
         } else {
             let bin = std::env::current_exe()?;
-            crate::zellij::create_and_attach_session(
-                &t.session,
-                &bin.to_string_lossy(),
-                &t.ws_dir.to_string_lossy(),
-            )?;
+            crate::zellij::create_and_attach_session(&bin.to_string_lossy())?;
         }
     }
     Ok(())

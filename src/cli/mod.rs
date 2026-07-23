@@ -31,16 +31,13 @@ pub enum Commands {
         #[command(subcommand)]
         command: TaskCommands,
     },
-    /// Launch the TUI directly (used by the zellij management tab)
-    Tui,
-    /// Toggle the global switch overlay (all tasks across all workspaces)
-    Overlay,
-    /// Launch the task-list TUI pane (used by the zellij management tab)
-    #[command(hide = true)]
-    Tasks,
-    /// Launch the repo-list TUI pane (used by the zellij management tab)
-    #[command(hide = true)]
-    Repos,
+    /// Run the global task overlay (all tasks across all workspaces)
+    Overlay {
+        /// Run as the tenx session's long-lived home pane (jump switches tabs
+        /// without exiting; quit keys are disabled)
+        #[arg(long)]
+        home: bool,
+    },
     /// Generate a daily standup from recent activity and task files
     Standup {
         /// Collect activity since this ISO timestamp (default: last standup, or start of yesterday)
@@ -68,9 +65,9 @@ pub enum HooksCommands {
 
 #[derive(Subcommand)]
 pub enum TabCommands {
-    /// Add the 💬 indicator to the task's zellij tab (runs from task cwd)
+    /// Mark the task as needing attention (💬 in the overlay; runs from task cwd)
     Notify,
-    /// Remove the 💬 indicator from the task's zellij tab (runs from task cwd)
+    /// Clear the task's attention marker (runs from task cwd)
     NotifyClear,
 }
 

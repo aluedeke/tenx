@@ -62,8 +62,8 @@ pub fn new_in(
     }
 
     if !no_open {
-        if !crate::zellij::is_inside_session() {
-            eprintln!("! not inside a zellij session — run: zellij");
+        if crate::zellij::current_session().as_deref() != Some(crate::zellij::SESSION) {
+            eprintln!("! not inside the '{}' session — run: tenx", crate::zellij::SESSION);
             eprintln!("  to open later: tenx task open {}", slug);
             return Ok(());
         }
@@ -95,8 +95,11 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     let task = ws.find_task(slug)?;
     let display_name = crate::workspace::read_task_display_name(&task.path);
 
-    if !crate::zellij::is_inside_session() {
-        bail!("not inside a zellij session — start zellij first");
+    if crate::zellij::current_session().as_deref() != Some(crate::zellij::SESSION) {
+        bail!(
+            "not inside the '{}' session — run 'tenx' to attach first",
+            crate::zellij::SESSION
+        );
     }
 
     // Try to find the tab by its stored id first.
@@ -154,14 +157,11 @@ pub fn list() -> Result<()> {
     let ws = crate::workspace::find(&cwd)?;
     let tasks = ws.tasks()?;
 
-    // Try to get open tabs (silently ignore if not in session)
-    let open_tabs: std::collections::HashSet<String> = if crate::zellij::is_inside_session() {
-        crate::zellij::list_tabs()
-            .map(|tabs| tabs.into_iter().map(|t| t.name).collect())
-            .unwrap_or_default()
-    } else {
-        Default::default()
-    };
+    // Try to get open tabs from the tenx session (silently ignore if it's not
+    // running). Works from anywhere via the cross-session listing.
+    let open_tabs: std::collections::HashSet<String> = crate::zellij::list_tabs_in(crate::zellij::SESSION)
+        .map(|tabs| tabs.into_iter().map(|t| t.name).collect())
+        .unwrap_or_default();
 
     println!("{:<20} {:<25} {:<20} {:<6} {}", "NAME", "REPOS", "BRANCH", "AGE", "OPEN");
     println!("{}", "-".repeat(80));

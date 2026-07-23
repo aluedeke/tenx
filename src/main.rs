@@ -1,12 +1,11 @@
 mod cli;
 mod git;
-mod github;
 mod progress;
 mod tui;
 mod workspace;
 mod zellij;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands, HooksCommands, RepoCommands, TabCommands, TaskCommands};
 use std::env;
@@ -22,15 +21,9 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        None | Some(Commands::Tui) | Some(Commands::Tasks) => open_workspace()?,
+        None => open()?,
 
-        Some(Commands::Overlay) => tui::run_overlay()?,
-
-        Some(Commands::Repos) => {
-            let cwd = env::current_dir()?;
-            let ws = workspace::find(&cwd)?;
-            tui::run_repos(ws)?;
-        }
+        Some(Commands::Overlay { home }) => tui::run_overlay(home)?,
 
         Some(Commands::Init { name }) => {
             cli::init::run(name.as_deref())?;
@@ -82,41 +75,33 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-/// Open the workspace: run the TUI if already in the right session, otherwise
-/// create or attach to the workspace's zellij session first. If cwd isn't inside
-/// any workspace, fall back to the global overlay so the user can pick a task
-/// from any registered workspace to jump/attach to.
-fn open_workspace() -> Result<()> {
+/// Connect to the single global tenx session, regardless of cwd: attach (or
+/// create) it from a plain terminal, switch to it in place from a foreign
+/// zellij session, or run the overlay directly when already inside it. If cwd
+/// is inside a workspace, self-heal the registry first so it shows up in the
+/// overlay.
+fn open() -> Result<()> {
     let cwd = env::current_dir()?;
-    let ws = match workspace::find_opt(&cwd)? {
-        Some(ws) => ws,
-        None => return tui::run_overlay(),
-    };
-    // Self-heal the registry so pre-existing workspaces show up in the overlay.
-    let _ = workspace::register_workspace(&ws.dir);
-    let session = zellij::session_name(&ws.config.name);
+    if let Some(ws) = workspace::find_opt(&cwd)? {
+        let _ = workspace::register_workspace(&ws.dir);
+    }
+
+    let bin = env::current_exe()?;
+    let bin_str = bin.to_string_lossy().into_owned();
 
     match zellij::current_session().as_deref() {
-        // Inside this workspace's session → run TUI directly in the current pane
-        Some(name) if name == session => {
-            tui::run(ws)?;
-        }
-        // Inside a different zellij session → refuse
-        Some(other) => {
-            bail!(
-                "already inside zellij session '{other}' — detach first (Ctrl+o d)"
-            );
-        }
-        // Outside zellij entirely → create or attach to the workspace session
+        // Already inside the tenx session → run the overlay in this pane.
+        Some(zellij::SESSION) => tui::run_overlay(false)?,
+        // Inside a different zellij session → switch the client in place
+        // (creating the tenx session from the home layout if needed).
+        Some(_) => zellij::switch_to_tenx_session(&bin_str)?,
+        // Outside zellij entirely → attach, creating the session if missing.
         None => {
-            let bin = env::current_exe()?;
-            let bin_str = bin.to_string_lossy().into_owned();
-            let ws_dir = ws.dir.to_string_lossy().into_owned();
-            if zellij::session_exists(&session)? {
-                zellij::attach_session(&session)?;
+            if zellij::session_exists(zellij::SESSION)? {
+                zellij::attach_session(zellij::SESSION)?;
             } else {
-                eprintln!("  creating session '{session}'");
-                zellij::create_and_attach_session(&session, &bin_str, &ws_dir)?;
+                eprintln!("  creating session '{}'", zellij::SESSION);
+                zellij::create_and_attach_session(&bin_str)?;
             }
         }
     }
