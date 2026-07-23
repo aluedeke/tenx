@@ -67,6 +67,8 @@ pub enum HooksCommands {
 pub enum TabCommands {
     /// Handle a Claude Code hook event (hook JSON on stdin; runs from task cwd)
     Event,
+    /// Render the task-tab header line (task name + live status; runs from task cwd)
+    Header,
 }
 
 #[derive(Subcommand)]

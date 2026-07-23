@@ -337,11 +337,16 @@ pub fn render_layout(opts: &TabOptions) -> Result<String> {
     } else {
         r#"args "--name" "{name}""#
     };
+    // {tenx}: absolute path to this binary, for layout panes that run tenx
+    // itself (e.g. the header line) — PATH is unreliable in zellij-spawned
+    // commands, same reason the hook scripts embed the path.
+    let tenx = std::env::current_exe().context("cannot determine tenx binary path")?;
     // {claude_args} first: it embeds {name}, which the next replace fills in.
     Ok(tmpl
         .replace("{claude_args}", claude_args)
         .replace("{name}", opts.name)
-        .replace("{cwd}", opts.cwd))
+        .replace("{cwd}", opts.cwd)
+        .replace("{tenx}", &tenx.to_string_lossy()))
 }
 
 fn default_task_layout(_workspace_dir: &str) -> String {
@@ -353,6 +358,10 @@ fn default_task_layout(_workspace_dir: &str) -> String {
         }
     }
     tab name="{name}" cwd="{cwd}" focus=true {
+        // 1-line header: task name + live Claude status (tenx tab header).
+        pane size=1 borderless=true command="{tenx}" cwd="{cwd}" close_on_exit=true {
+            args "tab" "header"
+        }
         pane split_direction="vertical" {
             pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true {
                 // {claude_args}: "--name {name}" plus "--continue" only when a prior
