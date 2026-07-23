@@ -277,50 +277,57 @@ fn ensure_workspace_claude_settings_inner(workspace_dir: &Path, force: bool) -> 
     let hooks_dir = claude_dir.join("hooks");
     std::fs::create_dir_all(&hooks_dir)?;
 
+    // All phase-1 hooks funnel their JSON into a single `event.sh`, which pipes
+    // it to `tenx tab event`; the event→state mapping lives in Rust, so adding
+    // events is a code change, not a settings.json edit.
+    //
+    // Fresh workspace → write settings.json with the canonical hook set. On
+    // `hooks install` (force) an existing settings.json gets its "hooks" key
+    // replaced in place, preserving any other keys the user added — otherwise
+    // upgraded workspaces would keep registering the old (deleted) scripts.
+    let hook_events =
+        ["SessionStart", "SessionEnd", "UserPromptSubmit", "Notification", "Stop", "StopFailure"];
+    let event_hook = serde_json::json!([
+        { "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/event.sh" } ] }
+    ]);
+    let hooks: serde_json::Map<String, serde_json::Value> = hook_events
+        .iter()
+        .map(|ev| (ev.to_string(), event_hook.clone()))
+        .collect();
+
     let settings_path = claude_dir.join("settings.json");
-    if !settings_path.exists() {
-        let content = r#"{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/notify.sh"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/notify-clear.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-"#;
-        std::fs::write(&settings_path, content)?;
+    let existing: Option<serde_json::Value> = std::fs::read_to_string(&settings_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+    match existing {
+        None => {
+            // Missing (or unparseable — treat as tenx-owned and rewrite).
+            let settings = serde_json::json!({ "hooks": hooks });
+            std::fs::write(&settings_path, format!("{:#}\n", settings))?;
+        }
+        Some(mut settings) if force => {
+            settings["hooks"] = serde_json::Value::Object(hooks);
+            std::fs::write(&settings_path, format!("{:#}\n", settings))?;
+        }
+        Some(_) => {} // present and not forcing — leave alone
     }
 
     let tenx = std::env::current_exe().context("cannot determine tenx binary path")?;
     let tenx = tenx.display();
 
+    // The hook payload arrives on stdin; forward it verbatim to `tenx tab event`.
     write_hook_script(
-        &hooks_dir.join("notify.sh"),
-        &format!("#!/bin/sh\ncd \"$CLAUDE_PROJECT_DIR\" || exit 0\nexec \"{tenx}\" tab notify\n"),
+        &hooks_dir.join("event.sh"),
+        &format!("#!/bin/sh\ncd \"$CLAUDE_PROJECT_DIR\" || exit 0\nexec \"{tenx}\" tab event\n"),
         force,
     )?;
 
-    write_hook_script(
-        &hooks_dir.join("notify-clear.sh"),
-        &format!("#!/bin/sh\ncd \"$CLAUDE_PROJECT_DIR\" || exit 0\nexec \"{tenx}\" tab notify-clear\n"),
-        force,
-    )?;
+    // Remove the pre-event.sh scripts so upgraded workspaces don't keep dead
+    // hooks around (the old settings.json referencing them is left alone if the
+    // user customized it; a fresh workspace never gets them).
+    for old in ["notify.sh", "notify-clear.sh"] {
+        let _ = std::fs::remove_file(hooks_dir.join(old));
+    }
 
     Ok(())
 }

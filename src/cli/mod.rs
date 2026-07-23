@@ -65,10 +65,8 @@ pub enum HooksCommands {
 
 #[derive(Subcommand)]
 pub enum TabCommands {
-    /// Mark the task as needing attention (💬 in the overlay; runs from task cwd)
-    Notify,
-    /// Clear the task's attention marker (runs from task cwd)
-    NotifyClear,
+    /// Handle a Claude Code hook event (hook JSON on stdin; runs from task cwd)
+    Event,
 }
 
 #[derive(Subcommand)]

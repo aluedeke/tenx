@@ -27,9 +27,10 @@ use ratatui::{
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Tabs},
     Terminal,
 };
+use std::collections::HashSet;
 use std::io;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use super::mouse::{self, ClickTracker};
 use crate::workspace::{self, TaskStatus, Workspace};
@@ -171,6 +172,14 @@ struct Overlay {
     /// Set when a jump from outside zellij should attach after teardown.
     attach: Option<AttachTarget>,
 
+    /// Cache of tab_ids currently live in the tenx session, used to drop stale
+    /// `.tenx-status` states left behind by a crashed/killed session (no
+    /// SessionEnd fires). `None` until the first successful query; refreshed at
+    /// most every `LIVENESS_TTL` and only when a stale non-idle row exists, so
+    /// the zellij subprocess isn't spawned on every idle tick.
+    live_tabs: Option<HashSet<u32>>,
+    live_tabs_at: Option<Instant>,
+
     // Mouse support (list view only; the modal forms stay keyboard-only).
     // `list_state` persists the scroll offset so a click's row maps to a list
     // line; `line_to_pos` maps each rendered line back to its filtered position
@@ -204,6 +213,8 @@ impl Overlay {
             status_msg: None,
             mode: Mode::List,
             attach: None,
+            live_tabs: None,
+            live_tabs_at: None,
             list_state: ListState::default(),
             line_to_pos: Vec::new(),
             tabs_area: Rect::default(),
@@ -258,7 +269,9 @@ impl Overlay {
         self.apply_filter();
     }
 
-    /// Rescan all workspaces for tasks + status. Cheap (small file reads).
+    /// Rescan all workspaces for tasks + status. Cheap (small file reads); the
+    /// only non-file work is an occasional, throttled zellij query to drop stale
+    /// statuses from dead sessions (see `drop_stale_dead_statuses`).
     fn rebuild_rows(&mut self) {
         let mut rows = Vec::new();
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
@@ -281,8 +294,54 @@ impl Overlay {
                 });
             }
         }
+        self.drop_stale_dead_statuses(&mut rows);
         self.rows = rows;
         self.apply_filter();
+    }
+
+    /// A crash or killed tab leaves `.tenx-status` frozen on a non-idle state
+    /// (no SessionEnd fires to clear it), so the overlay would keep showing a
+    /// stale glyph forever. When a non-idle status has sat unchanged past
+    /// `STALE_AFTER`, cross-check the task's tab against the live zellij session:
+    /// if the tab is gone, the session is dead — reset the row to `Idle`. A live
+    /// tab (e.g. genuinely blocked/working for a while) is left untouched.
+    fn drop_stale_dead_statuses(&mut self, rows: &mut [Row]) {
+        let now = SystemTime::now();
+        let stale = |r: &Row| {
+            r.status != TaskStatus::Idle
+                && r.changed
+                    .and_then(|c| now.duration_since(c).ok())
+                    .is_some_and(|age| age >= STALE_AFTER)
+        };
+        if !rows.iter().any(stale) {
+            return;
+        }
+        let Some(live) = self.live_tab_ids() else {
+            return; // couldn't determine liveness — don't guess
+        };
+        for r in rows.iter_mut().filter(|r| stale(r)) {
+            let alive = r.tab_id.is_some_and(|id| live.contains(&id));
+            if !alive {
+                r.status = TaskStatus::Idle;
+            }
+        }
+    }
+
+    /// The set of tab_ids currently live in the tenx session, cached and
+    /// refreshed at most every `LIVENESS_TTL`. Best-effort: on query failure the
+    /// last known set is kept (avoids "gone" flaps); `None` only before the very
+    /// first successful query.
+    fn live_tab_ids(&mut self) -> Option<&HashSet<u32>> {
+        let due = self
+            .live_tabs_at
+            .is_none_or(|t| t.elapsed() >= LIVENESS_TTL);
+        if due {
+            self.live_tabs_at = Some(Instant::now());
+            if let Ok(tabs) = crate::zellij::list_tabs_in(crate::zellij::SESSION) {
+                self.live_tabs = Some(tabs.into_iter().map(|t| t.tab_id).collect());
+            }
+        }
+        self.live_tabs.as_ref()
     }
 
     fn apply_filter(&mut self) {
@@ -1088,6 +1147,12 @@ pub fn run(home: bool) -> Result<()> {
 }
 
 const TICK: Duration = Duration::from_millis(500);
+/// A non-idle status unchanged for this long is a candidate for the liveness
+/// cross-check (long enough that a genuinely-working turn isn't flagged early).
+const STALE_AFTER: Duration = Duration::from_secs(180);
+/// Minimum spacing between live-tab zellij queries, so the subprocess isn't
+/// spawned on every 500ms idle tick while a dead status lingers.
+const LIVENESS_TTL: Duration = Duration::from_secs(10);
 
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1298,17 +1363,26 @@ fn task_items(
         }
 
         let glyph = match row.status {
-            TaskStatus::Attention => "💬 ",
+            TaskStatus::Blocked => "💬 ",
+            TaskStatus::Done => "✅ ",
+            TaskStatus::Failed => "⚠️ ",
+            TaskStatus::Working => "▷  ",
             TaskStatus::Idle => "   ",
         };
-        let title_style = if row.status == TaskStatus::Attention {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray)
+        let title_style = match row.status {
+            TaskStatus::Blocked => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            TaskStatus::Failed => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            TaskStatus::Done => Style::default().fg(Color::White),
+            TaskStatus::Working | TaskStatus::Idle => Style::default().fg(Color::Gray),
         };
+        // Age is only meaningful for resting states (how long it's waited/sat).
+        let show_age = matches!(
+            row.status,
+            TaskStatus::Blocked | TaskStatus::Done | TaskStatus::Failed
+        );
         let age = row
             .changed
-            .filter(|_| row.status == TaskStatus::Attention)
+            .filter(|_| show_age)
             .map(workspace::format_age)
             .unwrap_or_default();
         let mut right = String::new();

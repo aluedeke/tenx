@@ -52,8 +52,7 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Tab { command }) => match command {
-            TabCommands::Notify => cli::tab::notify()?,
-            TabCommands::NotifyClear => cli::tab::notify_clear()?,
+            TabCommands::Event => cli::tab::event()?,
         },
 
         Some(Commands::Task { command }) => match command {

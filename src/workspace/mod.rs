@@ -366,24 +366,45 @@ pub fn read_task_display_name(task_dir: &Path) -> String {
     task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// The Claude-activity status of a task, mirrored from the zellij tab indicator.
-/// Written by the Stop / UserPromptSubmit hooks via `tenx tab notify[-clear]`.
+/// The Claude-activity state of a task, mirrored from the zellij tab indicator.
+/// Written by Claude Code hooks via `tenx tab event`, which maps each hook event
+/// to one of these states (see `cli::tab::event`). Absent file → `Idle`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStatus {
-    /// Claude finished a turn — the ball is in your court (the 💬 indicator).
-    Attention,
-    /// A prompt is in flight / Claude is working, or no signal yet.
+    /// A turn is in flight — Claude is working (UserPromptSubmit / tool calls).
+    Working,
+    /// Claude needs you: a permission prompt, idle prompt, or explicit
+    /// needs-input notification (the 💬 indicator).
+    Blocked,
+    /// Claude finished a turn — the ball is in your court (Stop).
+    Done,
+    /// The turn ended on an API error (StopFailure).
+    Failed,
+    /// Session present but no active turn, or no signal yet.
     Idle,
 }
 
-/// Read a task's `.tenx-status` file, returning the status and when it last
+impl TaskStatus {
+    /// Parse the single token written to `.tenx-status`. Unknown/absent → `Idle`.
+    fn from_token(token: &str) -> TaskStatus {
+        match token {
+            "working" => TaskStatus::Working,
+            "blocked" => TaskStatus::Blocked,
+            "done" => TaskStatus::Done,
+            "failed" => TaskStatus::Failed,
+            _ => TaskStatus::Idle,
+        }
+    }
+}
+
+/// Read a task's `.tenx-status` file, returning the state and when it last
 /// changed. Absent file → `Idle` with no timestamp.
 pub fn read_task_status(task_dir: &Path) -> (TaskStatus, Option<SystemTime>) {
     let path = task_dir.join(".tenx-status");
     let modified = fs::metadata(&path).and_then(|m| m.modified()).ok();
     let status = match fs::read_to_string(&path) {
-        Ok(s) if s.trim() == "attention" => TaskStatus::Attention,
-        _ => TaskStatus::Idle,
+        Ok(s) => TaskStatus::from_token(s.trim()),
+        Err(_) => TaskStatus::Idle,
     };
     (status, modified)
 }
