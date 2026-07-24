@@ -348,6 +348,15 @@ impl ZellijPlugin for State {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        // Being rendered is proof we're on screen, so (re)enable polling here.
+        // Polling is gated on `visible`, but `Visible(true)` doesn't reliably
+        // fire on re-summon — without this, `hide()` (from the first jump)
+        // leaves `visible` stuck false and the re-opened overlay shows stale
+        // status forever. A suppressed pane isn't rendered, so this can't keep
+        // polling while hidden.
+        self.visible = true;
+        self.ensure_tick();
+
         // First render after a (re)open: freeze the display order NOW (before
         // the user can act) and select the top, so what they see is stable and
         // no async poll can reshuffle it under a tap.
