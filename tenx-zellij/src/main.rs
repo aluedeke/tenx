@@ -106,17 +106,22 @@ fn responsive_dim(avail: usize, full_below: usize, pct: f32, max: usize) -> usiz
     ((avail as f32 * pct) as usize).clamp(full_below, max).min(avail)
 }
 
-/// Centered floating-pane coordinates for a `cols`×`rows` display area:
-/// full-bleed on a narrow (phone) screen, a centered capped panel on desktop.
-fn geometry(cols: usize, rows: usize) -> Option<FloatingPaneCoordinates> {
-    let (w, h) = if cols <= PHONE_COLS {
+/// Target pane size for a display area: full-bleed on a narrow (phone) screen,
+/// a centered capped panel on desktop.
+fn geometry_wh(cols: usize, rows: usize) -> (usize, usize) {
+    if cols <= PHONE_COLS {
         (cols, rows)
     } else {
         (
             responsive_dim(cols, PHONE_COLS, 0.72, MAX_COLS),
             responsive_dim(rows, PHONE_ROWS, 0.85, MAX_ROWS),
         )
-    };
+    }
+}
+
+/// Centered floating-pane coordinates for a `cols`×`rows` display area.
+fn geometry(cols: usize, rows: usize) -> Option<FloatingPaneCoordinates> {
+    let (w, h) = geometry_wh(cols, rows);
     FloatingPaneCoordinates::new(
         Some((cols.saturating_sub(w) / 2).to_string()),
         Some((rows.saturating_sub(h) / 2).to_string()),
@@ -191,6 +196,9 @@ struct State {
     /// Display area (cols, rows) the pane was last sized for — resize only when
     /// it actually changes (e.g. a phone rotation), not on every tab switch.
     sized_for: Option<(usize, usize)>,
+    /// A render-time re-fit has been issued and we're waiting for the pane to
+    /// reach target size — prevents re-issuing every frame (no resize loop).
+    refit_pending: bool,
     /// Spinner frame counter (advances each animation tick).
     frame: usize,
     /// Screen row of the first list line, set during draw (click map).
@@ -247,9 +255,11 @@ impl ZellijPlugin for State {
                 self.visible = vis;
                 if vis {
                     // Reappearing over a new tab (summoned again) — reload now
-                    // so the list is fresh, and (re)start the tick loop.
+                    // so the list is fresh, restart the tick loop, and re-apply
+                    // our geometry (the re-home resets the pane to default size).
                     self.refresh();
                     self.ensure_tick();
+                    self.refit();
                 }
                 true
             }
@@ -325,6 +335,22 @@ impl ZellijPlugin for State {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        // Self-correct the pane size. On a re-summon, LaunchOrFocusPlugin
+        // re-homes the pane and zellij resets it to the default (small) size —
+        // and no Visible/changed-TabUpdate event fires to tell us. So whenever
+        // we render notably smaller than the responsive target, re-apply the
+        // geometry. Converges in a frame; the tolerance avoids border-off-by-one
+        // churn at steady state.
+        if let Some((dc, dr)) = self.sized_for {
+            let (w, h) = geometry_wh(dc, dr);
+            let too_small = cols + 3 < w || rows + 3 < h;
+            if too_small && !self.refit_pending {
+                self.refit_pending = true; // issue once; wait for it to take
+                self.apply_geometry(dc, dr);
+            } else if !too_small {
+                self.refit_pending = false; // reached target — ready for next
+            }
+        }
         let ansi = self.draw(rows, cols);
         print!("{ansi}");
     }
@@ -354,14 +380,34 @@ impl State {
         set_pane_borderless(PaneId::Plugin(id), true);
     }
 
-    /// Resize our own floating pane to the responsive geometry for the current
-    /// display area (full-bleed on a phone, centered-capped on desktop). No-op
-    /// when the display area hasn't changed since the last fit.
+    /// Fit our floating pane to the current display area (from TabUpdate).
+    /// Only re-applies when the display actually changed (e.g. phone rotation),
+    /// so ordinary tab switches don't churn.
     fn fit_pane(&mut self, cols: usize, rows: usize) {
-        if cols == 0 || rows == 0 || self.sized_for == Some((cols, rows)) {
+        if cols == 0 || rows == 0 {
             return;
         }
+        let changed = self.sized_for != Some((cols, rows));
         self.sized_for = Some((cols, rows));
+        if changed {
+            self.apply_geometry(cols, rows);
+        }
+    }
+
+    /// Re-apply the last-known geometry. Needed when the overlay is re-shown:
+    /// `LaunchOrFocusPlugin { move_to_focused_tab }` re-homes the pane and
+    /// zellij resets it to the default (small) floating size, but the display
+    /// area is unchanged — so `fit_pane`'s guard would skip. Without this the
+    /// first open is correctly sized but every re-open is default-sized.
+    fn refit(&mut self) {
+        if let Some((c, r)) = self.sized_for {
+            self.apply_geometry(c, r);
+        }
+    }
+
+    /// Set our floating pane to the responsive geometry for a display area:
+    /// full-bleed on a phone, centered-capped on desktop.
+    fn apply_geometry(&self, cols: usize, rows: usize) {
         if let Some(coords) = geometry(cols, rows) {
             let id = get_plugin_ids().plugin_id;
             change_floating_panes_coordinates(vec![(PaneId::Plugin(id), coords)]);
