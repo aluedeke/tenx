@@ -14,7 +14,6 @@ pub fn dump_json() -> anyhow::Result<()> {
     for ws in crate::workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
             let (status, changed) = crate::workspace::read_task_status(&task.path);
-            let open = task.path.join(".tenx-tab-id").exists();
             let activity = changed.unwrap_or(task.created_at);
             entries.push((
                 activity,
@@ -25,7 +24,6 @@ pub fn dump_json() -> anyhow::Result<()> {
                     "title": task.display_name,
                     "status": status.token(),
                     "age_secs": changed.and_then(|c| c.elapsed().ok()).map(|d| d.as_secs()),
-                    "open": open,
                 }),
             ));
         }

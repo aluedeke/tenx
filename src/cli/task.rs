@@ -117,11 +117,13 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
         None => crate::workspace::find(&env::current_dir()?)?,
     };
     let task = ws.find_task(slug)?;
+    let old_name = crate::workspace::read_task_display_name(&task.path);
     crate::workspace::set_task_title(&task.path, title)?;
-    // If the task's tab is open, keep its name in sync with the new title.
-    if let Ok(id_str) = std::fs::read_to_string(task.path.join(".tenx-tab-id")) {
-        if let Ok(id) = id_str.trim().parse::<u32>() {
-            let _ = crate::zellij::rename_tab_by_id(id, title);
+    // Keep the live tab's name in sync — found by its OLD name (the reliable
+    // key), not the stored tab id (which collides across sessions).
+    if let Ok(tabs) = crate::zellij::list_tabs() {
+        if let Some(tab) = tabs.into_iter().find(|t| t.name == old_name) {
+            let _ = crate::zellij::rename_tab_by_id(tab.tab_id, title);
         }
     }
     Ok(())
@@ -141,24 +143,23 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
         );
     }
 
-    // Try to find the tab by its stored id first.
+    // Correlate to a live tab by NAME (== the task's display title). We do NOT
+    // trust the stored `.tenx-tab-id`: zellij reuses tab ids across sessions,
+    // so a stale id collides with an unrelated live tab — using it would switch
+    // to (and even rename) the wrong task's tab. Tab names are kept synced to
+    // titles and are unique, so a name match is the reliable signal.
     let tab_id_file = task.path.join(".tenx-tab-id");
-    let existing_id = std::fs::read_to_string(&tab_id_file)
-        .ok()
-        .and_then(|s| s.trim().parse::<u32>().ok());
-
-    if let Some(id) = existing_id {
-        if let Some(tab) = crate::zellij::find_tab_by_id(id)? {
-            // Tab is still open — rename if TASK.md title changed, then switch.
-            if tab.name != display_name {
-                crate::zellij::rename_tab_by_id(id, &display_name)?;
-            }
-            crate::zellij::go_to_tab_position(tab.position)?;
-            return Ok(());
-        }
+    if let Some(tab) = crate::zellij::list_tabs()?
+        .into_iter()
+        .find(|t| t.name == display_name)
+    {
+        crate::zellij::go_to_tab_position(tab.position)?;
+        // Refresh the stored id to the current session's live one.
+        let _ = std::fs::write(&tab_id_file, tab.tab_id.to_string());
+        return Ok(());
     }
 
-    // Tab not open — create it and record the new id.
+    // Not open under this name — create it and record the new id.
     let layout = ws.config.layout.as_str();
     let opts = crate::zellij::TabOptions {
         name: &display_name,

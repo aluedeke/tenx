@@ -284,9 +284,6 @@ pub fn list_tabs() -> Result<Vec<Tab>> {
     Ok(tabs)
 }
 
-pub fn find_tab_by_id(id: u32) -> Result<Option<Tab>> {
-    Ok(list_tabs()?.into_iter().find(|t| t.tab_id == id))
-}
 
 pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
     let status = cmd()

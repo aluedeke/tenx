@@ -63,9 +63,6 @@ struct Task {
     title: String,
     status: String,
     age_secs: Option<u64>,
-    // NB: the JSON also has an `open` flag, but it only means a .tenx-tab-id
-    // file exists (stale across sessions), so we ignore it and use the live
-    // TabUpdate set instead. serde drops unknown fields.
 }
 
 #[derive(Deserialize)]
@@ -176,11 +173,11 @@ struct State {
     filter: String,
     grouping: Grouping,
     mode: Mode,
-    /// Title of the currently-focused tab (for the "current" badge).
+    /// Name of the currently-focused tab (for the "current" badge).
     active_tab: Option<String>,
-    /// Names of tabs live in the session right now (from TabUpdate). The JSON
-    /// `open` flag only means a `.tenx-tab-id` file exists — stale across
-    /// sessions — so jump decisions use this live set instead.
+    /// Names of live tabs in the session right now (from TabUpdate). Jump
+    /// matches a task's title against these (the reliable key; stored tab ids
+    /// collide across sessions).
     live_tabs: Vec<String>,
     /// Number of distinct workspaces across all tasks (footer summary).
     workspace_count: usize,
@@ -578,18 +575,15 @@ impl State {
         let Some(task) = self.selected_task().cloned() else {
             return false;
         };
-        let live = self.live_tabs.iter().any(|n| n == &task.title);
-        // Decide from the LIVE tab set, not the JSON `open` flag (which only
-        // means a .tenx-tab-id file exists and is stale across sessions).
-        if live {
-            // Tab is live — switch via the host API. Attributed to us (the
-            // summoning client), so phone and desktop each switch their own,
-            // and taps work (no CLI last-keystroke guessing).
+        // Correlate task → tab by NAME. tenx keeps each tab's name synced to
+        // its task title, and titles are unique — whereas the stored numeric
+        // tab id is per-session and reused across restarts, so it collides
+        // (two tasks can carry the same stale id). If a live tab matches the
+        // title, switch to it (host API → correct per-client attribution, so
+        // taps work); otherwise the native binary creates it.
+        if self.live_tabs.iter().any(|n| n == &task.title) {
             go_to_tab_name(&task.title);
         } else {
-            // No live tab — the native binary creates it (layout rendering
-            // lives there, and it drives the session via `zellij action`,
-            // which run_mutation supplies the env for).
             self.run_mutation(&["task", "open", "--ws-dir", &task.ws_dir, &task.slug]);
         }
         self.hide();
