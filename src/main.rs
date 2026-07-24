@@ -1,5 +1,6 @@
 mod cli;
 mod git;
+mod palette;
 mod progress;
 mod tui;
 mod workspace;

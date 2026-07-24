@@ -180,6 +180,88 @@ pub fn attach_session(name: &str) -> Result<()> {
     Err(err).context(format!("exec zellij attach {name}"))
 }
 
+/// The tenx zellij theme + frame styling, appended to the user's base config
+/// when launching a tenx session (see `write_session_config`). Built inline
+/// (rather than a `themes/tenx.kdl` file) so the generated config is fully
+/// self-contained and independent of zellij's theme-dir resolution.
+///
+/// Colours come from [`crate::palette`] — the *same* source the overlay TUI
+/// uses — so zellij's chrome and the overlay read as one design.
+///
+/// Uses zellij's **semantic component** theme format (not the legacy 16-colour
+/// palette) so pane-border colours are set *explicitly*: the focused pane's
+/// frame is the purple accent, unfocused frames are muted grey. The palette
+/// format leaves zellij to derive frame colours on its own, which lands on a
+/// near-default grey — so borders looked unthemed.
+fn theme_overlay() -> String {
+    use crate::palette::*;
+    // One component block: `base` (fg) + `background` + four emphasis accents.
+    let comp = |name: &str, base: &Rgb, bg: &Rgb| {
+        format!(
+            "    {name} {{\n        base {base}\n        background {bg}\n        \
+             emphasis_0 {e0}\n        emphasis_1 {e1}\n        emphasis_2 {e2}\n        \
+             emphasis_3 {e3}\n    }}\n",
+            name = name,
+            base = base.rgb(),
+            bg = bg.rgb(),
+            e0 = ACCENT.rgb(),
+            e1 = WARN.rgb(),
+            e2 = INFO.rgb(),
+            e3 = SUCCESS.rgb(),
+        )
+    };
+    let mut t = String::from(
+        "\n// ─── tenx theme (appended by tenx; applies to tenx sessions only) ───\n\
+         // Semantic components mirror the overlay palette (crate::palette).\n\
+         themes {\n    tenx {\n",
+    );
+    t.push_str(&comp("text_unselected", &TEXT, &GROUND));
+    t.push_str(&comp("text_selected", &BRIGHT, &GROUND));
+    t.push_str(&comp("ribbon_unselected", &MUTED, &GROUND));
+    t.push_str(&comp("ribbon_selected", &GROUND, &ACCENT));
+    t.push_str(&comp("frame_unselected", &MUTED, &GROUND));
+    t.push_str(&comp("frame_selected", &ACCENT, &GROUND)); // focused pane border → purple
+    t.push_str(&comp("frame_highlight", &WARN, &GROUND));
+    t.push_str(&comp("list_unselected", &TEXT, &GROUND));
+    t.push_str(&comp("list_selected", &BRIGHT, &ACCENT));
+    t.push_str(&comp("table_title", &ACCENT, &GROUND));
+    t.push_str(&comp("table_cell_unselected", &TEXT, &GROUND));
+    t.push_str(&comp("table_cell_selected", &BRIGHT, &ACCENT));
+    // exit_code_* also require the full field set in zellij 0.44 (base alone
+    // fails to parse with "Missing theme color: emphasis_0").
+    t.push_str(&comp("exit_code_success", &SUCCESS, &GROUND));
+    t.push_str(&comp("exit_code_error", &DANGER, &GROUND));
+    t.push_str("    }\n}\n");
+    t.push_str("theme \"tenx\"\nui {\n    pane_frames {\n        rounded_corners true\n    }\n}\n");
+    t
+}
+
+/// Generate a tenx-scoped zellij config — the user's base `config.kdl` plus the
+/// tenx theme overlay — and return its path. Regenerated on every session
+/// creation so it never drifts from the user's base config (which carries the
+/// tenx overlay keybind, plugin alias, and the user's own keybinds — all of
+/// which the tenx session must keep). Launching zellij against this file themes
+/// tenx sessions *only*, without touching the global config other sessions use.
+///
+/// Any active `theme "..."` line in the base config is dropped so the appended
+/// `theme "tenx"` is unambiguous.
+fn write_session_config() -> Result<PathBuf> {
+    let home = env::var("HOME").context("HOME not set")?;
+    let cfg_dir = PathBuf::from(&home).join(".config/zellij");
+    fs::create_dir_all(&cfg_dir).context("create zellij config dir")?;
+    let base = fs::read_to_string(cfg_dir.join("config.kdl")).unwrap_or_default();
+    // Strip any active (non-comment) top-level `theme "..."` selection so ours wins.
+    let base: String = base
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("theme "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let generated = cfg_dir.join("tenx-session.kdl");
+    fs::write(&generated, format!("{base}\n{}", theme_overlay()))
+        .context("write tenx session config")?;
+    Ok(generated)
+}
+
 /// Write the home layout to the zellij layouts dir and return its layout name
 /// (usable with `--new-session-with-layout` / `switch-session --layout`).
 fn write_home_layout(tenx_bin: &str) -> Result<String> {
@@ -200,8 +282,12 @@ fn write_home_layout(tenx_bin: &str) -> Result<String> {
 pub fn create_and_attach_session(tenx_bin: &str) -> Result<()> {
     use std::os::unix::process::CommandExt;
     let layout_name = write_home_layout(tenx_bin)?;
+    // Theme this session only: launch against a generated config (user base +
+    // tenx theme overlay) via the global `--config` flag.
+    let config = write_session_config()?;
+    let config = config.to_string_lossy();
     let err = cmd()
-        .args(["--session", SESSION, "--new-session-with-layout", &layout_name])
+        .args(["--config", &config, "--session", SESSION, "--new-session-with-layout", &layout_name])
         .exec();
     Err(err).context(format!("exec zellij --session {SESSION}"))
 }
@@ -217,12 +303,17 @@ pub fn switch_to_tenx_session(tenx_bin: &str) -> Result<()> {
     // Only pass --layout when the session doesn't exist yet: switch-session
     // applies the layout on creation; for an existing session it must not
     // append tabs.
+    let mut command = cmd();
     if !session_exists(SESSION)? {
         let layout_name = write_home_layout(tenx_bin)?;
         args.push("--layout".to_string());
         args.push(layout_name);
+        // Best-effort theming for the switch-session creation path: `action`
+        // takes no --config flag, so point the (creating) server at the tenx
+        // config via env. The guaranteed path is `create_and_attach_session`.
+        command.env("ZELLIJ_CONFIG_FILE", write_session_config()?);
     }
-    let status = cmd().args(&args).status().context("run zellij action switch-session")?;
+    let status = command.args(&args).status().context("run zellij action switch-session")?;
     if !status.success() {
         bail!("switch-session to '{SESSION}' failed");
     }

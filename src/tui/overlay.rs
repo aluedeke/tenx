@@ -23,7 +23,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Tabs},
     Terminal,
@@ -34,6 +34,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
 use super::mouse;
+use crate::palette;
 use crate::workspace::{self, TaskStatus, Workspace};
 
 /// One selectable task row, flattened across all workspaces.
@@ -1254,9 +1255,9 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     // ── Tab bar (its own row, not on a border) ────────────────────────────────
     let tabs = Tabs::new(vec![" Tasks ", " Repos "])
         .select(if overlay.tab == Tab::Tasks { 0 } else { 1 })
-        .style(Style::default().fg(Color::DarkGray))
-        .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .divider(Span::styled("│", Style::default().fg(Color::DarkGray)));
+        .style(Style::default().fg(palette::MUTED.color()))
+        .highlight_style(Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD))
+        .divider(Span::styled("│", Style::default().fg(palette::MUTED.color())));
     f.render_widget(tabs, chunks[0]);
 
     // ── Search box (or the rename input) ──────────────────────────────────────
@@ -1266,14 +1267,14 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         ""
     };
     let (prefix, prefix_style, value) = match &overlay.mode {
-        Mode::Rename(form) => ("✎ ", Style::default().fg(Color::Magenta), form.buffer.clone()),
-        _ => ("🔎 ", Style::default().fg(Color::Cyan), overlay.filter.clone()),
+        Mode::Rename(form) => ("✎ ", Style::default().fg(palette::ACCENT.color()), form.buffer.clone()),
+        _ => ("🔎 ", Style::default().fg(palette::ACCENT.color()), overlay.filter.clone()),
     };
     // Cursor bar only when the cursor lives in the search field (or renaming).
     let show_cursor = matches!(overlay.mode, Mode::Rename(_)) || overlay.focus == Focus::Search;
     let mut top_spans = vec![Span::styled(prefix, prefix_style), Span::raw(value)];
     if show_cursor {
-        top_spans.push(Span::styled("▏", Style::default().fg(Color::DarkGray)));
+        top_spans.push(Span::styled("▏", Style::default().fg(palette::MUTED.color())));
     }
     let top = Paragraph::new(Line::from(top_spans))
         .block(Block::default().borders(Borders::ALL).title(title));
@@ -1295,8 +1296,8 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         .block(Block::default().borders(Borders::ALL))
         .highlight_style(
             Style::default()
-                .bg(Color::Cyan)
-                .fg(Color::Black)
+                .bg(palette::ACCENT.color())
+                .fg(palette::GROUND.color())
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_spacing(HighlightSpacing::Never);
@@ -1306,39 +1307,39 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     let footer = match (&overlay.mode, &overlay.status_msg) {
         (Mode::Command(buf), _) => {
             let mut spans = vec![
-                Span::styled(":", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(":", Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)),
                 Span::raw(buf.clone()),
-                Span::styled("▏", Style::default().fg(Color::DarkGray)),
+                Span::styled("▏", Style::default().fg(palette::MUTED.color())),
             ];
             if buf.is_empty() {
                 spans.push(Span::styled(
                     "  new · open · delete · rename · close · quit",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(palette::MUTED.color()),
                 ));
             }
             Line::from(spans)
         }
         (Mode::Confirm(c), _) => Line::from(Span::styled(
             format!(" delete '{}' + worktrees?   y = delete   n/esc = cancel", c.title),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
         )),
         (Mode::Rename(_), _) => Line::from(Span::styled(
             " ⏎ save   esc cancel",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(palette::MUTED.color()),
         )),
         (_, Some(msg)) => Line::from(Span::styled(
             format!(" {msg}"),
-            Style::default().fg(Color::Green),
+            Style::default().fg(palette::SUCCESS.color()),
         )),
         _ => {
             let (tag, tag_style) = match overlay.input_mode {
                 InputMode::Insert => (
                     " INSERT ",
-                    Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD),
+                    Style::default().fg(palette::GROUND.color()).bg(palette::SUCCESS.color()).add_modifier(Modifier::BOLD),
                 ),
                 InputMode::Normal => (
                     " NORMAL ",
-                    Style::default().fg(Color::Black).bg(Color::Blue).add_modifier(Modifier::BOLD),
+                    Style::default().fg(palette::GROUND.color()).bg(palette::INFO.color()).add_modifier(Modifier::BOLD),
                 ),
             };
             let hint = match (overlay.input_mode, overlay.tab) {
@@ -1352,7 +1353,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
             };
             Line::from(vec![
                 Span::styled(tag, tag_style),
-                Span::styled(hint, Style::default().fg(Color::DarkGray)),
+                Span::styled(hint, Style::default().fg(palette::MUTED.color())),
             ])
         }
     };
@@ -1422,10 +1423,10 @@ fn task_items(
             TaskStatus::Idle => "   ",
         };
         let title_style = match row.status {
-            TaskStatus::Blocked => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-            TaskStatus::Failed => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            TaskStatus::Done => Style::default().fg(Color::White),
-            TaskStatus::Working | TaskStatus::Idle => Style::default().fg(Color::Gray),
+            TaskStatus::Blocked => Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD),
+            TaskStatus::Failed => Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
+            TaskStatus::Done => Style::default().fg(palette::BRIGHT.color()),
+            TaskStatus::Working | TaskStatus::Idle => Style::default().fg(palette::TEXT.color()),
         };
         // Age is only meaningful for resting states (how long it's waited/sat).
         let show_age = matches!(
@@ -1439,7 +1440,7 @@ fn task_items(
             .unwrap_or_default();
         let open_cell = if row.tab_id.is_some() { "open" } else { "    " };
 
-        let dim = Style::default().fg(Color::DarkGray);
+        let dim = Style::default().fg(palette::MUTED.color());
         let mut spans = vec![
             Span::raw("  "),
             Span::raw(glyph),
@@ -1462,7 +1463,7 @@ fn task_items(
     if items.is_empty() {
         items.push(ListItem::new(Line::from(Span::styled(
             "  no tasks — :n to create one",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(palette::MUTED.color()),
         ))));
         line_to_pos.push(None);
     }
@@ -1488,7 +1489,7 @@ fn repo_items(
             }
             items.push(ListItem::new(Line::from(Span::styled(
                 r.ws_name.clone(),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD),
             ))));
             line_to_pos.push(None);
             last_ws = Some(r.ws_idx);
@@ -1500,15 +1501,15 @@ fn repo_items(
         let (dot, dot_style, name_style, detail) = if r.cloned {
             (
                 "● ",
-                Style::default().fg(Color::Green),
-                Style::default().fg(Color::White),
+                Style::default().fg(palette::SUCCESS.color()),
+                Style::default().fg(palette::BRIGHT.color()),
                 r.commit.clone().unwrap_or_else(|| "—".into()),
             )
         } else {
             (
                 "○ ",
-                Style::default().fg(Color::DarkGray),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(palette::MUTED.color()),
+                Style::default().fg(palette::MUTED.color()),
                 "not cloned".into(),
             )
         };
@@ -1519,7 +1520,7 @@ fn repo_items(
             Span::styled(dot, dot_style),
             Span::styled(r.name.clone(), name_style),
             Span::raw("   "),
-            Span::styled(detail, Style::default().fg(Color::DarkGray)),
+            Span::styled(detail, Style::default().fg(palette::MUTED.color())),
         ])));
         line_to_pos.push(Some(pos));
     }
@@ -1527,7 +1528,7 @@ fn repo_items(
     if items.is_empty() {
         items.push(ListItem::new(Line::from(Span::styled(
             "  no repos",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(palette::MUTED.color()),
         ))));
         line_to_pos.push(None);
     }
@@ -1561,8 +1562,8 @@ fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay) {
 
     let lines = vec![
         Line::from(vec![
-            Span::styled("  workspace  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(ws_name, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("  workspace  ", Style::default().fg(palette::MUTED.color())),
+            Span::styled(ws_name, Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         field_line(form.focus == 0, "git URL", &format!("{}{}", form.url, cursor(form.focus == 0))),
@@ -1579,11 +1580,11 @@ fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay) {
     f.render_widget(body, chunks[0]);
 
     let footer = if let Some(msg) = &overlay.status_msg {
-        Line::from(Span::styled(format!(" {msg}"), Style::default().fg(Color::Red)))
+        Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
     } else {
         Line::from(Span::styled(
             " ⏎ clone & add   esc cancel   ⇥ next field",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(palette::MUTED.color()),
         ))
     };
     f.render_widget(Paragraph::new(footer), chunks[1]);
@@ -1613,24 +1614,24 @@ fn render_create(f: &mut ratatui::Frame, overlay: &Overlay) {
     let mut lines = vec![
         // Chosen workspace shown as context (picked in the previous step).
         Line::from(vec![
-            Span::styled("  workspace  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(ws_name, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("  workspace  ", Style::default().fg(palette::MUTED.color())),
+            Span::styled(ws_name, Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         field_line(form.focus == 0, "name", &format!("{}▏", form.name)),
         Line::from(""),
-        Line::from(Span::styled("  repos", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled("  repos", Style::default().fg(palette::MUTED.color()))),
     ];
     for (i, (name, on)) in form.repos.iter().enumerate() {
         let focused = form.focus == 1 + i;
         let check = if *on { "[x]" } else { "[ ]" };
         let prefix = if focused { "▸ " } else { "  " };
         let style = if focused {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)
         } else if *on {
-            Style::default().fg(Color::White)
+            Style::default().fg(palette::BRIGHT.color())
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(palette::MUTED.color())
         };
         lines.push(Line::from(Span::styled(format!("{prefix}{check} {name}"), style)));
     }
@@ -1642,12 +1643,12 @@ fn render_create(f: &mut ratatui::Frame, overlay: &Overlay) {
     let footer = if let Some(msg) = &overlay.status_msg {
         Line::from(Span::styled(
             format!(" {msg}"),
-            Style::default().fg(Color::Red),
+            Style::default().fg(palette::DANGER.color()),
         ))
     } else {
         Line::from(Span::styled(
             " ⏎ create   esc cancel   ⇥ next   space toggle repo",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(palette::MUTED.color()),
         ))
     };
     f.render_widget(Paragraph::new(footer), chunks[1]);
@@ -1656,14 +1657,14 @@ fn render_create(f: &mut ratatui::Frame, overlay: &Overlay) {
 fn field_line<'a>(focused: bool, label: &str, value: &str) -> Line<'a> {
     let prefix = if focused { "▸ " } else { "  " };
     let label_style = if focused {
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(palette::MUTED.color())
     };
     let value_style = if focused {
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+        Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::Gray)
+        Style::default().fg(palette::TEXT.color())
     };
     Line::from(vec![
         Span::styled(format!("{prefix}{label}: "), label_style),
