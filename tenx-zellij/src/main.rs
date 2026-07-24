@@ -203,10 +203,13 @@ struct State {
     /// A render-time re-fit has been issued and we're waiting for the pane to
     /// reach target size — prevents re-issuing every frame (no resize loop).
     refit_pending: bool,
-    /// The overlay was just (re)opened: the next data load should adopt fresh
-    /// activity order and reset the selection. While it's false, polls keep the
-    /// existing row order so the list never re-sorts under the cursor/tap.
+    /// The overlay was just (re)opened: the next render snapshots fresh
+    /// activity order and resets the selection. Starts true so the first render
+    /// freezes an order.
     reopen_pending: bool,
+    /// Frozen display order (task keys) — the rows never re-sort while the
+    /// overlay is open; only a (re)open takes a new snapshot (`freeze_order`).
+    order: Vec<(String, String)>,
     /// Spinner frame counter (advances each animation tick).
     frame: usize,
     /// Screen row of the first list line, set during draw (click map).
@@ -241,8 +244,9 @@ impl ZellijPlugin for State {
         ]);
         // We're created because we're being shown; assume visible until a
         // Visible(false) says otherwise (zellij doesn't reliably emit an
-        // initial Visible(true)).
+        // initial Visible(true)). Freeze an order on the first render.
         self.visible = true;
+        self.reopen_pending = true;
         // NB: pane chrome (rename + borderless) needs ChangeApplicationState,
         // which is granted ASYNC after load — calling it here gets denied. It's
         // applied in `apply_chrome` once a permission-bearing event arrives.
@@ -297,7 +301,10 @@ impl ZellijPlugin for State {
                     Some(KIND_TASKS) => {
                         self.loading = false;
                         if let Ok(dump) = serde_json::from_slice::<TaskDump>(&stdout) {
-                            self.ingest_tasks(dump.tasks);
+                            // Always take the fresh data verbatim; the DISPLAY
+                            // order is frozen separately (self.order), so a poll
+                            // never reshuffles rows under the cursor/finger.
+                            self.tasks = dump.tasks;
                             self.apply_filter();
                         }
                         true
@@ -343,6 +350,16 @@ impl ZellijPlugin for State {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
+        // First render after a (re)open: freeze the display order NOW (before
+        // the user can act) and select the top, so what they see is stable and
+        // no async poll can reshuffle it under a tap.
+        if self.reopen_pending && !self.tasks.is_empty() {
+            self.reopen_pending = false;
+            self.freeze_order();
+            self.selected = 0;
+            self.selected_key = None;
+            self.apply_filter();
+        }
         // Self-correct the pane size. On a re-summon, LaunchOrFocusPlugin
         // re-homes the pane and zellij resets it to the default (small) size —
         // and no Visible/changed-TabUpdate event fires to tell us. So whenever
@@ -365,34 +382,15 @@ impl ZellijPlugin for State {
 }
 
 impl State {
-    /// Merge freshly-loaded task data into `self.tasks`. On (re)open we adopt
-    /// the JSON's activity order verbatim and reset the selection; otherwise
-    /// (a background poll) we KEEP the current row order — updating each task's
-    /// data in place, appending genuinely-new tasks, dropping removed ones — so
-    /// the list never re-sorts under the cursor or a finger mid-selection.
-    fn ingest_tasks(&mut self, new: Vec<Task>) {
-        if self.tasks.is_empty() || self.reopen_pending {
-            self.reopen_pending = false;
-            self.tasks = new;
-            self.selected = 0;
-            self.selected_key = None; // reset to top (most recent)
-            return;
-        }
-        let key = |t: &Task| (t.ws_dir.clone(), t.slug.clone());
-        let mut merged: Vec<Task> = Vec::with_capacity(new.len());
-        // Existing tasks keep their position, with refreshed data.
-        for old in &self.tasks {
-            if let Some(u) = new.iter().find(|n| key(n) == key(old)) {
-                merged.push(u.clone());
-            }
-        }
-        // New tasks (unseen) append in the order the JSON gave them.
-        for n in &new {
-            if !merged.iter().any(|m| key(m) == key(n)) {
-                merged.push(n.clone());
-            }
-        }
-        self.tasks = merged;
+    /// Snapshot the current activity order into the frozen display order. Taken
+    /// synchronously when the overlay (re)opens, so the rows the user sees stay
+    /// put while they choose — background polls refresh data but never reorder.
+    fn freeze_order(&mut self) {
+        self.order = self
+            .tasks
+            .iter()
+            .map(|t| (t.ws_dir.clone(), t.slug.clone()))
+            .collect();
     }
 
     /// Kick off a task-data reload (unless one is already running).
@@ -492,9 +490,15 @@ impl State {
             })
             .map(|(i, _)| i)
             .collect();
+        // Order by the frozen snapshot (stable while open); tasks not in the
+        // snapshot yet (created since the last open) fall to the end.
+        let rank = |i: usize, s: &Self| {
+            let k = (s.tasks[i].ws_dir.clone(), s.tasks[i].slug.clone());
+            s.order.iter().position(|o| *o == k).unwrap_or(usize::MAX)
+        };
+        filtered.sort_by_key(|&i| rank(i, self));
         if self.grouping == Grouping::Workspace {
-            // Stable sort by workspace name → contiguous buckets, activity
-            // order retained inside each.
+            // Stable re-bucket by workspace; frozen order retained within each.
             filtered.sort_by(|&a, &b| self.tasks[a].ws.cmp(&self.tasks[b].ws));
         }
         self.filtered = filtered;
