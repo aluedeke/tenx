@@ -92,7 +92,6 @@ struct Confirm {
 /// Rename-title form.
 struct RenameForm {
     slug: String,
-    tab_id: Option<u32>,
     path: PathBuf,
     buffer: String,
 }
@@ -1059,7 +1058,6 @@ impl Overlay {
         if let Some(r) = self.selected_row() {
             self.mode = Mode::Rename(RenameForm {
                 slug: r.slug.clone(),
-                tab_id: r.tab_id,
                 path: r.path.clone(),
                 buffer: r.title.clone(),
             });
@@ -1085,9 +1083,9 @@ impl Overlay {
                 }
                 match crate::workspace::set_task_title(&form.path, &title) {
                     Ok(()) => {
-                        if let Some(id) = form.tab_id {
-                            let _ = crate::zellij::rename_tab_in(crate::zellij::SESSION, id, &title);
-                        }
+                        // The zellij tab is named by the immutable slug, not the
+                        // title, so a title change doesn't touch it — the header
+                        // and lists read the title from TASK.md.
                         let keep = form.slug.clone();
                         self.rebuild_rows();
                         if let Some(pos) =

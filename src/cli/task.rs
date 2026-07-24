@@ -69,7 +69,11 @@ pub fn new_in(
         }
         let layout = ws.config.layout.as_str();
         let opts = crate::zellij::TabOptions {
-            name: &display_name,
+            // Name the zellij tab by the immutable slug, not the editable
+            // title. Tab names are never shown (tabless layout) and are used
+            // only to correlate task↔tab; the slug can't drift or collide, so
+            // the correlation stays reliable even when the title is edited.
+            name: slug,
             cwd: &task_dir.to_string_lossy(),
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_file: if layout.is_empty() { None } else { Some(layout) },
@@ -109,21 +113,17 @@ pub fn rm_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
     rm_in(&ws, slug, true)
 }
 
-/// Rename a task's display title. If the task's tab is open, its zellij tab is
-/// renamed to match. `ws_dir` selects the workspace (cwd if None).
+/// Rename a task's display title. Only rewrites TASK.md — the zellij tab is
+/// named by the immutable slug (not the title), so there's nothing to keep in
+/// sync. `ws_dir` selects the workspace (cwd if None). The header pane and the
+/// overlay both read the title from TASK.md, so the new title shows up at once.
 pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
     let ws = match ws_dir {
         Some(dir) => crate::workspace::load(Path::new(dir))?,
         None => crate::workspace::find(&env::current_dir()?)?,
     };
     let task = ws.find_task(slug)?;
-    let old_name = crate::workspace::read_task_display_name(&task.path);
     crate::workspace::set_task_title(&task.path, title)?;
-    // Keep the live tab's name in sync — found by its OLD name (the reliable
-    // key), not the stored tab id (which collides across sessions).
-    if let Ok(Some(tab)) = crate::zellij::find_tab_by_name(&old_name) {
-        let _ = crate::zellij::rename_tab_by_id(tab.tab_id, title);
-    }
     Ok(())
 }
 
@@ -132,7 +132,6 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
 /// of which can rely on cwd matching the task.
 pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     let task = ws.find_task(slug)?;
-    let display_name = crate::workspace::read_task_display_name(&task.path);
 
     if crate::zellij::current_session().as_deref() != Some(crate::zellij::SESSION) {
         bail!(
@@ -141,23 +140,22 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
         );
     }
 
-    // Correlate to a live tab by NAME (== the task's display title). We do NOT
-    // trust the stored `.tenx-tab-id`: zellij reuses tab ids across sessions,
-    // so a stale id collides with an unrelated live tab — using it would switch
-    // to (and even rename) the wrong task's tab. Tab names are kept synced to
-    // titles and are unique, so a name match is the reliable signal.
+    // Correlate to a live tab by its name == the task SLUG. Slugs are immutable
+    // and unique, so this never drifts (unlike the title) or collides (unlike
+    // the reused numeric tab id). Tab names aren't shown anywhere (tabless
+    // layout), so using the slug costs nothing.
     let tab_id_file = task.path.join(".tenx-tab-id");
-    if let Some(tab) = crate::zellij::find_tab_by_name(&display_name)? {
+    if let Some(tab) = crate::zellij::find_tab_by_name(slug)? {
         crate::zellij::go_to_tab_position(tab.position)?;
         // Refresh the stored id to the current session's live one.
         let _ = std::fs::write(&tab_id_file, tab.tab_id.to_string());
         return Ok(());
     }
 
-    // Not open under this name — create it and record the new id.
+    // Not open — create it (named by slug) and record the new id.
     let layout = ws.config.layout.as_str();
     let opts = crate::zellij::TabOptions {
-        name: &display_name,
+        name: slug,
         cwd: &task.path.to_string_lossy(),
         workspace_dir: &ws.dir.to_string_lossy(),
         layout_file: if layout.is_empty() { None } else { Some(layout) },
@@ -203,7 +201,8 @@ pub fn list() -> Result<()> {
     for task in &tasks {
         let repos = task.repos.join(", ");
         let age = crate::workspace::format_age(task.created_at);
-        let open = if open_tabs.contains(&task.display_name) { "●" } else { "" };
+        // Tabs are named by slug (task.name), not the display title.
+        let open = if open_tabs.contains(&task.name) { "●" } else { "" };
         println!(
             "{:<20} {:<25} {:<20} {:<6} {}",
             task.display_name, repos, task.branch, age, open

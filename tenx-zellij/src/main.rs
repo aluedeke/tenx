@@ -173,11 +173,12 @@ struct State {
     filter: String,
     grouping: Grouping,
     mode: Mode,
-    /// Name of the currently-focused tab (for the "current" badge).
+    /// Name of the currently-focused tab (== a task slug) for the "current"
+    /// badge.
     active_tab: Option<String>,
-    /// Names of live tabs in the session right now (from TabUpdate). Jump
-    /// matches a task's title against these (the reliable key; stored tab ids
-    /// collide across sessions).
+    /// Names of live tabs (== task slugs) in the session right now, from
+    /// TabUpdate. Jump matches a task's slug against these — the reliable key
+    /// (slugs don't drift like titles or collide like the reused tab ids).
     live_tabs: Vec<String>,
     /// Number of distinct workspaces across all tasks (footer summary).
     workspace_count: usize,
@@ -575,14 +576,13 @@ impl State {
         let Some(task) = self.selected_task().cloned() else {
             return false;
         };
-        // Correlate task → tab by NAME. tenx keeps each tab's name synced to
-        // its task title, and titles are unique — whereas the stored numeric
-        // tab id is per-session and reused across restarts, so it collides
-        // (two tasks can carry the same stale id). If a live tab matches the
-        // title, switch to it (host API → correct per-client attribution, so
+        // Correlate task → tab by the SLUG (zellij tabs are named by slug).
+        // Slugs are immutable and unique, so this never drifts (unlike the
+        // title) or collides (unlike the reused numeric tab id). If a live tab
+        // matches, switch via the host API (correct per-client attribution, so
         // taps work); otherwise the native binary creates it.
-        if self.live_tabs.iter().any(|n| n == &task.title) {
-            go_to_tab_name(&task.title);
+        if self.live_tabs.iter().any(|n| n == &task.slug) {
+            go_to_tab_name(&task.slug);
         } else {
             self.run_mutation(&["task", "open", "--ws-dir", &task.ws_dir, &task.slug]);
         }
@@ -990,7 +990,7 @@ impl State {
                     };
                     put(&mut buf, cx, y, 1, icon, base(status_color(&t.status)));
                     // Name (+ badges), then workspace, then last-changed.
-                    let current = self.active_tab.as_deref() == Some(t.title.as_str());
+                    let current = self.active_tab.as_deref() == Some(t.slug.as_str());
                     let badge = if t.status == "blocked" {
                         Some(("needs input", C_BLOCKED, C_BADGE_INPUT_BG))
                     } else if current {

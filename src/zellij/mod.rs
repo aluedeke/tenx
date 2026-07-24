@@ -146,17 +146,6 @@ pub fn close_tab_in(session: &str, tab_id: u32) -> Result<()> {
 }
 
 /// Rename a tab by id in a specific session (works cross-session).
-pub fn rename_tab_in(session: &str, tab_id: u32, name: &str) -> Result<()> {
-    let status = cmd()
-        .args(["-s", session, "action", "rename-tab", "--tab-id", &tab_id.to_string(), name])
-        .status()
-        .context("run zellij -s <session> rename-tab")?;
-    if !status.success() {
-        bail!("rename-tab failed for tab {tab_id} in '{session}'");
-    }
-    Ok(())
-}
-
 /// Best-effort: pre-focus a task's tab in `session` so a subsequent `attach`
 /// lands on it. Used by the overlay when jumping from *outside* zellij, where we
 /// can't `switch-session` in place and must attach instead. Silently no-ops if
@@ -291,16 +280,6 @@ pub fn find_tab_by_name(name: &str) -> Result<Option<Tab>> {
     Ok(list_tabs()?.into_iter().find(|t| t.name == name))
 }
 
-pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
-    let status = cmd()
-        .args(["action", "rename-tab", "--tab-id", &id.to_string(), name])
-        .status()
-        .context("run zellij action rename-tab")?;
-    if !status.success() {
-        bail!("rename-tab failed for tab id {id}");
-    }
-    Ok(())
-}
 
 pub fn go_to_tab_position(position: usize) -> Result<()> {
     // zellij go-to-tab takes a 1-based index
