@@ -151,8 +151,10 @@ enum Grouping {
     Workspace,
 }
 
-/// A rendered list line: a section header, or a task (position in `filtered`).
+/// A rendered list line: a blank spacer, a section header, or a task
+/// (position in `filtered`).
 enum Disp {
+    Gap,
     Header(String),
     Task(usize),
 }
@@ -553,6 +555,11 @@ impl State {
                 Grouping::Workspace => {
                     let ws = self.tasks[ti].ws.as_str();
                     if last_ws != Some(ws) {
+                        // Blank line before each group (but not the first) so
+                        // sections read as distinct blocks.
+                        if !out.is_empty() {
+                            out.push(Disp::Gap);
+                        }
                         out.push(Disp::Header(ws.to_uppercase()));
                         last_ws = Some(ws);
                     }
@@ -972,9 +979,26 @@ impl State {
         for (row, d) in disp.iter().skip(self.scroll).take(list_h).enumerate() {
             let y = y_list + row as u16;
             match d {
+                Disp::Gap => {
+                    self.line_map.push(None); // blank spacer line
+                }
                 Disp::Header(text) => {
                     self.line_map.push(None);
-                    put(&mut buf, cx, y, cw as usize, &format!("▸ {text}"), Style::default().fg(C_SECTION).add_modifier(Modifier::BOLD));
+                    // Section divider: uppercase label + a faint rule to the
+                    // edge, so it clearly isn't a task row.
+                    let label = format!("{text}  ");
+                    let lx = put(
+                        &mut buf,
+                        cx,
+                        y,
+                        cw as usize,
+                        &label,
+                        Style::default().fg(C_SECTION).add_modifier(Modifier::BOLD),
+                    );
+                    if lx < right {
+                        let rule: String = "─".repeat((right - lx) as usize);
+                        put(&mut buf, lx, y, (right - lx) as usize, &rule, Style::default().fg(C_BORDER));
+                    }
                 }
                 Disp::Task(pos) => {
                     self.line_map.push(Some(*pos));
