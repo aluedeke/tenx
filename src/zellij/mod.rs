@@ -284,6 +284,12 @@ pub fn list_tabs() -> Result<Vec<Tab>> {
     Ok(tabs)
 }
 
+/// Find a live tab by exact name — the reliable task↔tab correlation. (Names
+/// are kept synced to unique task titles; stored numeric ids collide across
+/// sessions, so we never look tabs up by id.)
+pub fn find_tab_by_name(name: &str) -> Result<Option<Tab>> {
+    Ok(list_tabs()?.into_iter().find(|t| t.name == name))
+}
 
 pub fn rename_tab_by_id(id: u32, name: &str) -> Result<()> {
     let status = cmd()

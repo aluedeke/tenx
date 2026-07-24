@@ -121,10 +121,8 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
     crate::workspace::set_task_title(&task.path, title)?;
     // Keep the live tab's name in sync — found by its OLD name (the reliable
     // key), not the stored tab id (which collides across sessions).
-    if let Ok(tabs) = crate::zellij::list_tabs() {
-        if let Some(tab) = tabs.into_iter().find(|t| t.name == old_name) {
-            let _ = crate::zellij::rename_tab_by_id(tab.tab_id, title);
-        }
+    if let Ok(Some(tab)) = crate::zellij::find_tab_by_name(&old_name) {
+        let _ = crate::zellij::rename_tab_by_id(tab.tab_id, title);
     }
     Ok(())
 }
@@ -149,10 +147,7 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     // to (and even rename) the wrong task's tab. Tab names are kept synced to
     // titles and are unique, so a name match is the reliable signal.
     let tab_id_file = task.path.join(".tenx-tab-id");
-    if let Some(tab) = crate::zellij::list_tabs()?
-        .into_iter()
-        .find(|t| t.name == display_name)
-    {
+    if let Some(tab) = crate::zellij::find_tab_by_name(&display_name)? {
         crate::zellij::go_to_tab_position(tab.position)?;
         // Refresh the stored id to the current session's live one.
         let _ = std::fs::write(&tab_id_file, tab.tab_id.to_string());
