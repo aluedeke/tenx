@@ -169,6 +169,10 @@ struct State {
     filtered: Vec<usize>,
     /// Selected position within `filtered`.
     selected: usize,
+    /// Identity (ws_dir, slug) of the selected task, so the highlight follows
+    /// the task across re-sorts (the list re-orders by activity every poll —
+    /// tracking by position alone would open a different task on Enter).
+    selected_key: Option<(String, String)>,
     filter: String,
     grouping: Grouping,
     mode: Mode,
@@ -199,6 +203,10 @@ struct State {
     /// A render-time re-fit has been issued and we're waiting for the pane to
     /// reach target size — prevents re-issuing every frame (no resize loop).
     refit_pending: bool,
+    /// The overlay was just (re)opened: the next data load should adopt fresh
+    /// activity order and reset the selection. While it's false, polls keep the
+    /// existing row order so the list never re-sorts under the cursor/tap.
+    reopen_pending: bool,
     /// Spinner frame counter (advances each animation tick).
     frame: usize,
     /// Screen row of the first list line, set during draw (click map).
@@ -289,7 +297,7 @@ impl ZellijPlugin for State {
                     Some(KIND_TASKS) => {
                         self.loading = false;
                         if let Ok(dump) = serde_json::from_slice::<TaskDump>(&stdout) {
-                            self.tasks = dump.tasks;
+                            self.ingest_tasks(dump.tasks);
                             self.apply_filter();
                         }
                         true
@@ -357,6 +365,36 @@ impl ZellijPlugin for State {
 }
 
 impl State {
+    /// Merge freshly-loaded task data into `self.tasks`. On (re)open we adopt
+    /// the JSON's activity order verbatim and reset the selection; otherwise
+    /// (a background poll) we KEEP the current row order — updating each task's
+    /// data in place, appending genuinely-new tasks, dropping removed ones — so
+    /// the list never re-sorts under the cursor or a finger mid-selection.
+    fn ingest_tasks(&mut self, new: Vec<Task>) {
+        if self.tasks.is_empty() || self.reopen_pending {
+            self.reopen_pending = false;
+            self.tasks = new;
+            self.selected = 0;
+            self.selected_key = None; // reset to top (most recent)
+            return;
+        }
+        let key = |t: &Task| (t.ws_dir.clone(), t.slug.clone());
+        let mut merged: Vec<Task> = Vec::with_capacity(new.len());
+        // Existing tasks keep their position, with refreshed data.
+        for old in &self.tasks {
+            if let Some(u) = new.iter().find(|n| key(n) == key(old)) {
+                merged.push(u.clone());
+            }
+        }
+        // New tasks (unseen) append in the order the JSON gave them.
+        for n in &new {
+            if !merged.iter().any(|m| key(m) == key(n)) {
+                merged.push(n.clone());
+            }
+        }
+        self.tasks = merged;
+    }
+
     /// Kick off a task-data reload (unless one is already running).
     fn refresh(&mut self) {
         if self.loading {
@@ -429,9 +467,11 @@ impl State {
     }
 
     /// Hide the overlay and stop the tick loop (it lapses on the next fire
-    /// because `visible` is now false).
+    /// because `visible` is now false). Arm a re-sort so the next open starts
+    /// from fresh activity order at the top.
     fn hide(&mut self) {
         self.visible = false;
+        self.reopen_pending = true;
         hide_self();
     }
 
@@ -464,9 +504,26 @@ impl State {
         seen.dedup();
         self.workspace_count = seen.len();
 
-        if self.selected >= self.filtered.len() {
-            self.selected = self.filtered.len().saturating_sub(1);
-        }
+        // Keep the highlight on the SAME task across re-sorts/filters. If it's
+        // gone (deleted or filtered out), clamp to a valid position.
+        self.selected = self
+            .selected_key
+            .as_ref()
+            .and_then(|(wd, sl)| {
+                self.filtered
+                    .iter()
+                    .position(|&i| &self.tasks[i].ws_dir == wd && &self.tasks[i].slug == sl)
+            })
+            .unwrap_or_else(|| self.selected.min(self.filtered.len().saturating_sub(1)));
+        self.sync_key();
+    }
+
+    /// Record the selected task's identity so it can be re-found after the list
+    /// re-sorts. Call after any change to `selected`.
+    fn sync_key(&mut self) {
+        self.selected_key = self
+            .selected_task()
+            .map(|t| (t.ws_dir.clone(), t.slug.clone()));
     }
 
     /// Build the interleaved display rows (section headers + tasks) for the
@@ -506,6 +563,7 @@ impl State {
         }
         let cur = self.selected as isize;
         self.selected = (cur + delta).rem_euclid(n as isize) as usize;
+        self.sync_key();
     }
 
     /// Jump to the selected task's tab. If it's already open, use the host API
@@ -721,6 +779,7 @@ impl State {
             Mouse::LeftClick(line, _col) => {
                 if let Some(pos) = self.row_at(line) {
                     self.selected = pos;
+                    self.sync_key();
                     return self.jump();
                 }
                 return false;
