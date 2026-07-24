@@ -1,10 +1,15 @@
 //! Helpers shared by the TUI event loops for turning `Event::Mouse` into
 //! actions. Every TUI enables `EnableMouseCapture`, so crossterm reports clicks
 //! and wheel events with absolute terminal coordinates; these map those
-//! coordinates onto rendered widgets and distinguish single from double clicks.
+//! coordinates onto rendered widgets.
+//!
+//! Note there is deliberately no click-to-activate helper: activating a task
+//! runs `zellij action go-to-tab`, which zellij applies to the last client
+//! that pressed a *key* (mouse input doesn't update that), so mouse-triggered
+//! jumps switch the wrong client's tab when several clients are attached.
+//! Clicks only ever select; activation stays on ⏎.
 
 use ratatui::layout::Rect;
-use std::time::{Duration, Instant};
 
 /// Whether a click at terminal (`col`, `row`) lands inside `area`.
 pub fn hit(area: Rect, col: u16, row: u16) -> bool {
@@ -39,28 +44,3 @@ pub fn item_at(
     }
     Some(offset + ((row - y0) / item_height) as usize)
 }
-
-/// Tracks left-clicks to tell a single click from a double-click on the same
-/// item, so the event loops can select on the first click and activate on the
-/// second without any per-frame timing state of their own.
-pub struct ClickTracker {
-    last: Option<(usize, Instant)>,
-}
-
-impl ClickTracker {
-    pub fn new() -> Self {
-        Self { last: None }
-    }
-
-    /// Record a click on item `idx`; returns true when it completes a
-    /// double-click (same item within the threshold). A double-click resets the
-    /// tracker so a third click starts a fresh pair.
-    pub fn click(&mut self, idx: usize) -> bool {
-        let now = Instant::now();
-        let double = matches!(self.last, Some((i, t)) if i == idx && now.duration_since(t) < THRESHOLD);
-        self.last = if double { None } else { Some((idx, now)) };
-        double
-    }
-}
-
-const THRESHOLD: Duration = Duration::from_millis(400);

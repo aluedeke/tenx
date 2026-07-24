@@ -23,7 +23,13 @@ fn run() -> Result<()> {
     match cli.command {
         None => open()?,
 
-        Some(Commands::Overlay { home }) => tui::run_overlay(home)?,
+        Some(Commands::Overlay { home, json }) => {
+            if json {
+                tui::dump_json()?;
+            } else {
+                tui::run_overlay(home)?;
+            }
+        }
 
         Some(Commands::Init { name }) => {
             cli::init::run(name.as_deref())?;
@@ -57,18 +63,24 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Task { command }) => match command {
-            TaskCommands::New { name, repos, no_open } => {
-                cli::task::new(&name, repos.as_deref(), no_open)?;
-            }
-            TaskCommands::Open { name } => {
-                cli::task::open(&name)?;
+            TaskCommands::New { name, repos, no_open, ws_dir } => match ws_dir {
+                Some(dir) => cli::task::new_by_dir(&dir, &name)?,
+                None => cli::task::new(&name, repos.as_deref(), no_open)?,
+            },
+            TaskCommands::Open { name, ws_dir } => match ws_dir {
+                Some(dir) => cli::task::open_by_dir(&dir, &name)?,
+                None => cli::task::open(&name)?,
+            },
+            TaskCommands::Rename { name, title, ws_dir } => {
+                cli::task::rename(ws_dir.as_deref(), &name, &title)?;
             }
             TaskCommands::List => {
                 cli::task::list()?;
             }
-            TaskCommands::Rm { name, force } => {
-                cli::task::rm(&name, force)?;
-            }
+            TaskCommands::Rm { name, force, ws_dir } => match ws_dir {
+                Some(dir) => cli::task::rm_by_dir(&dir, &name)?,
+                None => cli::task::rm(&name, force)?,
+            },
         },
     }
 

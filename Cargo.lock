@@ -2224,6 +2224,9 @@ dependencies = [
 name = "tenx-zellij"
 version = "0.1.0"
 dependencies = [
+ "ratatui",
+ "serde",
+ "serde_json",
  "zellij-tile",
 ]
 

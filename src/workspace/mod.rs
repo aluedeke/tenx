@@ -395,6 +395,18 @@ impl TaskStatus {
             _ => TaskStatus::Idle,
         }
     }
+
+    /// The wire token for this status (inverse of `from_token`); used by
+    /// `tenx overlay --json` for the overlay plugin.
+    pub fn token(self) -> &'static str {
+        match self {
+            TaskStatus::Working => "working",
+            TaskStatus::Blocked => "blocked",
+            TaskStatus::Done => "done",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Idle => "idle",
+        }
+    }
 }
 
 /// Read a task's `.tenx-status` file, returning the state and when it last

@@ -88,6 +88,45 @@ pub fn open(name: &str) -> Result<()> {
     open_in(&ws, &slug)
 }
 
+/// Open a task given an explicit workspace directory and exact slug. Used by
+/// the overlay plugin (cross-workspace, no meaningful cwd, slug already known).
+pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
+    let ws = crate::workspace::load(Path::new(ws_dir))?;
+    open_in(&ws, slug)
+}
+
+/// Create a task in an explicit workspace directory (all repos, opens a tab).
+/// Used by the overlay plugin.
+pub fn new_by_dir(ws_dir: &str, name: &str) -> Result<()> {
+    let ws = crate::workspace::load(Path::new(ws_dir))?;
+    new_in(&ws, name, None, false)
+}
+
+/// Delete a task by explicit workspace directory and exact slug (no prompt).
+/// Used by the overlay plugin, which does its own confirmation.
+pub fn rm_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
+    let ws = crate::workspace::load(Path::new(ws_dir))?;
+    rm_in(&ws, slug, true)
+}
+
+/// Rename a task's display title. If the task's tab is open, its zellij tab is
+/// renamed to match. `ws_dir` selects the workspace (cwd if None).
+pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
+    let ws = match ws_dir {
+        Some(dir) => crate::workspace::load(Path::new(dir))?,
+        None => crate::workspace::find(&env::current_dir()?)?,
+    };
+    let task = ws.find_task(slug)?;
+    crate::workspace::set_task_title(&task.path, title)?;
+    // If the task's tab is open, keep its name in sync with the new title.
+    if let Ok(id_str) = std::fs::read_to_string(task.path.join(".tenx-tab-id")) {
+        if let Ok(id) = id_str.trim().parse::<u32>() {
+            let _ = crate::zellij::rename_tab_by_id(id, title);
+        }
+    }
+    Ok(())
+}
+
 /// Focus a task's zellij tab within the current session (creating it if needed),
 /// given an explicit workspace and slug. Used by `open` and the overlay, neither
 /// of which can rely on cwd matching the task.

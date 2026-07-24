@@ -37,6 +37,11 @@ pub enum Commands {
         /// without exiting; quit keys are disabled)
         #[arg(long)]
         home: bool,
+        /// Print all tasks as JSON (activity-sorted) instead of running the
+        /// TUI. Data source for the tenx-zellij overlay plugin, which runs in
+        /// a wasm sandbox and cannot read the filesystem itself.
+        #[arg(long)]
+        json: bool,
     },
     /// Generate a daily standup from recent activity and task files
     Standup {
@@ -102,10 +107,29 @@ pub enum TaskCommands {
         /// Create worktrees but don't open a zellij tab
         #[arg(long)]
         no_open: bool,
+        /// Create the task in this workspace directory instead of cwd. Used by
+        /// the overlay plugin, which has no meaningful cwd.
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Rename a task's display title (the `# ` heading in TASK.md)
+    Rename {
+        /// Exact task slug
+        name: String,
+        /// New display title
+        title: String,
+        /// Resolve the task in this workspace directory instead of cwd.
+        #[arg(long)]
+        ws_dir: Option<String>,
     },
     /// Open a task's zellij tab (or switch to it if already open)
     Open {
         name: String,
+        /// Resolve the task in this workspace directory instead of cwd. `name`
+        /// is treated as an exact slug (not slugified). Used by the overlay
+        /// plugin, which jumps across workspaces and has no meaningful cwd.
+        #[arg(long)]
+        ws_dir: Option<String>,
     },
     /// List all tasks
     List,
@@ -115,5 +139,9 @@ pub enum TaskCommands {
         /// Skip confirmation prompt
         #[arg(long)]
         force: bool,
+        /// Resolve the task in this workspace directory instead of cwd. `name`
+        /// is treated as an exact slug. Used by the overlay plugin.
+        #[arg(long)]
+        ws_dir: Option<String>,
     },
 }

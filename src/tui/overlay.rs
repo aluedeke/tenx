@@ -1,5 +1,6 @@
-//! Global task overlay: lists every task across every registered workspace,
-//! grouped by workspace, with each task's Claude-activity status. It's both a
+//! Global task overlay: lists every task across every registered workspace in
+//! one flat list ordered by last agent activity (workspace shown per row),
+//! with each task's Claude-activity status. It's both a
 //! switcher and a task manager — fuzzy-filter + Enter to jump, plus
 //! Ctrl-bindings to create, delete, close, and rename tasks from anywhere
 //! (plain typing always filters, so actions live on Ctrl).
@@ -13,8 +14,8 @@
 use anyhow::Result;
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
-        MouseButton, MouseEvent, MouseEventKind,
+        self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
+        Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -32,7 +33,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
-use super::mouse::{self, ClickTracker};
+use super::mouse;
 use crate::workspace::{self, TaskStatus, Workspace};
 
 /// One selectable task row, flattened across all workspaces.
@@ -190,7 +191,6 @@ struct Overlay {
     tabs_area: Rect,
     search_area: Rect,
     list_area: Rect,
-    click: ClickTracker,
 }
 
 impl Overlay {
@@ -220,7 +220,6 @@ impl Overlay {
             tabs_area: Rect::default(),
             search_area: Rect::default(),
             list_area: Rect::default(),
-            click: ClickTracker::new(),
         };
         o.rebuild_rows();
         o
@@ -273,16 +272,19 @@ impl Overlay {
     /// only non-file work is an occasional, throttled zellij query to drop stale
     /// statuses from dead sessions (see `drop_stale_dead_statuses`).
     fn rebuild_rows(&mut self) {
-        let mut rows = Vec::new();
+        // One flat list across all workspaces, ordered by last agent status
+        // change (`.tenx-status` mtime), newest first, so the task most
+        // recently touched by Claude sits on top regardless of workspace.
+        // Tasks with no agent activity yet fall back to creation time.
+        let mut keyed: Vec<(SystemTime, Row)> = Vec::new();
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
-            let mut tasks = ws.tasks().unwrap_or_default();
-            tasks.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-            for task in tasks {
+            for task in ws.tasks().unwrap_or_default() {
                 let (status, changed) = workspace::read_task_status(&task.path);
                 let tab_id = std::fs::read_to_string(task.path.join(".tenx-tab-id"))
                     .ok()
                     .and_then(|s| s.trim().parse::<u32>().ok());
-                rows.push(Row {
+                let activity = changed.unwrap_or(task.created_at);
+                let row = Row {
                     ws_idx,
                     ws_name: ws.config.name.clone(),
                     slug: task.name.clone(),
@@ -291,12 +293,35 @@ impl Overlay {
                     status,
                     changed,
                     tab_id,
-                });
+                };
+                keyed.push((activity, row));
             }
         }
+        keyed.sort_by(|a, b| b.0.cmp(&a.0));
+        let mut rows: Vec<Row> = keyed.into_iter().map(|(_, row)| row).collect();
         self.drop_stale_dead_statuses(&mut rows);
         self.rows = rows;
         self.apply_filter();
+    }
+
+    /// Idle-tick refresh: re-read each row's status/age/tab-id in place,
+    /// WITHOUT re-sorting or re-discovering tasks. The list order is frozen
+    /// while the overlay is showing (no rows shuffling under the cursor) and
+    /// only recomputed when the list is (re)opened: floating overlay spawn,
+    /// home-pane startup, regaining focus, returning after a jump, or a
+    /// mutating action (create/delete/rename).
+    fn refresh_statuses(&mut self) {
+        let mut rows = std::mem::take(&mut self.rows);
+        for r in rows.iter_mut() {
+            let (status, changed) = workspace::read_task_status(&r.path);
+            r.status = status;
+            r.changed = changed;
+            r.tab_id = std::fs::read_to_string(r.path.join(".tenx-tab-id"))
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+        }
+        self.drop_stale_dead_statuses(&mut rows);
+        self.rows = rows;
     }
 
     /// A crash or killed tab leaves `.tenx-status` frozen on a non-idle state
@@ -457,8 +482,14 @@ impl Overlay {
 
     /// Handle a mouse event in the list view (the modal forms stay
     /// keyboard-only). Wheel scrolls the selection; clicking a tab header, the
-    /// search box, or a task/repo row focuses it; a double-click on a row jumps.
-    /// Returns `Ok(true)` when the overlay should close (a jump completed).
+    /// search box, or a task/repo row focuses it. Deliberately NO click-to-jump:
+    /// jumping runs `zellij action go-to-tab`, which zellij applies to the last
+    /// client that pressed a *key* — mouse events don't update that, so a
+    /// tap-triggered jump from a phone (with a desktop client also attached)
+    /// would switch the desktop's tab instead of the phone's. Requiring ⏎ to
+    /// jump guarantees the jumping client just sent a keystroke and is
+    /// therefore the one zellij switches. Returns `Ok(true)` when the overlay
+    /// should close (a jump completed).
     fn handle_mouse(&mut self, m: MouseEvent) -> Result<bool> {
         if !matches!(self.mode, Mode::List) {
             return Ok(false);
@@ -489,9 +520,6 @@ impl Overlay {
                 {
                     self.focus_list();
                     self.set_cur_sel(pos);
-                    if self.click.click(pos) {
-                        return self.jump();
-                    }
                 }
             }
             _ => {}
@@ -738,10 +766,12 @@ impl Overlay {
                 }
                 if self.home {
                     // Stay alive as the session's home pane — zellij already
-                    // switched the visible tab to the task. Reset the filter so
-                    // the next visit starts fresh.
+                    // switched the visible tab to the task. Reset the filter
+                    // and re-sort by activity so the next visit starts fresh,
+                    // with the most recently active task selected on top.
                     self.filter.clear();
-                    self.apply_filter();
+                    self.rebuild_rows();
+                    self.selected = 0;
                     self.focus_search();
                     self.status_msg = None;
                     return Ok(false);
@@ -1113,13 +1143,13 @@ pub fn run(home: bool) -> Result<()> {
     let orig = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange);
         orig(info);
     }));
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableFocusChange)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -1127,7 +1157,7 @@ pub fn run(home: bool) -> Result<()> {
     let result = run_loop(&mut terminal, &mut overlay);
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange)?;
     terminal.show_cursor()?;
     result?;
 
@@ -1173,20 +1203,18 @@ fn run_loop(
                         break;
                     }
                 }
+                // Coming back to look at the overlay (home tab refocused, or
+                // the terminal regained focus) counts as a reopen — recompute
+                // the activity ordering once, here, not on every tick.
+                Event::FocusGained if matches!(overlay.mode, Mode::List) => {
+                    overlay.rebuild_rows();
+                }
                 _ => {}
             }
         } else if matches!(overlay.mode, Mode::List) {
-            // Idle tick — refresh status while preserving the selected task.
-            let keep = overlay.selected_row().map(|r| (r.ws_idx, r.slug.clone()));
-            overlay.rebuild_rows();
-            if let Some((ws_idx, slug)) = keep
-                && let Some(pos) = overlay
-                    .filtered
-                    .iter()
-                    .position(|&i| overlay.rows[i].ws_idx == ws_idx && overlay.rows[i].slug == slug)
-            {
-                overlay.selected = pos;
-            }
+            // Idle tick — update status glyphs/ages in place; the row order
+            // stays frozen (see `refresh_statuses`).
+            overlay.refresh_statuses();
         }
     }
     Ok(())
@@ -1333,8 +1361,22 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     f.render_widget(Paragraph::new(footer), chunks[3]);
 }
 
-/// Build the grouped task list; returns items, the selected line index, and a
-/// per-line map back to the filtered position (None for headers/separators).
+/// Pad `s` with spaces to exactly `w` chars, truncating with `…` if longer.
+fn pad_cell(s: &str, w: usize) -> String {
+    let n = s.chars().count();
+    if n > w {
+        let mut out: String = s.chars().take(w.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    } else {
+        format!("{s}{}", " ".repeat(w - n))
+    }
+}
+
+/// Build the flat task list (sorted by last agent activity), rendered as
+/// fixed-width columns — glyph · title · workspace · open · age — so every
+/// column starts at the same x. Returns items, the selected line index, and a
+/// per-line map back to the filtered position (None for the empty-state line).
 fn task_items(
     overlay: &Overlay,
     list_width: usize,
@@ -1342,22 +1384,34 @@ fn task_items(
     let mut items = Vec::new();
     let mut line_to_pos: Vec<Option<usize>> = Vec::new();
     let mut selected_line = None;
-    let mut last_ws: Option<usize> = None;
+
+    // Column widths from the visible rows, degrading for narrow panes (phone
+    // terminals can be ~40 cols): the workspace column fits its widest name
+    // but never more than a third of the pane; the age and `open` columns are
+    // dropped (age first) when they'd squeeze the title below a readable
+    // minimum. Fixed parts: 2 indent + 3 glyph + 2-wide gaps between columns.
+    const TITLE_MIN: usize = 12;
+    let ws_w = overlay
+        .filtered
+        .iter()
+        .map(|&i| overlay.rows[i].ws_name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(list_width / 3);
+    let title_max = overlay
+        .filtered
+        .iter()
+        .map(|&i| overlay.rows[i].title.chars().count())
+        .max()
+        .unwrap_or(0);
+    let base = 2 + 3 + 2 + ws_w; // indent + glyph + gap + workspace
+    let show_open = list_width.saturating_sub(base + 2 + 4) >= TITLE_MIN;
+    let show_age = list_width.saturating_sub(base + 2 + 4 + 2 + 4) >= TITLE_MIN;
+    let extras = if show_open { 2 + 4 } else { 0 } + if show_age { 2 + 4 } else { 0 };
+    let title_w = title_max.min(list_width.saturating_sub(base + extras).max(8));
 
     for (pos, &row_idx) in overlay.filtered.iter().enumerate() {
         let row = &overlay.rows[row_idx];
-        if last_ws != Some(row.ws_idx) {
-            if last_ws.is_some() {
-                items.push(ListItem::new(Line::from("")));
-                line_to_pos.push(None);
-            }
-            items.push(ListItem::new(Line::from(Span::styled(
-                row.ws_name.clone(),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-            ))));
-            line_to_pos.push(None);
-            last_ws = Some(row.ws_idx);
-        }
         if pos == overlay.selected {
             selected_line = Some(items.len());
         }
@@ -1385,27 +1439,23 @@ fn task_items(
             .filter(|_| show_age)
             .map(workspace::format_age)
             .unwrap_or_default();
-        let mut right = String::new();
-        if row.tab_id.is_some() {
-            right.push_str("open");
-        }
-        if !age.is_empty() {
-            if !right.is_empty() {
-                right.push_str("  ");
-            }
-            right.push_str(&age);
-        }
+        let open_cell = if row.tab_id.is_some() { "open" } else { "    " };
 
+        let dim = Style::default().fg(Color::DarkGray);
         let mut spans = vec![
             Span::raw("  "),
             Span::raw(glyph),
-            Span::styled(row.title.clone(), title_style),
+            Span::styled(pad_cell(&row.title, title_w), title_style),
+            Span::raw("  "),
+            Span::styled(pad_cell(&row.ws_name, ws_w), dim),
         ];
-        if !right.is_empty() {
-            let left_w = 2 + 3 + row.title.chars().count();
-            let pad = list_width.saturating_sub(left_w + right.chars().count()).max(1);
-            spans.push(Span::raw(" ".repeat(pad)));
-            spans.push(Span::styled(right, Style::default().fg(Color::DarkGray)));
+        if show_open {
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(open_cell, dim));
+        }
+        if show_age {
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(age, dim));
         }
         items.push(ListItem::new(Line::from(spans)));
         line_to_pos.push(Some(pos));
