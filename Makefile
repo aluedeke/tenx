@@ -2,14 +2,6 @@
 
 PLUGIN_DIR := $(HOME)/.local/share/tenx
 
-# `make` runs a non-interactive shell, where zellij often isn't on PATH — a bare
-# `zellij` then fails 127 and the (ignored) reload silently no-ops, leaving the
-# running session on the old wasm. Same reasoning as zellij::find_bin().
-ZELLIJ := $(shell command -v zellij 2>/dev/null || \
-	for p in $(HOME)/.local/bin/zellij $(HOME)/.cargo/bin/zellij /opt/homebrew/bin/zellij /usr/local/bin/zellij; do \
-		[ -x "$$p" ] && echo "$$p" && break; \
-	done)
-
 build:
 	cargo build --release
 
@@ -22,14 +14,17 @@ plugin:
 # and the zellij plugin to ~/.local/share/tenx/ (referenced by the Ctrl+w
 # keybind in ~/.config/zellij/config.kdl).
 #
-# zellij does NOT reload plugins when the wasm file changes — a running session
-# keeps the instance it loaded at startup. Reload it explicitly (best-effort:
-# a dead/absent session is fine, it'll load the new wasm on next start).
+# No plugin-reload step: the overlay CLOSES its pane when dismissed (see
+# `dismiss` in tenx-zellij), so the next Ctrl+w always loads the wasm this
+# target just wrote. `zellij action start-or-reload-plugin` used to live here
+# and was worse than useless — it spawns an *additional* plugin pane instead of
+# swapping the running one, and LaunchOrFocusPlugin then keeps focusing the
+# oldest (stale) pane, so installs appeared to do nothing.
 install: plugin
 	cargo install --path .
 	mkdir -p $(PLUGIN_DIR)
 	cp target/wasm32-wasip1/release/tenx-zellij.wasm $(PLUGIN_DIR)/tenx-zellij.wasm
-	-$(ZELLIJ) --session tenx action start-or-reload-plugin "file:$(PLUGIN_DIR)/tenx-zellij.wasm"
+	@echo "  ✓ installed — press esc in any open overlay; the next Ctrl+w loads the new build"
 
 clean:
 	cargo clean

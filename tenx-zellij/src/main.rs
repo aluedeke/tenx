@@ -19,6 +19,14 @@
 //! therefore correct for phone and desktop alike, with no "last-active-client"
 //! guessing (the bug that forced Enter-only jumps in the terminal overlay).
 //!
+//! ## Lifetime: one summon, one instance
+//!
+//! Dismissing the overlay (esc, or a jump) **closes** the pane rather than
+//! hiding it, so every Ctrl+w loads the wasm currently on disk. See `dismiss`
+//! for why: a hidden instance outlives reinstalls and there is no reliable way
+//! to swap it out from the outside, which made `make install` a silent no-op
+//! for the running session. The re-launch cost is a sub-10ms `--json` call.
+//!
 //! ## Where the data lives
 //!
 //! Plugins run in a wasm sandbox with no filesystem access, so task discovery
@@ -433,7 +441,7 @@ impl ZellijPlugin for State {
                         if let Mode::Busy { hide_on_done, .. } = self.mode {
                             self.mode = Mode::List;
                             if !failed && hide_on_done {
-                                self.hide();
+                                self.dismiss();
                             }
                         }
                         self.refresh();
@@ -591,13 +599,30 @@ impl State {
         set_timeout(secs);
     }
 
-    /// Hide the overlay and stop the tick loop (it lapses on the next fire
-    /// because `visible` is now false). Arm a re-sort so the next open starts
-    /// from fresh activity order at the top.
-    fn hide(&mut self) {
+    /// Dismiss the overlay: **close** the pane, don't hide it, so the next
+    /// Ctrl+w launches a brand-new instance.
+    ///
+    /// Hiding (`hide_self`) kept the instance alive so a re-summon could paint
+    /// the cached task list without a `loading…` frame — but `tenx overlay
+    /// --json` returns in under 10ms, so that buys almost nothing, and it costs
+    /// a lot: a hidden instance stays welded to the wasm that was on disk when
+    /// the session started. Reinstalling the plugin mid-session then had no
+    /// effect (`start-or-reload-plugin` spawns an *additional* pane rather than
+    /// swapping the running one), so the overlay silently served stale code
+    /// until every leftover pane was hunted down and closed by hand.
+    ///
+    /// Closing makes that impossible by construction: the wasm on disk is the
+    /// only thing that can ever be running. Nothing is lost — `reopen_pending`
+    /// already discarded the sort order and selection on every re-open, so a
+    /// summon was meant to start fresh regardless; now the filter resets too.
+    ///
+    /// The `visible` gating stays: the pane can still go off-screen without
+    /// being dismissed (switching tabs leaves it behind on the old one), and
+    /// polling must stop when it does.
+    fn dismiss(&mut self) {
         self.visible = false;
         self.reopen_pending = true;
-        hide_self();
+        close_self();
     }
 
     /// Recompute `filtered` from `filter` + `grouping`, clamping the selection.
@@ -720,7 +745,7 @@ impl State {
         } else {
             self.run_mutation(&["task", "open", "--ws-dir", &task.ws_dir, &task.slug]);
         }
-        self.hide();
+        self.dismiss();
         false
     }
 
@@ -751,7 +776,7 @@ impl State {
         match key.bare_key {
             BareKey::Esc if key.has_no_modifiers() => {
                 if self.filter.is_empty() {
-                    self.hide();
+                    self.dismiss();
                 } else {
                     self.filter.clear();
                     self.apply_filter();
