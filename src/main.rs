@@ -65,9 +65,18 @@ fn run() -> Result<()> {
 
         Some(Commands::Task { command }) => match command {
             TaskCommands::New { name, repos, no_open, ws_dir } => match ws_dir {
-                Some(dir) => cli::task::new_by_dir(&dir, &name)?,
+                Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref())?,
                 None => cli::task::new(&name, repos.as_deref(), no_open)?,
             },
+            TaskCommands::AddRepo { name, repos, ws_dir } => {
+                cli::task::add_repo(ws_dir.as_deref(), &name, &repos)?;
+            }
+            TaskCommands::RmRepo { name, repos, force, ws_dir } => {
+                cli::task::rm_repo(ws_dir.as_deref(), &name, &repos, force)?;
+            }
+            TaskCommands::SetRepos { name, repos, force, ws_dir } => {
+                cli::task::set_repos(ws_dir.as_deref(), &name, &repos, force)?;
+            }
             TaskCommands::Open { name, ws_dir } => match ws_dir {
                 Some(dir) => cli::task::open_by_dir(&dir, &name)?,
                 None => cli::task::open(&name)?,

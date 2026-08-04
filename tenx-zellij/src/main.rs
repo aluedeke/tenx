@@ -63,11 +63,35 @@ struct Task {
     title: String,
     status: String,
     age_secs: Option<u64>,
+    /// Repos this task has worktrees for — what the repo checklist diffs
+    /// against. `default` so an older native binary still deserializes.
+    #[serde(default)]
+    repos: Vec<String>,
+}
+
+/// A repo configured in a workspace (not necessarily one this task uses).
+#[derive(Debug, Clone, Deserialize)]
+struct Repo {
+    name: String,
+    #[serde(default)]
+    cloned: bool,
+}
+
+/// A registered workspace and its repos. Listed independently of tasks so the
+/// checklists can be built for a workspace that has no tasks yet.
+#[derive(Debug, Clone, Deserialize)]
+struct Ws {
+    name: String,
+    dir: String,
+    #[serde(default)]
+    repos: Vec<Repo>,
 }
 
 #[derive(Deserialize)]
 struct TaskDump {
     tasks: Vec<Task>,
+    #[serde(default)]
+    workspaces: Vec<Ws>,
 }
 
 /// Context marker on our `run_command` calls so we can tell the data refresh
@@ -129,17 +153,96 @@ fn geometry(cols: usize, rows: usize) -> Option<FloatingPaneCoordinates> {
     )
 }
 
+/// One line of a repo checklist: a workspace repo, whether it's ticked, and
+/// whether the task already has a worktree for it. `checked != present` is the
+/// pending change — added when ticked, detached when unticked. On the create
+/// form nothing is `present` yet, so every tick is an addition.
+#[derive(Clone)]
+struct Pick {
+    name: String,
+    checked: bool,
+    present: bool,
+    cloned: bool,
+}
+
+/// The shared repo checklist widget, used by both the create form and the
+/// edit-repos form (the only difference is what `present` starts as).
+#[derive(Default, Clone)]
+struct RepoPick {
+    items: Vec<Pick>,
+    cursor: usize,
+}
+
+impl RepoPick {
+    fn move_cursor(&mut self, delta: isize) {
+        let n = self.items.len();
+        if n == 0 {
+            return;
+        }
+        self.cursor = (self.cursor as isize + delta).rem_euclid(n as isize) as usize;
+    }
+    fn toggle(&mut self) {
+        if let Some(it) = self.items.get_mut(self.cursor) {
+            it.checked = !it.checked;
+        }
+    }
+    fn set_all(&mut self, on: bool) {
+        self.items.iter_mut().for_each(|i| i.checked = on);
+    }
+    fn checked(&self) -> Vec<String> {
+        self.items.iter().filter(|i| i.checked).map(|i| i.name.clone()).collect()
+    }
+    fn added(&self) -> Vec<String> {
+        self.items
+            .iter()
+            .filter(|i| i.checked && !i.present)
+            .map(|i| i.name.clone())
+            .collect()
+    }
+    fn removed(&self) -> Vec<String> {
+        self.items
+            .iter()
+            .filter(|i| !i.checked && i.present)
+            .map(|i| i.name.clone())
+            .collect()
+    }
+}
+
+/// Which field of the create form has the keyboard: the name, or the checklist.
+#[derive(Clone, Copy, PartialEq)]
+enum Phase {
+    Name,
+    Repos,
+}
+
 /// What the overlay is doing: the list, or a modal capturing text / a y/n.
 #[derive(Default)]
 enum Mode {
     #[default]
     List,
     /// Typing a new task name; created in `ws_dir` (of the selected task).
-    Create { name: String, ws: String, ws_dir: String },
+    /// `↵` from the name creates with every repo ticked (the fast path); `⇥`
+    /// steps into the checklist to narrow it down first.
+    Create { name: String, ws: String, ws_dir: String, phase: Phase, pick: RepoPick },
+    /// Repo checklist for an existing task (add/detach worktrees).
+    EditRepos { title: String, slug: String, ws_dir: String, pick: RepoPick },
+    /// Confirming a repo change that detaches worktrees (destructive).
+    ConfirmRepos {
+        title: String,
+        slug: String,
+        ws_dir: String,
+        /// The full desired set to hand to `task set-repos`.
+        desired: Vec<String>,
+        remove: Vec<String>,
+    },
     /// Editing the selected task's title; buffer pre-filled with the old one.
     Rename { buffer: String, slug: String, ws_dir: String },
     /// Confirming deletion of the selected task.
     ConfirmDelete { title: String, slug: String, ws_dir: String },
+    /// A mutation is running. Cloning a repo can take minutes, so the overlay
+    /// stays up and says so instead of vanishing into a blank screen — and an
+    /// error lands where the user is still looking.
+    Busy { label: String, hide_on_done: bool },
 }
 
 /// How the list is organised: one flat activity-sorted section, or grouped by
@@ -164,6 +267,9 @@ struct State {
     /// Absolute path to the native tenx binary (from plugin config).
     tenx_bin: String,
     tasks: Vec<Task>,
+    /// Every registered workspace and its repos — the source for both repo
+    /// checklists, and the create target when no task is selected.
+    workspaces: Vec<Ws>,
     /// Indices into `tasks` matching the current filter, in display order.
     filtered: Vec<usize>,
     /// Selected position within `filtered`.
@@ -305,18 +411,30 @@ impl ZellijPlugin for State {
                             // order is frozen separately (self.order), so a poll
                             // never reshuffles rows under the cursor/finger.
                             self.tasks = dump.tasks;
+                            self.workspaces = dump.workspaces;
                             self.apply_filter();
                         }
                         true
                     }
                     Some(KIND_MUTATE) => {
-                        // A create/rename/delete finished — surface any error,
-                        // then reload so the list reflects the change.
-                        if exit != Some(0) {
+                        // A create/rename/delete/repo-change finished — surface
+                        // any error, then reload so the list reflects it.
+                        let failed = exit != Some(0);
+                        if failed {
                             let msg = String::from_utf8_lossy(&stderr);
                             let msg = msg.trim();
                             self.message =
                                 Some(if msg.is_empty() { "command failed".into() } else { msg.into() });
+                        }
+                        // Release a Busy wait: on success a create hides (its
+                        // tab already took the screen), everything else drops
+                        // back to the refreshed list. On failure we always stay
+                        // put so the error is actually seen.
+                        if let Mode::Busy { hide_on_done, .. } = self.mode {
+                            self.mode = Mode::List;
+                            if !failed && hide_on_done {
+                                self.hide();
+                            }
                         }
                         self.refresh();
                         true
@@ -611,8 +729,18 @@ impl State {
         match &self.mode {
             Mode::List => self.handle_list_key(key),
             Mode::Create { .. } => self.handle_create_key(key),
+            Mode::EditRepos { .. } => self.handle_editrepos_key(key),
+            Mode::ConfirmRepos { .. } => self.handle_confirm_repos_key(key),
             Mode::Rename { .. } => self.handle_rename_key(key),
             Mode::ConfirmDelete { .. } => self.handle_confirm_key(key),
+            Mode::Busy { .. } => {
+                // The command keeps running; esc just stops staring at it.
+                if key.bare_key == BareKey::Esc {
+                    self.mode = Mode::List;
+                    return true;
+                }
+                false
+            }
         }
     }
 
@@ -645,6 +773,7 @@ impl State {
             BareKey::Char('a') if ctrl => self.start_create(),
             BareKey::Char('r') if ctrl => self.start_rename(),
             BareKey::Char('d') if ctrl => self.start_delete(),
+            BareKey::Char('e') if ctrl => self.start_edit_repos(),
             BareKey::Backspace if key.has_no_modifiers() => {
                 self.filter.pop();
                 self.apply_filter();
@@ -658,32 +787,132 @@ impl State {
         true
     }
 
+    /// Create form. Two phases share one modal: `Name` is exactly the old
+    /// behaviour (type, `↵` creates with every repo), and `⇥`/`↓` steps into the
+    /// checklist — where bare characters are free, so `space`/`a`/`n` can be
+    /// single-key toggles and taps can hit rows.
     fn handle_create_key(&mut self, key: KeyWithModifier) -> bool {
-        let Mode::Create { name, ws_dir, .. } = &mut self.mode else {
+        let Mode::Create { mut name, ws, ws_dir, mut phase, mut pick } =
+            std::mem::replace(&mut self.mode, Mode::List)
+        else {
+            return false;
+        };
+        match phase {
+            Phase::Name => match key.bare_key {
+                BareKey::Esc => return true, // cancelled; mode is already List
+                BareKey::Enter => {
+                    if self.submit_create(&name, &ws_dir, &pick) {
+                        return true;
+                    }
+                }
+                BareKey::Tab | BareKey::Down if !pick.items.is_empty() => phase = Phase::Repos,
+                BareKey::Backspace => {
+                    name.pop();
+                }
+                BareKey::Char(c) if key.has_no_modifiers() => name.push(c),
+                _ => {}
+            },
+            Phase::Repos => {
+                if !pick_key(&mut pick, &key) {
+                    match key.bare_key {
+                        BareKey::Esc | BareKey::Tab | BareKey::Left => phase = Phase::Name,
+                        BareKey::Enter => {
+                            if self.submit_create(&name, &ws_dir, &pick) {
+                                return true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        self.mode = Mode::Create { name, ws, ws_dir, phase, pick };
+        true
+    }
+
+    /// Fire the create. Returns false when the form should stay open (nothing
+    /// ticked) — the caller has already taken `self.mode`, so it has to put the
+    /// form back rather than leave the user dumped on the list.
+    fn submit_create(&mut self, name: &str, ws_dir: &str, pick: &RepoPick) -> bool {
+        let name = name.trim();
+        if name.is_empty() {
+            return true; // nothing typed — treat ↵ as a cancel
+        }
+        let repos = pick.checked();
+        // An empty workspace has nothing to tick; let the native side answer
+        // with its "no repos in workspace" guidance rather than inventing one.
+        if repos.is_empty() && !pick.items.is_empty() {
+            self.message = Some("select at least one repo".into());
+            return false;
+        }
+        let joined = repos.join(",");
+        let mut args = vec!["task", "new", "--ws-dir", ws_dir];
+        if !joined.is_empty() {
+            args.extend_from_slice(&["--repos", &joined]);
+        }
+        args.push(name);
+        // The new task's tab opens itself (new_in with no_open=false), so on
+        // success we get out of the way like a jump does.
+        self.run_mutation_busy(&args, format!("creating {name}…"), true);
+        true
+    }
+
+    fn handle_editrepos_key(&mut self, key: KeyWithModifier) -> bool {
+        let Mode::EditRepos { title, slug, ws_dir, mut pick } =
+            std::mem::replace(&mut self.mode, Mode::List)
+        else {
+            return false;
+        };
+        if !pick_key(&mut pick, &key) {
+            match key.bare_key {
+                BareKey::Esc => return true, // cancelled; mode is already List
+                BareKey::Enter => {
+                    let (desired, remove) = (pick.checked(), pick.removed());
+                    if desired.is_empty() {
+                        // Nothing ticked — keep the form up with the reason.
+                        self.message = Some("a task must keep at least one repo".into());
+                        self.mode = Mode::EditRepos { title, slug, ws_dir, pick };
+                    } else if pick.added().is_empty() && remove.is_empty() {
+                        // Nothing to do; ↵ reads as a cancel.
+                    } else if remove.is_empty() {
+                        self.apply_repos(&title, &slug, &ws_dir, &desired);
+                    } else {
+                        // Detaching drops a worktree and its branch — confirm.
+                        self.mode =
+                            Mode::ConfirmRepos { title, slug, ws_dir, desired, remove };
+                    }
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        self.mode = Mode::EditRepos { title, slug, ws_dir, pick };
+        true
+    }
+
+    fn handle_confirm_repos_key(&mut self, key: KeyWithModifier) -> bool {
+        let Mode::ConfirmRepos { title, slug, ws_dir, desired, .. } =
+            std::mem::replace(&mut self.mode, Mode::List)
+        else {
             return false;
         };
         match key.bare_key {
-            BareKey::Esc => self.mode = Mode::List,
-            BareKey::Enter => {
-                let name = name.trim().to_string();
-                if name.is_empty() {
-                    self.mode = Mode::List;
-                } else {
-                    let ws_dir = ws_dir.clone();
-                    self.run_mutation(&["task", "new", "--ws-dir", &ws_dir, &name]);
-                    self.mode = Mode::List;
-                    // The new task's tab opens itself (new_in with no_open=false),
-                    // so get out of the way like a jump does.
-                    self.hide();
-                }
+            BareKey::Char('y') | BareKey::Char('Y') => {
+                self.apply_repos(&title, &slug, &ws_dir, &desired)
             }
-            BareKey::Backspace => {
-                name.pop();
-            }
-            BareKey::Char(c) if key.has_no_modifiers() => name.push(c),
-            _ => return false,
+            _ => {} // any other key cancels, back to the list
         }
         true
+    }
+
+    /// Hand the whole desired set to `task set-repos`, which re-diffs it against
+    /// what's actually on disk and adds/detaches in one invocation — one command
+    /// and one result, rather than sequencing two async mutations. No `--force`:
+    /// git's refusal to drop a dirty worktree is the safety net here.
+    fn apply_repos(&mut self, title: &str, slug: &str, ws_dir: &str, desired: &[String]) {
+        let mut args: Vec<&str> = vec!["task", "set-repos", "--ws-dir", ws_dir, slug];
+        args.extend(desired.iter().map(String::as_str));
+        self.run_mutation_busy(&args, format!("updating repos for {title}…"), false);
     }
 
     fn handle_rename_key(&mut self, key: KeyWithModifier) -> bool {
@@ -725,19 +954,75 @@ impl State {
     }
 
     fn start_create(&mut self) {
-        // Create in the selected task's workspace (the data source only lists
-        // workspaces that already have tasks). With an empty list we have no
-        // workspace to target.
-        match self.selected_task() {
-            Some(t) => {
-                self.mode = Mode::Create {
-                    name: String::new(),
-                    ws: t.ws.clone(),
-                    ws_dir: t.ws_dir.clone(),
-                }
-            }
-            None => self.message = Some("no workspace — select a task first".into()),
+        // Create in the selected task's workspace; with nothing selected (an
+        // empty or fully-filtered list) fall back to the first registered
+        // workspace, so a workspace with no tasks yet is still reachable.
+        let target = self
+            .selected_task()
+            .map(|t| (t.ws.clone(), t.ws_dir.clone()))
+            .or_else(|| self.workspaces.first().map(|w| (w.name.clone(), w.dir.clone())));
+        let Some((ws, ws_dir)) = target else {
+            self.message = Some("no workspace registered — run `tenx init` in one".into());
+            return;
+        };
+        let pick = self.pick_for(&ws_dir, &[]);
+        self.mode = Mode::Create { name: String::new(), ws, ws_dir, phase: Phase::Name, pick };
+    }
+
+    /// Open the repo checklist for the selected task, prefilled with the
+    /// worktrees it already has.
+    fn start_edit_repos(&mut self) {
+        let Some(t) = self.selected_task().cloned() else {
+            return;
+        };
+        let pick = self.pick_for(&t.ws_dir, &t.repos);
+        if pick.items.is_empty() {
+            self.message = Some("no repos in this workspace — add one with `tenx repo add`".into());
+            return;
         }
+        self.mode = Mode::EditRepos {
+            title: t.title.clone(),
+            slug: t.slug.clone(),
+            ws_dir: t.ws_dir.clone(),
+            pick,
+        };
+    }
+
+    /// Build a checklist for a workspace's repos. `present` is the set the task
+    /// already has (empty when creating); those start ticked, and on the create
+    /// form — where nothing is present — everything starts ticked so `↵` still
+    /// means "all repos".
+    fn pick_for(&self, ws_dir: &str, present: &[String]) -> RepoPick {
+        let creating = present.is_empty();
+        let mut items: Vec<Pick> = self
+            .workspaces
+            .iter()
+            .find(|w| w.dir == ws_dir)
+            .map(|w| {
+                w.repos
+                    .iter()
+                    .map(|r| Pick {
+                        name: r.name.clone(),
+                        checked: creating || present.contains(&r.name),
+                        present: present.contains(&r.name),
+                        cloned: r.cloned,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        // A worktree whose repo has since left the workspace config still needs
+        // a row, otherwise it could never be detached from here.
+        for name in present {
+            if !items.iter().any(|i| &i.name == name) {
+                items.push(Pick {
+                    name: name.clone(),
+                    checked: true,
+                    present: true,
+                    cloned: true,
+                });
+            }
+        }
+        RepoPick { items, cursor: 0 }
     }
 
     fn start_rename(&mut self) {
@@ -779,8 +1064,57 @@ impl State {
         );
     }
 
+    /// Run a mutation and wait on it visibly. `hide_on_done` dismisses the
+    /// overlay once the command *succeeds* (for create, whose new tab has
+    /// already taken over the screen); a failure always keeps us up so the
+    /// error message lands somewhere the user is looking.
+    fn run_mutation_busy(&mut self, args: &[&str], label: String, hide_on_done: bool) {
+        self.run_mutation(args);
+        self.message = None;
+        self.mode = Mode::Busy { label, hide_on_done };
+    }
+
+    /// The checklist currently on screen, if any (create's repo phase, the
+    /// edit form, or the confirm step which still shows it read-only).
+    fn active_pick(&self) -> Option<&RepoPick> {
+        match &self.mode {
+            Mode::Create { phase: Phase::Repos, pick, .. } => Some(pick),
+            Mode::EditRepos { pick, .. } => Some(pick),
+            _ => None,
+        }
+    }
+
+    fn active_pick_mut(&mut self) -> Option<&mut RepoPick> {
+        match &mut self.mode {
+            Mode::Create { phase: Phase::Repos, pick, .. } => Some(pick),
+            Mode::EditRepos { pick, .. } => Some(pick),
+            _ => None,
+        }
+    }
+
     fn handle_mouse(&mut self, m: Mouse) -> bool {
-        // Mouse only drives the list; modal prompts are keyboard-only.
+        // The repo checklist is tappable too — that's the point of rendering it
+        // in the body rather than on the header line. Text prompts stay
+        // keyboard-only.
+        if self.active_pick().is_some() {
+            let line = match m {
+                Mouse::ScrollDown(_) | Mouse::ScrollUp(_) => {
+                    let delta = if matches!(m, Mouse::ScrollDown(_)) { 1 } else { -1 };
+                    if let Some(p) = self.active_pick_mut() {
+                        p.move_cursor(delta);
+                    }
+                    return true;
+                }
+                Mouse::LeftClick(line, _) => line,
+                _ => return false,
+            };
+            let Some(idx) = self.row_at(line) else { return false };
+            if let Some(pick) = self.active_pick_mut() {
+                pick.cursor = idx;
+                pick.toggle();
+            }
+            return true;
+        }
         if !matches!(self.mode, Mode::List) {
             return false;
         }
@@ -809,6 +1143,68 @@ impl State {
         let line = usize::try_from(line).ok()?;
         let idx = line.checked_sub(self.list_origin)?;
         self.line_map.get(idx).copied().flatten()
+    }
+
+    /// Draw the repo checklist into the body area, scrolled to keep the cursor
+    /// in view. Each row states what applying would do to it — "+ add",
+    /// "− detach", or the settled "worktree" — so the diff is readable without
+    /// remembering what was ticked on entry.
+    fn draw_picks(
+        &mut self,
+        buf: &mut Buffer,
+        name_x: u16,
+        y_list: u16,
+        right: u16,
+        name_w: u16,
+        list_h: usize,
+    ) {
+        // Cloned so the loop can also push into `self.line_map`; a checklist is
+        // a handful of rows, so the copy is free.
+        let Some(pick) = self.active_pick().cloned() else { return };
+        // Scroll the same way the task list does: keep the cursor on screen.
+        let scroll = if pick.cursor >= list_h { pick.cursor + 1 - list_h } else { 0 };
+        for (row, item) in pick.items.iter().enumerate().skip(scroll).take(list_h) {
+            let y = y_list + (row - scroll) as u16;
+            self.line_map.push(Some(row));
+            let selected = row == pick.cursor;
+            if selected {
+                fill_row(buf, name_x - 2, y, right - name_x + 2, C_SEL_BG);
+            }
+            let bg = if selected { Some(C_SEL_BG) } else { None };
+            let style = |fg: Color| {
+                let mut s = Style::default().fg(fg);
+                if let Some(b) = bg {
+                    s = s.bg(b);
+                }
+                s
+            };
+            let (note, note_fg) = match (item.checked, item.present) {
+                (true, true) => ("worktree", C_DIM),
+                (true, false) => ("+ add", C_DONE),
+                (false, true) => ("− detach", C_FAILED),
+                (false, false) if !item.cloned => ("not cloned", C_FAINT),
+                (false, false) => ("", C_FAINT),
+            };
+            let box_ = if item.checked { "[x]" } else { "[ ]" };
+            put(buf, name_x - 2, y, 3, box_, style(if item.checked { C_DONE } else { C_FAINT }));
+            let name_fg = if selected {
+                C_SEL_TEXT
+            } else if item.checked {
+                C_TEXT
+            } else {
+                C_DIM
+            };
+            // The note is right-aligned, so the name gets whatever is left of
+            // it — on a narrow pane that's what truncates, not the status.
+            let note_w = note.chars().count() as u16;
+            let avail = right
+                .saturating_sub(name_x + 2)
+                .saturating_sub(if note_w > 0 { note_w + 2 } else { 0 });
+            put(buf, name_x + 2, y, name_w.min(avail) as usize, &item.name, style(name_fg).add_modifier(Modifier::BOLD));
+            if note_w > 0 {
+                put(buf, right - note_w, y, note_w as usize, note, style(note_fg));
+            }
+        }
     }
 
     /// Render the overlay into a ratatui `Buffer`, then serialize it to ANSI
@@ -883,8 +1279,26 @@ impl State {
                 format!("⚲ {}", self.filter),
                 Style::default().fg(C_TEXT).add_modifier(Modifier::BOLD),
             ),
+            // Name phase carries the caret; in the repo phase the name is
+            // settled and the checklist below has the focus.
+            Mode::Create { name, ws, phase: Phase::Name, .. } => (
+                format!("＋ new in {ws} — {name}▏"),
+                Style::default().fg(C_WORKING).add_modifier(Modifier::BOLD),
+            ),
             Mode::Create { name, ws, .. } => (
                 format!("＋ new in {ws} — {name}"),
+                Style::default().fg(C_DIM),
+            ),
+            Mode::EditRepos { title, .. } => (
+                format!("⛁ repos — {title}"),
+                Style::default().fg(C_WORKING).add_modifier(Modifier::BOLD),
+            ),
+            Mode::ConfirmRepos { remove, .. } => (
+                format!("⛁ detach {} — worktree + branch.  y / n", remove.join(", ")),
+                Style::default().fg(C_FAILED).add_modifier(Modifier::BOLD),
+            ),
+            Mode::Busy { label, .. } => (
+                format!("{} {label}", SPINNER[self.frame % SPINNER.len()]),
                 Style::default().fg(C_WORKING).add_modifier(Modifier::BOLD),
             ),
             Mode::Rename { buffer, .. } => (
@@ -899,15 +1313,24 @@ impl State {
         let hw = left_limit.saturating_sub(cx + 1);
         put(&mut buf, cx, inner.y, hw as usize, &htext, hstyle);
 
-        // ── Column titles + faint rule ──
+        // ── Column titles + faint rule ── (the checklist relabels them)
         let hdr = Style::default().fg(C_FAINT);
-        put(&mut buf, name_x, inner.y + 2, name_w as usize, "TASK", hdr);
-        if show_ws {
-            put(&mut buf, ws_x, inner.y + 2, ws_w as usize, "WORKSPACE", hdr);
-        }
-        if age_full {
-            let lc = "LAST CHANGED";
-            put(&mut buf, right - lc.len() as u16, inner.y + 2, lc.len(), lc, hdr);
+        let picking = self.active_pick().is_some();
+        if picking {
+            let n = self.active_pick().map(|p| p.items.len()).unwrap_or(0);
+            let on = self.active_pick().map(|p| p.checked().len()).unwrap_or(0);
+            put(&mut buf, name_x, inner.y + 2, name_w as usize, "REPO", hdr);
+            let count = format!("{on} of {n}");
+            put(&mut buf, right - count.len() as u16, inner.y + 2, count.len(), &count, hdr);
+        } else {
+            put(&mut buf, name_x, inner.y + 2, name_w as usize, "TASK", hdr);
+            if show_ws {
+                put(&mut buf, ws_x, inner.y + 2, ws_w as usize, "WORKSPACE", hdr);
+            }
+            if age_full {
+                let lc = "LAST CHANGED";
+                put(&mut buf, right - lc.len() as u16, inner.y + 2, lc.len(), lc, hdr);
+            }
         }
         let rule: String = "─".repeat(cw as usize);
         put(&mut buf, cx, inner.y + 3, cw as usize, &rule, Style::default().fg(C_BORDER));
@@ -915,42 +1338,101 @@ impl State {
         // ── Footer: mode hints (left) + summary (right) ── shrinks with width.
         let y_footer = inner.y + inner.height - 1;
         let hints: &[(&str, &str)] = match &self.mode {
-            Mode::List if cw >= 72 => &[
+            Mode::List if cw >= 86 => &[
                 ("↑↓", "navigate"),
                 ("↵", "switch"),
                 ("→", "group"),
                 ("^a", "new"),
+                ("^e", "repos"),
                 ("^r/^d", "rename/del"),
                 ("esc", "close"),
             ],
-            Mode::List if cw >= 44 => &[("↵", "switch"), ("→", "group"), ("^a", "new"), ("esc", "close")],
-            Mode::List => &[("↵", "switch"), ("^a", "new"), ("esc", "")],
-            Mode::Create { .. } => &[("↵", "create"), ("esc", "cancel")],
+            Mode::List if cw >= 72 => &[
+                ("↵", "switch"),
+                ("→", "group"),
+                ("^a", "new"),
+                ("^e", "repos"),
+                ("^r/^d", "rename/del"),
+                ("esc", "close"),
+            ],
+            Mode::List if cw >= 44 => {
+                &[("↵", "switch"), ("^a", "new"), ("^e", "repos"), ("esc", "close")]
+            }
+            Mode::List => &[("↵", "switch"), ("^a", "new"), ("^e", "repos")],
+            Mode::Create { phase: Phase::Name, .. } if cw >= 56 => {
+                &[("↵", "create with all repos"), ("⇥", "pick repos"), ("esc", "cancel")]
+            }
+            Mode::Create { phase: Phase::Name, .. } => {
+                &[("↵", "create"), ("⇥", "repos"), ("esc", "cancel")]
+            }
+            Mode::Create { .. } | Mode::EditRepos { .. } if cw >= 56 => &[
+                ("↵", "apply"),
+                ("space", "toggle"),
+                ("a/n", "all/none"),
+                ("esc", "back"),
+            ],
+            Mode::Create { .. } | Mode::EditRepos { .. } => {
+                &[("↵", "apply"), ("space", "toggle"), ("esc", "back")]
+            }
+            Mode::ConfirmRepos { .. } => &[("y", "detach"), ("n", "cancel")],
+            Mode::Busy { .. } => &[("esc", "run in background")],
             Mode::Rename { .. } => &[("↵", "save"), ("esc", "cancel")],
             Mode::ConfirmDelete { .. } => &[("y", "delete"), ("n", "cancel")],
         };
-        let mut fx = cx;
-        for (key, label) in hints {
-            fx = put(&mut buf, fx, y_footer, (right - fx) as usize, key, Style::default().fg(C_TEXT).add_modifier(Modifier::BOLD));
-            if !label.is_empty() {
-                fx = put(&mut buf, fx + 1, y_footer, (right.saturating_sub(fx + 1)) as usize, label, Style::default().fg(C_FAINT));
+        // An error raised by a modal belongs next to the modal, not on a list
+        // line the modal is covering.
+        let modal_msg = match (&self.mode, &self.message) {
+            (Mode::List, _) => None,
+            (_, Some(msg)) => Some(msg.clone()),
+            _ => None,
+        };
+        if let Some(msg) = modal_msg {
+            put(&mut buf, cx, y_footer, cw as usize, &msg, Style::default().fg(C_FAILED));
+        } else {
+            let mut fx = cx;
+            for (key, label) in hints {
+                fx = put(&mut buf, fx, y_footer, (right - fx) as usize, key, Style::default().fg(C_TEXT).add_modifier(Modifier::BOLD));
+                if !label.is_empty() {
+                    fx = put(&mut buf, fx + 1, y_footer, (right.saturating_sub(fx + 1)) as usize, label, Style::default().fg(C_FAINT));
+                }
+                fx += 3;
             }
-            fx += 3;
-        }
-        // Summary only when it fits without crowding the hints.
-        if matches!(self.mode, Mode::List) && cw >= 60 {
-            let summary = format!("{} tasks · {} ws", self.filtered.len(), self.workspace_count);
-            let sx = right.saturating_sub(summary.chars().count() as u16);
-            if sx > fx + 1 {
-                put(&mut buf, sx, y_footer, summary.len(), &summary, Style::default().fg(C_FAINT));
+            // Summary only when it fits without crowding the hints.
+            if matches!(self.mode, Mode::List) && cw >= 60 {
+                let summary = format!("{} tasks · {} ws", self.filtered.len(), self.workspace_count);
+                let sx = right.saturating_sub(summary.chars().count() as u16);
+                if sx > fx + 1 {
+                    put(&mut buf, sx, y_footer, summary.len(), &summary, Style::default().fg(C_FAINT));
+                }
             }
         }
 
-        // ── List body ──
+        // ── Body ──
         let y_list = inner.y + 4;
         let list_h = y_footer.saturating_sub(y_list) as usize;
         self.list_origin = y_list as usize;
         if list_h == 0 {
+            return buf_to_ansi(&buf);
+        }
+        // A checklist (or a busy wait) takes over the body; `line_map` keeps
+        // pointing at whatever is drawn there, so taps land on the right thing.
+        if self.active_pick().is_some() {
+            self.draw_picks(&mut buf, name_x, y_list, right, name_w, list_h);
+            return buf_to_ansi(&buf);
+        }
+        if let Mode::Busy { label, .. } = &self.mode {
+            let spin = format!("{} {label}", SPINNER[self.frame % SPINNER.len()]);
+            put(&mut buf, name_x, y_list, cw as usize, &spin, Style::default().fg(C_DIM));
+            if list_h > 2 {
+                put(
+                    &mut buf,
+                    name_x,
+                    y_list + 2,
+                    cw as usize,
+                    "a first clone can take a while — esc leaves it running",
+                    Style::default().fg(C_FAINT),
+                );
+            }
             return buf_to_ansi(&buf);
         }
         if let Some(msg) = &self.message {
@@ -1199,6 +1681,25 @@ fn fmt_age(secs: Option<u64>) -> Option<String> {
     } else {
         format!("{}mo", s / (86400 * 30))
     })
+}
+
+/// Keys the repo checklist owns, shared by the create and edit forms. Returns
+/// false for anything it doesn't consume, so the caller can add its own
+/// bindings (↵, esc) on top. Ctrl-n/p mirror the list view's navigation; bare
+/// `n` is "none", which only works because the checklist doesn't capture text.
+fn pick_key(pick: &mut RepoPick, key: &KeyWithModifier) -> bool {
+    let ctrl = key.has_modifiers(&[KeyModifier::Ctrl]);
+    match key.bare_key {
+        BareKey::Down => pick.move_cursor(1),
+        BareKey::Up => pick.move_cursor(-1),
+        BareKey::Char('n') if ctrl => pick.move_cursor(1),
+        BareKey::Char('p') if ctrl => pick.move_cursor(-1),
+        BareKey::Char(' ') | BareKey::Char('x') if key.has_no_modifiers() => pick.toggle(),
+        BareKey::Char('a') if key.has_no_modifiers() => pick.set_all(true),
+        BareKey::Char('n') if key.has_no_modifiers() => pick.set_all(false),
+        _ => return false,
+    }
+    true
 }
 
 /// Subsequence (fuzzy) match: are all chars of `needle` present in `haystack`

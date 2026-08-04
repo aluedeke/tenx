@@ -133,6 +133,46 @@ pub enum TaskCommands {
     },
     /// List all tasks
     List,
+    /// Add repos (worktrees on the task's branch) to an existing task
+    AddRepo {
+        /// Exact task slug
+        name: String,
+        /// Repo names to add (must already be in the workspace)
+        #[arg(required = true)]
+        repos: Vec<String>,
+        /// Resolve the task in this workspace directory instead of cwd.
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Detach repos from a task, removing their worktree and task branch
+    RmRepo {
+        /// Exact task slug
+        name: String,
+        /// Repo names to detach
+        #[arg(required = true)]
+        repos: Vec<String>,
+        /// Discard uncommitted changes in the worktree (git refuses otherwise)
+        #[arg(long)]
+        force: bool,
+        /// Resolve the task in this workspace directory instead of cwd.
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Reconcile a task's repos to exactly this set (adds and detaches).
+    /// The overlay's repo checklist applies its changes through this.
+    SetRepos {
+        /// Exact task slug
+        name: String,
+        /// The complete set of repos the task should end up with
+        #[arg(required = true)]
+        repos: Vec<String>,
+        /// Discard uncommitted changes in worktrees being detached
+        #[arg(long)]
+        force: bool,
+        /// Resolve the task in this workspace directory instead of cwd.
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
     /// Delete a task and its worktrees
     Rm {
         name: String,

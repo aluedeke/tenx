@@ -42,23 +42,7 @@ pub fn new_in(
     write_claude_hooks(&task_dir)?;
 
     for repo_name in &repo_names {
-        let repo = ws.find_repo(repo_name).ok_or_else(|| {
-            crate::workspace::WorkspaceError::RepoNotFound(repo_name.clone())
-        })?;
-        let bare_path = crate::git::bare_repo_path(&bare_dir, &repo.name);
-        let verb = if bare_path.exists() { "fetching" } else { "cloning" };
-        let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
-        match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name) {
-            Ok(_) => spinner.done(),
-            Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
-        }
-
-        let worktree_path = task_dir.join(&repo.name);
-        let spinner = crate::progress::Spinner::new(format!("worktree {}", repo.name));
-        match crate::git::add_worktree(&bare_path, &worktree_path, slug) {
-            Ok(_) => spinner.done(),
-            Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
-        }
+        ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, slug)?;
     }
 
     if !no_open {
@@ -85,6 +69,153 @@ pub fn new_in(
     Ok(())
 }
 
+/// Clone-or-fetch one repo and create the task's worktree for it, on a branch
+/// named after the task slug.
+///
+/// Shared by task creation and `task add-repo`, so a repo that joins a task
+/// later is set up exactly like one that was there from the start: a fresh
+/// branch off that repo's freshly-fetched default branch. Branch namespaces are
+/// per-repo, so joining late costs nothing.
+fn ensure_repo_worktree(
+    ws: &crate::workspace::Workspace,
+    bare_dir: &Path,
+    task_dir: &Path,
+    repo_name: &str,
+    slug: &str,
+) -> Result<()> {
+    let repo = ws
+        .find_repo(repo_name)
+        .ok_or_else(|| crate::workspace::WorkspaceError::RepoNotFound(repo_name.to_string()))?;
+
+    let bare_path = crate::git::bare_repo_path(bare_dir, &repo.name);
+    let verb = if bare_path.exists() { "fetching" } else { "cloning" };
+    let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
+    match crate::git::ensure_synced(&repo.url, bare_dir, &repo.name) {
+        Ok(_) => spinner.done(),
+        Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
+    }
+
+    let worktree_path = task_dir.join(&repo.name);
+    let spinner = crate::progress::Spinner::new(format!("worktree {}", repo.name));
+    match crate::git::add_worktree(&bare_path, &worktree_path, slug) {
+        Ok(_) => spinner.done(),
+        Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
+    }
+    Ok(())
+}
+
+/// Add worktrees for `repos` to an existing task (cwd's workspace, or `ws_dir`).
+pub fn add_repo(ws_dir: Option<&str>, task: &str, repos: &[String]) -> Result<()> {
+    let (ws, slug) = resolve_task(ws_dir, task)?;
+    add_repo_in(&ws, &slug, repos)
+}
+
+/// Add worktrees for `repos` to an existing task. Idempotent: repos the task
+/// already has are skipped, so callers can pass a whole desired set without
+/// diffing it first.
+pub fn add_repo_in(ws: &crate::workspace::Workspace, slug: &str, repos: &[String]) -> Result<()> {
+    let global = crate::workspace::load_global()?;
+    let task = ws.find_task(slug)?;
+    let bare_dir = ws.bare_dir(&global);
+    for name in repos {
+        if task.repos.iter().any(|r| r == name) {
+            continue;
+        }
+        // task.name is the slug, i.e. the branch name the other worktrees use.
+        ensure_repo_worktree(ws, &bare_dir, &task.path, name, &task.name)?;
+    }
+    Ok(())
+}
+
+/// Detach `repos` from an existing task (cwd's workspace, or `ws_dir`).
+pub fn rm_repo(ws_dir: Option<&str>, task: &str, repos: &[String], force: bool) -> Result<()> {
+    let (ws, slug) = resolve_task(ws_dir, task)?;
+    rm_repo_in(&ws, &slug, repos, force)
+}
+
+/// Remove `repos`' worktrees from an existing task, along with their task
+/// branch — the same cleanup `task rm` does per repo, so a repo that leaves a
+/// task doesn't leave a stale branch behind (and a later re-add starts fresh
+/// off the default branch, which is what `add_worktree -B` would force anyway).
+///
+/// Without `force`, git refuses to remove a worktree with uncommitted changes;
+/// that refusal is the safety net, so the overlay never passes force.
+/// Idempotent: repos the task doesn't have are skipped.
+pub fn rm_repo_in(
+    ws: &crate::workspace::Workspace,
+    slug: &str,
+    repos: &[String],
+    force: bool,
+) -> Result<()> {
+    let global = crate::workspace::load_global()?;
+    let task = ws.find_task(slug)?;
+    let bare_dir = ws.bare_dir(&global);
+    for name in repos {
+        if !task.repos.iter().any(|r| r == name) {
+            continue;
+        }
+        let bare_path = crate::git::bare_repo_path(&bare_dir, name);
+        let worktree_path = task.path.join(name);
+        let spinner = crate::progress::Spinner::new(format!("detaching {name}"));
+        let res = crate::git::remove_worktree(&bare_path, &worktree_path, force)
+            .and_then(|()| crate::git::delete_branch(&bare_path, &task.name));
+        match res {
+            Ok(()) => spinner.done(),
+            Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
+        }
+    }
+    Ok(())
+}
+
+/// Reconcile a task's worktrees to exactly `repos`: add what's missing, detach
+/// what's extra. One command for a whole desired state, so the overlay can
+/// apply a checklist without sequencing two async invocations.
+///
+/// Additions run first: if one fails (a clone can), the repos the task already
+/// had are still intact rather than half-detached.
+pub fn set_repos(ws_dir: Option<&str>, task: &str, repos: &[String], force: bool) -> Result<()> {
+    let (ws, slug) = resolve_task(ws_dir, task)?;
+    set_repos_in(&ws, &slug, repos, force)
+}
+
+pub fn set_repos_in(
+    ws: &crate::workspace::Workspace,
+    slug: &str,
+    repos: &[String],
+    force: bool,
+) -> Result<()> {
+    if repos.is_empty() {
+        bail!("a task must keep at least one repo — delete the task instead");
+    }
+    let task = ws.find_task(slug)?;
+    let add: Vec<String> = repos
+        .iter()
+        .filter(|r| !task.repos.contains(r))
+        .cloned()
+        .collect();
+    let remove: Vec<String> = task
+        .repos
+        .iter()
+        .filter(|r| !repos.contains(r))
+        .cloned()
+        .collect();
+    add_repo_in(ws, slug, &add)?;
+    rm_repo_in(ws, slug, &remove, force)
+}
+
+/// Resolve a workspace (explicit dir, else cwd) and a task slug. An explicit
+/// `ws_dir` means the caller is a UI passing an exact slug; from cwd the name is
+/// slugified, matching how `task open` treats it.
+fn resolve_task(ws_dir: Option<&str>, task: &str) -> Result<(crate::workspace::Workspace, String)> {
+    match ws_dir {
+        Some(dir) => Ok((crate::workspace::load(Path::new(dir))?, task.to_string())),
+        None => Ok((
+            crate::workspace::find(&env::current_dir()?)?,
+            crate::workspace::slugify(task),
+        )),
+    }
+}
+
 pub fn open(name: &str) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
@@ -99,11 +230,11 @@ pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
     open_in(&ws, slug)
 }
 
-/// Create a task in an explicit workspace directory (all repos, opens a tab).
-/// Used by the overlay plugin.
-pub fn new_by_dir(ws_dir: &str, name: &str) -> Result<()> {
+/// Create a task in an explicit workspace directory and open a tab for it.
+/// Used by the overlay plugin. `repos` is the picked subset (None = all).
+pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>) -> Result<()> {
     let ws = crate::workspace::load(Path::new(ws_dir))?;
-    new_in(&ws, name, None, false)
+    new_in(&ws, name, repos, false)
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).
@@ -242,7 +373,7 @@ pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Resul
             // Best-effort: if the worktree was never registered (e.g. creation
             // failed mid-way), git remove will error but we still clean the dir.
             if worktree_path.exists() {
-                let _ = crate::git::remove_worktree(&bare_path, &worktree_path);
+                let _ = crate::git::remove_worktree(&bare_path, &worktree_path, true);
             }
             // Remove the task branch too so it doesn't linger and shadow a
             // future task of the same name with a stale tip. (task.name is the

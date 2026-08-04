@@ -153,9 +153,17 @@ pub fn add_worktree(bare_repo_path: &Path, worktree_path: &Path, branch_name: &s
 }
 
 /// Remove a git worktree from the bare repo.
-pub fn remove_worktree(bare_repo_path: &Path, worktree_path: &Path) -> Result<()> {
-    let out = Command::new("git")
-        .args(["-C", &bare_repo_path.to_string_lossy(), "worktree", "remove", "--force"])
+///
+/// `force` discards uncommitted changes. Task deletion forces (the whole task is
+/// going away and was confirmed), but detaching a single repo from a live task
+/// does not — git's refusal to drop a dirty worktree is the safety net there.
+pub fn remove_worktree(bare_repo_path: &Path, worktree_path: &Path, force: bool) -> Result<()> {
+    let mut cmd = Command::new("git");
+    cmd.args(["-C", &bare_repo_path.to_string_lossy(), "worktree", "remove"]);
+    if force {
+        cmd.arg("--force");
+    }
+    let out = cmd
         .arg(worktree_path)
         .output()
         .context("run git worktree remove")?;

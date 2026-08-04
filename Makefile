@@ -2,6 +2,14 @@
 
 PLUGIN_DIR := $(HOME)/.local/share/tenx
 
+# `make` runs a non-interactive shell, where zellij often isn't on PATH — a bare
+# `zellij` then fails 127 and the (ignored) reload silently no-ops, leaving the
+# running session on the old wasm. Same reasoning as zellij::find_bin().
+ZELLIJ := $(shell command -v zellij 2>/dev/null || \
+	for p in $(HOME)/.local/bin/zellij $(HOME)/.cargo/bin/zellij /opt/homebrew/bin/zellij /usr/local/bin/zellij; do \
+		[ -x "$$p" ] && echo "$$p" && break; \
+	done)
+
 build:
 	cargo build --release
 
@@ -21,7 +29,7 @@ install: plugin
 	cargo install --path .
 	mkdir -p $(PLUGIN_DIR)
 	cp target/wasm32-wasip1/release/tenx-zellij.wasm $(PLUGIN_DIR)/tenx-zellij.wasm
-	-zellij action start-or-reload-plugin "file:$(PLUGIN_DIR)/tenx-zellij.wasm" 2>/dev/null
+	-$(ZELLIJ) --session tenx action start-or-reload-plugin "file:$(PLUGIN_DIR)/tenx-zellij.wasm"
 
 clean:
 	cargo clean

@@ -47,6 +47,9 @@ struct Row {
     status: TaskStatus,
     changed: Option<SystemTime>,
     tab_id: Option<u32>,
+    /// Repos this task currently has worktrees for (what the repo editor diffs
+    /// against). Refreshed on `rebuild_rows`, not on the idle tick.
+    repos: Vec<String>,
 }
 
 /// Create-task form (workspace already chosen). `focus`: 0 = name,
@@ -71,6 +74,40 @@ impl CreateForm {
         } else {
             self.focus - 1
         };
+    }
+}
+
+/// One line of a repo checklist: the workspace repo, whether it's ticked, and
+/// whether the task already has a worktree for it. `checked != present` is the
+/// pending change — added when ticked, detached when unticked.
+#[derive(Clone)]
+struct RepoPick {
+    name: String,
+    checked: bool,
+    present: bool,
+}
+
+/// Edit which repos an existing task has worktrees for. Detaching is
+/// destructive (worktree + task branch), so an apply that removes anything goes
+/// through `confirm` first.
+struct EditReposForm {
+    ws_idx: usize,
+    slug: String,
+    title: String,
+    picks: Vec<RepoPick>,
+    focus: usize,
+    confirm: bool,
+}
+
+impl EditReposForm {
+    fn added(&self) -> Vec<String> {
+        self.picks.iter().filter(|p| p.checked && !p.present).map(|p| p.name.clone()).collect()
+    }
+    fn removed(&self) -> Vec<String> {
+        self.picks.iter().filter(|p| !p.checked && p.present).map(|p| p.name.clone()).collect()
+    }
+    fn desired(&self) -> Vec<String> {
+        self.picks.iter().filter(|p| p.checked).map(|p| p.name.clone()).collect()
     }
 }
 
@@ -136,6 +173,8 @@ enum Mode {
     Create(CreateForm),
     /// Add-repo form (Repos tab), workspace from the selected repo.
     AddRepo(AddRepoForm),
+    /// Repo checklist for the selected task (add/detach worktrees).
+    EditRepos(EditReposForm),
     Confirm(Confirm),
     Rename(RenameForm),
 }
@@ -293,6 +332,7 @@ impl Overlay {
                     status,
                     changed,
                     tab_id,
+                    repos: task.repos.clone(),
                 };
                 keyed.push((activity, row));
             }
@@ -536,6 +576,7 @@ impl Overlay {
             Command,
             Create,
             AddRepo,
+            EditRepos,
             Confirm,
             Rename,
         }
@@ -544,6 +585,7 @@ impl Overlay {
             Mode::Command(_) => Kind::Command,
             Mode::Create(_) => Kind::Create,
             Mode::AddRepo(_) => Kind::AddRepo,
+            Mode::EditRepos(_) => Kind::EditRepos,
             Mode::Confirm(_) => Kind::Confirm,
             Mode::Rename(_) => Kind::Rename,
         };
@@ -552,6 +594,7 @@ impl Overlay {
             Kind::Command => self.handle_command_key(key),
             Kind::Create => self.handle_create_key(key),
             Kind::AddRepo => self.handle_addrepo_key(key),
+            Kind::EditRepos => self.handle_editrepos_key(key),
             Kind::Confirm => {
                 self.handle_confirm_key(key);
                 Ok(false)
@@ -655,6 +698,11 @@ impl Overlay {
                     self.start_rename();
                 }
             }
+            KeyCode::Char('e') => {
+                if self.require_tasks() {
+                    self.start_edit_repos();
+                }
+            }
             KeyCode::Char('x') => {
                 if self.require_tasks() {
                     self.close_selected_tab();
@@ -739,6 +787,8 @@ impl Overlay {
         match cmd {
             "d" | "del" | "delete" | "rm" => self.start_delete(),
             "r" | "rename" => self.start_rename(),
+            // NB: not `:repos` — that's taken above by the Repos tab switch.
+            "e" | "edit" | "edit-repos" => self.start_edit_repos(),
             "x" | "close" => self.close_selected_tab(),
             "o" | "open" => return self.jump(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
@@ -991,6 +1041,135 @@ impl Overlay {
         Ok(())
     }
 
+    // ── Edit repos (Tasks tab) ────────────────────────────────────────────────
+
+    /// `e` / `:e` — open the repo checklist for the selected task, prefilled
+    /// with the worktrees it already has.
+    fn start_edit_repos(&mut self) {
+        let Some(row) = self.selected_row() else {
+            self.status_msg = Some("select a task first".into());
+            return;
+        };
+        let (ws_idx, slug, title, have) =
+            (row.ws_idx, row.slug.clone(), row.title.clone(), row.repos.clone());
+        let mut picks: Vec<RepoPick> = self
+            .workspaces
+            .get(ws_idx)
+            .map(|ws| {
+                ws.config
+                    .repos
+                    .iter()
+                    .map(|r| RepoPick {
+                        name: r.name.clone(),
+                        checked: have.contains(&r.name),
+                        present: have.contains(&r.name),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        // A worktree whose repo has since left the workspace config still needs
+        // a row, otherwise it could never be detached from here.
+        for name in &have {
+            if !picks.iter().any(|p| &p.name == name) {
+                picks.push(RepoPick { name: name.clone(), checked: true, present: true });
+            }
+        }
+        if picks.is_empty() {
+            self.status_msg = Some("no repos in workspace — add one on the Repos tab".into());
+            return;
+        }
+        self.status_msg = None;
+        self.mode = Mode::EditRepos(EditReposForm {
+            ws_idx,
+            slug,
+            title,
+            picks,
+            focus: 0,
+            confirm: false,
+        });
+    }
+
+    fn handle_editrepos_key(&mut self, key: KeyEvent) -> Result<bool> {
+        let mut form = match std::mem::replace(&mut self.mode, Mode::List) {
+            Mode::EditRepos(f) => f,
+            other => {
+                self.mode = other;
+                return Ok(false);
+            }
+        };
+        let n = form.picks.len();
+        // Awaiting the destructive-change confirmation: only y/⏎ goes through.
+        if form.confirm {
+            if matches!(key.code, KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter) {
+                self.apply_repo_changes(&form);
+                return Ok(false);
+            }
+            form.confirm = false;
+            self.mode = Mode::EditRepos(form);
+            return Ok(false);
+        }
+        match key.code {
+            KeyCode::Esc => return Ok(false), // cancel; mode is already List
+            KeyCode::Enter => {
+                if form.added().is_empty() && form.removed().is_empty() {
+                    self.status_msg = Some("no repo changes".into());
+                    return Ok(false);
+                }
+                if form.desired().is_empty() {
+                    self.status_msg = Some("a task must keep at least one repo".into());
+                    self.mode = Mode::EditRepos(form);
+                    return Ok(false);
+                }
+                // Detaching drops a worktree and its branch — confirm first.
+                if form.removed().is_empty() {
+                    self.apply_repo_changes(&form);
+                } else {
+                    form.confirm = true;
+                    self.mode = Mode::EditRepos(form);
+                }
+                return Ok(false);
+            }
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => form.focus = (form.focus + 1) % n,
+            KeyCode::BackTab | KeyCode::Up | KeyCode::Char('k') => {
+                form.focus = if form.focus == 0 { n - 1 } else { form.focus - 1 }
+            }
+            KeyCode::Char(' ') | KeyCode::Char('x') => {
+                form.picks[form.focus].checked = !form.picks[form.focus].checked;
+            }
+            KeyCode::Char('a') => form.picks.iter_mut().for_each(|p| p.checked = true),
+            KeyCode::Char('n') => form.picks.iter_mut().for_each(|p| p.checked = false),
+            _ => {}
+        }
+        self.mode = Mode::EditRepos(form);
+        Ok(false)
+    }
+
+    /// Reconcile the task's worktrees to the checklist. `set_repos_in` does the
+    /// diff again natively (it's the source of truth for what's on disk), so
+    /// this just hands over the desired set.
+    fn apply_repo_changes(&mut self, form: &EditReposForm) {
+        let (added, removed) = (form.added().len(), form.removed().len());
+        let res = {
+            let ws = &self.workspaces[form.ws_idx];
+            crate::cli::task::set_repos_in(ws, &form.slug, &form.desired(), false)
+        };
+        match res {
+            Ok(()) => {
+                let keep = form.slug.clone();
+                self.rebuild_rows();
+                if let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].slug == keep) {
+                    self.selected = pos;
+                }
+                self.status_msg = Some(match (added, removed) {
+                    (a, 0) => format!("added {a} repo(s) to '{}'", form.title),
+                    (0, r) => format!("detached {r} repo(s) from '{}'", form.title),
+                    (a, r) => format!("added {a}, detached {r} in '{}'", form.title),
+                });
+            }
+            Err(e) => self.status_msg = Some(e.to_string()),
+        }
+    }
+
     // ── Delete ────────────────────────────────────────────────────────────────
 
     fn start_delete(&mut self) {
@@ -1231,6 +1410,8 @@ fn render(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         render_create(f, overlay);
     } else if matches!(overlay.mode, Mode::AddRepo(_)) {
         render_addrepo(f, overlay);
+    } else if matches!(overlay.mode, Mode::EditRepos(_)) {
+        render_editrepos(f, overlay);
     } else {
         render_list(f, overlay);
     }
@@ -1345,7 +1526,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
             let hint = match (overlay.input_mode, overlay.tab) {
                 (InputMode::Insert, _) => "  type to filter · ↓ list · ⏎ open · ⇥ tab",
                 (InputMode::Normal, Tab::Tasks) => {
-                    "  j/k move · ↑ search · a new · dd del · r rename · x close · gt tab · q quit"
+                    "  j/k move · a new · e repos · dd del · r rename · x close · gt tab · q quit"
                 }
                 (InputMode::Normal, Tab::Repos) => {
                     "  j/k move · ↑ search · a add-repo · gt tab · q quit"
@@ -1596,6 +1777,73 @@ fn cursor(on: bool) -> &'static str {
     } else {
         ""
     }
+}
+
+/// Repo checklist for an existing task: ticked rows the task already has read
+/// as "worktree", the pending diff is called out per row, and detaching is
+/// spelled out in the footer before it's confirmed.
+fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay) {
+    let Mode::EditRepos(form) = &overlay.mode else { return };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(f.area());
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("  task  ", Style::default().fg(palette::MUTED.color())),
+            Span::styled(
+                form.title.clone(),
+                Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+    ];
+    for (i, p) in form.picks.iter().enumerate() {
+        let focused = form.focus == i;
+        let check = if p.checked { "[x]" } else { "[ ]" };
+        let prefix = if focused { "▸ " } else { "  " };
+        let style = if focused {
+            Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)
+        } else if p.checked {
+            Style::default().fg(palette::BRIGHT.color())
+        } else {
+            Style::default().fg(palette::MUTED.color())
+        };
+        let (note, note_style) = match (p.checked, p.present) {
+            (true, true) => ("worktree", Style::default().fg(palette::MUTED.color())),
+            (true, false) => ("+ add", Style::default().fg(palette::SUCCESS.color())),
+            (false, true) => ("− detach", Style::default().fg(palette::DANGER.color())),
+            (false, false) => ("", Style::default()),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("{prefix}{check} {}", pad_cell(&p.name, 24)), style),
+            Span::styled(note, note_style),
+        ]));
+    }
+
+    let body =
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" task repos "));
+    f.render_widget(body, chunks[0]);
+
+    let footer = if form.confirm {
+        Line::from(Span::styled(
+            format!(
+                " detach {} — removes the worktree AND its '{}' branch.   y = apply   esc = back",
+                form.removed().join(", "),
+                form.slug
+            ),
+            Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
+        ))
+    } else if let Some(msg) = &overlay.status_msg {
+        Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
+    } else {
+        Line::from(Span::styled(
+            " ⏎ apply   esc cancel   space toggle   a all / n none",
+            Style::default().fg(palette::MUTED.color()),
+        ))
+    };
+    f.render_widget(Paragraph::new(footer), chunks[1]);
 }
 
 fn render_create(f: &mut ratatui::Frame, overlay: &Overlay) {
