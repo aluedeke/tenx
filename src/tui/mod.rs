@@ -41,21 +41,7 @@ pub fn dump_json() -> anyhow::Result<()> {
         for task in ws.tasks().unwrap_or_default() {
             let state = crate::workspace::resolve_task_state(&task.path, &sessions);
             let activity = state.changed.unwrap_or(task.created_at);
-            entries.push((
-                activity,
-                serde_json::json!({
-                    "ws": ws.config.name,
-                    "ws_dir": ws.dir,
-                    "slug": task.name,
-                    "title": task.display_name,
-                    "status": state.status.token(),
-                    "waiting_for": state.waiting_for,
-                    "sessions": state.sessions,
-                    "agents": state.agents,
-                    "age_secs": state.changed.and_then(|c| c.elapsed().ok()).map(|d| d.as_secs()),
-                    "repos": task.repos,
-                }),
-            ));
+            entries.push((activity, crate::workspace::task_json(&ws, &task, &state)));
         }
     }
     entries.sort_by(|a, b| b.0.cmp(&a.0));

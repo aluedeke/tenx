@@ -539,6 +539,29 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[claude::Session]) -> Task
     }
 }
 
+/// One task as the JSON shape every out-of-process consumer reads: the `tasks`
+/// entries of `tenx overlay --json` (the overlay plugin) and the payload of the
+/// `tenx::status` pipe (the status bar).
+///
+/// Shared rather than written out at each call site on purpose — two hand-kept
+/// copies of a wire format is exactly how the overlay and its plugin drift, and
+/// here the consumers are in another process and another language runtime, where
+/// a silent mismatch surfaces as a missing field at runtime, not a compile error.
+pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::Value {
+    serde_json::json!({
+        "ws": ws.config.name,
+        "ws_dir": ws.dir,
+        "slug": task.name,
+        "title": task.display_name,
+        "status": state.status.token(),
+        "waiting_for": state.waiting_for,
+        "sessions": state.sessions,
+        "agents": state.agents,
+        "age_secs": state.changed.and_then(|c| c.elapsed().ok()).map(|d| d.as_secs()),
+        "repos": task.repos,
+    })
+}
+
 fn read_branch(worktree_dir: &Path) -> Option<String> {
     let content = fs::read_to_string(worktree_dir.join(".git")).ok()?;
     let gitdir_path = content.strip_prefix("gitdir: ")?.trim();

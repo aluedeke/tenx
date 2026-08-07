@@ -43,6 +43,49 @@ pub fn is_inside_session() -> bool {
     env::var("ZELLIJ").is_ok()
 }
 
+// ── Pushing state to plugins ──────────────────────────────────────────────────
+
+/// The pipe the status bar listens on. Namespaced because a pipe sent without
+/// `--plugin` is broadcast to *every* listening plugin in the session, so the
+/// name is the only thing distinguishing our traffic from anyone else's.
+pub const STATUS_PIPE: &str = "tenx::status";
+
+/// Broadcast a status payload to every plugin in the tenx session listening on
+/// [`STATUS_PIPE`]. Best-effort throughout: a status bar that misses an update
+/// gets the next one, and nothing in tenx should fail because a pipe didn't land.
+///
+/// Broadcast rather than `--plugin <url>`-addressed, which looks more precise
+/// and is worse in two ways: it *launches* a fresh instance (with a pane) when
+/// the URL isn't already running, and it matches on url+configuration, so the
+/// per-tab config that tells each bar which task it belongs to would make every
+/// one of them a different target.
+///
+/// The payload goes in on stdin, not as the positional `PAYLOAD` argument:
+/// `zellij pipe <payload>` holds the pipe open and never returns, which in a
+/// long-lived caller is a process that accumulates forever. Closing stdin is
+/// what tells the CLI to deliver and exit (~20 ms).
+pub fn pipe_status(payload: &str) {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let Ok(mut child) = cmd()
+        .args(["-s", SESSION, "pipe", "--name", STATUS_PIPE])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(payload.as_bytes());
+    }
+    // Reaped, not detached: this runs on a loop for the life of the session, and
+    // unwaited children would pile up as zombies. Safe to block on — a pipe to a
+    // session that's gone exits 1 immediately rather than hanging or creating it.
+    let _ = child.wait();
+}
+
 // ── Session management ────────────────────────────────────────────────────────
 
 /// Parse session names from `zellij list-sessions` output.
