@@ -21,6 +21,9 @@
 //! **middle** for `EVENT_TICKS` and then gone. Several queue and take it in
 //! turn. The middle is empty the rest of the time, which is the point: news
 //! right-aligned sat where the base sits, in the corner you stop looking at.
+//! The two never overlap — an event that covered the count made it vanish for
+//! four seconds exactly when something had happened, which is the worst moment
+//! to stop saying how much is outstanding.
 //!
 //! Two earlier cuts were wrong in opposite directions and both are worth not
 //! repeating. Rendering every waiting task as a chip produced a wall nobody
@@ -47,10 +50,9 @@
 //!
 //! The price is that `ReadApplicationState` is out of reach, so there is no mode
 //! indicator (`NORMAL`/`LOCKED`) and no way to know which tab is focused. Neither
-//! turned out to matter: keybind hints can be static because tenx generates the
-//! keybinds, and "which tab is focused" is answered by construction — only the
-//! visible tab's bar is on screen, so *this* instance's task is the one you're
-//! looking at and every other task in the payload is one you aren't.
+//! turned out to matter: "which tab is focused" is answered by construction —
+//! only the visible tab's bar is on screen, so *this* instance's task is the one
+//! you're looking at and every other task in the payload is one you aren't.
 //!
 //! ## Where the data comes from
 //!
@@ -400,48 +402,47 @@ impl State {
             x = put(buf, x, width, &format!("{glyph} {label}"), Style::default().fg(color));
         }
 
-        // ── Right: hint, then the event slot / base ──────────────────────────
-        let hint = "^w tasks";
-        let hint_x = width.saturating_sub(hint.len() as u16 + 1);
-        put(buf, hint_x, width, hint, Style::default().fg(palette::MUTED.color()));
-
-        let right_edge = hint_x.saturating_sub(2);
-
-        // An event takes the *middle* for a few seconds. Centring is the point:
-        // right-aligned it sat where the base sits, in the corner you have
-        // learned to ignore, and a transition went unnoticed. The middle is
-        // empty the rest of the time, so anything appearing there is news.
-        if let Some(event) = &self.current {
-            // How many events are still queued behind this one — news left to
-            // show, not a task count; the base carries that.
-            let more = self.queue.len();
-            let text = format!(" {} ", event.text);
-            let tail = if more > 0 { format!(" +{more}") } else { String::new() };
-            let w = display_width(&text) as u16 + display_width(&tail) as u16;
-            let centred = width.saturating_sub(w) / 2;
-            let latest = right_edge.saturating_sub(w).max(x + 2);
-            let start = centred.max(x + 2).min(latest);
-            let after = put(
-                buf,
-                start,
-                right_edge,
-                &text,
-                Style::default()
-                    .fg(palette::GROUND.color())
-                    .bg(event.color)
-                    .add_modifier(Modifier::BOLD),
-            );
-            if !tail.is_empty() {
-                put(buf, after, right_edge, &tail, Style::default().fg(palette::MUTED.color()));
-            }
-            return;
-        }
-
-        // The base stays in the corner — it is a standing condition, not news.
+        // ── Right: the standing count, drawn first and never covered ─────────
+        //
+        // It is the one thing on the bar that is always true, so an event must
+        // not take its place: an event replacing it made the count vanish for
+        // four seconds exactly when something had just happened, which is the
+        // worst possible moment to stop saying how much is outstanding.
+        let mut right_edge = width.saturating_sub(1);
         if let Some((text, color)) = self.base() {
             let w = display_width(&text) as u16;
-            let start = right_edge.saturating_sub(w).max(x + 2);
-            put(buf, start, right_edge, &text, Style::default().fg(color));
+            let start = width.saturating_sub(w + 1);
+            put(buf, start, width, &text, Style::default().fg(color));
+            right_edge = start.saturating_sub(2);
+        }
+
+        // ── Middle: an event, for a few seconds ──────────────────────────────
+        //
+        // Centred in what is left. The middle is empty the rest of the time, so
+        // anything appearing there is news; right-aligned it sat where the count
+        // sits, in the corner you have already learned to ignore.
+        let Some(event) = &self.current else { return };
+        // How many events are still queued behind this one — news left to show,
+        // not a task count; the base carries that.
+        let more = self.queue.len();
+        let text = format!(" {} ", event.text);
+        let tail = if more > 0 { format!(" +{more}") } else { String::new() };
+        let w = display_width(&text) as u16 + display_width(&tail) as u16;
+        let centred = width.saturating_sub(w) / 2;
+        let latest = right_edge.saturating_sub(w).max(x + 2);
+        let start = centred.max(x + 2).min(latest);
+        let after = put(
+            buf,
+            start,
+            right_edge,
+            &text,
+            Style::default()
+                .fg(palette::GROUND.color())
+                .bg(event.color)
+                .add_modifier(Modifier::BOLD),
+        );
+        if !tail.is_empty() {
+            put(buf, after, right_edge, &tail, Style::default().fg(palette::MUTED.color()));
         }
     }
 }
