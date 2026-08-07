@@ -40,15 +40,22 @@ install: plugin
 	cargo install --path .
 	mkdir -p $(PLUGIN_DIR)
 	cp target/wasm32-wasip1/release/tenx-zellij.wasm $(PLUGIN_DIR)/tenx-zellij.wasm
-	cp target/wasm32-wasip1/release/tenx-statusbar.wasm $(PLUGIN_DIR)/tenx-statusbar.wasm
+	@# Content-addressed, because the zellij server caches a plugin's compiled
+	@# module keyed by PATH for the life of the session. Overwriting the wasm in
+	@# place is a no-op for any tab opened afterwards — it gets the module
+	@# compiled the first time the server saw that path (measured: a new tab
+	@# rendered the old build). A new build at a new path gets a new cache entry
+	@# for free, with no reload action and no stray pane to close.
+	@sb=target/wasm32-wasip1/release/tenx-statusbar.wasm; \
+	  hash=$$(shasum -a256 $$sb | cut -c1-12); \
+	  cp $$sb $(PLUGIN_DIR)/tenx-statusbar-$$hash.wasm; \
+	  rm -f $(PLUGIN_DIR)/tenx-statusbar.wasm; \
+	  ls -t $(PLUGIN_DIR)/tenx-statusbar-*.wasm | tail -n +4 | while read old; do rm -f "$$old"; done; \
+	  echo "  ✓ status bar -> tenx-statusbar-$$hash.wasm"
 	-@$(ZELLIJ) --session tenx action start-or-reload-plugin \
 		"file:$(PLUGIN_DIR)/tenx-zellij.wasm" \
 		-c tenx_bin=$(HOME)/.cargo/bin/tenx >/dev/null 2>&1
-	@# The status bar hits the same module cache, but a reload here would only
-	@# swap panes in tabs that already exist and cannot re-render the ones a
-	@# running session already painted. Its instances are created with tabs, so
-	@# the honest instruction is to reopen the tab (or the session).
-	@echo "  ✓ status bar installed — open a new tab to pick it up"
+	@echo "  ✓ status bar picked up by the next task tab you open"
 	@echo "  ✓ installed — the plugin pane that just opened is the new build; esc closes it"
 
 clean:

@@ -363,14 +363,43 @@ pub fn switch_to_tenx_session(tenx_bin: &str) -> Result<()> {
     Ok(())
 }
 
-/// Absolute path to the status-bar wasm, installed by `make install`.
+/// Absolute path to the status-bar wasm — the newest content-addressed copy
+/// `make install` wrote, falling back to the unversioned name.
 ///
 /// Layouts must name it by path, not by a `plugins` alias: an alias is resolved
 /// against the *user's* config, and a task tab's bar carries per-task
 /// configuration that an alias can't supply.
+///
+/// **The filename carries a content hash on purpose.** The zellij *server*
+/// caches each plugin's compiled module keyed by path for the life of the
+/// session, so overwriting the wasm in place changes nothing: a task tab opened
+/// afterwards is handed the module compiled the first time the server read that
+/// path, and keeps running last week's code until the session is restarted.
+/// Measured — a tab created after an in-place overwrite rendered the *old*
+/// build. `zellij action start-or-reload-plugin` does evict the cache, but it
+/// also spawns a half-screen plugin pane that the bar (which handles no keys)
+/// can't dismiss, which is a poor thing to leave behind on every install.
+///
+/// A new build lands at a new path, so it gets a new cache entry for free. No
+/// eviction, no stray pane, and it works in a session that has been up for days.
 pub fn statusbar_wasm() -> String {
     let home = env::var("HOME").unwrap_or_default();
-    format!("{home}/.local/share/tenx/tenx-statusbar.wasm")
+    let dir = PathBuf::from(&home).join(".local/share/tenx");
+    let newest = fs::read_dir(&dir).ok().and_then(|entries| {
+        entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name();
+                let name = name.to_string_lossy();
+                name.starts_with("tenx-statusbar-") && name.ends_with(".wasm")
+            })
+            .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+            .map(|e| e.path())
+    });
+    newest
+        .unwrap_or_else(|| dir.join("tenx-statusbar.wasm"))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// A status-bar pane block for a layout, optionally bound to a task.
