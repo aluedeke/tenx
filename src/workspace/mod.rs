@@ -1,3 +1,5 @@
+pub mod claude;
+
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -366,59 +368,175 @@ pub fn read_task_display_name(task_dir: &Path) -> String {
     task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// The Claude-activity state of a task, mirrored from the zellij tab indicator.
-/// Written by Claude Code hooks via `tenx tab event`, which maps each hook event
-/// to one of these states (see `cli::tab::event`). Absent file → `Idle`.
+/// A task's Claude-activity state, derived entirely from Claude Code's own
+/// session registry (`claude::sessions`) — tenx installs no hooks and writes no
+/// state of its own. Every variant is a fact about live sessions in the task's
+/// directory tree; see `resolve_task_state`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStatus {
-    /// A turn is in flight — Claude is working (UserPromptSubmit / tool calls).
-    Working,
-    /// Claude needs you: a permission prompt, idle prompt, or explicit
-    /// needs-input notification (the 💬 indicator).
+    /// A session has a dialog open and cannot proceed until you answer it —
+    /// permission prompt, elicitation, sandbox request (the 💬 indicator).
     Blocked,
-    /// Claude finished a turn — the ball is in your court (Stop).
+    /// A turn is in flight.
+    Working,
+    /// A session is live but quiet: the turn is over and it's your move.
     Done,
-    /// The turn ended on an API error (StopFailure).
-    Failed,
-    /// Session present but no active turn, or no signal yet.
+    /// No Claude session running in this task at all.
     Idle,
 }
 
-impl TaskStatus {
-    /// Parse the single token written to `.tenx-status`. Unknown/absent → `Idle`.
-    fn from_token(token: &str) -> TaskStatus {
-        match token {
-            "working" => TaskStatus::Working,
-            "blocked" => TaskStatus::Blocked,
-            "done" => TaskStatus::Done,
-            "failed" => TaskStatus::Failed,
-            _ => TaskStatus::Idle,
+/// The section a status is listed under. Coarser than `TaskStatus` on purpose:
+/// `Blocked` and `Done` are both *waiting on you* — one has a dialog open, the
+/// other finished a turn — and splitting them put two near-identical headers
+/// back to back. They share a section; the row's glyph (💬 vs ✅) and Claude's
+/// waiting reason carry the difference, and `TaskStatus::rank` floats the
+/// blocked ones to the top of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskGroup {
+    /// An agent is waiting on you — a prompt to answer, or a finished turn.
+    Waiting,
+    /// A turn is in flight. Nothing for you to do.
+    Working,
+    /// No Claude session running at all.
+    Inactive,
+}
+
+impl TaskGroup {
+    /// Section order: what needs you, then what's running, then what isn't.
+    pub fn rank(self) -> u8 {
+        match self {
+            TaskGroup::Waiting => 0,
+            TaskGroup::Working => 1,
+            TaskGroup::Inactive => 2,
         }
     }
 
-    /// The wire token for this status (inverse of `from_token`); used by
-    /// `tenx overlay --json` for the overlay plugin.
+    pub fn label(self) -> &'static str {
+        match self {
+            TaskGroup::Waiting => "WAITING FOR INPUT",
+            TaskGroup::Working => "WORKING",
+            TaskGroup::Inactive => "INACTIVE",
+        }
+    }
+}
+
+impl TaskStatus {
+    /// The wire token for this status; used by `tenx overlay --json` for the
+    /// overlay plugin.
     pub fn token(self) -> &'static str {
         match self {
             TaskStatus::Working => "working",
             TaskStatus::Blocked => "blocked",
             TaskStatus::Done => "done",
-            TaskStatus::Failed => "failed",
             TaskStatus::Idle => "idle",
+        }
+    }
+
+    /// Which section this status is listed under.
+    pub fn group(self) -> TaskGroup {
+        match self {
+            TaskStatus::Blocked | TaskStatus::Done => TaskGroup::Waiting,
+            TaskStatus::Working => TaskGroup::Working,
+            TaskStatus::Idle => TaskGroup::Inactive,
+        }
+    }
+
+    /// Ordering *within* a section. Only `Blocked` vs `Done` matters in
+    /// practice: an agent parked on a prompt goes above one that merely
+    /// finished, because seconds of yours restart minutes of its work.
+    pub fn rank(self) -> u8 {
+        match self {
+            TaskStatus::Blocked => 0,
+            TaskStatus::Working => 1,
+            TaskStatus::Done => 2,
+            TaskStatus::Idle => 3,
         }
     }
 }
 
-/// Read a task's `.tenx-status` file, returning the state and when it last
-/// changed. Absent file → `Idle` with no timestamp.
-pub fn read_task_status(task_dir: &Path) -> (TaskStatus, Option<SystemTime>) {
-    let path = task_dir.join(".tenx-status");
-    let modified = fs::metadata(&path).and_then(|m| m.modified()).ok();
-    let status = match fs::read_to_string(&path) {
-        Ok(s) => TaskStatus::from_token(s.trim()),
-        Err(_) => TaskStatus::Idle,
-    };
-    (status, modified)
+/// A task's resolved activity state: what Claude Code says right now, backed by
+/// the hook file for the two states it can't express.
+#[derive(Debug, Clone)]
+pub struct TaskState {
+    pub status: TaskStatus,
+    /// When the state last changed: the session's `statusUpdatedAt`. For a
+    /// quiet session that's the busy→idle transition, so the age reads "waiting
+    /// on you this long".
+    pub changed: Option<SystemTime>,
+    /// Claude Code's reason for waiting ("input needed", "sandbox request", the
+    /// open dialog's label). Only set for `Blocked`, and only when the registry
+    /// is what decided it.
+    pub waiting_for: Option<String>,
+    /// Live sessions in this task's directory tree.
+    pub sessions: usize,
+    /// How many of those are background agents (`--bg`) rather than the
+    /// interactive session in the task's tab. They run in subdirectories of the
+    /// task, so the retired hooks never saw them at all — their status writes
+    /// landed in a directory no task reads.
+    pub agents: usize,
+}
+
+/// Resolve a task's state from Claude Code's session registry, falling back to
+/// the hook file. Pass `sessions` from [`claude::sessions`] once per refresh
+/// rather than per task.
+///
+/// The registry is authoritative for anything a live session can report, and
+/// the hook file only fills the gap it can't express:
+///
+/// - any session `waiting` → `Blocked`, with Claude Code's own reason. This is
+///   a live value, so unlike the old `Notification` latch it clears itself the
+///   moment you answer the prompt.
+/// - else any session `busy` → `Working`.
+/// - else a session exists and is quiet → `Done`. Not "a `Stop` hook fired" —
+///   for a live session `done` and `idle` are the same situation (not busy, no
+///   dialog), and the registry already timestamps it: an idle session's
+///   `statusUpdatedAt` *is* the busy→idle transition, i.e. when the turn ended.
+///   `Stop` was writing a fact the registry states outright, so it's gone too.
+/// - no live session at all → `Idle`. This is the line that actually matters:
+///   `Done` means an agent is sitting there waiting on you, `Idle` means nothing
+///   is running. Lumping those together (which the previous cut did whenever no
+///   `Stop` had been recorded) buries the first in a list of the second.
+pub fn resolve_task_state(task_dir: &Path, sessions: &[claude::Session]) -> TaskState {
+    let live = claude::sessions_for(sessions, task_dir);
+    let count = live.len();
+    let agents = live.iter().filter(|s| s.kind != "interactive").count();
+    if let Some(s) = live.iter().find(|s| s.status == claude::SessionStatus::Waiting) {
+        return TaskState {
+            status: TaskStatus::Blocked,
+            changed: s.status_updated_at,
+            waiting_for: s.waiting_for.clone(),
+            sessions: count,
+            agents,
+        };
+    }
+    if let Some(s) = live.iter().find(|s| s.status == claude::SessionStatus::Busy) {
+        return TaskState {
+            status: TaskStatus::Working,
+            changed: s.status_updated_at,
+            waiting_for: None,
+            sessions: count,
+            agents,
+        };
+    }
+    if live.is_empty() {
+        return TaskState {
+            status: TaskStatus::Idle,
+            changed: None,
+            waiting_for: None,
+            sessions: 0,
+            agents: 0,
+        };
+    }
+    // Quiet live session: the turn is over and it's your move. `changed` is the
+    // busy→idle transition, so the age column reads "waiting on you this long".
+    let quiet_since = live.iter().filter_map(|s| s.status_updated_at).max();
+    TaskState {
+        status: TaskStatus::Done,
+        changed: quiet_since,
+        waiting_for: None,
+        sessions: count,
+        agents,
+    }
 }
 
 fn read_branch(worktree_dir: &Path) -> Option<String> {

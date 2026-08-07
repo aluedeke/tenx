@@ -59,7 +59,6 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Tab { command }) => match command {
-            TabCommands::Event => cli::tab::event()?,
             TabCommands::Header => cli::tab::header()?,
         },
 

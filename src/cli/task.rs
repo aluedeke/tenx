@@ -434,86 +434,70 @@ fn write_claude_hooks(task_dir: &Path) -> Result<()> {
 }
 
 fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
-    ensure_workspace_claude_settings_inner(workspace_dir, false)
+    remove_tenx_hooks(workspace_dir)
 }
 
-fn ensure_workspace_claude_settings_inner(workspace_dir: &Path, force: bool) -> Result<()> {
+/// Strip tenx's Claude Code hooks from a workspace.
+///
+/// tenx installs **no hooks at all** any more. Every task state it shows is read
+/// live from Claude Code's own session registry (`workspace::claude`), so the
+/// `.claude/hooks/event.sh` → `tenx tab event` → `.tenx-status` pipeline has no
+/// remaining job. This function is what retires it, and it runs from both
+/// `task new` and `tenx hooks install` so a workspace converges whichever it
+/// meets first.
+///
+/// It removes only what tenx wrote:
+///
+/// - hook entries in `.claude/settings.json` whose command points at our
+///   `event.sh` — foreign hooks the user added are left in place, and the
+///   `hooks` key is dropped entirely only when nothing survives the filter.
+/// - our own scripts under `.claude/hooks/`.
+/// - stale `.tenx-status` files in the workspace's tasks. Nothing reads them
+///   now; leaving them would be litter that looks meaningful.
+///
+/// The `.claude` directory itself stays — `tenx init` also installs skills
+/// there, and the per-task symlink to it is still how Claude Code finds them.
+fn remove_tenx_hooks(workspace_dir: &Path) -> Result<()> {
     let claude_dir = workspace_dir.join(".claude");
     let hooks_dir = claude_dir.join("hooks");
-    std::fs::create_dir_all(&hooks_dir)?;
-
-    // All phase-1 hooks funnel their JSON into a single `event.sh`, which pipes
-    // it to `tenx tab event`; the event→state mapping lives in Rust, so adding
-    // events is a code change, not a settings.json edit.
-    //
-    // Fresh workspace → write settings.json with the canonical hook set. On
-    // `hooks install` (force) an existing settings.json gets its "hooks" key
-    // replaced in place, preserving any other keys the user added — otherwise
-    // upgraded workspaces would keep registering the old (deleted) scripts.
-    let hook_events =
-        ["SessionStart", "SessionEnd", "UserPromptSubmit", "Notification", "Stop", "StopFailure"];
-    let event_hook = serde_json::json!([
-        { "hooks": [ { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/event.sh" } ] }
-    ]);
-    let hooks: serde_json::Map<String, serde_json::Value> = hook_events
-        .iter()
-        .map(|ev| (ev.to_string(), event_hook.clone()))
-        .collect();
 
     let settings_path = claude_dir.join("settings.json");
-    let existing: Option<serde_json::Value> = std::fs::read_to_string(&settings_path)
+    if let Some(mut settings) = std::fs::read_to_string(&settings_path)
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok());
-    match existing {
-        None => {
-            // Missing (or unparseable — treat as tenx-owned and rewrite).
-            let settings = serde_json::json!({ "hooks": hooks });
-            std::fs::write(&settings_path, format!("{:#}\n", settings))?;
-        }
-        Some(mut settings) if force => {
-            settings["hooks"] = serde_json::Value::Object(hooks);
-            std::fs::write(&settings_path, format!("{:#}\n", settings))?;
-        }
-        Some(_) => {} // present and not forcing — leave alone
-    }
-
-    let tenx = std::env::current_exe().context("cannot determine tenx binary path")?;
-    let tenx = tenx.display();
-
-    // The hook payload arrives on stdin; forward it verbatim to `tenx tab event`.
-    write_hook_script(
-        &hooks_dir.join("event.sh"),
-        &format!("#!/bin/sh\ncd \"$CLAUDE_PROJECT_DIR\" || exit 0\nexec \"{tenx}\" tab event\n"),
-        force,
-    )?;
-
-    // Remove the pre-event.sh scripts so upgraded workspaces don't keep dead
-    // hooks around (the old settings.json referencing them is left alone if the
-    // user customized it; a fresh workspace never gets them).
-    for old in ["notify.sh", "notify-clear.sh"] {
-        let _ = std::fs::remove_file(hooks_dir.join(old));
-    }
-
-    Ok(())
-}
-
-fn write_hook_script(path: &Path, content: &str, force: bool) -> Result<()> {
-    if !force && path.exists() {
-        return Ok(());
-    }
-    std::fs::write(path, content)?;
-    #[cfg(unix)]
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
     {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(path)?.permissions();
-        perms.set_mode(perms.mode() | 0o111);
-        std::fs::set_permissions(path, perms)?;
+        if let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) {
+            hooks.retain(|_, matchers| !mentions_tenx_hook(matchers));
+            let empty = hooks.is_empty();
+            if empty {
+                settings.as_object_mut().map(|o| o.remove("hooks"));
+            }
+            std::fs::write(&settings_path, format!("{:#}\n", settings))?;
+        }
+    }
+
+    for script in ["event.sh", "notify.sh", "notify-clear.sh"] {
+        let _ = std::fs::remove_file(hooks_dir.join(script));
+    }
+    // Only if we emptied it — a user script in there is not ours to delete.
+    let _ = std::fs::remove_dir(&hooks_dir);
+
+    if let Ok(entries) = std::fs::read_dir(workspace_dir.join("tasks")) {
+        for entry in entries.flatten() {
+            let _ = std::fs::remove_file(entry.path().join(".tenx-status"));
+        }
     }
     Ok(())
 }
 
-/// (Re)write the Claude hook scripts for the given workspace directory.
-/// Pass `force = true` to overwrite existing scripts (e.g. after a tenx upgrade).
-pub fn install_hooks(workspace_dir: &Path, force: bool) -> Result<()> {
-    ensure_workspace_claude_settings_inner(workspace_dir, force)
+/// Whether a settings.json hook entry runs tenx's `event.sh`.
+fn mentions_tenx_hook(matchers: &serde_json::Value) -> bool {
+    matchers.to_string().contains("hooks/event.sh")
+}
+
+/// Retire tenx's Claude Code hooks in the given workspace (see
+/// `remove_tenx_hooks`). Kept under the `hooks install` command name so an
+/// existing workspace has one obvious thing to run after upgrading.
+pub fn install_hooks(workspace_dir: &Path, _force: bool) -> Result<()> {
+    remove_tenx_hooks(workspace_dir)
 }

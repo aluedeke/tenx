@@ -16,6 +16,9 @@ pub fn run_overlay(home: bool) -> anyhow::Result<()> {
 /// has worktrees for, which is what the edit checklist diffs against.
 pub fn dump_json() -> anyhow::Result<()> {
     let global = crate::workspace::load_global().unwrap_or_default();
+    // One registry read for the whole dump — every task's live state is resolved
+    // against this same snapshot.
+    let sessions = crate::workspace::claude::sessions();
     let mut entries = Vec::new();
     let mut workspaces = Vec::new();
     for ws in crate::workspace::registered_workspaces() {
@@ -35,8 +38,8 @@ pub fn dump_json() -> anyhow::Result<()> {
                 .collect::<Vec<_>>(),
         }));
         for task in ws.tasks().unwrap_or_default() {
-            let (status, changed) = crate::workspace::read_task_status(&task.path);
-            let activity = changed.unwrap_or(task.created_at);
+            let state = crate::workspace::resolve_task_state(&task.path, &sessions);
+            let activity = state.changed.unwrap_or(task.created_at);
             entries.push((
                 activity,
                 serde_json::json!({
@@ -44,8 +47,11 @@ pub fn dump_json() -> anyhow::Result<()> {
                     "ws_dir": ws.dir,
                     "slug": task.name,
                     "title": task.display_name,
-                    "status": status.token(),
-                    "age_secs": changed.and_then(|c| c.elapsed().ok()).map(|d| d.as_secs()),
+                    "status": state.status.token(),
+                    "waiting_for": state.waiting_for,
+                    "sessions": state.sessions,
+                    "agents": state.agents,
+                    "age_secs": state.changed.and_then(|c| c.elapsed().ok()).map(|d| d.as_secs()),
                     "repos": task.repos,
                 }),
             ));

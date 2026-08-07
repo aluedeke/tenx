@@ -28,10 +28,9 @@ use ratatui::{
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Tabs},
     Terminal,
 };
-use std::collections::HashSet;
 use std::io;
 use std::path::PathBuf;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use super::mouse;
 use crate::palette;
@@ -45,7 +44,17 @@ struct Row {
     title: String,
     path: PathBuf,
     status: TaskStatus,
+    /// The status group this row was filed under, fixed at `rebuild_rows` time.
+    /// `status` keeps updating on the idle tick (the glyph stays honest) but the
+    /// row never migrates to another section while the list is open — sections
+    /// would tear in two and rows would jump out from under the cursor.
+    group: TaskStatus,
     changed: Option<SystemTime>,
+    /// Claude Code's own reason for waiting, shown next to a blocked row.
+    waiting_for: Option<String>,
+    /// Sort key within a status group: last status change, or creation time for
+    /// a task Claude has never touched.
+    activity: SystemTime,
     tab_id: Option<u32>,
     /// Repos this task currently has worktrees for (what the repo editor diffs
     /// against). Refreshed on `rebuild_rows`, not on the idle tick.
@@ -212,14 +221,6 @@ struct Overlay {
     /// Set when a jump from outside zellij should attach after teardown.
     attach: Option<AttachTarget>,
 
-    /// Cache of tab_ids currently live in the tenx session, used to drop stale
-    /// `.tenx-status` states left behind by a crashed/killed session (no
-    /// SessionEnd fires). `None` until the first successful query; refreshed at
-    /// most every `LIVENESS_TTL` and only when a stale non-idle row exists, so
-    /// the zellij subprocess isn't spawned on every idle tick.
-    live_tabs: Option<HashSet<u32>>,
-    live_tabs_at: Option<Instant>,
-
     // Mouse support (list view only; the modal forms stay keyboard-only).
     // `list_state` persists the scroll offset so a click's row maps to a list
     // line; `line_to_pos` maps each rendered line back to its filtered position
@@ -252,8 +253,6 @@ impl Overlay {
             status_msg: None,
             mode: Mode::List,
             attach: None,
-            live_tabs: None,
-            live_tabs_at: None,
             list_state: ListState::default(),
             line_to_pos: Vec::new(),
             tabs_area: Rect::default(),
@@ -307,39 +306,46 @@ impl Overlay {
         self.apply_filter();
     }
 
-    /// Rescan all workspaces for tasks + status. Cheap (small file reads); the
-    /// only non-file work is an occasional, throttled zellij query to drop stale
-    /// statuses from dead sessions (see `drop_stale_dead_statuses`).
+    /// Rescan all workspaces for tasks + status. All file reads: the task tree,
+    /// plus one snapshot of Claude Code's session registry that every row
+    /// resolves against (`workspace::resolve_task_state`).
     fn rebuild_rows(&mut self) {
-        // One flat list across all workspaces, ordered by last agent status
-        // change (`.tenx-status` mtime), newest first, so the task most
-        // recently touched by Claude sits on top regardless of workspace.
-        // Tasks with no agent activity yet fall back to creation time.
-        let mut keyed: Vec<(SystemTime, Row)> = Vec::new();
+        // One flat list across all workspaces, grouped by agent status
+        // (`TaskStatus::rank` — needs-input first, idle last) and, within a
+        // group, by last status change newest first. Tasks with no agent
+        // activity yet fall back to creation time.
+        let sessions = workspace::claude::sessions();
+        let mut rows: Vec<Row> = Vec::new();
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
             for task in ws.tasks().unwrap_or_default() {
-                let (status, changed) = workspace::read_task_status(&task.path);
+                let state = workspace::resolve_task_state(&task.path, &sessions);
                 let tab_id = std::fs::read_to_string(task.path.join(".tenx-tab-id"))
                     .ok()
                     .and_then(|s| s.trim().parse::<u32>().ok());
-                let activity = changed.unwrap_or(task.created_at);
-                let row = Row {
+                rows.push(Row {
                     ws_idx,
                     ws_name: ws.config.name.clone(),
                     slug: task.name.clone(),
                     title: task.display_name.clone(),
                     path: task.path.clone(),
-                    status,
-                    changed,
+                    status: state.status,
+                    group: state.status,
+                    changed: state.changed,
+                    waiting_for: state.waiting_for,
+                    activity: state.changed.unwrap_or(task.created_at),
                     tab_id,
                     repos: task.repos.clone(),
-                };
-                keyed.push((activity, row));
+                });
             }
         }
-        keyed.sort_by(|a, b| b.0.cmp(&a.0));
-        let mut rows: Vec<Row> = keyed.into_iter().map(|(_, row)| row).collect();
-        self.drop_stale_dead_statuses(&mut rows);
+        rows.sort_by(|a, b| {
+            a.group
+                .group()
+                .rank()
+                .cmp(&b.group.group().rank())
+                .then(a.group.rank().cmp(&b.group.rank()))
+                .then(b.activity.cmp(&a.activity))
+        });
         self.rows = rows;
         self.apply_filter();
     }
@@ -351,62 +357,19 @@ impl Overlay {
     /// home-pane startup, regaining focus, returning after a jump, or a
     /// mutating action (create/delete/rename).
     fn refresh_statuses(&mut self) {
+        let sessions = workspace::claude::sessions();
         let mut rows = std::mem::take(&mut self.rows);
         for r in rows.iter_mut() {
-            let (status, changed) = workspace::read_task_status(&r.path);
-            r.status = status;
-            r.changed = changed;
+            let state = workspace::resolve_task_state(&r.path, &sessions);
+            r.status = state.status;
+            r.changed = state.changed;
+            r.waiting_for = state.waiting_for;
+            r.activity = state.changed.unwrap_or(r.activity);
             r.tab_id = std::fs::read_to_string(r.path.join(".tenx-tab-id"))
                 .ok()
                 .and_then(|s| s.trim().parse::<u32>().ok());
         }
-        self.drop_stale_dead_statuses(&mut rows);
         self.rows = rows;
-    }
-
-    /// A crash or killed tab leaves `.tenx-status` frozen on a non-idle state
-    /// (no SessionEnd fires to clear it), so the overlay would keep showing a
-    /// stale glyph forever. When a non-idle status has sat unchanged past
-    /// `STALE_AFTER`, cross-check the task's tab against the live zellij session:
-    /// if the tab is gone, the session is dead — reset the row to `Idle`. A live
-    /// tab (e.g. genuinely blocked/working for a while) is left untouched.
-    fn drop_stale_dead_statuses(&mut self, rows: &mut [Row]) {
-        let now = SystemTime::now();
-        let stale = |r: &Row| {
-            r.status != TaskStatus::Idle
-                && r.changed
-                    .and_then(|c| now.duration_since(c).ok())
-                    .is_some_and(|age| age >= STALE_AFTER)
-        };
-        if !rows.iter().any(stale) {
-            return;
-        }
-        let Some(live) = self.live_tab_ids() else {
-            return; // couldn't determine liveness — don't guess
-        };
-        for r in rows.iter_mut().filter(|r| stale(r)) {
-            let alive = r.tab_id.is_some_and(|id| live.contains(&id));
-            if !alive {
-                r.status = TaskStatus::Idle;
-            }
-        }
-    }
-
-    /// The set of tab_ids currently live in the tenx session, cached and
-    /// refreshed at most every `LIVENESS_TTL`. Best-effort: on query failure the
-    /// last known set is kept (avoids "gone" flaps); `None` only before the very
-    /// first successful query.
-    fn live_tab_ids(&mut self) -> Option<&HashSet<u32>> {
-        let due = self
-            .live_tabs_at
-            .is_none_or(|t| t.elapsed() >= LIVENESS_TTL);
-        if due {
-            self.live_tabs_at = Some(Instant::now());
-            if let Ok(tabs) = crate::zellij::list_tabs_in(crate::zellij::SESSION) {
-                self.live_tabs = Some(tabs.into_iter().map(|t| t.tab_id).collect());
-            }
-        }
-        self.live_tabs.as_ref()
     }
 
     fn apply_filter(&mut self) {
@@ -1355,12 +1318,6 @@ pub fn run(home: bool) -> Result<()> {
 }
 
 const TICK: Duration = Duration::from_millis(500);
-/// A non-idle status unchanged for this long is a candidate for the liveness
-/// cross-check (long enough that a genuinely-working turn isn't flagged early).
-const STALE_AFTER: Duration = Duration::from_secs(180);
-/// Minimum spacing between live-tab zellij queries, so the subprocess isn't
-/// spawned on every 500ms idle tick while a dead status lingers.
-const LIVENESS_TTL: Duration = Duration::from_secs(10);
 
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1553,10 +1510,22 @@ fn pad_cell(s: &str, w: usize) -> String {
     }
 }
 
-/// Build the flat task list (sorted by last agent activity), rendered as
-/// fixed-width columns — glyph · title · workspace · open · age — so every
-/// column starts at the same x. Returns items, the selected line index, and a
-/// per-line map back to the filtered position (None for the empty-state line).
+/// Header colour per section: amber for the pile that wants you, blue for
+/// what's running, grey for what isn't.
+fn group_color(group: workspace::TaskGroup) -> ratatui::style::Color {
+    match group {
+        workspace::TaskGroup::Waiting => palette::WARN.color(),
+        workspace::TaskGroup::Working => palette::INFO.color(),
+        workspace::TaskGroup::Inactive => palette::MUTED.color(),
+    }
+}
+
+/// Build the task list grouped by status (needs-input first, idle last; see
+/// `TaskStatus::rank`), rendered as fixed-width columns — glyph · title ·
+/// workspace · open · age — so every column starts at the same x. Group headers
+/// are interleaved as non-selectable lines. Returns items, the selected line
+/// index, and a per-line map back to the filtered position (None for headers,
+/// spacers and the empty-state line).
 fn task_items(
     overlay: &Overlay,
     list_width: usize,
@@ -1590,8 +1559,39 @@ fn task_items(
     let extras = if show_open { 2 + 4 } else { 0 } + if show_age { 2 + 4 } else { 0 };
     let title_w = title_max.min(list_width.saturating_sub(base + extras).max(8));
 
+    // Rows arrive sorted by status rank, so each status is one contiguous run —
+    // a header goes in wherever the status changes. Counts come from the
+    // filtered set, so they describe what's actually on screen.
+    let mut group_counts: [usize; 3] = [0; 3];
+    for &i in &overlay.filtered {
+        group_counts[overlay.rows[i].group.group().rank() as usize] += 1;
+    }
+    let mut last_group: Option<workspace::TaskGroup> = None;
+
     for (pos, &row_idx) in overlay.filtered.iter().enumerate() {
         let row = &overlay.rows[row_idx];
+        let group = row.group.group();
+        if last_group != Some(group) {
+            if last_group.is_some() {
+                items.push(ListItem::new(Line::from("")));
+                line_to_pos.push(None);
+            }
+            let count = group_counts[group.rank() as usize];
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(
+                    group.label().to_string(),
+                    Style::default()
+                        .fg(group_color(group))
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("  {count}"),
+                    Style::default().fg(palette::MUTED.color()),
+                ),
+            ])));
+            line_to_pos.push(None);
+            last_group = Some(group);
+        }
         if pos == overlay.selected {
             selected_line = Some(items.len());
         }
@@ -1599,20 +1599,18 @@ fn task_items(
         let glyph = match row.status {
             TaskStatus::Blocked => "💬 ",
             TaskStatus::Done => "✅ ",
-            TaskStatus::Failed => "⚠️ ",
             TaskStatus::Working => "▷  ",
             TaskStatus::Idle => "   ",
         };
         let title_style = match row.status {
             TaskStatus::Blocked => Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD),
-            TaskStatus::Failed => Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
             TaskStatus::Done => Style::default().fg(palette::BRIGHT.color()),
             TaskStatus::Working | TaskStatus::Idle => Style::default().fg(palette::TEXT.color()),
         };
         // Age is only meaningful for resting states (how long it's waited/sat).
         let show_age = matches!(
             row.status,
-            TaskStatus::Blocked | TaskStatus::Done | TaskStatus::Failed
+            TaskStatus::Blocked | TaskStatus::Done
         );
         let age = row
             .changed
@@ -1636,6 +1634,15 @@ fn task_items(
         if show_age {
             spans.push(Span::raw("  "));
             spans.push(Span::styled(age, dim));
+        }
+        // Claude Code's own words for what it's waiting on ("input needed", the
+        // open dialog's label). Beats a bare 💬: you can tell a permission
+        // prompt from a question without switching to the tab.
+        if let Some(reason) = row.waiting_for.as_deref().filter(|_| show_open) {
+            spans.push(Span::styled(
+                format!("  · {reason}"),
+                Style::default().fg(palette::WARN.color()),
+            ));
         }
         items.push(ListItem::new(Line::from(spans)));
         line_to_pos.push(Some(pos));

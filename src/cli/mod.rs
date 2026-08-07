@@ -64,14 +64,13 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum HooksCommands {
-    /// (Re)install Claude Code hooks, overwriting any existing versions
+    /// Remove tenx's Claude Code hooks (tenx no longer installs any — task
+    /// state is read live from Claude Code's session registry)
     Install,
 }
 
 #[derive(Subcommand)]
 pub enum TabCommands {
-    /// Handle a Claude Code hook event (hook JSON on stdin; runs from task cwd)
-    Event,
     /// Render the task-tab header line (task name + live status; runs from task cwd)
     Header,
 }

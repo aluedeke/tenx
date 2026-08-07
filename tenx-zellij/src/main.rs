@@ -54,7 +54,7 @@ const C_SEL_TEXT: Color = Color::Rgb(236, 239, 245);
 const C_WORKING: Color = Color::Rgb(104, 150, 220); // blue — a turn in flight
 const C_BLOCKED: Color = Color::Rgb(228, 168, 84); // amber — needs input
 const C_DONE: Color = Color::Rgb(122, 194, 124); // green — finished
-const C_FAILED: Color = Color::Rgb(226, 96, 92); // red — errored
+const C_FAILED: Color = Color::Rgb(226, 96, 92); // red — errors, destructive actions
 const C_IDLE: Color = Color::Rgb(96, 104, 120); // muted — resting
 // Badge chip backgrounds (dim, so the accent text reads on top).
 const C_BADGE_INPUT_BG: Color = Color::Rgb(58, 46, 24);
@@ -70,6 +70,12 @@ struct Task {
     slug: String,
     title: String,
     status: String,
+    /// Why Claude Code is waiting, in its own words ("input needed", "sandbox
+    /// request", the open dialog's label). Only set when `status` is `blocked`,
+    /// and only when the session registry is what said so. `default` so an older
+    /// native binary still deserializes.
+    #[serde(default)]
+    waiting_for: Option<String>,
     age_secs: Option<u64>,
     /// Repos this task has worktrees for — what the repo checklist diffs
     /// against. `default` so an older native binary still deserializes.
@@ -253,13 +259,45 @@ enum Mode {
     Busy { label: String, hide_on_done: bool },
 }
 
-/// How the list is organised: one flat activity-sorted section, or grouped by
-/// workspace. Toggled with → (the header's segmented control mirrors it).
+/// How the list is organised: sectioned by agent status (the default — what
+/// needs you, in the order it needs you), one flat activity-sorted section, or
+/// grouped by workspace. Cycled with → (the header's segmented control mirrors
+/// it).
 #[derive(Default, Clone, Copy, PartialEq)]
 enum Grouping {
     #[default]
+    Status,
     Recent,
     Workspace,
+}
+
+/// Status tokens in intra-section order; unknown tokens sort last. Mirrors
+/// `TaskStatus::rank` on the native side — only `blocked` before `done` really
+/// matters, so an agent parked on a prompt sits above one that merely finished.
+const STATUS_ORDER: [&str; 4] = ["blocked", "working", "done", "idle"];
+
+/// Section labels in display order, mirroring `TaskGroup` on the native side.
+/// `blocked` and `done` share one: both are waiting on you, and two adjacent
+/// headers saying nearly the same thing helped nobody. The row's icon and
+/// Claude's waiting reason carry the difference.
+const GROUPS: [&str; 3] = ["WAITING FOR INPUT", "WORKING", "INACTIVE"];
+
+/// Rank of a status token within `STATUS_ORDER`; unknown tokens sort with idle.
+fn status_rank(status: &str) -> usize {
+    STATUS_ORDER
+        .iter()
+        .position(|tok| *tok == status)
+        .unwrap_or(STATUS_ORDER.len() - 1)
+}
+
+/// Section index for a status rank: blocked/done → waiting, working → working,
+/// idle → inactive.
+fn group_rank(status_rank: usize) -> usize {
+    match STATUS_ORDER.get(status_rank) {
+        Some(&"working") => 1,
+        Some(&"idle") => 2,
+        _ => 0,
+    }
 }
 
 /// A rendered list line: a blank spacer, a section header, or a task
@@ -321,9 +359,15 @@ struct State {
     /// activity order and resets the selection. Starts true so the first render
     /// freezes an order.
     reopen_pending: bool,
-    /// Frozen display order (task keys) — the rows never re-sort while the
-    /// overlay is open; only a (re)open takes a new snapshot (`freeze_order`).
-    order: Vec<(String, String)>,
+    /// Frozen display order — task key plus the status rank it was filed under
+    /// (which fixes both its section and its place inside it, see
+    /// `frozen_rank`). The rows never re-sort while the overlay is open; only a
+    /// (re)open takes a new snapshot (`freeze_order`). The rank is frozen
+    /// alongside the position because status keeps arriving from the poll:
+    /// without it a task flipping blocked→working mid-view would tear its
+    /// section in two and jump out from under the cursor. The row's icon still
+    /// updates live.
+    order: Vec<((String, String), usize)>,
     /// Spinner frame counter (advances each animation tick).
     frame: usize,
     /// Screen row of the first list line, set during draw (click map).
@@ -517,15 +561,30 @@ impl ZellijPlugin for State {
 }
 
 impl State {
-    /// Snapshot the current activity order into the frozen display order. Taken
-    /// synchronously when the overlay (re)opens, so the rows the user sees stay
-    /// put while they choose — background polls refresh data but never reorder.
+    /// Snapshot the current activity order + status ranks into the frozen
+    /// display order. Taken synchronously when the overlay (re)opens, so the
+    /// rows the user sees stay put while they choose — background polls refresh
+    /// data but never reorder.
     fn freeze_order(&mut self) {
         self.order = self
             .tasks
             .iter()
-            .map(|t| (t.ws_dir.clone(), t.slug.clone()))
+            .map(|t| ((t.ws_dir.clone(), t.slug.clone()), status_rank(&t.status)))
             .collect();
+    }
+
+    /// The task's frozen status rank — what it had when the order was taken, or
+    /// its current status for a task created since. Sections derive from it via
+    /// `group_rank`, so freezing one value pins both the section and the
+    /// position within it.
+    fn frozen_rank(&self, i: usize) -> usize {
+        let t = &self.tasks[i];
+        let k = (t.ws_dir.clone(), t.slug.clone());
+        self.order
+            .iter()
+            .find(|(key, _)| *key == k)
+            .map(|(_, g)| *g)
+            .unwrap_or_else(|| status_rank(&t.status))
     }
 
     /// Kick off a task-data reload (unless one is already running).
@@ -627,9 +686,9 @@ impl State {
 
     /// Recompute `filtered` from `filter` + `grouping`, clamping the selection.
     /// Data arrives already activity-sorted from `tenx overlay --json`; Recent
-    /// keeps that order, Workspace re-buckets by workspace (stable, so within a
-    /// bucket the activity order is preserved). `filtered` is always in final
-    /// display order, so navigation can walk it linearly.
+    /// keeps that order, Status and Workspace re-bucket on top of it (stable, so
+    /// within a bucket the activity order is preserved). `filtered` is always in
+    /// final display order, so navigation can walk it linearly.
     fn apply_filter(&mut self) {
         let needle = self.filter.to_lowercase();
         let mut filtered: Vec<usize> = self
@@ -646,12 +705,26 @@ impl State {
         // snapshot yet (created since the last open) fall to the end.
         let rank = |i: usize, s: &Self| {
             let k = (s.tasks[i].ws_dir.clone(), s.tasks[i].slug.clone());
-            s.order.iter().position(|o| *o == k).unwrap_or(usize::MAX)
+            s.order
+                .iter()
+                .position(|(key, _)| *key == k)
+                .unwrap_or(usize::MAX)
         };
         filtered.sort_by_key(|&i| rank(i, self));
-        if self.grouping == Grouping::Workspace {
-            // Stable re-bucket by workspace; frozen order retained within each.
-            filtered.sort_by(|&a, &b| self.tasks[a].ws.cmp(&self.tasks[b].ws));
+        match self.grouping {
+            // Stable re-buckets; frozen activity order retained within each.
+            // Section first, then blocked-above-done inside it. Stable, so the
+            // frozen activity order survives within each pair.
+            Grouping::Status => {
+                filtered.sort_by_key(|&i| {
+                    let r = self.frozen_rank(i);
+                    (group_rank(r), r)
+                })
+            }
+            Grouping::Workspace => {
+                filtered.sort_by(|&a, &b| self.tasks[a].ws.cmp(&self.tasks[b].ws))
+            }
+            Grouping::Recent => {}
         }
         self.filtered = filtered;
 
@@ -683,13 +756,30 @@ impl State {
     }
 
     /// Build the interleaved display rows (section headers + tasks) for the
-    /// current grouping. Recent → a single "RECENT" header; Workspace → one
-    /// header per workspace bucket.
+    /// current grouping. Status → one header per non-empty status section, with
+    /// its count; Recent → a single "RECENT" header; Workspace → one header per
+    /// workspace bucket.
     fn display_rows(&self) -> Vec<Disp> {
         let mut out = Vec::new();
         let mut last_ws: Option<&str> = None;
+        let mut last_group: Option<usize> = None;
         for (pos, &ti) in self.filtered.iter().enumerate() {
             match self.grouping {
+                Grouping::Status => {
+                    let g = group_rank(self.frozen_rank(ti));
+                    if last_group != Some(g) {
+                        if !out.is_empty() {
+                            out.push(Disp::Gap);
+                        }
+                        let n = self
+                            .filtered
+                            .iter()
+                            .filter(|&&i| group_rank(self.frozen_rank(i)) == g)
+                            .count();
+                        out.push(Disp::Header(format!("{}  {n}", GROUPS[g])));
+                        last_group = Some(g);
+                    }
+                }
                 Grouping::Recent => {
                     if pos == 0 {
                         out.push(Disp::Header("RECENT".into()));
@@ -787,10 +877,20 @@ impl State {
             BareKey::Up => self.move_sel(-1),
             BareKey::Char('n') if ctrl => self.move_sel(1),
             BareKey::Char('p') if ctrl => self.move_sel(-1),
-            // → / ← toggle grouping (Recent ⇄ Workspace); Tab also cycles.
-            BareKey::Right | BareKey::Left | BareKey::Tab if key.has_no_modifiers() => {
+            // → / ⇥ cycle grouping forward (status → recent → workspace), ←
+            // back — matching the order of the header's segmented control.
+            BareKey::Right | BareKey::Tab if key.has_no_modifiers() => {
                 self.grouping = match self.grouping {
+                    Grouping::Status => Grouping::Recent,
                     Grouping::Recent => Grouping::Workspace,
+                    Grouping::Workspace => Grouping::Status,
+                };
+                self.apply_filter();
+            }
+            BareKey::Left if key.has_no_modifiers() => {
+                self.grouping = match self.grouping {
+                    Grouping::Status => Grouping::Workspace,
+                    Grouping::Recent => Grouping::Status,
                     Grouping::Workspace => Grouping::Recent,
                 };
                 self.apply_filter();
@@ -1281,16 +1381,26 @@ impl State {
         let esc = "esc";
         put(&mut buf, right - esc.len() as u16, inner.y, esc.len(), esc, Style::default().fg(C_FAINT));
         let mut left_limit = right - esc.len() as u16;
-        // Toggle only when there's room for it (phones skip it; → still cycles).
-        if matches!(self.mode, Mode::List) && cw >= 56 {
-            let (rl, wl) = (" recent ", " workspace ");
-            let wx = left_limit - 1 - wl.len() as u16;
-            let rx = wx - rl.len() as u16;
+        // Segmented control, only when there's room (→ still cycles without it).
+        // Three chips need a wide pane; on a narrower one just the active chip
+        // is shown, so the current grouping is still legible on a phone.
+        if matches!(self.mode, Mode::List) && cw >= 48 {
+            let chips: [(&str, Grouping); 3] = [
+                (" status ", Grouping::Status),
+                (" recent ", Grouping::Recent),
+                (" workspace ", Grouping::Workspace),
+            ];
             let on = Style::default().fg(C_SEL_TEXT).bg(C_TOGGLE_ON_BG).add_modifier(Modifier::BOLD);
             let off = Style::default().fg(C_FAINT);
-            put(&mut buf, rx, inner.y, rl.len(), rl, if self.grouping == Grouping::Recent { on } else { off });
-            put(&mut buf, wx, inner.y, wl.len(), wl, if self.grouping == Grouping::Workspace { on } else { off });
-            left_limit = rx;
+            let mut x = left_limit - 1;
+            for (label, g) in chips.iter().rev() {
+                if cw < 64 && self.grouping != *g {
+                    continue;
+                }
+                x -= label.len() as u16;
+                put(&mut buf, x, inner.y, label.len(), label, if self.grouping == *g { on } else { off });
+            }
+            left_limit = x;
         }
         let (htext, hstyle) = match &self.mode {
             Mode::List if self.filter.is_empty() && cw >= 60 => (
@@ -1531,8 +1641,19 @@ impl State {
                     put(&mut buf, cx, y, 1, icon, base(status_color(&t.status)));
                     // Name (+ badges), then workspace, then last-changed.
                     let current = self.active_tab.as_deref() == Some(t.slug.as_str());
+                    // Claude Code's own reason ("input needed", the open
+                    // dialog's label) when we have it — it says what a bare
+                    // "needs input" can't. Under a NEEDS INPUT header the
+                    // generic label adds nothing the section doesn't, so it
+                    // shows only in the flat groupings.
                     let badge = if t.status == "blocked" {
-                        Some(("needs input", C_BLOCKED, C_BADGE_INPUT_BG))
+                        // Always labelled now: blocked and done share a section,
+                        // so the chip is what says which one this row is.
+                        Some((
+                            t.waiting_for.as_deref().unwrap_or("needs input"),
+                            C_BLOCKED,
+                            C_BADGE_INPUT_BG,
+                        ))
                     } else if current {
                         Some(("current", C_CURRENT_FG, C_CURRENT_BG))
                     } else {
@@ -1569,7 +1690,6 @@ fn status_color(status: &str) -> Color {
         "working" => C_WORKING,
         "blocked" => C_BLOCKED,
         "done" => C_DONE,
-        "failed" => C_FAILED,
         _ => C_IDLE,
     }
 }
@@ -1579,7 +1699,6 @@ fn status_icon(status: &str) -> &'static str {
         "working" => "◐",
         "blocked" => "●",
         "done" => "✔",
-        "failed" => "✖",
         _ => "·",
     }
 }
