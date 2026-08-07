@@ -12,12 +12,15 @@
 //!
 //! The right side is a **base** with a transient **overlay** on top.
 //!
-//! The base is what is true right now — a live prompt if there is one, else how
-//! many tasks are waiting on you and which has waited longest. It is a pure
-//! function of the latest payload, so it changes only when the situation does.
+//! The base sits in the right corner and is a pure function of the latest
+//! payload: how many tasks are waiting on you, glyphed by whether any of them
+//! has a live prompt. Just the count — the bar says *that* something wants you,
+//! the overlay says what.
 //!
-//! The overlay is a task that just entered a waiting state, shown for
-//! `EVENT_TICKS` and then gone. Several queue and take the slot in turn.
+//! The overlay is a task that just entered a waiting state, shown in the
+//! **middle** for `EVENT_TICKS` and then gone. Several queue and take it in
+//! turn. The middle is empty the rest of the time, which is the point: news
+//! right-aligned sat where the base sits, in the corner you stop looking at.
 //!
 //! Two earlier cuts were wrong in opposite directions and both are worth not
 //! repeating. Rendering every waiting task as a chip produced a wall nobody
@@ -178,10 +181,13 @@ struct State {
     /// Ticks left before `current` gives way to the next queued event. At zero
     /// with an empty queue, `current` stops counting and simply stays.
     left: u32,
-    /// Seconds since the last payload, added to each `age_secs` so ages keep
-    /// counting between pushes. The sender only pushes on state change, and
-    /// "blocked for 20 minutes" is precisely a state that isn't changing.
+    /// Seconds since the last payload, added to each `age_secs` so the age gate
+    /// keeps advancing between pushes. The sender only pushes on state change,
+    /// and "waiting for 20 minutes" is precisely a state that isn't changing.
     since_push: u64,
+    /// Last base text rendered, so a timer tick can tell whether repainting
+    /// would show anything different.
+    last_base: Option<String>,
 }
 
 register_plugin!(State);
@@ -202,9 +208,14 @@ impl ZellijPlugin for State {
                 set_timeout(1.0);
                 self.since_push = self.since_push.saturating_add(1);
                 let advanced = self.advance();
-                // Repaint only when something visible actually moved: the event
-                // slot changed, or this tab's own age is on screen to tick.
-                advanced || self.own().is_some_and(|t| t.age_secs.is_some())
+                // Nothing on the bar ticks by the second any more, so repaint
+                // only when something actually changed: the event slot moved, or
+                // the base did — which happens without a payload when a task
+                // crosses WAIT_GATE_SECS and joins the count.
+                let base_now = self.base().map(|(t, _)| t);
+                let base_changed = base_now != self.last_base;
+                self.last_base = base_now;
+                advanced || base_changed
             }
             _ => false,
         }
@@ -341,48 +352,30 @@ impl State {
         out
     }
 
-    /// The base line: what is true right now, or nothing.
+    /// The base line: how many tasks are waiting on you, or nothing.
+    ///
+    /// Just the count. Naming the oldest was in the first cut and read as
+    /// clutter — the bar's job is to say *that* something wants you, and the
+    /// overlay's is to say what. The glyph carries the one distinction worth
+    /// making at this size: something has a live prompt, or work is merely
+    /// finished and unread.
     fn base(&self) -> Option<(String, Color)> {
         let waiting = self.backlog();
         if waiting.is_empty() {
             return None;
         }
-        // A live prompt outranks the backlog — it is the rare, actionable thing,
-        // and the one `tenx watch` already judged worth a desktop notification.
-        let blocked: Vec<&&Task> = waiting.iter().filter(|t| t.status == "blocked").collect();
-        if let Some(first) = blocked.first() {
-            let name = self.name_of(first);
-            let why = first.waiting_for.as_deref().unwrap_or("needs input");
-            let age = self.age(first).map(|a| format!(" {a}")).unwrap_or_default();
-            let more = blocked.len() - 1;
-            let tail = if more > 0 { format!(" +{more}") } else { String::new() };
-            return Some((format!("💬 {name} · {why}{age}{tail}"), palette::WARN.color()));
-        }
-        let oldest = waiting[0];
-        let name = self.name_of(oldest);
-        let age = self.age(oldest).map(|a| format!(" {a}")).unwrap_or_default();
-        // The count is the honest signal; naming the oldest says which end to
-        // pull from. At one task the count is noise, so drop it.
-        let text = if waiting.len() == 1 {
-            format!("✅ {name}{age}")
+        let n = waiting.len();
+        if waiting.iter().any(|t| t.status == "blocked") {
+            Some((format!("💬 {n} waiting"), palette::WARN.color()))
         } else {
-            format!("✅ {} waiting · {name}{age}", waiting.len())
-        };
-        Some((text, palette::SUCCESS.color()))
-    }
-
-    fn name_of<'a>(&self, task: &'a Task) -> &'a str {
-        if task.title.is_empty() { &task.slug } else { &task.title }
+            Some((format!("✅ {n} waiting"), palette::SUCCESS.color()))
+        }
     }
 
     /// This tab's own task, if it has a live session.
     fn own(&self) -> Option<&Task> {
         let key = self.own_key();
         self.tasks.iter().find(|t| t.key() == key)
-    }
-
-    fn age(&self, task: &Task) -> Option<String> {
-        task.age_secs.map(|s| fmt_age(s + self.since_push))
     }
 
     fn draw(&self, buf: &mut Buffer, width: u16) {
@@ -402,44 +395,53 @@ impl State {
                 // tasks entirely, so absence is the signal.
                 _ => ("·", "idle", palette::MUTED.color()),
             };
+            // No age: "working 14s" ticks every second and informs no decision
+            // you'd make differently — the status itself is the whole signal.
             x = put(buf, x, width, &format!("{glyph} {label}"), Style::default().fg(color));
-            if let Some(age) = self.own().and_then(|t| self.age(t)) {
-                x = put(buf, x, width, &format!(" {age}"), Style::default().fg(palette::MUTED.color()));
-            }
         }
 
-        // ── Right: hint, then the single event slot ──────────────────────────
+        // ── Right: hint, then the event slot / base ──────────────────────────
         let hint = "^w tasks";
         let hint_x = width.saturating_sub(hint.len() as u16 + 1);
         put(buf, hint_x, width, hint, Style::default().fg(palette::MUTED.color()));
 
-        // An event owns the slot while it lasts, then the base shows through.
-        // Highlighted vs plain is the whole visual distinction between "this
-        // just happened" and "this is how things are".
         let right_edge = hint_x.saturating_sub(2);
-        let (text, style, tail) = match (&self.current, self.base()) {
-            (Some(event), _) => {
-                // How many events are still queued behind this one — news left
-                // to show, not a task count; the base carries that.
-                let more = self.queue.len();
-                (
-                    format!(" {} ", event.text),
-                    Style::default()
-                        .fg(palette::GROUND.color())
-                        .bg(event.color)
-                        .add_modifier(Modifier::BOLD),
-                    if more > 0 { format!(" +{more}") } else { String::new() },
-                )
-            }
-            (None, Some((text, color))) => (text, Style::default().fg(color), String::new()),
-            (None, None) => return,
-        };
 
-        let w = display_width(&text) as u16 + display_width(&tail) as u16;
-        let start = right_edge.saturating_sub(w).max(x + 2);
-        let after = put(buf, start, right_edge, &text, style);
-        if !tail.is_empty() {
-            put(buf, after, right_edge, &tail, Style::default().fg(palette::MUTED.color()));
+        // An event takes the *middle* for a few seconds. Centring is the point:
+        // right-aligned it sat where the base sits, in the corner you have
+        // learned to ignore, and a transition went unnoticed. The middle is
+        // empty the rest of the time, so anything appearing there is news.
+        if let Some(event) = &self.current {
+            // How many events are still queued behind this one — news left to
+            // show, not a task count; the base carries that.
+            let more = self.queue.len();
+            let text = format!(" {} ", event.text);
+            let tail = if more > 0 { format!(" +{more}") } else { String::new() };
+            let w = display_width(&text) as u16 + display_width(&tail) as u16;
+            let centred = width.saturating_sub(w) / 2;
+            let latest = right_edge.saturating_sub(w).max(x + 2);
+            let start = centred.max(x + 2).min(latest);
+            let after = put(
+                buf,
+                start,
+                right_edge,
+                &text,
+                Style::default()
+                    .fg(palette::GROUND.color())
+                    .bg(event.color)
+                    .add_modifier(Modifier::BOLD),
+            );
+            if !tail.is_empty() {
+                put(buf, after, right_edge, &tail, Style::default().fg(palette::MUTED.color()));
+            }
+            return;
+        }
+
+        // The base stays in the corner — it is a standing condition, not news.
+        if let Some((text, color)) = self.base() {
+            let w = display_width(&text) as u16;
+            let start = right_edge.saturating_sub(w).max(x + 2);
+            put(buf, start, right_edge, &text, Style::default().fg(color));
         }
     }
 }
@@ -460,18 +462,6 @@ fn put(buf: &mut Buffer, x: u16, limit: u16, text: &str, style: Style) -> u16 {
 /// the line past the pane width, where it wraps and scrolls the only row away.
 fn display_width(s: &str) -> usize {
     UnicodeWidthStr::width(s)
-}
-
-fn fmt_age(secs: u64) -> String {
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{}m", secs / 60)
-    } else if secs < 86400 {
-        format!("{}h", secs / 3600)
-    } else {
-        format!("{}d", secs / 86400)
-    }
 }
 
 /// Serialize a one-row `Buffer` to ANSI. No clear-screen: this pane is a single
