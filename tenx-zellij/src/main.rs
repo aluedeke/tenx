@@ -46,11 +46,15 @@
 //!
 //! ## Where the data lives
 //!
-//! Plugins run in a wasm sandbox with no filesystem access, so task discovery
-//! stays in the native binary: `tenx overlay --json` (run via `run_command`,
-//! results delivered as `RunCommandResult`) is the single source of truth,
-//! polled on a timer and refreshed after any mutating action. Jumps to a
-//! not-yet-open task shell out to `tenx task open --ws-dir <dir> <slug>`.
+//! A plugin's wasm sandbox does get a filesystem, but only three preopened dirs
+//! — `/data` (per-plugin, persistent), `/tmp` (session-scoped, shared between
+//! plugins) and `/host` (the cwd zellij was started in). Workspace and task
+//! directories are not among them (`/` isn't preopened and `..` out of `/host`
+//! is refused), so task discovery stays in the native binary: `tenx overlay
+//! --json` (run via `run_command`, results delivered as `RunCommandResult`) is
+//! the single source of truth, polled on a timer and refreshed after any
+//! mutating action. Jumps to a not-yet-open task shell out to
+//! `tenx task open --ws-dir <dir> <slug>`.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;

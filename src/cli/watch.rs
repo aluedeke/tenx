@@ -6,13 +6,24 @@
 //! tasks sit 18-23 hours waiting on an answer nobody knew they wanted.
 //!
 //! **Why a process and not a zellij plugin.** A plugin was the obvious home —
-//! it dies with the session, no supervision — but zellij 0.44 has no paneless
-//! plugin: `zellij pipe --plugin <url>` launches one *with a pane* (measured:
-//! session pane count 11 → 13, and `plugin location=...` in the layout dump),
-//! and `zellij plugin` says so in its own help. A watcher that needs a visible
-//! pane to sit in is exactly the leftover-pane problem the tabless design
-//! avoids. A process also serves every consumer, where a plugin can only pipe
-//! to other plugins.
+//! it dies with the session, no supervision — and zellij 0.44 *can* run one
+//! paneless, but only down one of the two load paths and only conditionally:
+//!
+//! - `zellij pipe --plugin <url>` (and `pipe_message_to_plugin` addressed by
+//!   URL) launches an instance *with a pane* whether you want one or not
+//!   (measured: session pane count 11 → 13, and `plugin location=...` in the
+//!   layout dump); `zellij plugin` says so in its own help.
+//! - `load_plugins` in the config does load paneless — but only once the
+//!   plugin's permissions are already cached. With the grant missing, zellij
+//!   materialises a floating pane to ask for it (`dump-layout` puts the plugin
+//!   in a `floating_panes` block), so "paneless" would rest on tenx writing
+//!   into zellij's permission cache dir and that write continuing to work.
+//!
+//! A watcher that can sprout a visible pane is exactly the leftover-pane
+//! problem the tabless design avoids. And it would need `RunCommands` anyway to
+//! reach `terminal-notifier`/`osascript` — the very permission whose absence
+//! spawns the pane. A process also serves every consumer, where a plugin can
+//! only pipe to other plugins.
 //!
 //! **Lifecycle.** `tenx` is the only way into the session, and `main::open()` is
 //! the single funnel for all three entry paths, so [`ensure_running`] hangs off

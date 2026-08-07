@@ -8,12 +8,13 @@ pub fn run_overlay(home: bool) -> anyhow::Result<()> {
 /// `tenx overlay --json`: dump every task across all registered workspaces as
 /// JSON, sorted by last agent activity (newest first) — same ordering as the
 /// TUI. Consumed by the tenx-zellij overlay plugin, which runs in zellij's
-/// wasm sandbox and therefore cannot discover tasks from the filesystem.
+/// wasm sandbox whose only reachable dirs are `/data`, `/tmp` and `/host` —
+/// task directories are not among them, so it cannot discover tasks itself.
 ///
 /// Two collections, because the plugin needs both axes: `tasks` (what to list)
 /// and `workspaces` (which repos exist, so the create/edit repo checklists can
-/// be built without filesystem access). Each task carries the repos it actually
-/// has worktrees for, which is what the edit checklist diffs against.
+/// be built without reaching the workspace dirs). Each task carries the repos
+/// it actually has worktrees for, which is what the edit checklist diffs against.
 pub fn dump_json() -> anyhow::Result<()> {
     let global = crate::workspace::load_global().unwrap_or_default();
     // One registry read for the whole dump — every task's live state is resolved

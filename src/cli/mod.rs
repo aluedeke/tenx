@@ -40,7 +40,8 @@ pub enum Commands {
         home: bool,
         /// Print all tasks as JSON (activity-sorted) instead of running the
         /// TUI. Data source for the tenx-zellij overlay plugin, which runs in
-        /// a wasm sandbox and cannot read the filesystem itself.
+        /// a wasm sandbox whose reachable dirs (`/data`, `/tmp`, `/host`) don't
+        /// include the workspace, so it cannot read task state itself.
         #[arg(long)]
         json: bool,
     },
