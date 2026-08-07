@@ -2,11 +2,24 @@
 //!
 //! ## What it is for
 //!
-//! It answers "what is happening in the tasks I am *not* looking at". The
+//! It answers "has something happened in a task I am *not* looking at". The
 //! overlay answers that too, but only while it's open; `tenx watch` answers it
 //! as a desktop notification, but deliberately only for `Blocked` — a popup
 //! after every finished turn is noise you stop reading within a day. `Done` is
 //! the case a status bar handles well: worth seeing, not worth interrupting for.
+//!
+//! ## One event at a time, and the last one stays
+//!
+//! The bar is a single slot, never a list. Showing every waiting task at once
+//! was the first cut and it was wrong: a dozen live agents produce a wall of
+//! chips nobody reads, repainting constantly. Events queue instead and take the
+//! slot in turn (`EVENT_TICKS` each), and when the queue drains the last one
+//! *stays* — highlighted while cycling, dimmed once it is merely standing there.
+//!
+//! That standing marker is the whole point: it means "something wants you, go
+//! open the overlay", which is the surface that can actually show you what. It
+//! clears only when nothing is waiting any more — the bar is not a notification
+//! you dismiss, it goes quiet when the work is genuinely dealt with.
 //!
 //! It also absorbs the old per-tab header pane (`tenx tab header`): the left
 //! third is this tab's own task and status, which is all that pane did, and
@@ -44,7 +57,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use unicode_width::UnicodeWidthStr;
 use zellij_tile::prelude::*;
 
@@ -64,10 +77,11 @@ mod palette;
 /// makes this ours; anything else is ignored in `pipe`.
 const STATUS_PIPE: &str = "tenx::status";
 
-/// How long a toast stays up, in timer ticks (1 s each). Long enough to read a
-/// task name in peripheral vision, short enough that it's gone before it becomes
-/// something you have to dismiss.
-const TOAST_TICKS: u32 = 6;
+/// How long each event holds the slot before the next queued one takes it, in
+/// timer ticks (1 s each). Long enough to read a task name in peripheral vision;
+/// short enough that a burst of five drains in the time it takes to finish a
+/// thought rather than scrolling past like a ticker.
+const EVENT_TICKS: u32 = 4;
 
 /// One task with a live Claude Code session, from the `tenx::status` payload.
 /// Every field is optional-tolerant: the sender is a different binary that can
@@ -106,19 +120,20 @@ struct Payload {
     tasks: Vec<Task>,
 }
 
-/// A transition worth flashing: a task that just entered a waiting state.
-struct Toast {
+/// A task that just entered a waiting state — one line of news.
+#[derive(Clone)]
+struct Event_ {
+    /// Task key, so a second transition for the same task replaces the first
+    /// rather than queueing behind it.
+    key: String,
     text: String,
     color: Color,
-    /// Ticks remaining. Counted down rather than compared against a clock so the
-    /// plugin needs no time source at all.
-    left: u32,
 }
 
 #[derive(Default)]
 struct State {
     /// This tab's task, from the layout's plugin config. Empty on the home tab,
-    /// which has no task — there the bar is attention-list only.
+    /// which has no task — there the bar shows events only.
     own_slug: String,
     own_title: String,
     own_ws_dir: String,
@@ -128,12 +143,18 @@ struct State {
     /// Last seen status per task key, for edge detection. Separate from `tasks`
     /// because a task leaving the payload entirely (going idle) is also a change.
     seen: BTreeMap<String, String>,
-    /// The first payload seeds `seen` without toasting. Whatever was already
+    /// The first payload seeds `seen` without announcing. Whatever was already
     /// waiting when this tab opened has been waiting since before it existed —
     /// same reasoning as the watcher priming its notified set.
     primed: bool,
 
-    toasts: Vec<Toast>,
+    /// Events not yet shown, oldest first. Drained one at a time.
+    queue: VecDeque<Event_>,
+    /// The event on screen right now.
+    current: Option<Event_>,
+    /// Ticks left before `current` gives way to the next queued event. At zero
+    /// with an empty queue, `current` stops counting and simply stays.
+    left: u32,
     /// Seconds since the last payload, added to each `age_secs` so ages keep
     /// counting between pushes. The sender only pushes on state change, and
     /// "blocked for 20 minutes" is precisely a state that isn't changing.
@@ -157,14 +178,10 @@ impl ZellijPlugin for State {
             Event::Timer(_) => {
                 set_timeout(1.0);
                 self.since_push = self.since_push.saturating_add(1);
-                let had_toasts = !self.toasts.is_empty();
-                self.toasts.retain_mut(|t| {
-                    t.left = t.left.saturating_sub(1);
-                    t.left > 0
-                });
-                // Repaint only when something visible actually moved: a toast is
-                // running or just expired, or an age is on screen to advance.
-                had_toasts || self.shows_age()
+                let advanced = self.advance();
+                // Repaint only when something visible actually moved: the event
+                // slot changed, or this tab's own age is on screen to tick.
+                advanced || self.own().is_some_and(|t| t.age_secs.is_some())
             }
             _ => false,
         }
@@ -191,7 +208,7 @@ impl ZellijPlugin for State {
                 // A task absent from `seen` is one that was idle (or unknown)
                 // until now, which is as much an edge as a status change.
                 if self.seen.get(&key) != Some(&task.status) {
-                    self.raise_toast(task);
+                    self.announce(task);
                 }
             }
         }
@@ -199,6 +216,16 @@ impl ZellijPlugin for State {
         self.seen = incoming;
         self.tasks = payload.tasks;
         self.since_push = 0;
+
+        // Nothing is waiting on you any more, so the standing marker has served
+        // its purpose. This is the only thing that clears it — the bar is not a
+        // list you dismiss, it goes quiet when the work is actually dealt with.
+        if !self.tasks.iter().any(|t| t.wants_you()) {
+            self.queue.clear();
+            self.current = None;
+            self.left = 0;
+        }
+        self.pull();
         true
     }
 
@@ -224,23 +251,18 @@ impl ZellijPlugin for State {
 }
 
 impl State {
-    /// Whether anything currently on screen displays an age, i.e. whether a
-    /// timer tick would change the output.
-    fn shows_age(&self) -> bool {
-        self.tasks.iter().any(|t| t.age_secs.is_some())
-    }
-
     fn own_key(&self) -> String {
         format!("{}/{}", self.own_ws_dir, self.own_slug)
     }
 
-    /// Flash a transition for a task that isn't this tab's. Only into a waiting
-    /// state: `working` is the normal course of events and toasting it would
+    /// Queue a transition for a task that isn't this tab's. Only into a waiting
+    /// state: `working` is the normal course of events and announcing it would
     /// make the bar flicker through every turn of every agent.
-    fn raise_toast(&mut self, task: &Task) {
+    fn announce(&mut self, task: &Task) {
         if !task.wants_you() || task.key() == self.own_key() {
             return;
         }
+        let key = task.key();
         let name = if task.title.is_empty() { &task.slug } else { &task.title };
         let (text, color) = if task.status == "blocked" {
             let why = task.waiting_for.as_deref().unwrap_or("needs input");
@@ -248,10 +270,41 @@ impl State {
         } else {
             (format!("✅ {name} finished"), palette::SUCCESS.color())
         };
-        // One toast per task: a task that flips blocked→done→blocked while you're
-        // reading should replace its own line, not stack up copies of itself.
-        self.toasts.retain(|t| !t.text.contains(name.as_str()));
-        self.toasts.push(Toast { text, color, left: TOAST_TICKS });
+        // One entry per task. A task that flips blocked→done→blocked while the
+        // queue is draining should update its own line, not take three turns.
+        self.queue.retain(|e| e.key != key);
+        self.queue.push_back(Event_ { key, text, color });
+    }
+
+    /// Move the currently shown event to the next queued one if its time is up.
+    /// Returns whether the visible slot changed.
+    fn advance(&mut self) -> bool {
+        if self.left > 0 {
+            self.left -= 1;
+            if self.left == 0 {
+                // Expired. Either the next event takes the slot, or this one
+                // stays put as the standing "there is something to look at"
+                // marker — `pull` decides, and rendering dims it either way.
+                return self.pull() || self.current.is_some();
+            }
+        }
+        self.pull()
+    }
+
+    /// Promote the next queued event into the visible slot, if the slot is free
+    /// or its dwell time has elapsed. Returns whether anything changed.
+    fn pull(&mut self) -> bool {
+        if self.left > 0 {
+            return false;
+        }
+        match self.queue.pop_front() {
+            Some(next) => {
+                self.current = Some(next);
+                self.left = EVENT_TICKS;
+                true
+            }
+            None => false,
+        }
     }
 
     /// This tab's own task, if it has a live session.
@@ -287,78 +340,40 @@ impl State {
             }
         }
 
-        // ── Right: hint, then attention list or toasts, right-aligned ────────
+        // ── Right: hint, then the single event slot ──────────────────────────
         let hint = "^w tasks";
         let hint_x = width.saturating_sub(hint.len() as u16 + 1);
         put(buf, hint_x, width, hint, Style::default().fg(palette::MUTED.color()));
 
-        // A live toast owns the middle outright: it's the thing that just
-        // happened, and competing with the standing list would bury it.
+        // One event at a time, never a list. With a dozen agents running, a list
+        // is a wall of chips nobody reads and it repaints constantly; the bar's
+        // job is to say "something happened, go look", and the overlay's job is
+        // to say what. Queued events take this slot in turn, and once the queue
+        // drains the last one *stays* — a standing marker that there is
+        // something to check, rather than news that quietly disappears.
         let right_edge = hint_x.saturating_sub(2);
-        if let Some(toast) = self.toasts.last() {
-            let text = format!(" {} ", toast.text);
-            let w = display_width(&text) as u16;
-            let start = right_edge.saturating_sub(w).max(x + 2);
-            put(
-                buf,
-                start,
-                right_edge,
-                &text,
-                Style::default().fg(palette::GROUND.color()).bg(toast.color).add_modifier(Modifier::BOLD),
-            );
-            return;
-        }
+        let Some(event) = &self.current else { return };
 
-        // Standing list: everyone else who wants you, newest first.
-        let own = self.own_key();
-        let waiting: Vec<&Task> =
-            self.tasks.iter().filter(|t| t.wants_you() && t.key() != own).collect();
-        if waiting.is_empty() {
-            return;
-        }
-        let chips: Vec<(String, Color)> = waiting
-            .iter()
-            .map(|t| {
-                let name = if t.title.is_empty() { &t.slug } else { &t.title };
-                let age = self.age(t).map(|a| format!(" {a}")).unwrap_or_default();
-                if t.status == "blocked" {
-                    (format!("💬 {name}{age}"), palette::WARN.color())
-                } else {
-                    (format!("✅ {name}{age}"), palette::SUCCESS.color())
-                }
-            })
-            .collect();
+        // Highlighted while it's still cycling, dimmed once it's just the
+        // standing marker — so a genuinely new event is visibly different from
+        // one that has been sitting there, without either shouting.
+        let live = self.left > 0;
+        let style = if live {
+            Style::default().fg(palette::GROUND.color()).bg(event.color).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(event.color)
+        };
+        let text = if live { format!(" {} ", event.text) } else { event.text.clone() };
+        // How many more are still queued behind this one. Not a task count —
+        // that would be the list again — just an honest "more coming".
+        let more = self.queue.len();
+        let tail = if more > 0 { format!(" +{more}") } else { String::new() };
 
-        // Fit as many whole chips as the space allows, then say how many were
-        // dropped. A truncated task name is worse than an honest "+3".
-        let avail = right_edge.saturating_sub(x + 2);
-        let mut shown = 0usize;
-        let mut used = 0u16;
-        for (text, _) in &chips {
-            let w = display_width(text) as u16 + 3; // chip + gap
-            let overflow = chips.len() - shown - 1;
-            let reserve = if overflow > 0 { 5 } else { 0 };
-            if used + w + reserve > avail {
-                break;
-            }
-            used += w;
-            shown += 1;
-        }
-        let overflow = chips.len() - shown;
-        let total = used + if overflow > 0 { 5 } else { 0 };
-        let mut cx = right_edge.saturating_sub(total).max(x + 2);
-        for (text, color) in chips.iter().take(shown) {
-            cx = put(buf, cx, right_edge, text, Style::default().fg(*color));
-            cx = put(buf, cx, right_edge, "   ", Style::default());
-        }
-        if overflow > 0 {
-            put(
-                buf,
-                cx,
-                right_edge,
-                &format!("+{overflow}"),
-                Style::default().fg(palette::MUTED.color()),
-            );
+        let w = display_width(&text) as u16 + display_width(&tail) as u16;
+        let start = right_edge.saturating_sub(w).max(x + 2);
+        let after = put(buf, start, right_edge, &text, style);
+        if !tail.is_empty() {
+            put(buf, after, right_edge, &tail, Style::default().fg(palette::MUTED.color()));
         }
     }
 }
