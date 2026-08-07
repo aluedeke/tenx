@@ -17,13 +17,13 @@
 //! has a live prompt. Just the count — the bar says *that* something wants you,
 //! the overlay says what.
 //!
-//! The overlay is a task that just entered a waiting state, shown in the
-//! **middle** for `EVENT_TICKS` and then gone. Several queue and take it in
-//! turn. The middle is empty the rest of the time, which is the point: news
-//! right-aligned sat where the base sits, in the corner you stop looking at.
-//! The two never overlap — an event that covered the count made it vanish for
-//! four seconds exactly when something had happened, which is the worst moment
-//! to stop saying how much is outstanding.
+//! The overlay is a task that just entered a waiting state, shown for
+//! `EVENT_TICKS` immediately left of the count and then gone. Several queue and
+//! take that place in turn. The two never overlap — an event that *covered* the
+//! count made it vanish for five seconds exactly when something had happened,
+//! which is the worst moment to stop saying how much is outstanding.
+//!
+//! Whole line: `[task name] - [status]        [last event] - [N waiting]`.
 //!
 //! Two earlier cuts were wrong in opposite directions and both are worth not
 //! repeating. Rendering every waiting task as a chip produced a wall nobody
@@ -91,10 +91,10 @@ mod palette;
 /// makes this ours; anything else is ignored in `pipe`.
 const STATUS_PIPE: &str = "tenx::status";
 
-/// How long each event holds the slot before the next queued one takes it (or
-/// the base returns), in timer ticks (1 s each). Long enough to read a task name
+/// How long each event holds its place before the next queued one takes it (or
+/// it simply goes), in timer ticks (1 s each). Long enough to read a task name
 /// in peripheral vision, short enough that a burst drains promptly.
-const EVENT_TICKS: u32 = 4;
+const EVENT_TICKS: u32 = 5;
 
 /// A task must have been waiting this long to count towards the base. Below it,
 /// you are simply driving that task — every turn ends in `done` for a moment
@@ -380,14 +380,32 @@ impl State {
         self.tasks.iter().find(|t| t.key() == key)
     }
 
+    /// `[task name] - [status]        [last event] - [N waiting]`
+    ///
+    /// Both groups are built as whole strings before anything is written, so the
+    /// right group can be measured and right-aligned as a unit. Writing it piece
+    /// by piece from a computed start column is what produced the off-by-one
+    /// that clipped the final letter of "waiting".
     fn draw(&self, buf: &mut Buffer, width: u16) {
-        let mut x = 1u16;
+        // Keep clear of both edges. The last column is where a one-row pane goes
+        // wrong: any disagreement between our width arithmetic and the terminal's
+        // idea of how wide a glyph is lands there, and the symptom is a chopped
+        // final character rather than anything that looks like a layout bug.
+        let left_margin = 1u16;
+        let right_margin = 2u16;
 
         // ── Left: this tab's task ────────────────────────────────────────────
+        let mut x = left_margin;
         if !self.own_slug.is_empty() {
             let title = if self.own_title.is_empty() { &self.own_slug } else { &self.own_title };
-            x = put(buf, x, width, title, Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD));
-            x = put(buf, x, width, "  ", Style::default());
+            x = put(
+                buf,
+                x,
+                width,
+                title,
+                Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD),
+            );
+            x = put(buf, x, width, " - ", Style::default().fg(palette::MUTED.color()));
 
             let (glyph, label, color) = match self.own().map(|t| t.status.as_str()) {
                 Some("blocked") => ("💬", "needs input", palette::WARN.color()),
@@ -402,47 +420,65 @@ impl State {
             x = put(buf, x, width, &format!("{glyph} {label}"), Style::default().fg(color));
         }
 
-        // ── Right: the standing count, drawn first and never covered ─────────
+        // ── Right: the live event, then the standing count ───────────────────
         //
-        // It is the one thing on the bar that is always true, so an event must
-        // not take its place: an event replacing it made the count vanish for
-        // four seconds exactly when something had just happened, which is the
-        // worst possible moment to stop saying how much is outstanding.
-        let mut right_edge = width.saturating_sub(1);
-        if let Some((text, color)) = self.base() {
-            let w = display_width(&text) as u16;
-            let start = width.saturating_sub(w + 1);
-            put(buf, start, width, &text, Style::default().fg(color));
-            right_edge = start.saturating_sub(2);
-        }
+        // The count is always present; the event joins it on its left for a few
+        // seconds. They are separate segments so each keeps its own colour, but
+        // they are measured together and placed as one right-aligned block.
+        let event = self.current.as_ref().map(|e| {
+            let more = self.queue.len();
+            let tail = if more > 0 { format!(" +{more}") } else { String::new() };
+            (format!(" {} ", e.text), e.color, tail)
+        });
+        let base = self.base();
+        let sep = " - ";
 
-        // ── Middle: an event, for a few seconds ──────────────────────────────
-        //
-        // Centred in what is left. The middle is empty the rest of the time, so
-        // anything appearing there is news; right-aligned it sat where the count
-        // sits, in the corner you have already learned to ignore.
-        let Some(event) = &self.current else { return };
-        // How many events are still queued behind this one — news left to show,
-        // not a task count; the base carries that.
-        let more = self.queue.len();
-        let text = format!(" {} ", event.text);
-        let tail = if more > 0 { format!(" +{more}") } else { String::new() };
-        let w = display_width(&text) as u16 + display_width(&tail) as u16;
-        let centred = width.saturating_sub(w) / 2;
-        let latest = right_edge.saturating_sub(w).max(x + 2);
-        let start = centred.max(x + 2).min(latest);
-        let after = put(
-            buf,
-            start,
-            right_edge,
-            &text,
-            Style::default()
-                .fg(palette::GROUND.color())
-                .bg(event.color)
-                .add_modifier(Modifier::BOLD),
-        );
-        if !tail.is_empty() {
-            put(buf, after, right_edge, &tail, Style::default().fg(palette::MUTED.color()));
+        let base_w = base.as_ref().map(|(t, _)| display_width(t) as u16).unwrap_or(0);
+        let event_w = event
+            .as_ref()
+            .map(|(t, _, tail)| {
+                display_width(t) as u16
+                    + display_width(tail) as u16
+                    + if base.is_some() { display_width(sep) as u16 } else { 0 }
+            })
+            .unwrap_or(0);
+
+        let limit = width.saturating_sub(right_margin);
+        let room = limit.saturating_sub(x + 2);
+
+        // The count is never truncated. When the line is tight — a long task
+        // title, a long status like "waiting for you", a narrow pane — the event
+        // is dropped whole rather than everything sliding left until "3 waiting"
+        // loses its last letter. Half a word is worse than no word: a clipped
+        // count reads as a rendering fault, a missing event reads as nothing
+        // happening, and only one of those is a lie about the state.
+        let event = if event_w + base_w <= room { event } else { None };
+        let total = base_w + if event.is_some() { event_w } else { 0 };
+        if total == 0 {
+            return;
+        }
+        let mut cx = limit.saturating_sub(total).max(x + 2);
+
+        if let Some((text, color, tail)) = &event {
+            cx = put(
+                buf,
+                cx,
+                limit,
+                text,
+                Style::default()
+                    .fg(palette::GROUND.color())
+                    .bg(*color)
+                    .add_modifier(Modifier::BOLD),
+            );
+            if !tail.is_empty() {
+                cx = put(buf, cx, limit, tail, Style::default().fg(palette::MUTED.color()));
+            }
+            if base.is_some() {
+                cx = put(buf, cx, limit, sep, Style::default().fg(palette::MUTED.color()));
+            }
+        }
+        if let Some((text, color)) = &base {
+            put(buf, cx, limit, text, Style::default().fg(*color));
         }
     }
 }
