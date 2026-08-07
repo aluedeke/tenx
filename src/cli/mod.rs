@@ -3,6 +3,7 @@ pub mod init;
 pub mod repo;
 pub mod standup;
 pub mod tab;
+pub mod watch;
 pub mod task;
 
 use clap::{Parser, Subcommand};
@@ -43,6 +44,9 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Watch for tasks that start waiting on you and send a notification
+    /// (started automatically when tenx opens the session; runs until it ends)
+    Watch,
     /// Generate a daily standup from recent activity and task files
     Standup {
         /// Collect activity since this ISO timestamp (default: last standup, or start of yesterday)

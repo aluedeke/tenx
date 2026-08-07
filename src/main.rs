@@ -58,6 +58,8 @@ fn run() -> Result<()> {
             }
         },
 
+        Some(Commands::Watch) => cli::watch::run()?,
+
         Some(Commands::Tab { command }) => match command {
             TabCommands::Header => cli::tab::header()?,
         },
@@ -109,6 +111,10 @@ fn open() -> Result<()> {
 
     let bin = env::current_exe()?;
     let bin_str = bin.to_string_lossy().into_owned();
+
+    // Every route into the session lands here, so this is the one place that
+    // guarantees a watcher exists. No-op when one is already running.
+    cli::watch::ensure_running(&bin);
 
     match zellij::current_session().as_deref() {
         // Already inside the tenx session → run the overlay in this pane.

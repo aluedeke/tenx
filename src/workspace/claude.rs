@@ -1,26 +1,27 @@
-//! Claude Code's own session registry — the live half of a task's status.
+//! Claude Code's own session registry — where every task state comes from.
 //!
-//! Claude Code writes one `~/.claude/sessions/<pid>.json` per running session and
-//! rewrites it whenever the session's status changes (an effect on the status
-//! value, not a poll), so it is a push-updated status file exactly like our
-//! `.tenx-status` — but authored by the process that actually knows. Reading it
-//! replaces four hooks (`SessionStart`, `SessionEnd`, `UserPromptSubmit`,
-//! `Notification`) and, more importantly, fixes what they got wrong:
+//! Claude Code writes one `~/.claude/sessions/<pid>.json` per running session
+//! and rewrites it whenever the session's status changes (an effect on the
+//! status value, not a poll), so it is a push-updated status file — authored by
+//! the process that actually knows. Reading it replaced tenx's entire hook
+//! pipeline, and fixed what the hooks got wrong:
 //!
 //! - `Notification` → blocked was a *latch*. Approving a permission prompt fires
 //!   no further hook (the tool call just resumes), so a task stayed 💬 while
 //!   Claude was busy working. `waiting` is a live value that clears itself.
 //! - Session liveness was inferred from whether the *zellij tab* still existed,
-//!   after a `STALE_AFTER` grace period. A pid either exists or it doesn't.
+//!   after a three-minute grace period. A pid either exists or it doesn't.
 //!
-//! What it can't do is `done`/`failed`: both are `idle` here, so `Stop` and
-//! `StopFailure` remain the only source for those two (see `resolve_status`).
+//! What it can't express is *how* a turn ended — a failed one goes quiet exactly
+//! like a successful one. That distinction was dropped rather than keep a hook
+//! for it; see `workspace::resolve_task_state`.
 //!
 //! The registry is Claude Code's internal file, not a published API — the
 //! supported reader is `claude agents --json`, which costs ~310 ms of node
 //! startup and can't serve a 1 s poll. So this is deliberately best-effort:
-//! every field is optional, a parse failure drops the one file, and a caller
-//! with no sessions at all falls back to the hook state it already had.
+//! every field is optional and a parse failure drops that one file. If the
+//! format ever changes wholesale, the visible result is every task reading as
+//! `Inactive`, not a broken overlay.
 
 use serde::Deserialize;
 use std::fs;
@@ -127,8 +128,8 @@ pub fn sessions() -> Vec<Session> {
 
 /// Sessions running in `task_dir` or anywhere beneath it. Background agents get
 /// their own subdirectory (`tasks/<slug>/ios-agent`), so this is a prefix match,
-/// not equality — which is also why our hooks never saw them: they wrote a
-/// `.tenx-status` into a directory no task ever reads.
+/// not equality — which is also why the retired hooks never saw them: they wrote
+/// their status into a directory no task ever reads.
 pub fn sessions_for<'a>(sessions: &'a [Session], task_dir: &Path) -> Vec<&'a Session> {
     sessions
         .iter()
@@ -138,6 +139,6 @@ pub fn sessions_for<'a>(sessions: &'a [Session], task_dir: &Path) -> Vec<&'a Ses
 
 /// True if the process exists. `kill(pid, 0)` performs the permission and
 /// existence checks without sending anything.
-fn pid_alive(pid: u32) -> bool {
+pub fn pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }
