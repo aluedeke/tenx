@@ -46,11 +46,21 @@ install: plugin
 	@# compiled the first time the server saw that path (measured: a new tab
 	@# rendered the old build). A new build at a new path gets a new cache entry
 	@# for free, with no reload action and no stray pane to close.
+	@#
+	@# Pruning spares every build the running session still references — each
+	@# tab is pinned to whatever was newest when it opened, so a live session
+	@# legitimately names several at once. Deleting one is worse than leaving
+	@# it: recreating a pane from a missing path makes zellij retry every
+	@# ~1.5s forever (measured: "Failed to run command: No such file or
+	@# directory" on a loop) with a dead bar. Five kept beyond that, ~8 MB.
 	@sb=target/wasm32-wasip1/release/tenx-statusbar.wasm; \
 	  hash=$$(shasum -a256 $$sb | cut -c1-12); \
 	  cp $$sb $(PLUGIN_DIR)/tenx-statusbar-$$hash.wasm; \
 	  rm -f $(PLUGIN_DIR)/tenx-statusbar.wasm; \
-	  ls -t $(PLUGIN_DIR)/tenx-statusbar-*.wasm | tail -n +4 | while read old; do rm -f "$$old"; done; \
+	  keep=$$($(ZELLIJ) -s tenx action dump-layout 2>/dev/null | grep -o 'tenx-statusbar-[a-f0-9]*\.wasm' | sort -u); \
+	  ls -t $(PLUGIN_DIR)/tenx-statusbar-*.wasm | tail -n +6 | while read old; do \
+	    printf '%s\n' "$$keep" | grep -qx "$$(basename $$old)" && continue; \
+	    rm -f "$$old"; done; \
 	  echo "  ✓ status bar -> tenx-statusbar-$$hash.wasm"
 	-@$(ZELLIJ) --session tenx action start-or-reload-plugin \
 		"file:$(PLUGIN_DIR)/tenx-zellij.wasm" \
