@@ -187,9 +187,9 @@ struct State {
     /// keeps advancing between pushes. The sender only pushes on state change,
     /// and "waiting for 20 minutes" is precisely a state that isn't changing.
     since_push: u64,
-    /// Last base text rendered, so a timer tick can tell whether repainting
-    /// would show anything different.
-    last_base: Option<String>,
+    /// Signature of the line as last rendered, so nothing asks for a repaint
+    /// that would draw the same thing. See [`State::visible`].
+    last_visible: String,
 }
 
 register_plugin!(State);
@@ -209,15 +209,11 @@ impl ZellijPlugin for State {
             Event::Timer(_) => {
                 set_timeout(1.0);
                 self.since_push = self.since_push.saturating_add(1);
-                let advanced = self.advance();
-                // Nothing on the bar ticks by the second any more, so repaint
-                // only when something actually changed: the event slot moved, or
-                // the base did — which happens without a payload when a task
-                // crosses WAIT_GATE_SECS and joins the count.
-                let base_now = self.base().map(|(t, _)| t);
-                let base_changed = base_now != self.last_base;
-                self.last_base = base_now;
-                advanced || base_changed
+                self.advance();
+                // A tick can change the line two ways with no payload involved:
+                // the event slot moves on, or a task crosses WAIT_GATE_SECS and
+                // joins the count.
+                self.changed()
             }
             _ => false,
         }
@@ -255,7 +251,7 @@ impl ZellijPlugin for State {
         // The base needs no clearing — it is derived from `tasks` every frame,
         // so a task that stops waiting simply stops being counted.
         self.pull();
-        true
+        self.changed()
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
@@ -280,6 +276,32 @@ impl ZellijPlugin for State {
 }
 
 impl State {
+    /// Everything the line shows, as one string.
+    ///
+    /// A render is expensive out of all proportion to this pane: zellij wipes a
+    /// plugin pane's grid and re-transmits the whole viewport to every attached
+    /// terminal on every render — no diffing is possible, it is part of the
+    /// plugin contract (see `tenx-zellij`, which was flickering over ssh for
+    /// exactly this reason). How often we return true is the only lever a plugin
+    /// has, so the bar asks for a repaint only when the result would differ.
+    fn visible(&self) -> String {
+        format!(
+            "{}|{}|{}|{}",
+            self.own().map(|t| t.status.as_str()).unwrap_or("idle"),
+            self.base().map(|(t, _)| t).unwrap_or_default(),
+            self.current.as_ref().map(|e| e.text.as_str()).unwrap_or(""),
+            self.queue.len(),
+        )
+    }
+
+    /// Whether the line would now draw differently than it last did.
+    fn changed(&mut self) -> bool {
+        let now = self.visible();
+        let differs = now != self.last_visible;
+        self.last_visible = now;
+        differs
+    }
+
     fn own_key(&self) -> String {
         format!("{}/{}", self.own_ws_dir, self.own_slug)
     }
