@@ -117,12 +117,16 @@ const KIND_TASKS: &str = "tasks";
 const KIND_MUTATE: &str = "mutate";
 
 /// Poll interval for re-reading task state (status glyphs, ages, open flags).
+/// A poll is cheap; the *render* it may trigger is not, so it only asks for one
+/// when `data_fingerprint` says something changed.
 const POLL_SECS: f64 = 1.5;
-/// Spinner frame interval when at least one task is working (animation on).
-const ANIM_SECS: f64 = 0.11;
+/// Spinner frame interval while a mutation runs — the only animated state.
+/// Slower than it looks like it should be on purpose: each frame retransmits
+/// the whole pane, so this is a legibility-vs-bandwidth trade, not a frame rate.
+const ANIM_SECS: f64 = 0.25;
 /// In animated mode, poll data once every N frames (≈ POLL_SECS worth).
 const POLL_EVERY: usize = (POLL_SECS / ANIM_SECS) as usize;
-/// Braille spinner frames for the "working" status icon.
+/// Braille spinner frames for the busy indicator.
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 // ── Responsive pane geometry ── At/under the phone thresholds the overlay
@@ -376,6 +380,10 @@ struct State {
     scroll: usize,
     /// Per-rendered-line → filtered position (None for headers/blanks).
     line_map: Vec<Option<usize>>,
+    /// Hash of everything a background poll can change on screen, as of the
+    /// last render. A poll whose data hashes the same must not ask to render —
+    /// see `buf_to_ansi` for what a render costs.
+    fingerprint: u64,
 }
 
 register_plugin!(State);
@@ -438,21 +446,23 @@ impl ZellijPlugin for State {
                 if !(self.visible && self.permissions_ok) {
                     return false; // hidden → let the tick loop lapse
                 }
-                self.frame = self.frame.wrapping_add(1);
-                // Animate at ~9fps while any task is working; otherwise fall
-                // back to a plain 1.5s data poll (no wasted renders when idle).
-                let working = self.tasks.iter().any(|t| t.status == "working");
-                if working {
+                // A running mutation is the one place motion carries
+                // information, and it's the only thing on screen while it runs
+                // — a clone can take minutes with nothing else to look at. The
+                // *list* never animates: a frame there costs the whole pane
+                // (see `buf_to_ansi`), and a spinner on every working task made
+                // the overlay repaint itself ~9 times a second forever.
+                if matches!(self.mode, Mode::Busy { .. }) {
+                    self.frame = self.frame.wrapping_add(1);
                     if self.frame % POLL_EVERY == 0 {
                         self.refresh();
                     }
                     self.schedule(ANIM_SECS);
-                    true // re-render to advance the spinner
-                } else {
-                    self.refresh();
-                    self.schedule(POLL_SECS);
-                    false
+                    return true;
                 }
+                self.refresh();
+                self.schedule(POLL_SECS);
+                false // the poll's result renders only if it changed anything
             }
             Event::RunCommandResult(exit, stdout, stderr, ctx) => {
                 match ctx.get(CTX_KIND).map(String::as_str) {
@@ -466,7 +476,13 @@ impl ZellijPlugin for State {
                             self.workspaces = dump.workspaces;
                             self.apply_filter();
                         }
-                        true
+                        // Most polls find nothing new — ages are drawn to the
+                        // minute and statuses change rarely. Reporting those as
+                        // needing a render would repaint the whole pane every
+                        // POLL_SECS for no visible difference. (`fingerprint`
+                        // is stamped by `render`, so this compares against what
+                        // is actually on screen, not against the last poll.)
+                        self.data_fingerprint() != self.fingerprint
                     }
                     Some(KIND_MUTATE) => {
                         // A create/rename/delete/repo-change finished — surface
@@ -557,6 +573,9 @@ impl ZellijPlugin for State {
         }
         let ansi = self.draw(rows, cols);
         print!("{ansi}");
+        // Record what is now on screen, so the next poll can tell whether it
+        // still matches and skip a repaint if it does.
+        self.fingerprint = self.data_fingerprint();
     }
 }
 
@@ -585,6 +604,28 @@ impl State {
             .find(|(key, _)| *key == k)
             .map(|(_, g)| *g)
             .unwrap_or_else(|| status_rank(&t.status))
+    }
+
+    /// Hash of everything a background poll can change on screen: the drawn
+    /// form of each task (note `fmt_age`, not the raw seconds — the list shows
+    /// minutes), the resulting filter/selection, the "current" badge's tab, and
+    /// the workspace repo state the checklists read. Anything the *user* does
+    /// reports its own render, so it doesn't need to be in here.
+    fn data_fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for t in &self.tasks {
+            (&t.ws, &t.slug, &t.title, &t.status, &t.waiting_for, &t.repos).hash(&mut h);
+            fmt_age(t.age_secs).hash(&mut h);
+        }
+        for w in &self.workspaces {
+            w.name.hash(&mut h);
+            for r in &w.repos {
+                (&r.name, r.cloned).hash(&mut h);
+            }
+        }
+        (&self.filtered, self.selected, &self.active_tab).hash(&mut h);
+        h.finish()
     }
 
     /// Kick off a task-data reload (unless one is already running).
@@ -1632,13 +1673,11 @@ impl State {
                         }
                         s
                     };
-                    // Status icon — an animated spinner while working.
-                    let icon = if t.status == "working" {
-                        SPINNER[self.frame % SPINNER.len()]
-                    } else {
-                        status_icon(&t.status)
-                    };
-                    put(&mut buf, cx, y, 1, icon, base(status_color(&t.status)));
+                    // Status icon. Deliberately static, including for `working`:
+                    // animating it means re-rendering, and a render is the
+                    // whole pane (see `buf_to_ansi`). The blue ◐ against the
+                    // muted · already says which rows are live.
+                    put(&mut buf, cx, y, 1, status_icon(&t.status), base(status_color(&t.status)));
                     // Name (+ badges), then workspace, then last-changed.
                     let current = self.active_tab.as_deref() == Some(t.slug.as_str());
                     // Claude Code's own reason ("input needed", the open
@@ -1731,11 +1770,29 @@ fn fill_row(buf: &mut Buffer, x: u16, y: u16, w: u16, bg: Color) {
 }
 
 /// Serialize a ratatui `Buffer` to a full-frame ANSI string for the plugin
-/// pane: clear + home, then each row as styled cells joined by CRLF. Emitting
-/// a full frame (not a diff) is fine — zellij calls `render` fresh each tick.
+/// pane: clear + home, then each row as styled cells joined by CRLF.
+///
+/// It has to be a full frame, and there is no point trying to make it smaller.
+/// Before each `render` zellij *wipes* the pane's grid and marks the whole
+/// viewport for re-transmission — `plugin_pane.rs` calls
+/// `delete_viewport_and_scroll` + `render_full_viewport` and documents it as
+/// "part of the plugin contract". So a diff would paint onto a blanked screen,
+/// and shaving bytes here changes nothing on the wire: zellij re-encodes the
+/// pane from its own grid regardless.
+///
+/// What that costs is worth stating, because it drives `POLL_SECS` and the
+/// absence of a list spinner: **one render == the whole pane re-sent to every
+/// attached terminal** (measured on a 120×44 overlay: ~17 KB, so a 9 fps
+/// animation was ~156 KB/s and ~210 terminal writes per second). Over ssh that
+/// reads as flicker, and at ~1 KB per write it splits a multi-byte glyph across
+/// writes several times a second — which any terminal that doesn't reassemble
+/// UTF-8 across reads renders as a question mark. Hence: render only when
+/// something actually changed (`data_fingerprint`).
 fn buf_to_ansi(buf: &Buffer) -> String {
     let area = buf.area;
-    let mut out = String::from("\x1b[2J\x1b[H");
+    // Hide the cursor — nothing here is a text caret, and left visible it sits
+    // wherever the paint ended.
+    let mut out = String::from("\x1b[?25l\x1b[2J\x1b[H");
     let mut cur = String::new();
     for y in 0..area.height {
         if y > 0 {
