@@ -382,8 +382,8 @@ fn statusbar_pane(task: Option<(&str, &str, &str)>) -> String {
     let cfg = match task {
         // NB: `task_title`, not `title` — zellij consumes `title` as the pane
         // title and it never reaches the plugin's `load()` configuration.
-        Some((slug, title, cwd)) => format!(
-            "\n            task \"{slug}\"\n            task_title \"{title}\"\n            ws_dir \"{cwd}\"\n        "
+        Some((slug, title, ws_dir)) => format!(
+            "\n            task \"{slug}\"\n            task_title \"{title}\"\n            ws_dir \"{ws_dir}\"\n        "
         ),
         None => String::new(),
     };
@@ -488,7 +488,11 @@ pub fn render_layout(opts: &TabOptions) -> Result<String> {
     // {tenx}: absolute path to this binary, for layout panes that run tenx
     // itself — PATH is unreliable in zellij-spawned commands.
     let tenx = std::env::current_exe().context("cannot determine tenx binary path")?;
-    let statusbar = statusbar_pane(Some((opts.name, opts.title, opts.cwd)));
+    // `workspace_dir`, NOT `cwd`: the bar identifies its own task by the same
+    // key the payload uses, `<workspace dir>/<slug>` (`workspace::task_json`).
+    // Passing the task directory built `<workspace>/tasks/<slug>/<slug>`, which
+    // matches nothing, so the left side sat on "idle" forever.
+    let statusbar = statusbar_pane(Some((opts.name, opts.title, opts.workspace_dir)));
     // {claude_args} first: it embeds {name}, which the next replace fills in.
     let rendered = tmpl
         .replace("{claude_args}", claude_args)

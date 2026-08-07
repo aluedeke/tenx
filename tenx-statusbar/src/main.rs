@@ -8,18 +8,27 @@
 //! after every finished turn is noise you stop reading within a day. `Done` is
 //! the case a status bar handles well: worth seeing, not worth interrupting for.
 //!
-//! ## One event at a time, and the last one stays
+//! ## Two layers: a standing base, and events that get out of the way
 //!
-//! The bar is a single slot, never a list. Showing every waiting task at once
-//! was the first cut and it was wrong: a dozen live agents produce a wall of
-//! chips nobody reads, repainting constantly. Events queue instead and take the
-//! slot in turn (`EVENT_TICKS` each), and when the queue drains the last one
-//! *stays* — highlighted while cycling, dimmed once it is merely standing there.
+//! The right side is a **base** with a transient **overlay** on top.
 //!
-//! That standing marker is the whole point: it means "something wants you, go
-//! open the overlay", which is the surface that can actually show you what. It
-//! clears only when nothing is waiting any more — the bar is not a notification
-//! you dismiss, it goes quiet when the work is genuinely dealt with.
+//! The base is what is true right now — a live prompt if there is one, else how
+//! many tasks are waiting on you and which has waited longest. It is a pure
+//! function of the latest payload, so it changes only when the situation does.
+//!
+//! The overlay is a task that just entered a waiting state, shown for
+//! `EVENT_TICKS` and then gone. Several queue and take the slot in turn.
+//!
+//! Two earlier cuts were wrong in opposite directions and both are worth not
+//! repeating. Rendering every waiting task as a chip produced a wall nobody
+//! reads. Replacing that with pure events produced a bar that was *silent*:
+//! measured on a real workspace set, transitions fire ~0.7/min while thirteen
+//! tasks sit waiting, so the slot showed one stale message about whichever task
+//! moved last while a two-day backlog stayed invisible — quietest exactly when
+//! the situation was worst. The category error was treating `done` as news: a
+//! task that finished 47 hours ago is a standing condition, not an event.
+//!
+//! Hence: levels in the base, edges in the overlay, and nothing sticky.
 //!
 //! It also absorbs the old per-tab header pane (`tenx tab header`): the left
 //! third is this tab's own task and status, which is all that pane did, and
@@ -77,11 +86,24 @@ mod palette;
 /// makes this ours; anything else is ignored in `pipe`.
 const STATUS_PIPE: &str = "tenx::status";
 
-/// How long each event holds the slot before the next queued one takes it, in
-/// timer ticks (1 s each). Long enough to read a task name in peripheral vision;
-/// short enough that a burst of five drains in the time it takes to finish a
-/// thought rather than scrolling past like a ticker.
+/// How long each event holds the slot before the next queued one takes it (or
+/// the base returns), in timer ticks (1 s each). Long enough to read a task name
+/// in peripheral vision, short enough that a burst drains promptly.
 const EVENT_TICKS: u32 = 4;
+
+/// A task must have been waiting this long to count towards the base. Below it,
+/// you are simply driving that task — every turn ends in `done` for a moment
+/// before the next prompt moves it back to `working`, and counting those makes
+/// the base flicker while you work. Measured against a real workspace: the tasks
+/// under ten minutes were ones being actively driven, the eight over an hour
+/// were the actual backlog.
+const WAIT_GATE_SECS: u64 = 60;
+
+/// Most events queued at once. Past this the base already tells the story
+/// ("13 waiting"), and a queue of ten would hold the slot for the best part of a
+/// minute — a ticker, which is the thing this design exists to avoid. Oldest are
+/// dropped, so what survives is the most recent news.
+const MAX_QUEUED: usize = 3;
 
 /// One task with a live Claude Code session, from the `tenx::status` payload.
 /// Every field is optional-tolerant: the sender is a different binary that can
@@ -120,9 +142,10 @@ struct Payload {
     tasks: Vec<Task>,
 }
 
-/// A task that just entered a waiting state — one line of news.
+/// A task that just entered a waiting state — one line of news for the slot.
+/// (Not `Event`: that name belongs to zellij's own lifecycle enum.)
 #[derive(Clone)]
-struct Event_ {
+struct Alert {
     /// Task key, so a second transition for the same task replaces the first
     /// rather than queueing behind it.
     key: String,
@@ -149,9 +172,9 @@ struct State {
     primed: bool,
 
     /// Events not yet shown, oldest first. Drained one at a time.
-    queue: VecDeque<Event_>,
+    queue: VecDeque<Alert>,
     /// The event on screen right now.
-    current: Option<Event_>,
+    current: Option<Alert>,
     /// Ticks left before `current` gives way to the next queued event. At zero
     /// with an empty queue, `current` stops counting and simply stays.
     left: u32,
@@ -216,15 +239,8 @@ impl ZellijPlugin for State {
         self.seen = incoming;
         self.tasks = payload.tasks;
         self.since_push = 0;
-
-        // Nothing is waiting on you any more, so the standing marker has served
-        // its purpose. This is the only thing that clears it — the bar is not a
-        // list you dismiss, it goes quiet when the work is actually dealt with.
-        if !self.tasks.iter().any(|t| t.wants_you()) {
-            self.queue.clear();
-            self.current = None;
-            self.left = 0;
-        }
+        // The base needs no clearing — it is derived from `tasks` every frame,
+        // so a task that stops waiting simply stops being counted.
         self.pull();
         true
     }
@@ -273,26 +289,30 @@ impl State {
         // One entry per task. A task that flips blocked→done→blocked while the
         // queue is draining should update its own line, not take three turns.
         self.queue.retain(|e| e.key != key);
-        self.queue.push_back(Event_ { key, text, color });
-    }
-
-    /// Move the currently shown event to the next queued one if its time is up.
-    /// Returns whether the visible slot changed.
-    fn advance(&mut self) -> bool {
-        if self.left > 0 {
-            self.left -= 1;
-            if self.left == 0 {
-                // Expired. Either the next event takes the slot, or this one
-                // stays put as the standing "there is something to look at"
-                // marker — `pull` decides, and rendering dims it either way.
-                return self.pull() || self.current.is_some();
-            }
+        self.queue.push_back(Alert { key, text, color });
+        while self.queue.len() > MAX_QUEUED {
+            self.queue.pop_front();
         }
-        self.pull()
     }
 
-    /// Promote the next queued event into the visible slot, if the slot is free
-    /// or its dwell time has elapsed. Returns whether anything changed.
+    /// Tick the shown event down. When its time is up it gives way to the next
+    /// queued one, or — and this is the part the previous cut got wrong — to the
+    /// base. An event never stays: once it has been read it is history, and
+    /// history on a status bar is just a stale line you learn to ignore.
+    fn advance(&mut self) -> bool {
+        if self.left == 0 {
+            return false; // already on the base
+        }
+        self.left -= 1;
+        if self.left > 0 {
+            return false;
+        }
+        self.current = None;
+        self.pull();
+        true
+    }
+
+    /// Promote the next queued event into the slot if the slot is free.
     fn pull(&mut self) -> bool {
         if self.left > 0 {
             return false;
@@ -305,6 +325,54 @@ impl State {
             }
             None => false,
         }
+    }
+
+    /// Tasks waiting on you, excluding this tab's own (the left side already
+    /// shows that) and anything below the gate, oldest first.
+    fn backlog(&self) -> Vec<&Task> {
+        let own = self.own_key();
+        let mut out: Vec<&Task> = self
+            .tasks
+            .iter()
+            .filter(|t| t.wants_you() && t.key() != own)
+            .filter(|t| t.age_secs.unwrap_or(0) + self.since_push >= WAIT_GATE_SECS)
+            .collect();
+        out.sort_by_key(|t| std::cmp::Reverse(t.age_secs.unwrap_or(0)));
+        out
+    }
+
+    /// The base line: what is true right now, or nothing.
+    fn base(&self) -> Option<(String, Color)> {
+        let waiting = self.backlog();
+        if waiting.is_empty() {
+            return None;
+        }
+        // A live prompt outranks the backlog — it is the rare, actionable thing,
+        // and the one `tenx watch` already judged worth a desktop notification.
+        let blocked: Vec<&&Task> = waiting.iter().filter(|t| t.status == "blocked").collect();
+        if let Some(first) = blocked.first() {
+            let name = self.name_of(first);
+            let why = first.waiting_for.as_deref().unwrap_or("needs input");
+            let age = self.age(first).map(|a| format!(" {a}")).unwrap_or_default();
+            let more = blocked.len() - 1;
+            let tail = if more > 0 { format!(" +{more}") } else { String::new() };
+            return Some((format!("💬 {name} · {why}{age}{tail}"), palette::WARN.color()));
+        }
+        let oldest = waiting[0];
+        let name = self.name_of(oldest);
+        let age = self.age(oldest).map(|a| format!(" {a}")).unwrap_or_default();
+        // The count is the honest signal; naming the oldest says which end to
+        // pull from. At one task the count is noise, so drop it.
+        let text = if waiting.len() == 1 {
+            format!("✅ {name}{age}")
+        } else {
+            format!("✅ {} waiting · {name}{age}", waiting.len())
+        };
+        Some((text, palette::SUCCESS.color()))
+    }
+
+    fn name_of<'a>(&self, task: &'a Task) -> &'a str {
+        if task.title.is_empty() { &task.slug } else { &task.title }
     }
 
     /// This tab's own task, if it has a live session.
@@ -345,29 +413,27 @@ impl State {
         let hint_x = width.saturating_sub(hint.len() as u16 + 1);
         put(buf, hint_x, width, hint, Style::default().fg(palette::MUTED.color()));
 
-        // One event at a time, never a list. With a dozen agents running, a list
-        // is a wall of chips nobody reads and it repaints constantly; the bar's
-        // job is to say "something happened, go look", and the overlay's job is
-        // to say what. Queued events take this slot in turn, and once the queue
-        // drains the last one *stays* — a standing marker that there is
-        // something to check, rather than news that quietly disappears.
+        // An event owns the slot while it lasts, then the base shows through.
+        // Highlighted vs plain is the whole visual distinction between "this
+        // just happened" and "this is how things are".
         let right_edge = hint_x.saturating_sub(2);
-        let Some(event) = &self.current else { return };
-
-        // Highlighted while it's still cycling, dimmed once it's just the
-        // standing marker — so a genuinely new event is visibly different from
-        // one that has been sitting there, without either shouting.
-        let live = self.left > 0;
-        let style = if live {
-            Style::default().fg(palette::GROUND.color()).bg(event.color).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(event.color)
+        let (text, style, tail) = match (&self.current, self.base()) {
+            (Some(event), _) => {
+                // How many events are still queued behind this one — news left
+                // to show, not a task count; the base carries that.
+                let more = self.queue.len();
+                (
+                    format!(" {} ", event.text),
+                    Style::default()
+                        .fg(palette::GROUND.color())
+                        .bg(event.color)
+                        .add_modifier(Modifier::BOLD),
+                    if more > 0 { format!(" +{more}") } else { String::new() },
+                )
+            }
+            (None, Some((text, color))) => (text, Style::default().fg(color), String::new()),
+            (None, None) => return,
         };
-        let text = if live { format!(" {} ", event.text) } else { event.text.clone() };
-        // How many more are still queued behind this one. Not a task count —
-        // that would be the list again — just an honest "more coming".
-        let more = self.queue.len();
-        let tail = if more > 0 { format!(" +{more}") } else { String::new() };
 
         let w = display_width(&text) as u16 + display_width(&tail) as u16;
         let start = right_edge.saturating_sub(w).max(x + 2);
