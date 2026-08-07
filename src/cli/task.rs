@@ -58,6 +58,8 @@ pub fn new_in(
             // only to correlate task↔tab; the slug can't drift or collide, so
             // the correlation stays reliable even when the title is edited.
             name: slug,
+            // The status bar shows the title; the tab is still keyed by slug.
+            title: name,
             cwd: &task_dir.to_string_lossy(),
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_file: if layout.is_empty() { None } else { Some(layout) },
@@ -287,6 +289,7 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     let layout = ws.config.layout.as_str();
     let opts = crate::zellij::TabOptions {
         name: slug,
+        title: &task.display_name,
         cwd: &task.path.to_string_lossy(),
         workspace_dir: &ws.dir.to_string_lossy(),
         layout_file: if layout.is_empty() { None } else { Some(layout) },

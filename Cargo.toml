@@ -1,7 +1,8 @@
 # Root package + workspace: `tenx` is the native CLI/TUI binary; `tenx-zellij`
-# is the WASM launcher plugin (build with --target wasm32-wasip1).
+# (the Ctrl+w overlay) and `tenx-statusbar` (the per-tab status line) are WASM
+# zellij plugins (build with --target wasm32-wasip1).
 [workspace]
-members = ["tenx-zellij"]
+members = ["tenx-zellij", "tenx-statusbar"]
 
 [package]
 name = "tenx"

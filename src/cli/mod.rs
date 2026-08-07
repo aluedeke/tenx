@@ -2,7 +2,6 @@ pub mod hooks;
 pub mod init;
 pub mod repo;
 pub mod standup;
-pub mod tab;
 pub mod watch;
 pub mod task;
 
@@ -59,12 +58,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: HooksCommands,
     },
-    /// Tab operations invoked by Claude Code hooks
-    #[command(hide = true)]
-    Tab {
-        #[command(subcommand)]
-        command: TabCommands,
-    },
 }
 
 #[derive(Subcommand)]
@@ -72,12 +65,6 @@ pub enum HooksCommands {
     /// Remove tenx's Claude Code hooks (tenx no longer installs any — task
     /// state is read live from Claude Code's session registry)
     Install,
-}
-
-#[derive(Subcommand)]
-pub enum TabCommands {
-    /// Render the task-tab header line (task name + live status; runs from task cwd)
-    Header,
 }
 
 #[derive(Subcommand)]

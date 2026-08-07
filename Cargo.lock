@@ -2222,6 +2222,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tenx-statusbar"
+version = "0.1.0"
+dependencies = [
+ "ratatui",
+ "serde",
+ "serde_json",
+ "unicode-width 0.2.0",
+ "zellij-tile",
+]
+
+[[package]]
 name = "tenx-zellij"
 version = "0.1.0"
 dependencies = [

@@ -363,18 +363,47 @@ pub fn switch_to_tenx_session(tenx_bin: &str) -> Result<()> {
     Ok(())
 }
 
+/// Absolute path to the status-bar wasm, installed by `make install`.
+///
+/// Layouts must name it by path, not by a `plugins` alias: an alias is resolved
+/// against the *user's* config, and a task tab's bar carries per-task
+/// configuration that an alias can't supply.
+pub fn statusbar_wasm() -> String {
+    let home = env::var("HOME").unwrap_or_default();
+    format!("{home}/.local/share/tenx/tenx-statusbar.wasm")
+}
+
+/// A status-bar pane block for a layout, optionally bound to a task.
+///
+/// One row, not zellij's two: the bar it replaces is a single line, and the row
+/// this frees is the one the old per-tab header pane used to occupy.
+fn statusbar_pane(task: Option<(&str, &str, &str)>) -> String {
+    let wasm = statusbar_wasm();
+    let cfg = match task {
+        // NB: `task_title`, not `title` — zellij consumes `title` as the pane
+        // title and it never reaches the plugin's `load()` configuration.
+        Some((slug, title, cwd)) => format!(
+            "\n            task \"{slug}\"\n            task_title \"{title}\"\n            ws_dir \"{cwd}\"\n        "
+        ),
+        None => String::new(),
+    };
+    format!(
+        "pane size=1 borderless=true {{\n        plugin location=\"file:{wasm}\" {{{cfg}}}\n    }}"
+    )
+}
+
 /// The single session's home tab: the overlay running full-screen as the base
 /// pane. No tab-bar anywhere — tasks live in invisible tabs and the overlay is
-/// the only switcher. The status-bar stays for zellij keybinding hints; the
-/// default_tab_template ensures manually created tabs (Ctrl+t n) inherit it.
+/// the only switcher. The home tab's bar has no task of its own, so it renders
+/// the attention list alone; the default_tab_template ensures manually created
+/// tabs (Ctrl+t n) inherit one too.
 fn home_layout(tenx_bin: &str) -> String {
+    let statusbar = statusbar_pane(None);
     format!(
         r#"layout {{
     default_tab_template {{
         children
-        pane size=2 borderless=true {{
-            plugin location="zellij:status-bar"
-        }}
+        {statusbar}
     }}
     tab name="home" focus=true {{
         pane command="{tenx_bin}" {{
@@ -431,6 +460,9 @@ pub struct TabOptions<'a> {
     pub name: &'a str,
     pub cwd: &'a str,
     pub workspace_dir: &'a str,
+    /// The task's display title (TASK.md's heading). Only the status bar uses
+    /// it — the tab itself is named by slug so the correlation can't drift.
+    pub title: &'a str,
     pub layout_file: Option<&'a str>,
     /// Resume the task's most recent claude conversation (`--continue`). Only
     /// safe when one exists: with no prior conversation, interactive
@@ -454,30 +486,39 @@ pub fn render_layout(opts: &TabOptions) -> Result<String> {
         r#"args "--name" "{name}""#
     };
     // {tenx}: absolute path to this binary, for layout panes that run tenx
-    // itself (e.g. the header line) — PATH is unreliable in zellij-spawned
-    // commands, same reason the hook scripts embed the path.
+    // itself — PATH is unreliable in zellij-spawned commands.
     let tenx = std::env::current_exe().context("cannot determine tenx binary path")?;
+    let statusbar = statusbar_pane(Some((opts.name, opts.title, opts.cwd)));
     // {claude_args} first: it embeds {name}, which the next replace fills in.
-    Ok(tmpl
+    let rendered = tmpl
         .replace("{claude_args}", claude_args)
+        .replace("{statusbar}", &statusbar)
         .replace("{name}", opts.name)
         .replace("{cwd}", opts.cwd)
-        .replace("{tenx}", &tenx.to_string_lossy()))
+        .replace("{tenx}", &tenx.to_string_lossy());
+    // `{statusbar}` above is the supported hook for layout authors. This is the
+    // fallback for the ones that never got edited: a workspace layout file
+    // naming zellij's own bar gains the tenx one without anyone touching it,
+    // which matters because those files live outside this repo. It keeps
+    // whatever `size=` the layout declared — a 2-row pane just renders the bar
+    // in its first row — since rewriting the surrounding pane block by string
+    // match would break on any formatting the author chose differently.
+    Ok(rendered.replace(
+        "plugin location=\"zellij:status-bar\"",
+        &format!("plugin location=\"file:{}\"", statusbar_wasm()),
+    ))
 }
 
 fn default_task_layout(_workspace_dir: &str) -> String {
+    // No header pane: the task's name and live status are the left third of the
+    // status bar now, which is the same information in one fewer row and one
+    // fewer process per tab.
     r#"layout {
     default_tab_template {
         children
-        pane size=2 borderless=true {
-            plugin location="zellij:status-bar"
-        }
+        {statusbar}
     }
     tab name="{name}" cwd="{cwd}" focus=true {
-        // 1-line header: task name + live Claude status (tenx tab header).
-        pane size=1 borderless=true command="{tenx}" cwd="{cwd}" close_on_exit=true {
-            args "tab" "header"
-        }
         pane split_direction="vertical" {
             pane name="claude" command="claude" cwd="{cwd}" size="50%" close_on_exit=true {
                 // {claude_args}: "--name {name}" plus "--continue" only when a prior

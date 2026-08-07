@@ -8,7 +8,7 @@ mod zellij;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Commands, HooksCommands, RepoCommands, TabCommands, TaskCommands};
+use cli::{Cli, Commands, HooksCommands, RepoCommands, TaskCommands};
 use std::env;
 
 fn main() {
@@ -60,9 +60,6 @@ fn run() -> Result<()> {
 
         Some(Commands::Watch) => cli::watch::run()?,
 
-        Some(Commands::Tab { command }) => match command {
-            TabCommands::Header => cli::tab::header()?,
-        },
 
         Some(Commands::Task { command }) => match command {
             TaskCommands::New { name, repos, no_open, ws_dir } => match ws_dir {

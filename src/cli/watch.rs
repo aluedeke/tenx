@@ -182,7 +182,7 @@ struct Snapshot {
 fn resolve_all() -> Snapshot {
     let sessions = workspace::claude::sessions();
     let mut blocked = Vec::new();
-    let mut tasks = Vec::new();
+    let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
             let state = workspace::resolve_task_state(&task.path, &sessions);
@@ -197,11 +197,16 @@ fn resolve_all() -> Snapshot {
                 ));
             }
             if state.status != TaskStatus::Idle {
-                tasks.push(workspace::task_json(&ws, &task, &state));
+                tasks.push((state.changed, workspace::task_json(&ws, &task, &state)));
             }
         }
     }
-    Snapshot { blocked, tasks }
+    // Newest activity first, matching what `tenx overlay --json` promises for
+    // the same shape. Same bytes in a different order is still a different wire
+    // format to anyone who reads position; cheap to guarantee here, awkward to
+    // rediscover in a consumer that assumed it.
+    tasks.sort_by(|a, b| b.0.cmp(&a.0));
+    Snapshot { blocked, tasks: tasks.into_iter().map(|(_, v)| v).collect() }
 }
 
 /// A change key over everything the status bar renders *except* age.

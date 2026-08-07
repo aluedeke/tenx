@@ -13,6 +13,7 @@ build:
 # pane sized responsively for the current screen.
 plugin:
 	cargo build -p tenx-zellij --release --target wasm32-wasip1
+	cargo build -p tenx-statusbar --release --target wasm32-wasip1
 
 # Installs the binary to ~/.cargo/bin (cargo's default, same as `cargo install`)
 # and the zellij plugin to ~/.local/share/tenx/ (referenced by the Ctrl+w
@@ -39,9 +40,15 @@ install: plugin
 	cargo install --path .
 	mkdir -p $(PLUGIN_DIR)
 	cp target/wasm32-wasip1/release/tenx-zellij.wasm $(PLUGIN_DIR)/tenx-zellij.wasm
+	cp target/wasm32-wasip1/release/tenx-statusbar.wasm $(PLUGIN_DIR)/tenx-statusbar.wasm
 	-@$(ZELLIJ) --session tenx action start-or-reload-plugin \
 		"file:$(PLUGIN_DIR)/tenx-zellij.wasm" \
 		-c tenx_bin=$(HOME)/.cargo/bin/tenx >/dev/null 2>&1
+	@# The status bar hits the same module cache, but a reload here would only
+	@# swap panes in tabs that already exist and cannot re-render the ones a
+	@# running session already painted. Its instances are created with tabs, so
+	@# the honest instruction is to reopen the tab (or the session).
+	@echo "  ✓ status bar installed — open a new tab to pick it up"
 	@echo "  ✓ installed — the plugin pane that just opened is the new build; esc closes it"
 
 clean:

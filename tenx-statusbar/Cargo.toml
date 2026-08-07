@@ -1,0 +1,27 @@
+[package]
+name = "tenx-statusbar"
+version = "0.1.0"
+edition = "2021"
+
+# WASM zellij plugin: the tenx status bar, one instance per tab (mounted by
+# every tenx layout's `default_tab_template`).
+#
+# It requests NO permissions, which is the property the whole design hangs off.
+# A plugin with a pending permission request is frozen — it receives no pipes and
+# never renders — and a status bar is one line tall, with nowhere to display the
+# prompt. Zero permissions means it paints the moment it loads, in every tab, on
+# a fresh machine, with nothing written into zellij's cache dir. That rules out
+# `run_command`, so all state arrives by pipe from `tenx watch`.
+
+[dependencies]
+zellij-tile = "0.44"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Same as tenx-zellij: ratatui's widget/layout/Buffer core, no crossterm backend
+# (it can't build for wasm32-wasip1). We render into an in-memory Buffer and
+# serialize that to ANSI ourselves.
+ratatui = { version = "0.29", default-features = false }
+# The same width table ratatui uses internally. Hand-rolling one was a real bug:
+# it called ✅ (U+2705) one column where ratatui calls it two, so every chip lost
+# its last character and the line silently overflowed the pane.
+unicode-width = "0.2"
