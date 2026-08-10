@@ -62,6 +62,10 @@ install: plugin
 	    printf '%s\n' "$$keep" | grep -qx "$$(basename $$old)" && continue; \
 	    rm -f "$$old"; done; \
 	  echo "  ✓ status bar -> tenx-statusbar-$$hash.wasm"
+	@# Refresh the manual-tab layout so Ctrl+t n picks up the build just
+	@# installed. Task tabs resolve the path themselves at tab-creation time;
+	@# a manual tab is built from this file, and only this keeps it current.
+	-@$(HOME)/.cargo/bin/tenx layouts >/dev/null 2>&1
 	-@$(ZELLIJ) --session tenx action start-or-reload-plugin \
 		"file:$(PLUGIN_DIR)/tenx-zellij.wasm" \
 		-c tenx_bin=$(HOME)/.cargo/bin/tenx >/dev/null 2>&1
