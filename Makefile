@@ -47,6 +47,12 @@ install: plugin
 	@# rendered the old build). A new build at a new path gets a new cache entry
 	@# for free, with no reload action and no stray pane to close.
 	@#
+	@# The install records which file it wrote in `tenx-statusbar.current`,
+	@# and `zellij::statusbar_wasm` reads that. Resolving "newest by mtime"
+	@# instead was a guess that broke as soon as anything else touched this
+	@# directory — including the restore below, which hands an older build's
+	@# path a fresh mtime and had it win over the build being installed.
+	@#
 	@# Pruning spares every build the running session still references — each
 	@# tab is pinned to whatever was newest when it opened, so a live session
 	@# legitimately names several at once. Deleting one is worse than leaving
@@ -56,6 +62,7 @@ install: plugin
 	@sb=target/wasm32-wasip1/release/tenx-statusbar.wasm; \
 	  hash=$$(shasum -a256 $$sb | cut -c1-12); \
 	  cp $$sb $(PLUGIN_DIR)/tenx-statusbar-$$hash.wasm; \
+	  echo tenx-statusbar-$$hash.wasm > $(PLUGIN_DIR)/tenx-statusbar.current; \
 	  rm -f $(PLUGIN_DIR)/tenx-statusbar.wasm; \
 	  keep=$$($(ZELLIJ) -s tenx action dump-layout 2>/dev/null | grep -o 'tenx-statusbar-[a-f0-9]*\.wasm' | sort -u); \
 	  ls -t $(PLUGIN_DIR)/tenx-statusbar-*.wasm | tail -n +6 | while read old; do \

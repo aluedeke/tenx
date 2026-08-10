@@ -438,6 +438,24 @@ pub fn switch_to_tenx_session(tenx_bin: &str) -> Result<()> {
 pub fn statusbar_wasm() -> String {
     let home = env::var("HOME").unwrap_or_default();
     let dir = PathBuf::from(&home).join(".local/share/tenx");
+
+    // The pointer `make install` writes, naming the file it just installed.
+    //
+    // This used to be "newest by mtime", which is a guess, and the guess was
+    // wrong the moment anything else touched the directory — restoring an older
+    // build's path (which `make install` deliberately does, so panes in a
+    // running session stay loadable) gave that copy the freshest mtime and it
+    // won resolution over the build actually being installed. An install knows
+    // exactly which file it wrote; asking it beats inferring.
+    if let Ok(name) = fs::read_to_string(dir.join(CURRENT_STATUSBAR)) {
+        let candidate = dir.join(name.trim());
+        if candidate.is_file() {
+            return candidate.to_string_lossy().into_owned();
+        }
+    }
+
+    // No pointer (an install predating it, or a hand-managed directory): fall
+    // back to newest-by-mtime, then to the unversioned name.
     let newest = fs::read_dir(&dir).ok().and_then(|entries| {
         entries
             .filter_map(|e| e.ok())
@@ -454,6 +472,9 @@ pub fn statusbar_wasm() -> String {
         .to_string_lossy()
         .into_owned()
 }
+
+/// File naming the status-bar build to load, written by `make install`.
+pub const CURRENT_STATUSBAR: &str = "tenx-statusbar.current";
 
 /// A status-bar pane block for a layout, optionally bound to a task.
 ///
