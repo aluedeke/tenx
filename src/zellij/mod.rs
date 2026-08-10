@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Find the zellij binary by searching common install locations.
@@ -299,10 +299,6 @@ fn write_session_config() -> Result<PathBuf> {
         .filter(|l| !l.trim_start().starts_with("theme "))
         .collect::<Vec<_>>()
         .join("\n");
-    let base = match tab_layout_path() {
-        Ok(layout) => redirect_new_tab(&base, &layout),
-        Err(_) => base,
-    };
     let generated = cfg_dir.join("tenx-session.kdl");
     fs::write(&generated, format!("{base}\n{}", theme_overlay()))
         .context("write tenx session config")?;
@@ -311,53 +307,6 @@ fn write_session_config() -> Result<PathBuf> {
 
 /// Write the home layout to the zellij layouts dir and return its layout name
 /// (usable with `--new-session-with-layout` / `switch-session --layout`).
-/// Path of the layout manual tabs (Ctrl+t n) are built from.
-pub fn tab_layout_path() -> Result<PathBuf> {
-    let home = env::var("HOME").context("HOME not set")?;
-    Ok(PathBuf::from(&home).join(".config/zellij/layouts/tenx-tab.kdl"))
-}
-
-/// Write the manual-tab layout, resolving the status-bar wasm at write time.
-///
-/// A manual tab would otherwise come from the session's stored
-/// `default_tab_template`, whose plugin path was baked when the session was
-/// created — so it loads whatever build was current back then, for as long as
-/// the session lives. `NewTab { layout "…" }` reads *this file* at the keypress
-/// instead, so keeping the file current keeps the tab current.
-///
-/// Rewritten at session creation and by `tenx layouts`, which `make install`
-/// runs — an install mid-session is the whole case this exists for.
-pub fn write_tab_layout() -> Result<PathBuf> {
-    let path = tab_layout_path()?;
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).context("create zellij layouts dir")?;
-    }
-    // No task identity: a manual tab isn't a task, so the bar shows the waiting
-    // count and leaves the left side empty.
-    let statusbar = statusbar_pane(None);
-    fs::write(&path, format!("layout {{\n    pane\n    {statusbar}\n}}\n"))
-        .context("write tenx tab layout")?;
-    Ok(path)
-}
-
-/// Point every plain `NewTab` binding at [`tab_layout_path`].
-///
-/// Appending a second `keybinds` block does **not** work — zellij ignores it
-/// (measured: a binding for an unused key in an appended block did nothing at
-/// all, while `Ctrl+t n` kept using the base config's plain `NewTab`). The
-/// binding has to be rewritten where it already is, which is why this is a
-/// string transform over the user's config rather than a block we add.
-///
-/// Only touches the generated tenx-session config, never the user's own. Being
-/// a config change it takes effect on the *next* session; from then on the file
-/// it points at is what keeps manual tabs current.
-fn redirect_new_tab(config: &str, layout: &Path) -> String {
-    config.replace(
-        "{ NewTab; ",
-        &format!("{{ NewTab {{ layout \"{}\"; }}; ", layout.display()),
-    )
-}
-
 fn write_home_layout(tenx_bin: &str) -> Result<String> {
     let home = env::var("HOME").context("HOME not set")?;
     let layouts_dir = PathBuf::from(&home).join(".config/zellij/layouts");
@@ -376,7 +325,6 @@ fn write_home_layout(tenx_bin: &str) -> Result<String> {
 pub fn create_and_attach_session(tenx_bin: &str) -> Result<()> {
     use std::os::unix::process::CommandExt;
     let layout_name = write_home_layout(tenx_bin)?;
-    write_tab_layout()?;
     // Theme this session only: launch against a generated config (user base +
     // tenx theme overlay) via the global `--config` flag.
     let config = write_session_config()?;
@@ -401,7 +349,6 @@ pub fn switch_to_tenx_session(tenx_bin: &str) -> Result<()> {
     let mut command = cmd();
     if !session_exists(SESSION)? {
         let layout_name = write_home_layout(tenx_bin)?;
-        write_tab_layout()?;
         args.push("--layout".to_string());
         args.push(layout_name);
         // Best-effort theming for the switch-session creation path: `action`
@@ -498,12 +445,8 @@ fn statusbar_pane(task: Option<(&str, &str, &str)>) -> String {
 /// The single session's home tab: the overlay running full-screen as the base
 /// pane. No tab-bar anywhere — tasks live in invisible tabs and the overlay is
 /// the only switcher. The home tab's bar has no task of its own, so it renders
-/// the attention list alone.
-///
-/// The `default_tab_template` here is a *fallback* for manual tabs. It bakes a
-/// plugin path at session creation and can never be updated afterwards, so
-/// `new_tab_keybind` redirects Ctrl+t n to [`tab_layout_path`] — a file, re-read
-/// on every keypress — and the template only applies if that rewrite didn't take.
+/// the attention list alone; the default_tab_template ensures manually created
+/// tabs (Ctrl+t n) inherit one too.
 fn home_layout(tenx_bin: &str) -> String {
     let statusbar = statusbar_pane(None);
     format!(

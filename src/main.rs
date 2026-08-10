@@ -58,9 +58,6 @@ fn run() -> Result<()> {
             }
         },
 
-        Some(Commands::Layouts) => {
-            println!("{}", zellij::write_tab_layout()?.display());
-        }
         Some(Commands::Watch) => cli::watch::run()?,
 
 
