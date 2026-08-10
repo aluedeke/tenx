@@ -11,21 +11,38 @@
 //! its own launcher with its own pane bookkeeping, and they stacked duplicate
 //! overlays that no single instance could see to clean up.
 //!
-//! A plugin *pane* dissolves the problem. `LaunchOrFocusPlugin { move_to_
-//! focused_tab: true }` keeps exactly one session-wide pane and *moves* it to
-//! the summoning client's current tab — the singleton is enforced by zellij,
-//! and every key/mouse event this instance receives is already attributed to
-//! the client who summoned it. Jumping via the host API (`go_to_tab_name`) is
-//! therefore correct for phone and desktop alike, with no "last-active-client"
-//! guessing (the bug that forced Enter-only jumps in the terminal overlay).
+//! A plugin *pane* dissolves the problem. Zellij runs at most one instance per
+//! (plugin, configuration), so it's a singleton by construction, and every
+//! key/mouse event this instance receives is already attributed to the client
+//! who summoned it. Jumping via the host API (`go_to_tab_name`) is therefore
+//! correct for phone and desktop alike, with no "last-active-client" guessing
+//! (the bug that forced Enter-only jumps in the terminal overlay).
+//!
+//! ## Ctrl+w toggles: why `MessagePlugin`, not `LaunchOrFocusPlugin`
+//!
+//! The keybind (in the user's `config.kdl`) binds Ctrl+w to `MessagePlugin
+//! "tenx" { name "toggle"; floating true; }`, delivered to `pipe()` as
+//! `MSG_TOGGLE`. `LaunchOrFocusPlugin` was tried first and doesn't work for a
+//! toggle: once we're open and focused on the client's current tab, pressing
+//! it again is a pure no-op on zellij's side (already floating, already
+//! focused, nothing to move) — no event of any kind reaches the plugin, so
+//! there's nothing a key handler could ever act on. `MessagePlugin` instead
+//! calls `pipe()` on *every* press, whether it launches a fresh instance or
+//! lands on one already running, which is exactly the signal a toggle needs
+//! (see `pipe()`). The trade-off: unlike `LaunchOrFocusPlugin`'s
+//! `move_to_focused_tab`, a still-open instance left behind on another tab
+//! (switched away from by some means other than Ctrl+w/Esc) does not follow
+//! you to your current tab — the next Ctrl+w just closes it invisibly, since
+//! by then it's already "open" as far as the toggle is concerned.
 //!
 //! ## Lifetime: one summon, one instance
 //!
-//! Dismissing the overlay (esc, or a jump) **closes** the pane rather than
-//! hiding it, so every Ctrl+w loads the wasm currently on disk. See `dismiss`
-//! for why: a hidden instance outlives reinstalls and there is no reliable way
-//! to swap it out from the outside, which made `make install` a silent no-op
-//! for the running session. The re-launch cost is a sub-10ms `--json` call.
+//! Dismissing the overlay (esc, a jump, or the Ctrl+w toggle) **closes** the
+//! pane rather than hiding it, so every summon loads the wasm currently on
+//! disk. See `dismiss` for why: a hidden instance outlives reinstalls and
+//! there is no reliable way to swap it out from the outside, which made `make
+//! install` a silent no-op for the running session. The re-launch cost is a
+//! sub-10ms `--json` call.
 //!
 //! ## Where the data lives
 //!
@@ -116,6 +133,14 @@ const KIND_TASKS: &str = "tasks";
 /// re-read task data so the list reflects the change.
 const KIND_MUTATE: &str = "mutate";
 
+/// Name of the pipe message the "Ctrl w" keybind sends (see `pipe()`). The
+/// keybind uses `MessagePlugin`, not `LaunchOrFocusPlugin`: the latter is a
+/// silent no-op when we're already open and focused on the current tab (no
+/// event reaches the plugin either way), which is exactly the case that needs
+/// to close us — `MessagePlugin` instead always delivers this message,
+/// whether it just launched us or found us already running.
+const MSG_TOGGLE: &str = "toggle";
+
 /// Poll interval for re-reading task state (status glyphs, ages, open flags).
 /// A poll is cheap; the *render* it may trigger is not, so it only asks for one
 /// when `data_fingerprint` says something changed.
@@ -131,8 +156,8 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 
 // ── Responsive pane geometry ── At/under the phone thresholds the overlay
 // fills the whole screen; past them it scales by percentage up to a desktop cap
-// and centers. The plugin sizes ITS OWN floating pane (LaunchOrFocusPlugin only
-// gives a default fraction of the terminal, which is cramped on a phone).
+// and centers. The plugin sizes ITS OWN floating pane (zellij's own default on
+// creation is just a fraction of the terminal, which is cramped on a phone).
 const PHONE_COLS: usize = 96;
 const PHONE_ROWS: usize = 28;
 const MAX_COLS: usize = 120;
@@ -363,6 +388,10 @@ struct State {
     /// activity order and resets the selection. Starts true so the first render
     /// freezes an order.
     reopen_pending: bool,
+    /// Set once this (single, still-running) instance has processed one
+    /// `MSG_TOGGLE` pipe message — see `pipe()` for why this, and not
+    /// `visible`, is what decides open-vs-close.
+    armed: bool,
     /// Frozen display order — task key plus the status rank it was filed under
     /// (which fixes both its section and its place inside it, see
     /// `frozen_rank`). The rows never re-sort while the overlay is open; only a
@@ -535,6 +564,27 @@ impl ZellijPlugin for State {
         }
     }
 
+    /// Delivery for the "Ctrl w" keybind (`MessagePlugin`, see `MSG_TOGGLE`).
+    /// Every press — whether it launches a fresh instance or lands on one
+    /// already running — sends exactly one of these, so `armed` alone tells
+    /// the two apart: unset means this is the message that (re)opened us,
+    /// set means it's a second press on the same still-alive instance and
+    /// the toggle should now close it. `MessagePlugin` doesn't focus a
+    /// freshly-created pane the way `LaunchOrFocusPlugin` does, so the open
+    /// branch claims focus itself.
+    fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
+        if pipe_message.name != MSG_TOGGLE {
+            return false;
+        }
+        if self.armed {
+            self.dismiss();
+        } else {
+            self.armed = true;
+            show_self(true);
+        }
+        true
+    }
+
     fn render(&mut self, rows: usize, cols: usize) {
         // Being rendered is proof we're on screen, so (re)enable polling here.
         // Polling is gated on `visible`, but `Visible(true)` doesn't reliably
@@ -555,12 +605,12 @@ impl ZellijPlugin for State {
             self.selected_key = None;
             self.apply_filter();
         }
-        // Self-correct the pane size. On a re-summon, LaunchOrFocusPlugin
-        // re-homes the pane and zellij resets it to the default (small) size —
-        // and no Visible/changed-TabUpdate event fires to tell us. So whenever
-        // we render notably smaller than the responsive target, re-apply the
-        // geometry. Converges in a frame; the tolerance avoids border-off-by-one
-        // churn at steady state.
+        // Self-correct the pane size. On every (re)open zellij creates the
+        // pane at its own default (small) size, and no Visible/changed-
+        // TabUpdate event fires to tell us. So whenever we render notably
+        // smaller than the responsive target, re-apply the geometry.
+        // Converges in a frame; the tolerance avoids border-off-by-one churn
+        // at steady state.
         if let Some((dc, dr)) = self.sized_for {
             let (w, h) = geometry_wh(dc, dr);
             let too_small = cols + 3 < w || rows + 3 < h;
@@ -666,10 +716,10 @@ impl State {
     }
 
     /// Re-apply the last-known geometry. Needed when the overlay is re-shown:
-    /// `LaunchOrFocusPlugin { move_to_focused_tab }` re-homes the pane and
-    /// zellij resets it to the default (small) floating size, but the display
-    /// area is unchanged — so `fit_pane`'s guard would skip. Without this the
-    /// first open is correctly sized but every re-open is default-sized.
+    /// each (re)open is a fresh pane at zellij's default (small) floating
+    /// size, but the display area is unchanged from last time — so
+    /// `fit_pane`'s guard would skip. Without this the first open is
+    /// correctly sized but every re-open is default-sized.
     fn refit(&mut self) {
         if let Some((c, r)) = self.sized_for {
             self.apply_geometry(c, r);
