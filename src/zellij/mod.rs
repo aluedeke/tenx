@@ -329,7 +329,26 @@ pub fn create_and_attach_session(tenx_bin: &str) -> Result<()> {
     // tenx theme overlay) via the global `--config` flag.
     let config = write_session_config()?;
     let config = config.to_string_lossy();
-    let err = cmd()
+    let mut command = cmd();
+    // Start the server from $HOME, not from wherever tenx happened to be run.
+    //
+    // A zellij server outlives the directory it was started in, and every
+    // plugin `run_command` is issued with a cwd of "." (hardcoded in
+    // zellij-tile), so once that directory is deleted *every* plugin command
+    // fails with ENOENT — not because the binary is missing, but because the
+    // working directory is. The overlay polls every 1.5s, so it becomes a
+    // permanent error loop and an overlay that can never list a task again.
+    //
+    // tenx is habitually run from inside a task, and tasks get deleted. Seen in
+    // the wild: a session whose cwd was `tasks/flickering/tenx`, still spinning
+    // days after that task was removed, ~25 MB/day of identical log lines.
+    // Confirmed by experiment — a session started in a scratch directory logged
+    // nothing until the directory was deleted underneath it, then ~0.75 errors
+    // a second, one per poll.
+    if let Ok(home) = env::var("HOME") {
+        command.current_dir(home);
+    }
+    let err = command
         .args(["--config", &config, "--session", SESSION, "--new-session-with-layout", &layout_name])
         .exec();
     Err(err).context(format!("exec zellij --session {SESSION}"))
