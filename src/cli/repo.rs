@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use std::env;
+use std::path::Path;
 
 fn infer_name(url: &str) -> String {
     url.rsplit('/')
@@ -9,9 +10,15 @@ fn infer_name(url: &str) -> String {
         .to_string()
 }
 
-pub fn add(url: &str, name: Option<&str>) -> Result<()> {
-    let cwd = env::current_dir()?;
-    let mut ws = crate::workspace::find(&cwd)?;
+/// `ws_dir` selects the workspace directly (the zellij overlay plugin shells
+/// out from an arbitrary cwd and has no other way to name a workspace);
+/// without it, the workspace is found by walking up from cwd, same as every
+/// other bare `tenx` invocation.
+pub fn add(url: &str, name: Option<&str>, ws_dir: Option<&str>) -> Result<()> {
+    let mut ws = match ws_dir {
+        Some(dir) => crate::workspace::load(Path::new(dir))?,
+        None => crate::workspace::find(&env::current_dir()?)?,
+    };
     add_in(&mut ws, url, name)
 }
 

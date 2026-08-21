@@ -273,6 +273,13 @@ enum Mode {
     Create { name: String, ws: String, ws_dir: String, phase: Phase, pick: RepoPick },
     /// Repo checklist for an existing task (add/detach worktrees).
     EditRepos { title: String, slug: String, ws_dir: String, pick: RepoPick },
+    /// Registering a brand-new repo into a workspace (bare clone + config),
+    /// targeting `ws`/`ws_dir` — the selected task's workspace, or the first
+    /// registered one (same fallback as `Create`). `focus`: 0 = url, 1 = name.
+    /// This is the zellij overlay's only path to `tenx repo add`: unlike
+    /// `Create`/`EditRepos`, the checklist has nothing to tick when a
+    /// workspace has zero repos yet, so it can't be the entry point.
+    AddRepo { ws: String, ws_dir: String, url: String, name: String, focus: usize },
     /// Confirming a repo change that detaches worktrees (destructive).
     ConfirmRepos {
         title: String,
@@ -295,13 +302,34 @@ enum Mode {
 /// How the list is organised: sectioned by agent status (the default — what
 /// needs you, in the order it needs you), one flat activity-sorted section, or
 /// grouped by workspace. Cycled with → (the header's segmented control mirrors
-/// it).
+/// it). Tasks-view only — the Repos view has nothing to group by status.
 #[derive(Default, Clone, Copy, PartialEq)]
 enum Grouping {
     #[default]
     Status,
     Recent,
     Workspace,
+}
+
+/// Which list is on screen: the task switcher, or the flat list of every
+/// workspace's configured repos (clone status + add-repo). ⇥ toggles between
+/// them, mirroring `tui/overlay.rs`'s Tasks/Repos tabs.
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+enum View {
+    #[default]
+    Tasks,
+    Repos,
+}
+
+/// One repo row in the Repos view, flattened across every registered
+/// workspace. Built from `self.workspaces` — the same data the create/edit
+/// checklists already read — so no extra `run_command` round trip.
+#[derive(Clone)]
+struct RepoRow {
+    ws: String,
+    ws_dir: String,
+    name: String,
+    cloned: bool,
 }
 
 /// Status tokens in intra-section order; unknown tokens sort last. Mirrors
@@ -333,8 +361,8 @@ fn group_rank(status_rank: usize) -> usize {
     }
 }
 
-/// A rendered list line: a blank spacer, a section header, or a task
-/// (position in `filtered`).
+/// A rendered list line: a blank spacer, a section header, or a row (position
+/// in `filtered`/`repo_filtered`, depending which view built this list).
 enum Disp {
     Gap,
     Header(String),
@@ -359,6 +387,16 @@ struct State {
     selected_key: Option<(String, String)>,
     filter: String,
     grouping: Grouping,
+    /// Which list is on screen (⇥ toggles). The Repos view is where `Mode::AddRepo`
+    /// actually lives — the task list has nothing to add a repo *to*.
+    view: View,
+    /// Every workspace's repos, flattened — rebuilt from `workspaces` whenever
+    /// a data refresh lands, same as `apply_filter` rebuilds `filtered`.
+    repo_rows: Vec<RepoRow>,
+    /// Indices into `repo_rows` matching the current filter, in display order.
+    repo_filtered: Vec<usize>,
+    /// Selected position within `repo_filtered`.
+    repo_selected: usize,
     mode: Mode,
     /// Name of the currently-focused tab (== a task slug) for the "current"
     /// badge.
@@ -679,6 +717,7 @@ impl State {
             }
         }
         (&self.filtered, self.selected, &self.active_tab).hash(&mut h);
+        (&self.repo_filtered, self.repo_selected, self.view).hash(&mut h);
         h.finish()
     }
 
@@ -840,6 +879,32 @@ impl State {
             })
             .unwrap_or_else(|| self.selected.min(self.filtered.len().saturating_sub(1)));
         self.sync_key();
+
+        // Repos view: rebuild the flattened row list from `workspaces` (cheap —
+        // a handful of repos, not worth caching across polls) and re-filter it
+        // the same way, then clamp its own independent selection cursor.
+        self.repo_rows = self
+            .workspaces
+            .iter()
+            .flat_map(|w| {
+                w.repos.iter().map(move |r| RepoRow {
+                    ws: w.name.clone(),
+                    ws_dir: w.dir.clone(),
+                    name: r.name.clone(),
+                    cloned: r.cloned,
+                })
+            })
+            .collect();
+        self.repo_filtered = self
+            .repo_rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| {
+                needle.is_empty() || subseq_match(&needle, &format!("{} {}", r.ws, r.name).to_lowercase())
+            })
+            .map(|(i, _)| i)
+            .collect();
+        self.repo_selected = self.repo_selected.min(self.repo_filtered.len().saturating_sub(1));
     }
 
     /// Record the selected task's identity so it can be re-found after the list
@@ -898,18 +963,56 @@ impl State {
         out
     }
 
+    /// Repos-view counterpart to `display_rows`: one header per workspace
+    /// (repos aren't sectioned any other way — no status, no grouping toggle).
+    fn repo_display_rows(&self) -> Vec<Disp> {
+        let mut out = Vec::new();
+        let mut last_ws: Option<&str> = None;
+        for (pos, &ri) in self.repo_filtered.iter().enumerate() {
+            let ws = self.repo_rows[ri].ws.as_str();
+            if last_ws != Some(ws) {
+                if !out.is_empty() {
+                    out.push(Disp::Gap);
+                }
+                out.push(Disp::Header(ws.to_uppercase()));
+                last_ws = Some(ws);
+            }
+            out.push(Disp::Task(pos));
+        }
+        out
+    }
+
     fn selected_task(&self) -> Option<&Task> {
         self.filtered.get(self.selected).and_then(|&i| self.tasks.get(i))
     }
 
+    fn selected_repo(&self) -> Option<&RepoRow> {
+        self.repo_filtered.get(self.repo_selected).and_then(|&i| self.repo_rows.get(i))
+    }
+
+    /// Moves within whichever list is on screen (`self.view`); the two have
+    /// independent selection cursors so switching views doesn't lose either
+    /// place.
     fn move_sel(&mut self, delta: isize) {
-        let n = self.filtered.len();
-        if n == 0 {
-            return;
+        match self.view {
+            View::Tasks => {
+                let n = self.filtered.len();
+                if n == 0 {
+                    return;
+                }
+                let cur = self.selected as isize;
+                self.selected = (cur + delta).rem_euclid(n as isize) as usize;
+                self.sync_key();
+            }
+            View::Repos => {
+                let n = self.repo_filtered.len();
+                if n == 0 {
+                    return;
+                }
+                let cur = self.repo_selected as isize;
+                self.repo_selected = (cur + delta).rem_euclid(n as isize) as usize;
+            }
         }
-        let cur = self.selected as isize;
-        self.selected = (cur + delta).rem_euclid(n as isize) as usize;
-        self.sync_key();
     }
 
     /// Jump to the selected task's tab. If it's already open, use the host API
@@ -940,6 +1043,7 @@ impl State {
             Mode::List => self.handle_list_key(key),
             Mode::Create { .. } => self.handle_create_key(key),
             Mode::EditRepos { .. } => self.handle_editrepos_key(key),
+            Mode::AddRepo { .. } => self.handle_addrepo_key(key),
             Mode::ConfirmRepos { .. } => self.handle_confirm_repos_key(key),
             Mode::Rename { .. } => self.handle_rename_key(key),
             Mode::ConfirmDelete { .. } => self.handle_confirm_key(key),
@@ -967,14 +1071,25 @@ impl State {
                     self.apply_filter();
                 }
             }
-            BareKey::Enter if key.has_no_modifiers() => return self.jump(),
+            BareKey::Enter if key.has_no_modifiers() && self.view == View::Tasks => {
+                return self.jump()
+            }
             BareKey::Down => self.move_sel(1),
             BareKey::Up => self.move_sel(-1),
             BareKey::Char('n') if ctrl => self.move_sel(1),
             BareKey::Char('p') if ctrl => self.move_sel(-1),
-            // → / ⇥ cycle grouping forward (status → recent → workspace), ←
-            // back — matching the order of the header's segmented control.
-            BareKey::Right | BareKey::Tab if key.has_no_modifiers() => {
+            // ⇥ toggles the Tasks/Repos view — the list underneath it changes,
+            // so it's separate from →/← which only ever re-bucket the task
+            // list (meaningless for repos: there's no status to group by).
+            BareKey::Tab if key.has_no_modifiers() => {
+                self.view = match self.view {
+                    View::Tasks => View::Repos,
+                    View::Repos => View::Tasks,
+                };
+            }
+            // → / ← cycle grouping forward/back (status → recent → workspace),
+            // matching the order of the header's segmented control.
+            BareKey::Right if key.has_no_modifiers() && self.view == View::Tasks => {
                 self.grouping = match self.grouping {
                     Grouping::Status => Grouping::Recent,
                     Grouping::Recent => Grouping::Workspace,
@@ -982,7 +1097,7 @@ impl State {
                 };
                 self.apply_filter();
             }
-            BareKey::Left if key.has_no_modifiers() => {
+            BareKey::Left if key.has_no_modifiers() && self.view == View::Tasks => {
                 self.grouping = match self.grouping {
                     Grouping::Status => Grouping::Workspace,
                     Grouping::Recent => Grouping::Status,
@@ -990,10 +1105,16 @@ impl State {
                 };
                 self.apply_filter();
             }
-            BareKey::Char('a') if ctrl => self.start_create(),
-            BareKey::Char('r') if ctrl => self.start_rename(),
-            BareKey::Char('d') if ctrl => self.start_delete(),
-            BareKey::Char('e') if ctrl => self.start_edit_repos(),
+            // Ctrl-a is "add to the current list": a task on the Tasks view,
+            // a repo on the Repos view — mirroring `tui/overlay.rs`'s dual-use
+            // 'a' key. Add-repo belongs on the repo list, not the task list.
+            BareKey::Char('a') if ctrl => match self.view {
+                View::Tasks => self.start_create(),
+                View::Repos => self.start_add_repo(),
+            },
+            BareKey::Char('r') if ctrl && self.view == View::Tasks => self.start_rename(),
+            BareKey::Char('d') if ctrl && self.view == View::Tasks => self.start_delete(),
+            BareKey::Char('e') if ctrl && self.view == View::Tasks => self.start_edit_repos(),
             BareKey::Backspace if key.has_no_modifiers() => {
                 self.filter.pop();
                 self.apply_filter();
@@ -1208,6 +1329,76 @@ impl State {
         };
     }
 
+    /// Open the add-repo form from the Repos view. Target workspace: the
+    /// selected repo row's, or the first registered workspace when the list
+    /// is empty (a workspace with zero repos has nothing to select, and
+    /// that's exactly the case this exists to unblock).
+    fn start_add_repo(&mut self) {
+        let target = self
+            .selected_repo()
+            .map(|r| (r.ws.clone(), r.ws_dir.clone()))
+            .or_else(|| self.workspaces.first().map(|w| (w.name.clone(), w.dir.clone())));
+        let Some((ws, ws_dir)) = target else {
+            self.message = Some("no workspace registered — run `tenx init` in one".into());
+            return;
+        };
+        self.mode = Mode::AddRepo { ws, ws_dir, url: String::new(), name: String::new(), focus: 0 };
+    }
+
+    fn handle_addrepo_key(&mut self, key: KeyWithModifier) -> bool {
+        let Mode::AddRepo { ws, ws_dir, mut url, mut name, mut focus } =
+            std::mem::replace(&mut self.mode, Mode::List)
+        else {
+            return false;
+        };
+        match key.bare_key {
+            BareKey::Esc => return true, // cancelled; mode is already List
+            BareKey::Enter => {
+                if self.submit_add_repo(&ws_dir, &url, &name) {
+                    return true;
+                }
+            }
+            BareKey::Tab | BareKey::Down if key.has_no_modifiers() => focus = (focus + 1) % 2,
+            BareKey::Up if key.has_no_modifiers() => focus = if focus == 0 { 1 } else { 0 },
+            BareKey::Backspace => {
+                if focus == 0 {
+                    url.pop();
+                } else {
+                    name.pop();
+                }
+            }
+            BareKey::Char(c) if key.has_no_modifiers() => {
+                if focus == 0 {
+                    url.push(c);
+                } else {
+                    name.push(c);
+                }
+            }
+            _ => {}
+        }
+        self.mode = Mode::AddRepo { ws, ws_dir, url, name, focus };
+        true
+    }
+
+    /// Fire off `tenx repo add --ws-dir <ws_dir>`. Returns false (form stays
+    /// open) only on a validation failure the user can still fix; a real
+    /// clone failure surfaces later, through the `Busy` mutation's own error
+    /// path, same as `submit_create`.
+    fn submit_add_repo(&mut self, ws_dir: &str, url: &str, name: &str) -> bool {
+        let url = url.trim();
+        if url.is_empty() {
+            self.message = Some("git URL cannot be empty".into());
+            return false;
+        }
+        let name = name.trim();
+        let mut args: Vec<&str> = vec!["repo", "add", "--ws-dir", ws_dir, url];
+        if !name.is_empty() {
+            args.extend_from_slice(&["--name", name]);
+        }
+        self.run_mutation_busy(&args, format!("cloning {url}…"), false);
+        true
+    }
+
     /// Build a checklist for a workspace's repos. `present` is the set the task
     /// already has (empty when creating); those start ticked, and on the create
     /// form — where nothing is present — everything starts ticked so `↵` still
@@ -1341,16 +1532,21 @@ impl State {
         match m {
             Mouse::ScrollDown(_) => self.move_sel(1),
             Mouse::ScrollUp(_) => self.move_sel(-1),
-            // Tap a row → select it and jump. Mouse events reach *this* client's
-            // plugin instance, so the resulting jump is correctly attributed —
-            // the phone tap switches the phone's tab, unlike CLI `go-to-tab`.
+            // Tap a row → select it and, on the Tasks view, jump. Mouse events
+            // reach *this* client's plugin instance, so the resulting jump is
+            // correctly attributed — the phone tap switches the phone's tab,
+            // unlike CLI `go-to-tab`. A repo row has nothing to jump to; a tap
+            // there just moves the selection.
             Mouse::LeftClick(line, _col) => {
-                if let Some(pos) = self.row_at(line) {
-                    self.selected = pos;
-                    self.sync_key();
-                    return self.jump();
+                let Some(pos) = self.row_at(line) else { return false };
+                match self.view {
+                    View::Tasks => {
+                        self.selected = pos;
+                        self.sync_key();
+                        return self.jump();
+                    }
+                    View::Repos => self.repo_selected = pos,
                 }
-                return false;
             }
             _ => return false,
         }
@@ -1472,21 +1668,22 @@ impl State {
             .max(6);
         let ws_x = name_x + name_w + 2;
 
-        // ── Header row: help/filter (left) + grouping toggle & esc (right) ──
+        // ── Header row: help/filter (left) + view/grouping toggles & esc (right) ──
         let esc = "esc";
         put(&mut buf, right - esc.len() as u16, inner.y, esc.len(), esc, Style::default().fg(C_FAINT));
         let mut left_limit = right - esc.len() as u16;
+        let on = Style::default().fg(C_SEL_TEXT).bg(C_TOGGLE_ON_BG).add_modifier(Modifier::BOLD);
+        let off = Style::default().fg(C_FAINT);
         // Segmented control, only when there's room (→ still cycles without it).
         // Three chips need a wide pane; on a narrower one just the active chip
         // is shown, so the current grouping is still legible on a phone.
-        if matches!(self.mode, Mode::List) && cw >= 48 {
+        // Tasks-only: grouping doesn't apply to the flat Repos list.
+        if matches!(self.mode, Mode::List) && self.view == View::Tasks && cw >= 48 {
             let chips: [(&str, Grouping); 3] = [
                 (" status ", Grouping::Status),
                 (" recent ", Grouping::Recent),
                 (" workspace ", Grouping::Workspace),
             ];
-            let on = Style::default().fg(C_SEL_TEXT).bg(C_TOGGLE_ON_BG).add_modifier(Modifier::BOLD);
-            let off = Style::default().fg(C_FAINT);
             let mut x = left_limit - 1;
             for (label, g) in chips.iter().rev() {
                 if cw < 64 && self.grouping != *g {
@@ -1497,13 +1694,32 @@ impl State {
             }
             left_limit = x;
         }
+        // View chips (⇥ also toggles this) — always shown in List mode so the
+        // Repos view, and its add-repo action, are visible without reading a
+        // footer hint first.
+        if matches!(self.mode, Mode::List) && cw >= 32 {
+            let vchips: [(&str, View); 2] = [(" tasks ", View::Tasks), (" repos ", View::Repos)];
+            let mut x = left_limit - 1;
+            for (label, v) in vchips.iter().rev() {
+                x -= label.len() as u16;
+                put(&mut buf, x, inner.y, label.len(), label, if self.view == *v { on } else { off });
+            }
+            left_limit = x;
+        }
         let (htext, hstyle) = match &self.mode {
             Mode::List if self.filter.is_empty() && cw >= 60 => (
-                "⚲ switch task — type to filter, ↑↓ move, ↵ jump".to_string(),
+                match self.view {
+                    View::Tasks => "⚲ switch task — type to filter, ↑↓ move, ↵ jump".to_string(),
+                    View::Repos => "⚲ browse repos — type to filter, ↑↓ move, ^a add".to_string(),
+                },
                 Style::default().fg(C_DIM),
             ),
             Mode::List if self.filter.is_empty() => {
-                ("⚲ switch task".to_string(), Style::default().fg(C_DIM))
+                let msg = match self.view {
+                    View::Tasks => "⚲ switch task",
+                    View::Repos => "⚲ browse repos",
+                };
+                (msg.to_string(), Style::default().fg(C_DIM))
             }
             Mode::List => (
                 format!("⚲ {}", self.filter),
@@ -1521,6 +1737,14 @@ impl State {
             ),
             Mode::EditRepos { title, .. } => (
                 format!("⛁ repos — {title}"),
+                Style::default().fg(C_WORKING).add_modifier(Modifier::BOLD),
+            ),
+            Mode::AddRepo { ws, url, name, focus, .. } => (
+                format!(
+                    "＋ add repo in {ws} — url: {url}{}   name: {name}{}",
+                    if *focus == 0 { "▏" } else { "" },
+                    if *focus == 1 { "▏" } else { "" },
+                ),
                 Style::default().fg(C_WORKING).add_modifier(Modifier::BOLD),
             ),
             Mode::ConfirmRepos { remove, .. } => (
@@ -1552,6 +1776,15 @@ impl State {
             put(&mut buf, name_x, inner.y + 2, name_w as usize, "REPO", hdr);
             let count = format!("{on} of {n}");
             put(&mut buf, right - count.len() as u16, inner.y + 2, count.len(), &count, hdr);
+        } else if self.view == View::Repos {
+            put(&mut buf, name_x, inner.y + 2, name_w as usize, "REPO", hdr);
+            if show_ws {
+                put(&mut buf, ws_x, inner.y + 2, ws_w as usize, "WORKSPACE", hdr);
+            }
+            if age_full {
+                let cl = "CLONED";
+                put(&mut buf, right - cl.len() as u16, inner.y + 2, cl.len(), cl, hdr);
+            }
         } else {
             put(&mut buf, name_x, inner.y + 2, name_w as usize, "TASK", hdr);
             if show_ws {
@@ -1568,27 +1801,42 @@ impl State {
         // ── Footer: mode hints (left) + summary (right) ── shrinks with width.
         let y_footer = inner.y + inner.height - 1;
         let hints: &[(&str, &str)] = match &self.mode {
+            Mode::List if self.view == View::Repos && cw >= 72 => &[
+                ("↑↓", "navigate"),
+                ("⇥", "tasks"),
+                ("^a", "add repo"),
+                ("esc", "close"),
+            ],
+            Mode::List if self.view == View::Repos => &[("⇥", "tasks"), ("^a", "add repo")],
             Mode::List if cw >= 86 => &[
                 ("↑↓", "navigate"),
                 ("↵", "switch"),
                 ("→", "group"),
+                ("⇥", "repos"),
                 ("^a", "new"),
-                ("^e", "repos"),
+                ("^e", "edit repos"),
                 ("^r/^d", "rename/del"),
                 ("esc", "close"),
             ],
             Mode::List if cw >= 72 => &[
                 ("↵", "switch"),
                 ("→", "group"),
+                ("⇥", "repos"),
                 ("^a", "new"),
-                ("^e", "repos"),
+                ("^e", "edit repos"),
                 ("^r/^d", "rename/del"),
                 ("esc", "close"),
             ],
             Mode::List if cw >= 44 => {
-                &[("↵", "switch"), ("^a", "new"), ("^e", "repos"), ("esc", "close")]
+                &[("↵", "switch"), ("⇥", "repos"), ("^a", "new"), ("esc", "close")]
             }
-            Mode::List => &[("↵", "switch"), ("^a", "new"), ("^e", "repos")],
+            Mode::List => &[("↵", "switch"), ("⇥", "repos"), ("^a", "new")],
+            Mode::AddRepo { .. } if cw >= 56 => &[
+                ("↵", "clone & add"),
+                ("⇥", "next field"),
+                ("esc", "cancel"),
+            ],
+            Mode::AddRepo { .. } => &[("↵", "add"), ("esc", "cancel")],
             Mode::Create { phase: Phase::Name, .. } if cw >= 56 => {
                 &[("↵", "create with all repos"), ("⇥", "pick repos"), ("esc", "cancel")]
             }
@@ -1629,7 +1877,10 @@ impl State {
             }
             // Summary only when it fits without crowding the hints.
             if matches!(self.mode, Mode::List) && cw >= 60 {
-                let summary = format!("{} tasks · {} ws", self.filtered.len(), self.workspace_count);
+                let summary = match self.view {
+                    View::Tasks => format!("{} tasks · {} ws", self.filtered.len(), self.workspace_count),
+                    View::Repos => format!("{} repos · {} ws", self.repo_filtered.len(), self.workspace_count),
+                };
                 let sx = right.saturating_sub(summary.chars().count() as u16);
                 if sx > fx + 1 {
                     put(&mut buf, sx, y_footer, summary.len(), &summary, Style::default().fg(C_FAINT));
@@ -1669,17 +1920,37 @@ impl State {
             put(&mut buf, name_x, y_list, cw as usize, msg, Style::default().fg(C_FAILED));
             return buf_to_ansi(&buf);
         }
-        if self.filtered.is_empty() {
-            let msg = if self.tasks.is_empty() { "loading…" } else { "no match" };
+        let empty = match self.view {
+            View::Tasks => self.filtered.is_empty(),
+            View::Repos => self.repo_filtered.is_empty(),
+        };
+        if empty {
+            let msg = match self.view {
+                View::Tasks if self.tasks.is_empty() => "loading…",
+                View::Tasks => "no match",
+                // Data hasn't landed yet vs. a workspace with nothing in it
+                // yet — the latter is the exact case add-repo exists to fix,
+                // so it says so instead of just reading empty.
+                View::Repos if self.workspaces.is_empty() => "loading…",
+                View::Repos if self.repo_rows.is_empty() => "no repos yet — ^a to add one",
+                View::Repos => "no match",
+            };
             put(&mut buf, name_x, y_list, cw as usize, msg, Style::default().fg(C_DIM));
             return buf_to_ansi(&buf);
         }
 
         // Interleave section headers, then scroll to keep the selection in view.
-        let disp = self.display_rows();
+        let disp = match self.view {
+            View::Tasks => self.display_rows(),
+            View::Repos => self.repo_display_rows(),
+        };
+        let cur_sel = match self.view {
+            View::Tasks => self.selected,
+            View::Repos => self.repo_selected,
+        };
         let sel_line = disp
             .iter()
-            .position(|d| matches!(d, Disp::Task(p) if *p == self.selected))
+            .position(|d| matches!(d, Disp::Task(p) if *p == cur_sel))
             .unwrap_or(0);
         if sel_line < self.scroll {
             self.scroll = sel_line;
@@ -1710,6 +1981,36 @@ impl State {
                     if lx < right {
                         let rule: String = "─".repeat((right - lx) as usize);
                         put(&mut buf, lx, y, (right - lx) as usize, &rule, Style::default().fg(C_BORDER));
+                    }
+                }
+                Disp::Task(pos) if self.view == View::Repos => {
+                    self.line_map.push(Some(*pos));
+                    let r = &self.repo_rows[self.repo_filtered[*pos]];
+                    let selected = *pos == self.repo_selected;
+                    if selected {
+                        fill_row(&mut buf, inner.x + 1, y, inner.width - 2, C_SEL_BG);
+                    }
+                    let bg = if selected { Some(C_SEL_BG) } else { None };
+                    let base = |fg: Color| {
+                        let mut s = Style::default().fg(fg);
+                        if let Some(b) = bg {
+                            s = s.bg(b);
+                        }
+                        s
+                    };
+                    // Clone-status dot, same colors/language as the repo
+                    // checklist's "worktree"/"not cloned" notes.
+                    let (dot, dot_fg) = if r.cloned { ("●", C_DONE) } else { ("○", C_FAINT) };
+                    put(&mut buf, cx, y, 1, dot, base(dot_fg));
+                    let name_style = base(if selected { C_SEL_TEXT } else { C_TEXT }).add_modifier(Modifier::BOLD);
+                    put(&mut buf, name_x, y, name_w as usize, &r.name, name_style);
+                    if show_ws {
+                        put(&mut buf, ws_x, y, ws_w as usize, &r.ws, base(C_DIM));
+                    }
+                    if show_age {
+                        let status = if r.cloned { "cloned" } else { "not cloned" };
+                        let sx = right.saturating_sub(status.chars().count() as u16);
+                        put(&mut buf, sx, y, status.chars().count(), status, base(if r.cloned { C_DIM } else { C_FAINT }));
                     }
                 }
                 Disp::Task(pos) => {

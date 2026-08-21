@@ -76,6 +76,11 @@ pub enum RepoCommands {
         /// Override the repo name (default: inferred from URL)
         #[arg(long)]
         name: Option<String>,
+        /// Resolve the workspace from this directory instead of cwd — used by
+        /// the tenx-zellij overlay plugin, which shells out from an arbitrary
+        /// cwd and can't link against `workspace::find`.
+        #[arg(long)]
+        ws_dir: Option<String>,
     },
     /// List repos in the workspace
     List,

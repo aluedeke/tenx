@@ -41,8 +41,8 @@ fn run() -> Result<()> {
         }
 
         Some(Commands::Repo { command }) => match command {
-            RepoCommands::Add { url, name } => {
-                cli::repo::add(&url, name.as_deref())?;
+            RepoCommands::Add { url, name, ws_dir } => {
+                cli::repo::add(&url, name.as_deref(), ws_dir.as_deref())?;
             }
             RepoCommands::List => {
                 cli::repo::list()?;
