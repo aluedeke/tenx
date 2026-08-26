@@ -43,6 +43,13 @@ pub struct WorkspaceConfig {
     pub layout: String,
     #[serde(default)]
     pub repos: Vec<RepoConfig>,
+    /// Override the age identity used by `tenx secrets` for this workspace.
+    /// Only needed for the edge case of a workspace-specific identity (e.g. a
+    /// client's own key); the common case resolves it from the standard
+    /// `SOPS_AGE_KEY_FILE` / `~/.config/sops/age` / `~/.config/age` chain
+    /// instead and leaves this unset. See `cli::secrets::resolve_identity_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub age_identity: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -584,7 +591,9 @@ fn atomic_write_toml<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     Ok(())
 }
 
-fn expand_home(path: &str) -> String {
+/// `pub(crate)`: also used by `cli::secrets` to resolve identity paths that may
+/// be given with a `~/` prefix (e.g. a workspace's `age_identity` override).
+pub(crate) fn expand_home(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {
             return format!("{home}/{rest}");
@@ -593,7 +602,9 @@ fn expand_home(path: &str) -> String {
     path.to_string()
 }
 
-fn home_dir() -> Result<PathBuf> {
+/// `pub(crate)`: also used by `cli::secrets` to locate the default
+/// `~/.config/sops/age` / `~/.config/age` identity paths.
+pub(crate) fn home_dir() -> Result<PathBuf> {
     std::env::var("HOME").map(PathBuf::from).context("$HOME not set")
 }
 

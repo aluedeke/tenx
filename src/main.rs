@@ -8,7 +8,7 @@ mod zellij;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Commands, HooksCommands, RepoCommands, TaskCommands};
+use cli::{Cli, Commands, HooksCommands, RepoCommands, SecretsCommands, TaskCommands};
 use std::env;
 
 fn main() {
@@ -59,6 +59,14 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Watch) => cli::watch::run()?,
+
+        Some(Commands::Secrets { command }) => match command {
+            SecretsCommands::Init => cli::secrets::init()?,
+            SecretsCommands::Seal { task, file } => cli::secrets::seal(&task, &file)?,
+            SecretsCommands::Request { name } => cli::secrets::request(&name)?,
+            SecretsCommands::Unlock => cli::secrets::unlock()?,
+            SecretsCommands::Status => cli::secrets::status()?,
+        },
 
 
         Some(Commands::Task { command }) => match command {

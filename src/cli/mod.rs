@@ -1,6 +1,7 @@
 pub mod hooks;
 pub mod init;
 pub mod repo;
+pub mod secrets;
 pub mod standup;
 pub mod watch;
 pub mod task;
@@ -58,6 +59,43 @@ pub enum Commands {
         #[command(subcommand)]
         command: HooksCommands,
     },
+    /// Manage per-task encrypted secrets (age-based). See PRD.md for the full
+    /// design — this covers the CLI baseline (Phase 0): identity resolution,
+    /// sealing, the agent-safe request queue, and unlock.
+    Secrets {
+        #[command(subcommand)]
+        command: SecretsCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SecretsCommands {
+    /// Resolve an existing age identity ($SOPS_AGE_KEY_FILE, ~/.config/sops/age,
+    /// ~/.config/age) or generate a new passphrase-protected one
+    Init,
+    /// Encrypt a file as the sealed secrets bundle for a task
+    Seal {
+        /// Exact task slug
+        task: String,
+        /// File to seal (typically a .env)
+        file: String,
+    },
+    /// Declare that the current task wants a secret unlocked. Agent-safe: only
+    /// ever enqueues a durable, informational request — never touches the
+    /// identity or the encrypted bundle. Task is resolved from cwd.
+    Request {
+        /// Secret name being requested (shown in `status`; informational only —
+        /// unlock always releases the whole task bundle in v1)
+        name: String,
+    },
+    /// Decrypt the current task's sealed bundle into tasks/<slug>/.secrets.env.
+    /// Human-only: prompts for the identity's passphrase on the real terminal.
+    /// Never prints a decrypted value to stdout — file output only. Task is
+    /// resolved from cwd.
+    Unlock,
+    /// Show sealed/unlocked/pending state across all tasks (metadata only —
+    /// never secret values)
+    Status,
 }
 
 #[derive(Subcommand)]
