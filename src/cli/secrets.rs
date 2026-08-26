@@ -17,12 +17,16 @@
 //! only ever appends to a durable, per-task marker file. It has no code path
 //! that touches an identity or an encrypted bundle.
 //!
-//! Nothing here needs a `.gitignore`: `.secrets.age`/`.secrets.env`/
+//! Nothing tenx seals needs a `.gitignore`: `.secrets.age`/`.secrets.env`/
 //! `.secrets-pending` all live directly under a task's own directory
 //! (`tasks/<slug>/`), which is never itself a git repo (only the `<repo>/`
 //! worktree subdirectories under it are) — so they're structurally outside
 //! git's reach, and `task rm`'s existing `fs::remove_dir_all(&task.path)`
-//! already shreds them for free on teardown.
+//! already shreds them for free on teardown. This does *not* extend to
+//! adopted secrets (see §4.2 below and `find_sops_covered_files`) — those
+//! decrypt to a sibling of their ciphertext *inside* the repo worktree,
+//! matching the project's own convention, so it's that project's own
+//! `.gitignore` (not ours) doing the work there.
 
 use anyhow::{bail, Context, Result};
 use std::env;
@@ -138,24 +142,42 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
     let identity = resolve_identity_path(ws)?;
 
     let bundle = task.path.join(".secrets.age");
-    if !bundle.exists() {
+    let sops_files = find_sops_covered_files(task);
+
+    if !bundle.exists() && sops_files.is_empty() {
         bail!(
             "no sealed secrets for task '{}' — run: tenx secrets seal {} <file>",
             task.name,
             task.name
         );
     }
-    let out_path = task.path.join(".secrets.env");
 
-    if is_age_encrypted(&identity)? {
-        decrypt_via_passphrase_identity(&identity, &bundle, &out_path)?;
-    } else {
-        decrypt_via_plain_identity(&identity, &bundle, &out_path)?;
+    if bundle.exists() {
+        let out_path = task.path.join(".secrets.env");
+        if is_age_encrypted(&identity)? {
+            decrypt_via_passphrase_identity(&identity, &bundle, &out_path)?;
+        } else {
+            decrypt_via_plain_identity(&identity, &bundle, &out_path)?;
+        }
+        set_permissions_600(&out_path)?;
+        eprintln!("✓ unlocked → {}", out_path.display());
     }
 
-    set_permissions_600(&out_path)?;
+    // Adopted secrets (see PRD.md §4.2): a repo the task has a worktree for
+    // may already have its own age/sops setup — an existing `.sops.yaml`
+    // plus `*.enc.*` files, sealed by that project's own tooling, not by
+    // `tenx secrets seal`. Decrypt each to its conventional sibling name
+    // (`secrets.staging.enc.env` → `secrets.staging.env`), matching how the
+    // project already expects to consume it, rather than forcing everything
+    // through our own single-bundle-per-task shape.
+    for ciphertext in &sops_files {
+        let plaintext_out = strip_enc_suffix(ciphertext);
+        sops_decrypt(&identity, ciphertext, &plaintext_out)?;
+        set_permissions_600(&plaintext_out)?;
+        eprintln!("✓ unlocked (sops) → {}", plaintext_out.display());
+    }
+
     clear_pending(task)?;
-    eprintln!("✓ unlocked → {}", out_path.display());
     Ok(())
 }
 
@@ -215,6 +237,118 @@ fn decrypt_via_plain_identity(identity: &Path, bundle: &Path, out_path: &Path) -
     Ok(())
 }
 
+// ── Sops adoption (PRD.md §4.2) ─────────────────────────────────────────────
+
+/// Files inside this task's repo worktrees that an existing `.sops.yaml`
+/// covers — detected by the de facto sops naming convention (`name.enc.ext`,
+/// e.g. `secrets.staging.enc.env`) in any repo that has a `.sops.yaml` at its
+/// root. Deliberately not parsing the config's own `creation_rules` regexes,
+/// which would need a YAML parser this project doesn't otherwise pull in —
+/// the naming convention is what every sops project actually uses in
+/// practice, `.sops.yaml` presence is just the "this repo really uses sops"
+/// gate. Scanned shallowly (repo root + one level), which is where these
+/// files live in every real project seen so far; a deeply nested one would
+/// need a deliberately wider scan, not a silent one.
+fn find_sops_covered_files(task: &Task) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for repo in &task.repos {
+        let repo_dir = task.path.join(repo);
+        if repo_dir.join(".sops.yaml").exists() {
+            scan_for_enc_files(&repo_dir, 1, &mut found);
+        }
+    }
+    found
+}
+
+fn scan_for_enc_files(dir: &Path, depth: u8, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if path.is_dir() {
+            if depth > 0 && !matches!(name.as_ref(), "node_modules" | ".git" | "dist" | "build" | "target") {
+                scan_for_enc_files(&path, depth - 1, out);
+            }
+            continue;
+        }
+        if name.contains(".enc.") {
+            out.push(path);
+        }
+    }
+}
+
+/// `secrets.staging.enc.env` → `secrets.staging.env` — the plaintext sibling
+/// name every sops project already expects (and, in practice, already has
+/// `.gitignore`d — this project's ciphertext-vs-plaintext naming split is
+/// what makes that possible in the first place).
+fn strip_enc_suffix(path: &Path) -> PathBuf {
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    path.with_file_name(name.replacen(".enc.", ".", 1))
+}
+
+/// Decrypt one sops-covered file to `plaintext_out` using `identity`. `sops`
+/// resolves its decryption key via `SOPS_AGE_KEY_FILE`, which — unlike raw
+/// `age -i -` — must be a real file path, not something stdin can feed it.
+/// For a passphrase-protected identity this means a real intermediate file
+/// is unavoidable here (unlike `decrypt_via_passphrase_identity`'s pipe-only
+/// approach for our own bundles): decrypted to a mode-700 temp directory,
+/// used for exactly this one `sops` invocation, and removed immediately
+/// after — never the task folder, never longer-lived than this function call.
+fn sops_decrypt(identity: &Path, ciphertext: &Path, plaintext_out: &Path) -> Result<()> {
+    if !is_age_encrypted(identity)? {
+        return run_sops_decrypt(identity, ciphertext, plaintext_out);
+    }
+
+    let tmp_dir = std::env::temp_dir().join(format!("tenx-sops-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir).with_context(|| format!("create {}", tmp_dir.display()))?;
+    set_dir_permissions_700(&tmp_dir)?;
+    let tmp_identity = tmp_dir.join("identity");
+
+    let result = (|| -> Result<()> {
+        let status = Command::new("age")
+            .arg("-d")
+            .arg("-o")
+            .arg(&tmp_identity)
+            .arg(identity)
+            .stdin(Stdio::inherit()) // passphrase prompt reaches the real terminal
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("run age -d (identity)")?;
+        if !status.success() {
+            bail!("failed to decrypt the identity (wrong passphrase?)");
+        }
+        run_sops_decrypt(&tmp_identity, ciphertext, plaintext_out)
+    })();
+
+    let _ = std::fs::remove_dir_all(&tmp_dir); // shred immediately, success or not
+    result
+}
+
+fn run_sops_decrypt(identity_file: &Path, ciphertext: &Path, plaintext_out: &Path) -> Result<()> {
+    let out = Command::new("sops")
+        .env("SOPS_AGE_KEY_FILE", identity_file)
+        .arg("-d")
+        .arg("--output")
+        .arg(plaintext_out)
+        .arg(ciphertext)
+        .output()
+        .context("run sops -d")?;
+    if !out.status.success() {
+        bail!("sops decrypt failed: {}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(())
+}
+
+fn set_dir_permissions_700(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o700);
+    std::fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
 /// Metadata-only overview across every task in the workspace: whether it has
 /// a sealed bundle, whether it's currently unlocked, and what's pending.
 /// Never reads or prints a secret value — only presence/absence of files and
@@ -228,8 +362,10 @@ pub fn status() -> Result<()> {
     println!("{}", "-".repeat(70));
     let mut any = false;
     for task in &tasks {
-        let sealed = task.path.join(".secrets.age").exists();
-        let unlocked = task.path.join(".secrets.env").exists();
+        let sops_files = find_sops_covered_files(task);
+        let sealed = task.path.join(".secrets.age").exists() || !sops_files.is_empty();
+        let unlocked = task.path.join(".secrets.env").exists()
+            || sops_files.iter().any(|f| strip_enc_suffix(f).exists());
         let pending = read_pending(task);
         if !sealed && !unlocked && pending.is_empty() {
             continue;
