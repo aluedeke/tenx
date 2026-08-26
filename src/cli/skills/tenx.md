@@ -61,6 +61,14 @@ Keep TASK.md current at all times:
 - Keep `Linear Project:` and `Linear Milestone:` up to date if they change
 - Add decisions and gotchas to `## Notes`
 
+## Secrets
+
+If a task needs a credential (API key, token, DB password) and it isn't already sitting in `tasks/<name>/.secrets.env`, ask for it — don't try to find, guess, or work around it another way:
+
+    tenx secrets request <NAME>
+
+This only enqueues a request (a durable marker, visible in the tenx status bar and overlay) — it never touches the credential itself, and it's always safe to run even if this workspace hasn't set up secrets at all. Releasing it requires a human to type the decryption passphrase themselves, from a normal shell or the tenx overlay — that's the whole point, so **never** run `tenx secrets unlock`, `init`, or `seal` yourself, and don't wait around for it. Move on to other work, and check back later for `tasks/<name>/.secrets.env` (a plain `KEY=VALUE` file) or re-run `request` if it's been a while. `tenx secrets status` is safe to run any time — it only shows sealed/unlocked/pending state, never values.
+
 ## Common commands
 
     tenx task new <name>       create task with worktrees + TASK.md
@@ -68,6 +76,8 @@ Keep TASK.md current at all times:
     tenx task list             list all tasks and open tabs
     tenx task rm <name>        remove task and worktrees
     tenx repo add <url>        add a repo to the workspace
+    tenx secrets request <n>   ask for a credential (see Secrets above)
+    tenx secrets status        check sealed/unlocked/pending state
 
 ## Migrating existing work
 
