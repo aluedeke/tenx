@@ -327,17 +327,19 @@ enum Mode {
     /// stays up and says so instead of vanishing into a blank screen — and an
     /// error lands where the user is still looking.
     Busy { label: String, hide_on_done: bool },
-    /// Typing the identity's passphrase after `^u`/`start_unlock` on a task
-    /// with a pending secrets request. `pane_id` is the real, already-spawned
-    /// floating pane running `tenx secrets unlock` (cwd set to the task
-    /// directory) — this mode only ever captures keystrokes to relay into
-    /// its real stdin via `write_chars_to_pane_id` on submit. It never
-    /// touches the identity or the encrypted bundle itself: this plugin's
-    /// only job is spawning the real command and getting out of its way,
-    /// same principle as the design's other unlock path (`tui/overlay.rs`
-    /// suspending its own TUI to hand the real terminal to the real `age`
-    /// process).
-    Unlock { title: String, pane_id: PaneId, buffer: String },
+    /// After `^u`/`start_unlock` on a task with a pending secrets request:
+    /// `pane_id` is the real, already-spawned floating pane running `tenx
+    /// secrets unlock` (cwd set to the task directory). Opening a new pane
+    /// focuses it by default, so from this point the user is typing directly
+    /// into that *real* terminal — this plugin never captures or relays the
+    /// passphrase at all (an earlier version tried to, via a masked field +
+    /// `write_chars_to_pane_id`; that code never actually received any
+    /// keystrokes, since focus had already moved to the real pane before the
+    /// user typed anything — turned out to be unnecessary rather than
+    /// broken). This mode's only job left is waiting for `CommandPaneExited`
+    /// (see `handle_unlock_pane_exited`) and reacting to it — the plugin
+    /// never touches the identity, the bundle, or the typed value itself.
+    Unlock { title: String, pane_id: PaneId },
 }
 
 /// How the list is organised: sectioned by agent status (the default — what
@@ -532,14 +534,14 @@ impl ZellijPlugin for State {
             PermissionType::RunCommands,
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
-            // For the secrets-unlock flow only: OpenTerminalsOrPlugins to
-            // spawn the real `tenx secrets unlock` as a real floating pane,
-            // WriteToStdin to relay a typed passphrase into its real stdin
-            // (see `start_unlock`/`handle_unlock_key`). Nothing else in this
-            // plugin uses either — every other mutation stays on the
-            // existing `run_command` background path.
+            // For the secrets-unlock flow only: spawns the real `tenx secrets
+            // unlock` as a real floating pane (see `start_unlock`) — the user
+            // types directly into it (a new pane takes keyboard focus by
+            // default), so no `WriteToStdin` is needed here; the plugin never
+            // touches the typed passphrase at all. Nothing else in this
+            // plugin uses this permission — every other mutation stays on
+            // the existing `run_command` background path.
             PermissionType::OpenTerminalsOrPlugins,
-            PermissionType::WriteToStdin,
         ]);
         subscribe(&[
             EventType::Key,
@@ -549,6 +551,12 @@ impl ZellijPlugin for State {
             EventType::Visible,
             EventType::TabUpdate,
             EventType::PermissionRequestResult,
+            // Detects the spawned unlock pane's real exit (see `Mode::Unlock`
+            // and `update`'s CommandPaneExited arm) instead of guessing with
+            // a delay — this is the event zellij fires specifically for a
+            // command pane's process exiting, not a general structural
+            // PaneUpdate that may or may not follow from it.
+            EventType::CommandPaneExited,
         ]);
         // We're created because we're being shown; assume visible until a
         // Visible(false) says otherwise (zellij doesn't reliably emit an
@@ -670,6 +678,9 @@ impl ZellijPlugin for State {
                 let changed = active != self.active_tab;
                 self.active_tab = active;
                 changed
+            }
+            Event::CommandPaneExited(terminal_pane_id, exit_status, _context) => {
+                self.handle_unlock_pane_exited(terminal_pane_id, exit_status)
             }
             Event::Key(key) => self.handle_key(key),
             Event::Mouse(m) => self.handle_mouse(m),
@@ -1119,7 +1130,22 @@ impl State {
             Mode::ConfirmRepos { .. } => self.handle_confirm_repos_key(key),
             Mode::Rename { .. } => self.handle_rename_key(key),
             Mode::ConfirmDelete { .. } => self.handle_confirm_key(key),
-            Mode::Unlock { .. } => self.handle_unlock_key(key),
+            // The user is typing directly into the real spawned pane (it took
+            // keyboard focus when opened), so this plugin doesn't normally
+            // receive key events at all while here — this arm only covers
+            // the edge case where focus is somehow still on the overlay.
+            // Esc closes the pane we spawned (rather than orphaning it) and
+            // backs out to the list; nothing else is handled.
+            Mode::Unlock { pane_id, .. } => {
+                if key.bare_key == BareKey::Esc {
+                    if let PaneId::Terminal(id) = *pane_id {
+                        close_terminal_pane(id);
+                    }
+                    self.mode = Mode::List;
+                    return true;
+                }
+                false
+            }
             Mode::Busy { .. } => {
                 // The command keeps running; esc just stops staring at it.
                 if key.bare_key == BareKey::Esc {
@@ -1533,8 +1559,10 @@ impl State {
     /// Spawn the real `tenx secrets unlock` as a real floating pane (cwd set
     /// to the task directory — `unlock` resolves the task from cwd, the same
     /// way it does when run by hand in a shell), then enter `Mode::Unlock` to
-    /// capture the passphrase for relay. This plugin never runs the decrypt
-    /// itself — it only ever spawns the real command and gets out of the way.
+    /// wait for it. This plugin never runs the decrypt itself, never sees the
+    /// passphrase, and never relays anything into the pane — it only ever
+    /// spawns the real command and gets out of the way; the pane takes
+    /// keyboard focus on its own.
     fn start_unlock(&mut self) {
         let Some(t) = self.selected_task() else { return };
         if t.secrets_pending.is_empty() {
@@ -1553,33 +1581,40 @@ impl State {
             self.message = Some("failed to open the unlock pane".into());
             return;
         };
-        self.mode = Mode::Unlock { title, pane_id, buffer: String::new() };
+        // Renamed purely for legibility — this is still a real, unmodified
+        // terminal pane the user types directly into (see `Mode::Unlock`'s
+        // doc comment for why the plugin doesn't try to mediate that).
+        if let PaneId::Terminal(id) = pane_id {
+            rename_terminal_pane(id, format!("🔒 unlock {title}"));
+        }
+        self.mode = Mode::Unlock { title, pane_id };
     }
 
-    /// Capture keystrokes for the passphrase field; on `↵`, relay exactly
-    /// what was typed (plus a newline) into the real spawned pane's real
-    /// stdin via `write_chars_to_pane_id` and return to the list — the pane
-    /// stays open so its own success/error output is visible. The buffer is
-    /// held only in this `Mode` variant, for only as long as it takes to
-    /// type and relay it; nothing here ever writes it anywhere else.
-    fn handle_unlock_key(&mut self, key: KeyWithModifier) -> bool {
-        let Mode::Unlock { pane_id, buffer, .. } = &mut self.mode else {
+    /// Reacts to the spawned unlock pane's real exit, via `CommandPaneExited`
+    /// — the event zellij fires specifically for a command pane's process
+    /// exiting.
+    ///
+    /// On success: close the now-redundant pane and dismiss the whole
+    /// overlay — a clean, single action from the user's point of view
+    /// ("typed the passphrase, done"), not a stray shell left behind.
+    /// On failure: leave the pane open — it has the real error text, which
+    /// is worth reading — and only back out of the modal to the list, so the
+    /// still-pending row (unlock never got to `clear_pending`) is right there
+    /// to retry.
+    fn handle_unlock_pane_exited(&mut self, terminal_pane_id: u32, exit_status: Option<i32>) -> bool {
+        let Mode::Unlock { pane_id, .. } = &self.mode else {
             return false;
         };
-        match key.bare_key {
-            BareKey::Esc => self.mode = Mode::List,
-            BareKey::Enter => {
-                let pane_id = *pane_id;
-                let mut chars = std::mem::take(buffer);
-                chars.push('\n');
-                write_chars_to_pane_id(&chars, pane_id);
-                self.mode = Mode::List;
-            }
-            BareKey::Backspace => {
-                buffer.pop();
-            }
-            BareKey::Char(c) if key.has_no_modifiers() => buffer.push(c),
-            _ => return false,
+        if *pane_id != PaneId::Terminal(terminal_pane_id) {
+            return false; // some other command pane entirely
+        }
+        if exit_status == Some(0) {
+            close_terminal_pane(terminal_pane_id);
+            self.dismiss();
+        } else {
+            self.mode = Mode::List;
+            self.message = Some("unlock failed — see the pane for details".into());
+            self.refresh();
         }
         true
     }
@@ -1891,11 +1926,11 @@ impl State {
                 format!("🗑 delete “{title}” ?  y / n"),
                 Style::default().fg(C_FAILED).add_modifier(Modifier::BOLD),
             ),
-            // Masked — never the typed characters themselves, same reasoning
-            // as `tui/overlay.rs` suspending its own rendering rather than
-            // ever drawing a passphrase.
-            Mode::Unlock { title, buffer, .. } => (
-                format!("🔒 unlock {title} — {}", "•".repeat(buffer.chars().count())),
+            // Nothing to mask here — the plugin never sees the passphrase at
+            // all (see `Mode::Unlock`'s doc comment), it's typed directly
+            // into the real pane that took keyboard focus when it opened.
+            Mode::Unlock { title, .. } => (
+                format!("🔒 type your passphrase in the “unlock {title}” pane"),
                 Style::default().fg(C_SECRETS).add_modifier(Modifier::BOLD),
             ),
         };
@@ -1993,7 +2028,9 @@ impl State {
             Mode::Busy { .. } => &[("esc", "run in background")],
             Mode::Rename { .. } => &[("↵", "save"), ("esc", "cancel")],
             Mode::ConfirmDelete { .. } => &[("y", "delete"), ("n", "cancel")],
-            Mode::Unlock { .. } => &[("↵", "unlock"), ("esc", "cancel")],
+            // No hints for keys this plugin actually handles here — focus is
+            // on the real pane, not the overlay (see `Mode::Unlock`).
+            Mode::Unlock { .. } => &[],
         };
         // An error raised by a modal belongs next to the modal, not on a list
         // line the modal is covering.
