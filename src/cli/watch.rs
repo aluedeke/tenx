@@ -90,10 +90,16 @@ pub fn run() -> Result<()> {
 
     // Prime from the current state: anything already waiting when the watcher
     // starts has been waiting since before we existed, and firing a burst of
-    // notifications for a backlog is not "attention", it's noise.
+    // notifications for a backlog is not "attention", it's noise. Same
+    // reasoning for secrets-pending, tracked in parallel — an independent
+    // condition from `blocked` (a task can be idle and still have a pending
+    // secrets request left over from an agent that already finished).
     let primed = resolve_all();
     let mut notified: HashSet<String> = primed.blocked.into_iter().map(|(k, _)| k).collect();
     let mut pending: HashMap<String, u32> = HashMap::new();
+    let mut notified_secrets: HashSet<String> =
+        primed.secrets_pending.into_iter().map(|(k, _)| k).collect();
+    let mut pending_secrets: HashMap<String, u32> = HashMap::new();
     let mut tick: u32 = 0;
     let mut session_misses: u32 = 0;
     // Deliberately not seeded from `primed`: the session is still being created
@@ -117,7 +123,7 @@ pub fn run() -> Result<()> {
             let seen = pending.entry(key.clone()).or_insert(0);
             *seen += 1;
             if *seen > DEBOUNCE_POLLS {
-                notify(note);
+                notify(note, "tenx — needs input");
                 notified.insert(key.clone());
                 pending.remove(key);
             }
@@ -126,6 +132,29 @@ pub fn run() -> Result<()> {
         // Left the waiting state — forget it, so the next prompt notifies again.
         pending.retain(|k, _| keys.contains(k));
         notified.retain(|k| keys.contains(k));
+
+        // Same edge-notify shape, independent condition: a secrets request
+        // outlives the session that made it, so this can fire (and clear)
+        // completely out of step with `blocked` for the same task.
+        let secrets_pending = snapshot.secrets_pending;
+        let secrets_keys: HashSet<String> = secrets_pending.iter().map(|(k, _)| k.clone()).collect();
+
+        for (key, note) in &secrets_pending {
+            if notified_secrets.contains(key) {
+                continue;
+            }
+            let seen = pending_secrets.entry(key.clone()).or_insert(0);
+            *seen += 1;
+            if *seen > DEBOUNCE_POLLS {
+                notify(note, "tenx — secrets pending");
+                notified_secrets.insert(key.clone());
+                pending_secrets.remove(key);
+            }
+        }
+        // Cleared (unlocked, or the marker removed some other way) — forget
+        // it, so a future request for this task notifies again.
+        pending_secrets.retain(|k, _| secrets_keys.contains(k));
+        notified_secrets.retain(|k| secrets_keys.contains(k));
 
         // Publish last. Delivery is the slowest thing in this loop — ~0.17 s for
         // a live-task payload, against ~5 ms to resolve — and the notification
@@ -149,7 +178,9 @@ pub fn run() -> Result<()> {
     }
 }
 
-/// What to say about a task that started waiting.
+/// What to say about a task that started waiting — for a `blocked` edge,
+/// `reason` is Claude Code's own waiting-for label; for a secrets-pending
+/// edge, it's the joined names of what's pending (`cli::secrets::request`).
 struct Note {
     task: String,
     workspace: String,
@@ -165,6 +196,10 @@ struct Note {
 struct Snapshot {
     /// Tasks currently blocked, keyed by workspace dir + slug.
     blocked: Vec<(String, Note)>,
+    /// Tasks with a pending secrets request, keyed the same way. Independent
+    /// of `blocked` — this is `cli::secrets::request`'s marker, which
+    /// outlives the session that wrote it.
+    secrets_pending: Vec<(String, Note)>,
     /// Tasks with a live Claude Code session, in the shared wire shape
     /// (`workspace::task_json`).
     ///
@@ -182,13 +217,15 @@ struct Snapshot {
 fn resolve_all() -> Snapshot {
     let sessions = workspace::claude::sessions();
     let mut blocked = Vec::new();
+    let mut secrets_pending = Vec::new();
     let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
             let state = workspace::resolve_task_state(&task.path, &sessions);
+            let key = format!("{}/{}", ws.dir.display(), task.name);
             if state.status == TaskStatus::Blocked {
                 blocked.push((
-                    format!("{}/{}", ws.dir.display(), task.name),
+                    key.clone(),
                     Note {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
@@ -196,7 +233,23 @@ fn resolve_all() -> Snapshot {
                     },
                 ));
             }
-            if state.status != TaskStatus::Idle {
+            let pending_names = workspace::secrets_pending(&task.path);
+            if !pending_names.is_empty() {
+                secrets_pending.push((
+                    key,
+                    Note {
+                        task: task.display_name.clone(),
+                        workspace: ws.config.name.clone(),
+                        reason: Some(pending_names.join(", ")),
+                    },
+                ));
+            }
+            // Idle tasks are normally omitted (see `Snapshot::tasks` docs), but
+            // a task with a pending secrets request still needs to reach the
+            // status bar even with no live session — that's exactly the case
+            // of an agent that requested a secret and then finished or was
+            // closed before you unlocked it.
+            if state.status != TaskStatus::Idle || !pending_names.is_empty() {
                 tasks.push((state.changed, workspace::task_json(&ws, &task, &state)));
             }
         }
@@ -206,7 +259,7 @@ fn resolve_all() -> Snapshot {
     // format to anyone who reads position; cheap to guarantee here, awkward to
     // rediscover in a consumer that assumed it.
     tasks.sort_by(|a, b| b.0.cmp(&a.0));
-    Snapshot { blocked, tasks: tasks.into_iter().map(|(_, v)| v).collect() }
+    Snapshot { blocked, secrets_pending, tasks: tasks.into_iter().map(|(_, v)| v).collect() }
 }
 
 /// A change key over everything the status bar renders *except* age.
@@ -229,8 +282,7 @@ fn digest(tasks: &[serde_json::Value]) -> String {
 /// Deliver one notification. `terminal-notifier` when it's installed (it can
 /// carry a subtitle and group by task), `osascript` otherwise — always present
 /// on macOS, so there's no path where the watcher runs but can't speak.
-fn notify(note: &Note) {
-    let title = "tenx — needs input";
+fn notify(note: &Note, title: &str) {
     let subtitle = format!("{} · {}", note.task, note.workspace);
     let body = note.reason.clone().unwrap_or_else(|| "waiting for you".into());
 

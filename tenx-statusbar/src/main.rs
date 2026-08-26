@@ -60,7 +60,10 @@
 //! the session changes (see `cli::watch` and `zellij::pipe_status`). Payload is
 //! `{"tasks":[...]}` in the shared `workspace::task_json` shape, newest activity
 //! first, carrying only tasks with a live Claude Code session — `Idle` is
-//! encoded by absence, so a task not in the list is idle by definition.
+//! encoded by absence, so a task not in the list is idle by definition. One
+//! exception: a task with a pending secrets request (`cli::secrets::request`,
+//! `task_json`'s `secrets_pending` field) is included even when otherwise
+//! idle, since that request outlives the session that made it.
 //!
 //! Without `run_command` there is no way to ask for a snapshot, so a bar that
 //! loads mid-session shows nothing until the next change. That is a deliberate
@@ -128,16 +131,31 @@ struct Task {
     waiting_for: Option<String>,
     #[serde(default)]
     age_secs: Option<u64>,
+    /// Secret names pending unlock for this task (`cli::secrets::request`),
+    /// from `workspace::secrets_pending` via `task_json`. Independent of
+    /// `status` — a task can be `idle` (no live session at all) and still
+    /// have a pending request left over from an agent that already finished.
+    #[serde(default)]
+    secrets_pending: Vec<String>,
 }
 
 impl Task {
     fn key(&self) -> String {
         format!("{}/{}", self.ws_dir, self.slug)
     }
-    /// Both `Blocked` and `Done` mean an agent is sitting there waiting on you —
-    /// `TaskGroup::Waiting` on the native side. That's the set the bar surfaces.
+    /// Both `Blocked` and `Done` mean an agent is sitting there waiting on
+    /// you — `TaskGroup::Waiting` on the native side — and so does a pending
+    /// secrets request, which needs the same kind of explicit action from you
+    /// (typing a passphrase) regardless of whether a session is still live.
     fn wants_you(&self) -> bool {
-        self.status == "blocked" || self.status == "done"
+        self.status == "blocked" || self.status == "done" || !self.secrets_pending.is_empty()
+    }
+    /// Edge-detection key: status alone isn't enough, because a second,
+    /// distinct secret can be requested while status stays unchanged (e.g.
+    /// `idle` the whole time) — that's still new information worth a fresh
+    /// event, not a no-op.
+    fn edge_key(&self) -> String {
+        format!("{}|{}", self.status, self.secrets_pending.join(","))
     }
 }
 
@@ -232,14 +250,17 @@ impl ZellijPlugin for State {
         };
 
         let incoming: BTreeMap<String, String> =
-            payload.tasks.iter().map(|t| (t.key(), t.status.clone())).collect();
+            payload.tasks.iter().map(|t| (t.key(), t.edge_key())).collect();
 
         if self.primed {
             for task in &payload.tasks {
                 let key = task.key();
                 // A task absent from `seen` is one that was idle (or unknown)
-                // until now, which is as much an edge as a status change.
-                if self.seen.get(&key) != Some(&task.status) {
+                // until now, which is as much an edge as a status change —
+                // and `edge_key` folds in `secrets_pending` too, so a second
+                // distinct secret requested while status stays put still
+                // counts as new information.
+                if self.seen.get(&key) != Some(&task.edge_key()) {
                     self.announce(task);
                 }
             }
@@ -315,7 +336,13 @@ impl State {
         }
         let key = task.key();
         let name = if task.title.is_empty() { &task.slug } else { &task.title };
-        let (text, color) = if task.status == "blocked" {
+        // Secrets-pending takes priority over status: it needs a distinct
+        // action from you (typing a passphrase in the overlay) regardless of
+        // whether the task also happens to be blocked/done/idle right now.
+        let (text, color) = if !task.secrets_pending.is_empty() {
+            let names = task.secrets_pending.join(", ");
+            (format!("🔒 {name} wants {names}"), palette::ACCENT.color())
+        } else if task.status == "blocked" {
             let why = task.waiting_for.as_deref().unwrap_or("needs input");
             (format!("💬 {name} · {why}"), palette::WARN.color())
         } else {
@@ -389,7 +416,12 @@ impl State {
             return None;
         }
         let n = waiting.len();
-        if waiting.iter().any(|t| t.status == "blocked") {
+        // Priority: a pending secrets request needs a specific action (typing
+        // a passphrase in the overlay), not just "look at this" — worth its
+        // own glyph even when it's outnumbered by ordinary blocked/done tasks.
+        if waiting.iter().any(|t| !t.secrets_pending.is_empty()) {
+            Some((format!("🔒 {n} waiting"), palette::ACCENT.color()))
+        } else if waiting.iter().any(|t| t.status == "blocked") {
             Some((format!("💬 {n} waiting"), palette::WARN.color()))
         } else {
             Some((format!("✅ {n} waiting"), palette::SUCCESS.color()))
@@ -429,13 +461,21 @@ impl State {
             );
             x = put(buf, x, width, " - ", Style::default().fg(palette::MUTED.color()));
 
-            let (glyph, label, color) = match self.own().map(|t| t.status.as_str()) {
-                Some("blocked") => ("💬", "needs input", palette::WARN.color()),
-                Some("done") => ("✅", "waiting for you", palette::SUCCESS.color()),
-                Some("working") => ("▷", "working", palette::INFO.color()),
-                // No live session in this task's tree — the payload omits idle
-                // tasks entirely, so absence is the signal.
-                _ => ("·", "idle", palette::MUTED.color()),
+            // A pending secrets request takes priority over the ordinary
+            // status — it needs you to type a passphrase in the overlay
+            // regardless of whether this task is also blocked/done/idle.
+            let own = self.own();
+            let (glyph, label, color) = if own.is_some_and(|t| !t.secrets_pending.is_empty()) {
+                ("🔒", "secrets pending", palette::ACCENT.color())
+            } else {
+                match own.map(|t| t.status.as_str()) {
+                    Some("blocked") => ("💬", "needs input", palette::WARN.color()),
+                    Some("done") => ("✅", "waiting for you", palette::SUCCESS.color()),
+                    Some("working") => ("▷", "working", palette::INFO.color()),
+                    // No live session in this task's tree — the payload omits
+                    // idle tasks entirely, so absence is the signal.
+                    _ => ("·", "idle", palette::MUTED.color()),
+                }
             };
             // No age: "working 14s" ticks every second and informs no decision
             // you'd make differently — the status itself is the whole signal.

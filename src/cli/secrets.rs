@@ -438,16 +438,14 @@ fn current_task(ws: &Workspace, cwd: &Path) -> Result<Task> {
 // ── Pending-request marker ───────────────────────────────────────────────────
 
 fn pending_path(task: &Task) -> PathBuf {
-    task.path.join(".secrets-pending")
+    task.path.join(workspace::SECRETS_PENDING_FILE)
 }
 
+/// `workspace::secrets_pending` is the shared reader (also used by
+/// `task_json`, so the overlay/status bar see the same data this module
+/// writes) — this is just the `Task`-typed convenience wrapper for it.
 fn read_pending(task: &Task) -> Vec<String> {
-    std::fs::read_to_string(pending_path(task))
-        .unwrap_or_default()
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect()
+    workspace::secrets_pending(&task.path)
 }
 
 fn clear_pending(task: &Task) -> Result<()> {

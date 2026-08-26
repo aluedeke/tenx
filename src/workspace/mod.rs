@@ -566,7 +566,26 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "agents": state.agents,
         "age_secs": state.changed.and_then(|c| c.elapsed().ok()).map(|d| d.as_secs()),
         "repos": task.repos,
+        "secrets_pending": secrets_pending(&task.path),
     })
+}
+
+/// Filename of a task's pending-secrets marker (see `cli::secrets::request`).
+/// Defined here, not only in `cli::secrets`, because `task_json` — the wire
+/// shape shared by the overlay and the status bar pipe — needs to read it too,
+/// and `workspace` is the lower layer both depend on.
+pub const SECRETS_PENDING_FILE: &str = ".secrets-pending";
+
+/// Secret names currently pending unlock for `task_dir` (see
+/// `cli::secrets::request`), newline-delimited in `SECRETS_PENDING_FILE`.
+/// Empty if there's no marker — most tasks, most of the time.
+pub fn secrets_pending(task_dir: &Path) -> Vec<String> {
+    fs::read_to_string(task_dir.join(SECRETS_PENDING_FILE))
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 fn read_branch(worktree_dir: &Path) -> Option<String> {
