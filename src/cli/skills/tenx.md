@@ -63,11 +63,15 @@ Keep TASK.md current at all times:
 
 ## Secrets
 
-If a task needs a credential (API key, token, DB password) and it isn't already sitting in `tasks/<name>/.secrets.env`, ask for it — don't try to find, guess, or work around it another way:
+If a task needs a credential (API key, token, DB password) and it isn't already sitting somewhere readable, ask for it — don't try to find, guess, or work around it another way:
 
     tenx secrets request <NAME>
 
-This only enqueues a request (a durable marker, visible in the tenx status bar and overlay) — it never touches the credential itself, and it's always safe to run even if this workspace hasn't set up secrets at all. Releasing it requires a human to type the decryption passphrase themselves, from a normal shell or the tenx overlay — that's the whole point, so **never** run `tenx secrets unlock`, `init`, or `seal` yourself, and don't wait around for it. Move on to other work, and check back later for `tasks/<name>/.secrets.env` (a plain `KEY=VALUE` file) or re-run `request` if it's been a while. `tenx secrets status` is safe to run any time — it only shows sealed/unlocked/pending state, never values.
+This only enqueues a request (a durable marker, visible in the tenx status bar and overlay) — it never touches the credential itself, and it's always safe to run even if this workspace hasn't set up secrets at all. Releasing it requires a human to type the decryption passphrase themselves, from a normal shell or the tenx overlay — that's the whole point, so **never** run `tenx secrets unlock`, `init`, or `seal` yourself, and don't wait around for it. Move on to other work, and check back later, or re-run `request` if it's been a while. `tenx secrets status` is safe to run any time — it only shows sealed/unlocked/pending state, never values.
+
+Two shapes of secret you might find, depending on the repo:
+- **Sealed by tenx** — lands at `tasks/<name>/.secrets.env` (a plain `KEY=VALUE` file). `<NAME>` here is just a label for the human approving it; unlocking always releases the whole file.
+- **Adopted from the repo's own setup** (`.sops.yaml` already in a worktree) — lands as a plaintext sibling of its ciphertext, inside that worktree (e.g. `secrets.staging.enc.env` → `secrets.staging.env`). Here `<NAME>` actually matters: it's matched against candidate filenames, so if a repo has more than one (e.g. `secrets.staging.enc.env` *and* `secrets.prod.enc.env`), name the **file** you need (or a distinctive fragment like `staging`) so only that one gets released — not a field inside it, and not the whole set. A name that doesn't match any file falls back to releasing everything found, so still err toward naming the file rather than nothing.
 
 ## Common commands
 

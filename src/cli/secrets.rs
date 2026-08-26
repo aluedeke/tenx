@@ -143,6 +143,7 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
 
     let bundle = task.path.join(".secrets.age");
     let sops_files = find_sops_covered_files(task);
+    let pending = workspace::secrets_pending(&task.path);
 
     if !bundle.exists() && sops_files.is_empty() {
         bail!(
@@ -151,6 +152,29 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
             task.name
         );
     }
+
+    // Which pending names refer to a specific sops file (see
+    // `file_matches_request`) vs. something else entirely (a field inside
+    // our own bundle, a typo, free text). A repo adopted from an existing
+    // project can have more than one sops-covered file — checkly's
+    // local-support has both `secrets.staging.enc.env` and
+    // `secrets.prod.enc.env` — and "decrypt every file this repo has,
+    // regardless of which one was actually asked for" would violate the
+    // same least-privilege principle the rest of this design holds
+    // everywhere else. So: if a pending request names a specific file,
+    // unlock only that one. With nothing that names a file specifically,
+    // fall back to every sops file found — matches how our own single
+    // bundle already has no partial-release concept, so "nothing named,
+    // unlock what's here" isn't a new behavior, just the existing one.
+    let named_sops_files: Vec<&PathBuf> = sops_files
+        .iter()
+        .filter(|f| pending.iter().any(|n| file_matches_request(f, n)))
+        .collect();
+    let fell_back_to_all = named_sops_files.is_empty();
+    let selected_sops: Vec<&PathBuf> =
+        if fell_back_to_all { sops_files.iter().collect() } else { named_sops_files };
+
+    let mut satisfied: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     if bundle.exists() {
         let out_path = task.path.join(".secrets.env");
@@ -161,6 +185,15 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
         }
         set_permissions_600(&out_path)?;
         eprintln!("✓ unlocked → {}", out_path.display());
+        // The bundle is all-or-nothing (we control what's sealed into it, so
+        // least-privilege already happened at seal time) — releasing it
+        // satisfies any pending name that isn't specifically claimed by a
+        // sops file match above.
+        for n in &pending {
+            if !sops_files.iter().any(|f| file_matches_request(f, n)) {
+                satisfied.insert(n.clone());
+            }
+        }
     }
 
     // Adopted secrets (see PRD.md §4.2): a repo the task has a worktree for
@@ -170,14 +203,27 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
     // (`secrets.staging.enc.env` → `secrets.staging.env`), matching how the
     // project already expects to consume it, rather than forcing everything
     // through our own single-bundle-per-task shape.
-    for ciphertext in &sops_files {
+    for ciphertext in &selected_sops {
         let plaintext_out = strip_enc_suffix(ciphertext);
         sops_decrypt(&identity, ciphertext, &plaintext_out)?;
         set_permissions_600(&plaintext_out)?;
         eprintln!("✓ unlocked (sops) → {}", plaintext_out.display());
     }
+    for n in &pending {
+        let claimed_by_selection = selected_sops.iter().any(|f| file_matches_request(f, n));
+        // A name that matches nothing at all (not a specific file, and we
+        // fell back to "everything") is satisfied by that fallback too.
+        let satisfied_by_fallback = fell_back_to_all && !sops_files.is_empty() && !claimed_by_selection;
+        if claimed_by_selection || satisfied_by_fallback {
+            satisfied.insert(n.clone());
+        }
+    }
 
-    clear_pending(task)?;
+    // Leaves anything not actually resolved this time (e.g. "prod" still
+    // pending after only "staging" was requested and unlocked) for a future
+    // unlock, rather than wiping the whole queue regardless of what was
+    // actually released.
+    clear_pending_names(task, &satisfied)?;
     Ok(())
 }
 
@@ -238,6 +284,19 @@ fn decrypt_via_plain_identity(identity: &Path, bundle: &Path, out_path: &Path) -
 }
 
 // ── Sops adoption (PRD.md §4.2) ─────────────────────────────────────────────
+
+/// Whether a pending request name plausibly refers to this specific
+/// sops-covered file — a loose, case-insensitive substring match against the
+/// filename. `"staging"` matches `secrets.staging.enc.env`; the exact
+/// filename always matches itself. We only ever see filenames without
+/// decrypting, so this can't (and doesn't try to) match a field *inside* a
+/// file — a name that doesn't match any file here is assumed to be about
+/// something else (a field in our own bundle, free text, a typo) and falls
+/// through to `unlock_in`'s "nothing named a specific file" fallback.
+fn file_matches_request(file: &Path, requested: &str) -> bool {
+    let name = file.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+    name.contains(&requested.to_lowercase())
+}
 
 /// Files inside this task's repo worktrees that an existing `.sops.yaml`
 /// covers — detected by the de facto sops naming convention (`name.enc.ext`,
@@ -606,8 +665,20 @@ fn read_pending(task: &Task) -> Vec<String> {
     workspace::secrets_pending(&task.path)
 }
 
-fn clear_pending(task: &Task) -> Result<()> {
-    let _ = std::fs::remove_file(pending_path(task));
+/// Remove `resolved` names from the task's pending list, leaving any others
+/// (e.g. a second sops file that wasn't actually decrypted this time)
+/// pending for a future unlock — partial resolution, not "unlock ran, so the
+/// whole queue must be satisfied now."
+fn clear_pending_names(task: &Task, resolved: &std::collections::HashSet<String>) -> Result<()> {
+    let remaining: Vec<String> =
+        read_pending(task).into_iter().filter(|n| !resolved.contains(n)).collect();
+    let path = pending_path(task);
+    if remaining.is_empty() {
+        let _ = std::fs::remove_file(&path);
+    } else {
+        std::fs::write(&path, remaining.join("\n") + "\n")
+            .with_context(|| format!("write {}", path.display()))?;
+    }
     Ok(())
 }
 
