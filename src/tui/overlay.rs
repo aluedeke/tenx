@@ -11,7 +11,7 @@
 //! and as the Ctrl+w *floating* pane (exits after a jump; the tenx-zellij
 //! plugin closes the pane).
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::{
     event::{
         self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
@@ -59,6 +59,20 @@ struct Row {
     /// Repos this task currently has worktrees for (what the repo editor diffs
     /// against). Refreshed on `rebuild_rows`, not on the idle tick.
     repos: Vec<String>,
+    /// Secret names pending unlock (`cli::secrets::request`). Like `group`,
+    /// fixed at `rebuild_rows` time and NOT touched by `refresh_statuses` —
+    /// `section` below is derived from it once, and letting it drift on the
+    /// idle tick would desync a row's section from its actual (frozen)
+    /// position in `rows`, producing a stray header in the wrong place.
+    secrets_pending: Vec<String>,
+    /// The section this row is grouped under — normally `status.group()`, but
+    /// a pending secrets request forces `TaskGroup::SecretsPending` regardless
+    /// of Claude session state, since it needs a specific action from you
+    /// (unlocking) even when the task is otherwise idle. Separate from
+    /// `group: TaskStatus` (which stays a pure fact about Claude session
+    /// state, used for its glyph/rank) so this override doesn't have to
+    /// invent a fake `TaskStatus` variant to express "wants you but idle".
+    section: workspace::TaskGroup,
 }
 
 /// Create-task form (workspace already chosen). `focus`: 0 = name,
@@ -220,6 +234,14 @@ struct Overlay {
     mode: Mode,
     /// Set when a jump from outside zellij should attach after teardown.
     attach: Option<AttachTarget>,
+    /// Set by `start_unlock` (the `u` key / `:unlock`) to (workspace index,
+    /// slug). `run_loop` checks this after every event and, when set,
+    /// suspends the TUI (leaves raw mode/alt screen) to run the real
+    /// interactive `cli::secrets::unlock_in` — the identity's passphrase
+    /// prompt needs a real controlling terminal, which the alternate screen
+    /// isn't. Not handled inside `Overlay` itself because only `run_loop` has
+    /// the `Terminal` handle needed to leave and re-enter raw mode.
+    pending_unlock: Option<(usize, String)>,
 
     // Mouse support (list view only; the modal forms stay keyboard-only).
     // `list_state` persists the scroll offset so a click's row maps to a list
@@ -253,6 +275,7 @@ impl Overlay {
             status_msg: None,
             mode: Mode::List,
             attach: None,
+            pending_unlock: None,
             list_state: ListState::default(),
             line_to_pos: Vec::new(),
             tabs_area: Rect::default(),
@@ -322,6 +345,12 @@ impl Overlay {
                 let tab_id = std::fs::read_to_string(task.path.join(".tenx-tab-id"))
                     .ok()
                     .and_then(|s| s.trim().parse::<u32>().ok());
+                let secrets_pending = workspace::secrets_pending(&task.path);
+                let section = if !secrets_pending.is_empty() {
+                    workspace::TaskGroup::SecretsPending
+                } else {
+                    state.status.group()
+                };
                 rows.push(Row {
                     ws_idx,
                     ws_name: ws.config.name.clone(),
@@ -335,14 +364,15 @@ impl Overlay {
                     activity: state.changed.unwrap_or(task.created_at),
                     tab_id,
                     repos: task.repos.clone(),
+                    secrets_pending,
+                    section,
                 });
             }
         }
         rows.sort_by(|a, b| {
-            a.group
-                .group()
+            a.section
                 .rank()
-                .cmp(&b.group.group().rank())
+                .cmp(&b.section.rank())
                 .then(a.group.rank().cmp(&b.group.rank()))
                 .then(b.activity.cmp(&a.activity))
         });
@@ -671,6 +701,11 @@ impl Overlay {
                     self.close_selected_tab();
                 }
             }
+            KeyCode::Char('u') => {
+                if self.require_tasks() {
+                    self.start_unlock();
+                }
+            }
             KeyCode::Enter | KeyCode::Char('o') | KeyCode::Char('l') => {
                 if self.tab == Tab::Tasks {
                     return self.jump();
@@ -753,6 +788,7 @@ impl Overlay {
             // NB: not `:repos` — that's taken above by the Repos tab switch.
             "e" | "edit" | "edit-repos" => self.start_edit_repos(),
             "x" | "close" => self.close_selected_tab(),
+            "u" | "unlock" => self.start_unlock(),
             "o" | "open" => return self.jump(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
         }
@@ -1195,6 +1231,24 @@ impl Overlay {
         }
     }
 
+    // ── Secrets ───────────────────────────────────────────────────────────────
+
+    /// Queue an unlock for the selected row, if it has a pending secrets
+    /// request. Doesn't do the unlock itself — only `run_loop` has the
+    /// `Terminal` handle needed to leave raw mode/the alternate screen, which
+    /// the identity's passphrase prompt needs (a real controlling terminal,
+    /// not a TUI's alternate screen buffer).
+    fn start_unlock(&mut self) {
+        let Some(r) = self.selected_row() else {
+            return;
+        };
+        if r.secrets_pending.is_empty() {
+            self.status_msg = Some("no pending secrets for this task".into());
+            return;
+        }
+        self.pending_unlock = Some((r.ws_idx, r.slug.clone()));
+    }
+
     // ── Rename ────────────────────────────────────────────────────────────────
 
     fn start_rename(&mut self) {
@@ -1351,7 +1405,58 @@ fn run_loop(
             // stays frozen (see `refresh_statuses`).
             overlay.refresh_statuses();
         }
+
+        if let Some((ws_idx, slug)) = overlay.pending_unlock.take() {
+            run_unlock(terminal, overlay, ws_idx, &slug)?;
+        }
     }
+    Ok(())
+}
+
+/// Suspend the TUI to run the real, interactive `cli::secrets::unlock_in` —
+/// leaves raw mode and the alternate screen so `age`'s passphrase prompt
+/// reaches this pane's *real* controlling terminal (which is unaffected by
+/// raw-mode/alt-screen state either way, but the TUI's own rendering would
+/// otherwise stomp all over the prompt while it's waiting on input). This
+/// works whether the overlay is running in a plain terminal or inside a
+/// zellij pane — either way it's a real interactive terminal, which is all
+/// `age` needs; nothing zellij-specific about this path.
+///
+/// The plugin's only job here is spawning the real command and getting out of
+/// its way — same principle as the design's other unlock path (a spawned
+/// pane in the `tenx-zellij` overlay, relayed via `write_chars_to_pane_id`):
+/// this function never touches the identity or the encrypted bundle itself,
+/// it just hands the real terminal to the real `age` process.
+fn run_unlock(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    overlay: &mut Overlay,
+    ws_idx: usize,
+    slug: &str,
+) -> Result<()> {
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange)?;
+    terminal.show_cursor()?;
+
+    println!("unlocking secrets for '{slug}'...\n");
+    let result = (|| -> Result<()> {
+        let ws = overlay.workspaces.get(ws_idx).context("workspace no longer registered")?;
+        let task = ws.find_task(slug)?;
+        crate::cli::secrets::unlock_in(ws, &task)
+    })();
+    match &result {
+        Ok(()) => println!("\npress Enter to return"),
+        Err(e) => println!("\ntenx: {e}\npress Enter to return"),
+    }
+    let mut discard = String::new();
+    let _ = io::stdin().read_line(&mut discard);
+
+    enable_raw_mode()?;
+    execute!(terminal.backend_mut(), EnterAlternateScreen, EnableMouseCapture, EnableFocusChange)?;
+    terminal.clear()?;
+    // Pending state changed (cleared on success) — rebuild so the row moves
+    // out of SECRETS PENDING rather than showing a stale glyph until the next
+    // reopen.
+    overlay.rebuild_rows();
     Ok(())
 }
 
@@ -1483,7 +1588,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
             let hint = match (overlay.input_mode, overlay.tab) {
                 (InputMode::Insert, _) => "  type to filter · ↓ list · ⏎ open · ⇥ tab",
                 (InputMode::Normal, Tab::Tasks) => {
-                    "  j/k move · a new · e repos · dd del · r rename · x close · gt tab · q quit"
+                    "  j/k move · a new · e repos · u unlock · dd del · r rename · x close · gt tab · q quit"
                 }
                 (InputMode::Normal, Tab::Repos) => {
                     "  j/k move · ↑ search · a add-repo · gt tab · q quit"
@@ -1514,6 +1619,10 @@ fn pad_cell(s: &str, w: usize) -> String {
 /// what's running, grey for what isn't.
 fn group_color(group: workspace::TaskGroup) -> ratatui::style::Color {
     match group {
+        // Same reasoning as the status bar's glyph priority: a pending
+        // secrets request needs a specific action from you, distinct from
+        // ordinary waiting — worth its own colour, not folded into WARN.
+        workspace::TaskGroup::SecretsPending => palette::ACCENT.color(),
         workspace::TaskGroup::Waiting => palette::WARN.color(),
         workspace::TaskGroup::Working => palette::INFO.color(),
         workspace::TaskGroup::Inactive => palette::MUTED.color(),
@@ -1562,15 +1671,15 @@ fn task_items(
     // Rows arrive sorted by status rank, so each status is one contiguous run —
     // a header goes in wherever the status changes. Counts come from the
     // filtered set, so they describe what's actually on screen.
-    let mut group_counts: [usize; 3] = [0; 3];
+    let mut group_counts: [usize; 4] = [0; 4];
     for &i in &overlay.filtered {
-        group_counts[overlay.rows[i].group.group().rank() as usize] += 1;
+        group_counts[overlay.rows[i].section.rank() as usize] += 1;
     }
     let mut last_group: Option<workspace::TaskGroup> = None;
 
     for (pos, &row_idx) in overlay.filtered.iter().enumerate() {
         let row = &overlay.rows[row_idx];
-        let group = row.group.group();
+        let group = row.section;
         if last_group != Some(group) {
             if last_group.is_some() {
                 items.push(ListItem::new(Line::from("")));
@@ -1596,16 +1705,29 @@ fn task_items(
             selected_line = Some(items.len());
         }
 
-        let glyph = match row.status {
-            TaskStatus::Blocked => "💬 ",
-            TaskStatus::Done => "✅ ",
-            TaskStatus::Working => "▷  ",
-            TaskStatus::Idle => "   ",
+        // A pending secrets request takes glyph priority over the ordinary
+        // Claude-session status — same reasoning as `tenx-statusbar`: it needs
+        // a different action from you (unlocking) than approving a prompt
+        // does, regardless of whether the task also happens to be idle.
+        let has_secrets = !row.secrets_pending.is_empty();
+        let glyph = if has_secrets {
+            "🔒 "
+        } else {
+            match row.status {
+                TaskStatus::Blocked => "💬 ",
+                TaskStatus::Done => "✅ ",
+                TaskStatus::Working => "▷  ",
+                TaskStatus::Idle => "   ",
+            }
         };
-        let title_style = match row.status {
-            TaskStatus::Blocked => Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD),
-            TaskStatus::Done => Style::default().fg(palette::BRIGHT.color()),
-            TaskStatus::Working | TaskStatus::Idle => Style::default().fg(palette::TEXT.color()),
+        let title_style = if has_secrets {
+            Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)
+        } else {
+            match row.status {
+                TaskStatus::Blocked => Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD),
+                TaskStatus::Done => Style::default().fg(palette::BRIGHT.color()),
+                TaskStatus::Working | TaskStatus::Idle => Style::default().fg(palette::TEXT.color()),
+            }
         };
         // Age is only meaningful for resting states (how long it's waited/sat).
         let show_age = matches!(
@@ -1635,10 +1757,18 @@ fn task_items(
             spans.push(Span::raw("  "));
             spans.push(Span::styled(age, dim));
         }
-        // Claude Code's own words for what it's waiting on ("input needed", the
-        // open dialog's label). Beats a bare 💬: you can tell a permission
-        // prompt from a question without switching to the tab.
-        if let Some(reason) = row.waiting_for.as_deref().filter(|_| show_open) {
+        // Which secret(s) it wants takes priority over Claude Code's own
+        // waiting-for reason — same priority as the glyph above, and for the
+        // same reason: it's a different, more specific thing to act on.
+        if has_secrets && show_open {
+            spans.push(Span::styled(
+                format!("  · wants {}", row.secrets_pending.join(", ")),
+                Style::default().fg(palette::ACCENT.color()),
+            ));
+        } else if let Some(reason) = row.waiting_for.as_deref().filter(|_| show_open) {
+            // Claude Code's own words for what it's waiting on ("input
+            // needed", the open dialog's label). Beats a bare 💬: you can tell
+            // a permission prompt from a question without switching to the tab.
             spans.push(Span::styled(
                 format!("  · {reason}"),
                 Style::default().fg(palette::WARN.color()),

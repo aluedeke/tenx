@@ -82,6 +82,13 @@ const C_BADGE_INPUT_BG: Color = Color::Rgb(58, 46, 24);
 const C_CURRENT_FG: Color = Color::Rgb(120, 160, 230);
 const C_CURRENT_BG: Color = Color::Rgb(28, 40, 60);
 const C_TOGGLE_ON_BG: Color = Color::Rgb(48, 56, 72);
+// Same RGB as `palette::ACCENT` on the native side (this crate can't import
+// `src/palette.rs` the way `tenx-statusbar` does — it isn't `ratatui`-Color
+// shaped the same way here — so the value is duplicated, not the constant).
+// A pending secrets request needs a specific action from you (typing a
+// passphrase), distinct from ordinary status colors.
+const C_SECRETS: Color = Color::Rgb(0xa7, 0x8b, 0xfa);
+const C_BADGE_SECRETS_BG: Color = Color::Rgb(42, 36, 64);
 
 /// One task row, deserialized from `tenx overlay --json`.
 #[derive(Debug, Clone, Deserialize)]
@@ -102,6 +109,13 @@ struct Task {
     /// against. `default` so an older native binary still deserializes.
     #[serde(default)]
     repos: Vec<String>,
+    /// Secret names pending unlock (`cli::secrets::request`), from
+    /// `workspace::secrets_pending` via `task_json`. Independent of `status`
+    /// — a task can be `idle` (no live session) and still have a pending
+    /// request left over from an agent that already finished. `default` so
+    /// an older native binary still deserializes.
+    #[serde(default)]
+    secrets_pending: Vec<String>,
 }
 
 /// A repo configured in a workspace (not necessarily one this task uses).
@@ -196,6 +210,22 @@ fn geometry(cols: usize, rows: usize) -> Option<FloatingPaneCoordinates> {
         Some(w.to_string()),
         Some(h.to_string()),
         Some(true), // pinned: stay on top
+        None,
+    )
+}
+
+/// Centered coordinates for the spawned `tenx secrets unlock` pane —
+/// deliberately much smaller than `geometry()` (a single interactive prompt,
+/// not this overlay's own list), but sized sensibly across screen sizes.
+fn unlock_pane_geometry(cols: usize, rows: usize) -> Option<FloatingPaneCoordinates> {
+    let w = cols.clamp(20, 70);
+    let h = rows.clamp(6, 12);
+    FloatingPaneCoordinates::new(
+        Some((cols.saturating_sub(w) / 2).to_string()),
+        Some((rows.saturating_sub(h) / 2).to_string()),
+        Some(w.to_string()),
+        Some(h.to_string()),
+        Some(true),
         None,
     )
 }
@@ -297,6 +327,17 @@ enum Mode {
     /// stays up and says so instead of vanishing into a blank screen — and an
     /// error lands where the user is still looking.
     Busy { label: String, hide_on_done: bool },
+    /// Typing the identity's passphrase after `^u`/`start_unlock` on a task
+    /// with a pending secrets request. `pane_id` is the real, already-spawned
+    /// floating pane running `tenx secrets unlock` (cwd set to the task
+    /// directory) — this mode only ever captures keystrokes to relay into
+    /// its real stdin via `write_chars_to_pane_id` on submit. It never
+    /// touches the identity or the encrypted bundle itself: this plugin's
+    /// only job is spawning the real command and getting out of its way,
+    /// same principle as the design's other unlock path (`tui/overlay.rs`
+    /// suspending its own TUI to hand the real terminal to the real `age`
+    /// process).
+    Unlock { title: String, pane_id: PaneId, buffer: String },
 }
 
 /// How the list is organised: sectioned by agent status (the default — what
@@ -340,8 +381,9 @@ const STATUS_ORDER: [&str; 4] = ["blocked", "working", "done", "idle"];
 /// Section labels in display order, mirroring `TaskGroup` on the native side.
 /// `blocked` and `done` share one: both are waiting on you, and two adjacent
 /// headers saying nearly the same thing helped nobody. The row's icon and
-/// Claude's waiting reason carry the difference.
-const GROUPS: [&str; 3] = ["WAITING FOR INPUT", "WORKING", "INACTIVE"];
+/// Claude's waiting reason carry the difference. `SECRETS PENDING` is not a
+/// status-derived section like the rest — see `combined_rank`.
+const GROUPS: [&str; 4] = ["SECRETS PENDING", "WAITING FOR INPUT", "WORKING", "INACTIVE"];
 
 /// Rank of a status token within `STATUS_ORDER`; unknown tokens sort with idle.
 fn status_rank(status: &str) -> usize {
@@ -351,13 +393,34 @@ fn status_rank(status: &str) -> usize {
         .unwrap_or(STATUS_ORDER.len() - 1)
 }
 
-/// Section index for a status rank: blocked/done → waiting, working → working,
-/// idle → inactive.
-fn group_rank(status_rank: usize) -> usize {
-    match STATUS_ORDER.get(status_rank) {
-        Some(&"working") => 1,
-        Some(&"idle") => 2,
-        _ => 0,
+/// The frozen-order rank a task sorts and sections by — `1 + status_rank`,
+/// except a task with a pending secrets request always ranks `0` regardless
+/// of its Claude-session status. That mirrors the native side's
+/// `TaskGroup::SecretsPending`: a pending request (`cli::secrets::request`)
+/// outlives the session that made it, so a task can be `idle` and still
+/// belong at the very top. Kept as a single `usize` — not a new field on the
+/// `order` snapshot — so `freeze_order`/`frozen_rank`'s existing frozen-order
+/// machinery doesn't need to change shape, only what value it captures.
+fn combined_rank(t: &Task) -> usize {
+    if t.secrets_pending.is_empty() {
+        1 + status_rank(&t.status)
+    } else {
+        0
+    }
+}
+
+/// Section index for a combined rank (see `combined_rank`): `0` is its own
+/// section (secrets pending); everything else shifts by one relative to the
+/// old status-only scheme (blocked/done → waiting, working → working, idle →
+/// inactive).
+fn group_rank(rank: usize) -> usize {
+    if rank == 0 {
+        return 0;
+    }
+    match STATUS_ORDER.get(rank - 1) {
+        Some(&"working") => 2,
+        Some(&"idle") => 3,
+        _ => 1,
     }
 }
 
@@ -469,6 +532,14 @@ impl ZellijPlugin for State {
             PermissionType::RunCommands,
             PermissionType::ReadApplicationState,
             PermissionType::ChangeApplicationState,
+            // For the secrets-unlock flow only: OpenTerminalsOrPlugins to
+            // spawn the real `tenx secrets unlock` as a real floating pane,
+            // WriteToStdin to relay a typed passphrase into its real stdin
+            // (see `start_unlock`/`handle_unlock_key`). Nothing else in this
+            // plugin uses either — every other mutation stays on the
+            // existing `run_command` background path.
+            PermissionType::OpenTerminalsOrPlugins,
+            PermissionType::WriteToStdin,
         ]);
         subscribe(&[
             EventType::Key,
@@ -680,7 +751,7 @@ impl State {
         self.order = self
             .tasks
             .iter()
-            .map(|t| ((t.ws_dir.clone(), t.slug.clone()), status_rank(&t.status)))
+            .map(|t| ((t.ws_dir.clone(), t.slug.clone()), combined_rank(t)))
             .collect();
     }
 
@@ -695,7 +766,7 @@ impl State {
             .iter()
             .find(|(key, _)| *key == k)
             .map(|(_, g)| *g)
-            .unwrap_or_else(|| status_rank(&t.status))
+            .unwrap_or_else(|| combined_rank(t))
     }
 
     /// Hash of everything a background poll can change on screen: the drawn
@@ -707,7 +778,8 @@ impl State {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         for t in &self.tasks {
-            (&t.ws, &t.slug, &t.title, &t.status, &t.waiting_for, &t.repos).hash(&mut h);
+            (&t.ws, &t.slug, &t.title, &t.status, &t.waiting_for, &t.repos, &t.secrets_pending)
+                .hash(&mut h);
             fmt_age(t.age_secs).hash(&mut h);
         }
         for w in &self.workspaces {
@@ -1047,6 +1119,7 @@ impl State {
             Mode::ConfirmRepos { .. } => self.handle_confirm_repos_key(key),
             Mode::Rename { .. } => self.handle_rename_key(key),
             Mode::ConfirmDelete { .. } => self.handle_confirm_key(key),
+            Mode::Unlock { .. } => self.handle_unlock_key(key),
             Mode::Busy { .. } => {
                 // The command keeps running; esc just stops staring at it.
                 if key.bare_key == BareKey::Esc {
@@ -1115,6 +1188,7 @@ impl State {
             BareKey::Char('r') if ctrl && self.view == View::Tasks => self.start_rename(),
             BareKey::Char('d') if ctrl && self.view == View::Tasks => self.start_delete(),
             BareKey::Char('e') if ctrl && self.view == View::Tasks => self.start_edit_repos(),
+            BareKey::Char('u') if ctrl && self.view == View::Tasks => self.start_unlock(),
             BareKey::Backspace if key.has_no_modifiers() => {
                 self.filter.pop();
                 self.apply_filter();
@@ -1456,6 +1530,60 @@ impl State {
         }
     }
 
+    /// Spawn the real `tenx secrets unlock` as a real floating pane (cwd set
+    /// to the task directory — `unlock` resolves the task from cwd, the same
+    /// way it does when run by hand in a shell), then enter `Mode::Unlock` to
+    /// capture the passphrase for relay. This plugin never runs the decrypt
+    /// itself — it only ever spawns the real command and gets out of the way.
+    fn start_unlock(&mut self) {
+        let Some(t) = self.selected_task() else { return };
+        if t.secrets_pending.is_empty() {
+            self.message = Some("no pending secrets for this task".into());
+            return;
+        }
+        let title = t.title.clone();
+        let task_dir = std::path::PathBuf::from(&t.ws_dir).join("tasks").join(&t.slug);
+        let cmd = CommandToRun {
+            path: std::path::PathBuf::from(&self.tenx_bin),
+            args: vec!["secrets".to_string(), "unlock".to_string()],
+            cwd: Some(task_dir),
+        };
+        let coords = self.sized_for.and_then(|(c, r)| unlock_pane_geometry(c, r));
+        let Some(pane_id) = open_command_pane_floating(cmd, coords, BTreeMap::new()) else {
+            self.message = Some("failed to open the unlock pane".into());
+            return;
+        };
+        self.mode = Mode::Unlock { title, pane_id, buffer: String::new() };
+    }
+
+    /// Capture keystrokes for the passphrase field; on `↵`, relay exactly
+    /// what was typed (plus a newline) into the real spawned pane's real
+    /// stdin via `write_chars_to_pane_id` and return to the list — the pane
+    /// stays open so its own success/error output is visible. The buffer is
+    /// held only in this `Mode` variant, for only as long as it takes to
+    /// type and relay it; nothing here ever writes it anywhere else.
+    fn handle_unlock_key(&mut self, key: KeyWithModifier) -> bool {
+        let Mode::Unlock { pane_id, buffer, .. } = &mut self.mode else {
+            return false;
+        };
+        match key.bare_key {
+            BareKey::Esc => self.mode = Mode::List,
+            BareKey::Enter => {
+                let pane_id = *pane_id;
+                let mut chars = std::mem::take(buffer);
+                chars.push('\n');
+                write_chars_to_pane_id(&chars, pane_id);
+                self.mode = Mode::List;
+            }
+            BareKey::Backspace => {
+                buffer.pop();
+            }
+            BareKey::Char(c) if key.has_no_modifiers() => buffer.push(c),
+            _ => return false,
+        }
+        true
+    }
+
     /// Run a tenx mutation subcommand, marked so its result triggers a reload.
     /// Env is injected so the subprocess (a child of the zellij server, with
     /// no zellij vars) can still drive the session for tab open/rename.
@@ -1763,6 +1891,13 @@ impl State {
                 format!("🗑 delete “{title}” ?  y / n"),
                 Style::default().fg(C_FAILED).add_modifier(Modifier::BOLD),
             ),
+            // Masked — never the typed characters themselves, same reasoning
+            // as `tui/overlay.rs` suspending its own rendering rather than
+            // ever drawing a passphrase.
+            Mode::Unlock { title, buffer, .. } => (
+                format!("🔒 unlock {title} — {}", "•".repeat(buffer.chars().count())),
+                Style::default().fg(C_SECRETS).add_modifier(Modifier::BOLD),
+            ),
         };
         let hw = left_limit.saturating_sub(cx + 1);
         put(&mut buf, cx, inner.y, hw as usize, &htext, hstyle);
@@ -1815,6 +1950,7 @@ impl State {
                 ("⇥", "repos"),
                 ("^a", "new"),
                 ("^e", "edit repos"),
+                ("^u", "unlock secrets"),
                 ("^r/^d", "rename/del"),
                 ("esc", "close"),
             ],
@@ -1824,6 +1960,7 @@ impl State {
                 ("⇥", "repos"),
                 ("^a", "new"),
                 ("^e", "edit repos"),
+                ("^u", "unlock"),
                 ("^r/^d", "rename/del"),
                 ("esc", "close"),
             ],
@@ -1856,6 +1993,7 @@ impl State {
             Mode::Busy { .. } => &[("esc", "run in background")],
             Mode::Rename { .. } => &[("↵", "save"), ("esc", "cancel")],
             Mode::ConfirmDelete { .. } => &[("y", "delete"), ("n", "cancel")],
+            Mode::Unlock { .. } => &[("↵", "unlock"), ("esc", "cancel")],
         };
         // An error raised by a modal belongs next to the modal, not on a list
         // line the modal is covering.
@@ -2031,8 +2169,17 @@ impl State {
                     // Status icon. Deliberately static, including for `working`:
                     // animating it means re-rendering, and a render is the
                     // whole pane (see `buf_to_ansi`). The blue ◐ against the
-                    // muted · already says which rows are live.
-                    put(&mut buf, cx, y, 1, status_icon(&t.status), base(status_color(&t.status)));
+                    // muted · already says which rows are live. A pending
+                    // secrets request takes priority — same reasoning as the
+                    // native status bar: it needs a different action from you
+                    // (unlocking) than approving a prompt does, regardless of
+                    // whether the task also happens to be idle/blocked/done.
+                    let has_secrets = !t.secrets_pending.is_empty();
+                    if has_secrets {
+                        put(&mut buf, cx, y, 1, "🔒", base(C_SECRETS));
+                    } else {
+                        put(&mut buf, cx, y, 1, status_icon(&t.status), base(status_color(&t.status)));
+                    }
                     // Name (+ badges), then workspace, then last-changed.
                     let current = self.active_tab.as_deref() == Some(t.slug.as_str());
                     // Claude Code's own reason ("input needed", the open
@@ -2040,7 +2187,11 @@ impl State {
                     // "needs input" can't. Under a NEEDS INPUT header the
                     // generic label adds nothing the section doesn't, so it
                     // shows only in the flat groupings.
-                    let badge = if t.status == "blocked" {
+                    let secrets_label =
+                        has_secrets.then(|| format!("wants {}", t.secrets_pending.join(", ")));
+                    let badge = if let Some(label) = secrets_label.as_deref() {
+                        Some((label, C_SECRETS, C_BADGE_SECRETS_BG))
+                    } else if t.status == "blocked" {
                         // Always labelled now: blocked and done share a section,
                         // so the chip is what says which one this row is.
                         Some((

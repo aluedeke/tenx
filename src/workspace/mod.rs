@@ -398,8 +398,20 @@ pub enum TaskStatus {
 /// back to back. They share a section; the row's glyph (💬 vs ✅) and Claude's
 /// waiting reason carry the difference, and `TaskStatus::rank` floats the
 /// blocked ones to the top of it.
+///
+/// `SecretsPending` is not a `TaskStatus`-derived variant like the other
+/// three — a task can be `Idle` (no live Claude session at all) and still
+/// belong here, because a pending secrets request (`cli::secrets::request`)
+/// outlives the session that made it. Callers that need it (`tui::overlay`)
+/// compute it themselves from `secrets_pending`, overriding the
+/// `TaskStatus::group()` result rather than folding it in here — this type
+/// stays a pure function of session state, secrets awareness lives one layer
+/// up where the data actually is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskGroup {
+    /// A pending secrets request — needs a specific action (typing a
+    /// passphrase), ranked above ordinary waiting for that reason.
+    SecretsPending,
     /// An agent is waiting on you — a prompt to answer, or a finished turn.
     Waiting,
     /// A turn is in flight. Nothing for you to do.
@@ -409,17 +421,20 @@ pub enum TaskGroup {
 }
 
 impl TaskGroup {
-    /// Section order: what needs you, then what's running, then what isn't.
+    /// Section order: secrets pending (needs a specific action from you),
+    /// then what needs you, then what's running, then what isn't.
     pub fn rank(self) -> u8 {
         match self {
-            TaskGroup::Waiting => 0,
-            TaskGroup::Working => 1,
-            TaskGroup::Inactive => 2,
+            TaskGroup::SecretsPending => 0,
+            TaskGroup::Waiting => 1,
+            TaskGroup::Working => 2,
+            TaskGroup::Inactive => 3,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
+            TaskGroup::SecretsPending => "SECRETS PENDING",
             TaskGroup::Waiting => "WAITING FOR INPUT",
             TaskGroup::Working => "WORKING",
             TaskGroup::Inactive => "INACTIVE",

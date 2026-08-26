@@ -125,7 +125,17 @@ pub fn unlock() -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = current_task(&ws, &cwd)?;
-    let identity = resolve_identity_path(&ws)?;
+    unlock_in(&ws, &task)
+}
+
+/// Same as [`unlock`], for an explicit workspace/task rather than cwd — used
+/// by the overlays (native `tui::overlay` and the `tenx-zellij` wasm plugin,
+/// via a spawned pane whose cwd is set to the task directory rather than a
+/// direct call), which pick a task from a list spanning every workspace
+/// rather than being invoked from inside one. Same terminal-interactive
+/// passphrase prompt, same file-output-only guarantee.
+pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
+    let identity = resolve_identity_path(ws)?;
 
     let bundle = task.path.join(".secrets.age");
     if !bundle.exists() {
@@ -144,7 +154,7 @@ pub fn unlock() -> Result<()> {
     }
 
     set_permissions_600(&out_path)?;
-    clear_pending(&task)?;
+    clear_pending(task)?;
     eprintln!("✓ unlocked → {}", out_path.display());
     Ok(())
 }
@@ -395,13 +405,25 @@ fn generate_identity(target: &Path) -> Result<()> {
         .status();
 
     // Cache the public key before removing the plaintext copy, so `seal`
-    // never needs the passphrase for an identity `tenx secrets init` created.
-    if let Ok(recipient) = pubkey_from_identity_bytes(&std::fs::read(&tmp).unwrap_or_default()) {
+    // never needs the passphrase for an identity `tenx secrets init` created
+    // — but only once `age -p` actually succeeded. Doing this unconditionally
+    // used to leave an orphaned `.pub` sidecar (a cached recipient with no
+    // corresponding identity file) whenever the passphrase step failed.
+    let succeeded = status.as_ref().is_ok_and(|s| s.success());
+    if succeeded
+        && let Ok(recipient) = pubkey_from_identity_bytes(&std::fs::read(&tmp).unwrap_or_default())
+    {
         let _ = std::fs::write(pub_sidecar(target), format!("{recipient}\n"));
     }
 
     let _ = std::fs::remove_file(&tmp); // best-effort shred of the unencrypted copy
-    if !status.context("run age -p")?.success() {
+    if !succeeded {
+        // Surface *why* if the process never ran at all (e.g. `age` missing);
+        // a non-zero exit (passphrase mismatch, no tty, ^C) already printed
+        // its own reason above via the inherited stderr.
+        if let Err(e) = status {
+            return Err(e).context("run age -p");
+        }
         bail!("failed to passphrase-protect the generated identity");
     }
     // `age -p -o` writes with the umask's default (0644 on a typical Mac) —
