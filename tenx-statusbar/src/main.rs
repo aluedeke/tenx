@@ -61,8 +61,9 @@
 //! `{"tasks":[...]}` in the shared `workspace::task_json` shape, newest activity
 //! first, carrying only tasks with a live Claude Code session — `Idle` is
 //! encoded by absence, so a task not in the list is idle by definition. One
-//! exception: a task with a pending secrets request (`cli::secrets::request`,
-//! `task_json`'s `secrets_pending` field) is included even when otherwise
+//! exception: a task with a pending secrets request (`cli::secrets::enqueue_pending`,
+//! `decrypt`'s non-interactive fallback; `task_json`'s `secrets_pending` field)
+//! is included even when otherwise
 //! idle, since that request outlives the session that made it.
 //!
 //! Without `run_command` there is no way to ask for a snapshot, so a bar that
@@ -131,31 +132,49 @@ struct Task {
     waiting_for: Option<String>,
     #[serde(default)]
     age_secs: Option<u64>,
-    /// Secret names pending unlock for this task (`cli::secrets::request`),
-    /// from `workspace::secrets_pending` via `task_json`. Independent of
-    /// `status` — a task can be `idle` (no live session at all) and still
-    /// have a pending request left over from an agent that already finished.
+    /// Secret names pending decrypt for this task — release something
+    /// already sealed (`cli::secrets::enqueue_pending`, `decrypt`'s
+    /// non-interactive fallback), from `workspace::secrets_pending` via
+    /// `task_json`. Independent of `status` — a task can be `idle` (no live
+    /// session at all) and still have a pending request left over from an
+    /// agent that already finished.
     #[serde(default)]
     secrets_pending: Vec<String>,
+    /// Secret names a human needs to supply a value for
+    /// (`cli::secrets::enqueue_pending_set`, `set`'s non-interactive
+    /// fallback), from `workspace::secrets_pending_set` via `task_json`.
+    /// Distinct from `secrets_pending` above — nothing sealed to release yet.
+    #[serde(default)]
+    secrets_pending_set: Vec<String>,
 }
 
 impl Task {
     fn key(&self) -> String {
         format!("{}/{}", self.ws_dir, self.slug)
     }
+    /// Whether this task has *any* pending secrets request, either kind.
+    fn has_secrets_pending(&self) -> bool {
+        !self.secrets_pending.is_empty() || !self.secrets_pending_set.is_empty()
+    }
     /// Both `Blocked` and `Done` mean an agent is sitting there waiting on
     /// you — `TaskGroup::Waiting` on the native side — and so does a pending
-    /// secrets request, which needs the same kind of explicit action from you
-    /// (typing a passphrase) regardless of whether a session is still live.
+    /// secrets request (either kind), which needs the same kind of explicit
+    /// action from you (typing a passphrase, or a value) regardless of
+    /// whether a session is still live.
     fn wants_you(&self) -> bool {
-        self.status == "blocked" || self.status == "done" || !self.secrets_pending.is_empty()
+        self.status == "blocked" || self.status == "done" || self.has_secrets_pending()
     }
     /// Edge-detection key: status alone isn't enough, because a second,
     /// distinct secret can be requested while status stays unchanged (e.g.
     /// `idle` the whole time) — that's still new information worth a fresh
     /// event, not a no-op.
     fn edge_key(&self) -> String {
-        format!("{}|{}", self.status, self.secrets_pending.join(","))
+        format!(
+            "{}|{}|{}",
+            self.status,
+            self.secrets_pending.join(","),
+            self.secrets_pending_set.join(","),
+        )
     }
 }
 
@@ -339,9 +358,14 @@ impl State {
         // Secrets-pending takes priority over status: it needs a distinct
         // action from you (typing a passphrase in the overlay) regardless of
         // whether the task also happens to be blocked/done/idle right now.
-        let (text, color) = if !task.secrets_pending.is_empty() {
-            let names = task.secrets_pending.join(", ");
-            (format!("🔒 {name} wants {names}"), palette::ACCENT.color())
+        let (text, color) = if task.has_secrets_pending() {
+            let wants: Vec<&str> = task
+                .secrets_pending
+                .iter()
+                .map(String::as_str)
+                .chain(task.secrets_pending_set.iter().map(String::as_str))
+                .collect();
+            (format!("🔒 {name} wants {}", wants.join(", ")), palette::ACCENT.color())
         } else if task.status == "blocked" {
             let why = task.waiting_for.as_deref().unwrap_or("needs input");
             (format!("💬 {name} · {why}"), palette::WARN.color())
@@ -419,7 +443,7 @@ impl State {
         // Priority: a pending secrets request needs a specific action (typing
         // a passphrase in the overlay), not just "look at this" — worth its
         // own glyph even when it's outnumbered by ordinary blocked/done tasks.
-        if waiting.iter().any(|t| !t.secrets_pending.is_empty()) {
+        if waiting.iter().any(|t| t.has_secrets_pending()) {
             Some((format!("🔒 {n} waiting"), palette::ACCENT.color()))
         } else if waiting.iter().any(|t| t.status == "blocked") {
             Some((format!("💬 {n} waiting"), palette::WARN.color()))
@@ -465,7 +489,7 @@ impl State {
             // status — it needs you to type a passphrase in the overlay
             // regardless of whether this task is also blocked/done/idle.
             let own = self.own();
-            let (glyph, label, color) = if own.is_some_and(|t| !t.secrets_pending.is_empty()) {
+            let (glyph, label, color) = if own.is_some_and(Task::has_secrets_pending) {
                 ("🔒", "secrets pending", palette::ACCENT.color())
             } else {
                 match own.map(|t| t.status.as_str()) {

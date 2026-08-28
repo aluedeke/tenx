@@ -100,6 +100,9 @@ pub fn run() -> Result<()> {
     let mut notified_secrets: HashSet<String> =
         primed.secrets_pending.into_iter().map(|(k, _)| k).collect();
     let mut pending_secrets: HashMap<String, u32> = HashMap::new();
+    let mut notified_secrets_set: HashSet<String> =
+        primed.secrets_pending_set.into_iter().map(|(k, _)| k).collect();
+    let mut pending_secrets_set: HashMap<String, u32> = HashMap::new();
     let mut tick: u32 = 0;
     let mut session_misses: u32 = 0;
     // Deliberately not seeded from `primed`: the session is still being created
@@ -156,6 +159,30 @@ pub fn run() -> Result<()> {
         pending_secrets.retain(|k, _| secrets_keys.contains(k));
         notified_secrets.retain(|k| secrets_keys.contains(k));
 
+        // Third independent edge, same shape again: `set`'s value-request
+        // queue (see `workspace::SECRETS_PENDING_SET_FILE`) — a human needs
+        // to type in a value for something that doesn't exist yet, distinct
+        // from `secrets_pending` above (which means "release something
+        // already sealed").
+        let secrets_pending_set = snapshot.secrets_pending_set;
+        let secrets_set_keys: HashSet<String> =
+            secrets_pending_set.iter().map(|(k, _)| k.clone()).collect();
+
+        for (key, note) in &secrets_pending_set {
+            if notified_secrets_set.contains(key) {
+                continue;
+            }
+            let seen = pending_secrets_set.entry(key.clone()).or_insert(0);
+            *seen += 1;
+            if *seen > DEBOUNCE_POLLS {
+                notify(note, "tenx — secret value needed");
+                notified_secrets_set.insert(key.clone());
+                pending_secrets_set.remove(key);
+            }
+        }
+        pending_secrets_set.retain(|k, _| secrets_set_keys.contains(k));
+        notified_secrets_set.retain(|k| secrets_set_keys.contains(k));
+
         // Publish last. Delivery is the slowest thing in this loop — ~0.17 s for
         // a live-task payload, against ~5 ms to resolve — and the notification
         // above is the half with a person waiting on it. Only on a real change,
@@ -180,7 +207,8 @@ pub fn run() -> Result<()> {
 
 /// What to say about a task that started waiting — for a `blocked` edge,
 /// `reason` is Claude Code's own waiting-for label; for a secrets-pending
-/// edge, it's the joined names of what's pending (`cli::secrets::request`).
+/// edge, it's the joined names of what's pending (`cli::secrets::enqueue_pending`,
+/// `decrypt`'s non-interactive fallback).
 struct Note {
     task: String,
     workspace: String,
@@ -196,10 +224,17 @@ struct Note {
 struct Snapshot {
     /// Tasks currently blocked, keyed by workspace dir + slug.
     blocked: Vec<(String, Note)>,
-    /// Tasks with a pending secrets request, keyed the same way. Independent
-    /// of `blocked` — this is `cli::secrets::request`'s marker, which
-    /// outlives the session that wrote it.
+    /// Tasks with a pending secrets *release* request, keyed the same way.
+    /// Independent of `blocked` — this is `cli::secrets::enqueue_pending`'s
+    /// marker (`decrypt`'s non-interactive fallback), which outlives the
+    /// session that wrote it.
     secrets_pending: Vec<(String, Note)>,
+    /// Tasks with a pending secrets *value* request — `set`'s non-interactive
+    /// fallback (`cli::secrets::enqueue_pending_set`), meaning a human needs
+    /// to type in a value for something that doesn't exist yet. Tracked
+    /// separately from `secrets_pending` above: different marker file,
+    /// different fulfillment action.
+    secrets_pending_set: Vec<(String, Note)>,
     /// Tasks with a live Claude Code session, in the shared wire shape
     /// (`workspace::task_json`).
     ///
@@ -218,6 +253,7 @@ fn resolve_all() -> Snapshot {
     let sessions = workspace::claude::sessions();
     let mut blocked = Vec::new();
     let mut secrets_pending = Vec::new();
+    let mut secrets_pending_set = Vec::new();
     let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
@@ -236,11 +272,22 @@ fn resolve_all() -> Snapshot {
             let pending_names = workspace::secrets_pending(&task.path);
             if !pending_names.is_empty() {
                 secrets_pending.push((
-                    key,
+                    key.clone(),
                     Note {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
                         reason: Some(pending_names.join(", ")),
+                    },
+                ));
+            }
+            let pending_set_names = workspace::secrets_pending_set(&task.path);
+            if !pending_set_names.is_empty() {
+                secrets_pending_set.push((
+                    key,
+                    Note {
+                        task: task.display_name.clone(),
+                        workspace: ws.config.name.clone(),
+                        reason: Some(format!("{} (needs value)", pending_set_names.join(", "))),
                     },
                 ));
             }
@@ -249,7 +296,7 @@ fn resolve_all() -> Snapshot {
             // status bar even with no live session — that's exactly the case
             // of an agent that requested a secret and then finished or was
             // closed before you unlocked it.
-            if state.status != TaskStatus::Idle || !pending_names.is_empty() {
+            if state.status != TaskStatus::Idle || !pending_names.is_empty() || !pending_set_names.is_empty() {
                 tasks.push((state.changed, workspace::task_json(&ws, &task, &state)));
             }
         }
@@ -259,7 +306,12 @@ fn resolve_all() -> Snapshot {
     // format to anyone who reads position; cheap to guarantee here, awkward to
     // rediscover in a consumer that assumed it.
     tasks.sort_by(|a, b| b.0.cmp(&a.0));
-    Snapshot { blocked, secrets_pending, tasks: tasks.into_iter().map(|(_, v)| v).collect() }
+    Snapshot {
+        blocked,
+        secrets_pending,
+        secrets_pending_set,
+        tasks: tasks.into_iter().map(|(_, v)| v).collect(),
+    }
 }
 
 /// A change key over everything the status bar renders *except* age.

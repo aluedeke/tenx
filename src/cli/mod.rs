@@ -59,9 +59,13 @@ pub enum Commands {
         #[command(subcommand)]
         command: HooksCommands,
     },
-    /// Manage per-task encrypted secrets (age-based). See PRD.md for the full
-    /// design — this covers the CLI baseline (Phase 0): identity resolution,
-    /// sealing, the agent-safe request queue, and unlock.
+    /// Manage per-task encrypted secrets (age + sops). See PRD.md for the
+    /// full design — this covers the CLI baseline (Phase 0): identity
+    /// resolution, `encrypt`/`set`/`decrypt` (named and behaved after their
+    /// `sops` equivalents), and `fulfill`. Both `decrypt` and `set` are
+    /// agent-safe the same way: non-interactively each can only enqueue its
+    /// own kind of request (release, or supply-a-value), never touch key
+    /// material or an actual secret value either direction.
     Secrets {
         #[command(subcommand)]
         command: SecretsCommands,
@@ -73,26 +77,59 @@ pub enum SecretsCommands {
     /// Resolve an existing age identity ($SOPS_AGE_KEY_FILE, ~/.config/sops/age,
     /// ~/.config/age) or generate a new passphrase-protected one
     Init,
-    /// Encrypt a file as the sealed secrets bundle for a task
-    Seal {
+    /// Encrypt a file as the sealed secrets bundle for a task — `sops
+    /// --encrypt`, matching that command's own name
+    Encrypt {
         /// Exact task slug
         task: String,
-        /// File to seal (typically a .env)
+        /// File to encrypt (typically a .env)
         file: String,
     },
-    /// Declare that the current task wants a secret unlocked. Agent-safe: only
-    /// ever enqueues a durable, informational request — never touches the
-    /// identity or the encrypted bundle. Task is resolved from cwd.
-    Request {
-        /// Secret name being requested (shown in `status`; informational only —
-        /// unlock always releases the whole task bundle in v1)
+    /// Set one secret in the current task's sealed bundle (task resolved
+    /// from cwd) — literally `sops set`: edits the existing document in
+    /// place, reusing its data key. Same tty-detection shape as `decrypt`,
+    /// mirrored: real terminal reachable → prompts for the value (masked),
+    /// then the passphrase, then edits; not reachable → enqueues "someone
+    /// needs to supply a value for this" instead, agent-safe, own queue
+    /// separate from `decrypt`'s. The value itself is never a CLI argument
+    /// or read from stdin — always typed directly into the real terminal.
+    Set {
+        /// Secret name (becomes its key in the decrypted .secrets.env)
         name: String,
     },
-    /// Decrypt the current task's sealed bundle into tasks/<slug>/.secrets.env.
-    /// Human-only: prompts for the identity's passphrase on the real terminal.
-    /// Never prints a decrypted value to stdout — file output only. Task is
-    /// resolved from cwd.
-    Unlock,
+    /// Ask for the current task's secrets — the one command both an agent
+    /// and a human use, resolved from cwd. Whether it prompts for a
+    /// passphrase or just enqueues a durable request depends entirely on
+    /// whether a real terminal is reachable (checked via /dev/tty, the same
+    /// thing age's own prompt reads from), never on how it's invoked: from a
+    /// human's real shell or the overlay's spawned pane it decrypts straight
+    /// away; from an agent's Bash tool (no controlling terminal) it falls
+    /// back to enqueue-only — never touches the identity or the encrypted
+    /// bundle in that case. When it does decrypt: the task's own sealed
+    /// bundle into tasks/<slug>/.secrets.env, and/or any sops-covered files
+    /// an adopted repo already has (to their plaintext sibling, inside the
+    /// worktree) — filtered by pending names when any match a filename,
+    /// otherwise every sops file found. Never prints a decrypted value to
+    /// stdout — file output only.
+    Decrypt {
+        /// Secret name to ask for (shown in `status`), for the non-interactive
+        /// fallback and to seed the request queue before an interactive
+        /// decrypt. For the task's own sealed bundle this is just a label —
+        /// decrypt always releases the whole bundle. For an adopted repo with
+        /// its own .sops.yaml, it's matched against candidate filenames and
+        /// *does* select which file gets decrypted (e.g. "staging" vs
+        /// "prod") — name the file, not a field inside it. Required when no
+        /// real terminal is reachable (nothing else to do in that case);
+        /// optional otherwise.
+        name: Option<String>,
+    },
+    /// Interactive convenience: do whatever's pending for the current task in
+    /// one sitting (task resolved from cwd) — decrypt if anything is pending
+    /// release, then set once per pending value-request. Human-only in
+    /// practice (each step still needs a real terminal); exists mainly for
+    /// the overlay's spawned pane, so it doesn't need to know which of the
+    /// two pending kinds a task has before deciding what to run.
+    Fulfill,
     /// Show sealed/unlocked/pending state across all tasks (metadata only —
     /// never secret values)
     Status,

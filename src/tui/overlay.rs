@@ -59,19 +59,28 @@ struct Row {
     /// Repos this task currently has worktrees for (what the repo editor diffs
     /// against). Refreshed on `rebuild_rows`, not on the idle tick.
     repos: Vec<String>,
-    /// Secret names pending unlock (`cli::secrets::request`). Like `group`,
-    /// fixed at `rebuild_rows` time and NOT touched by `refresh_statuses` —
-    /// `section` below is derived from it once, and letting it drift on the
-    /// idle tick would desync a row's section from its actual (frozen)
-    /// position in `rows`, producing a stray header in the wrong place.
+    /// Secret names pending decrypt (`cli::secrets::enqueue_pending`,
+    /// `decrypt`'s non-interactive fallback) — release something already
+    /// sealed. Like `group`, fixed at `rebuild_rows` time and NOT touched by
+    /// `refresh_statuses` — `section` below is derived from it once, and
+    /// letting it drift on the idle tick would desync a row's section from
+    /// its actual (frozen) position in `rows`, producing a stray header in
+    /// the wrong place.
     secrets_pending: Vec<String>,
+    /// Secret names a human needs to supply a value for
+    /// (`cli::secrets::enqueue_pending_set`, `set`'s non-interactive
+    /// fallback) — distinct from `secrets_pending` above: nothing sealed to
+    /// release yet, someone has to type a value in first. Same
+    /// frozen-at-`rebuild_rows` treatment.
+    secrets_pending_set: Vec<String>,
     /// The section this row is grouped under — normally `status.group()`, but
-    /// a pending secrets request forces `TaskGroup::SecretsPending` regardless
-    /// of Claude session state, since it needs a specific action from you
-    /// (unlocking) even when the task is otherwise idle. Separate from
-    /// `group: TaskStatus` (which stays a pure fact about Claude session
-    /// state, used for its glyph/rank) so this override doesn't have to
-    /// invent a fake `TaskStatus` variant to express "wants you but idle".
+    /// a pending secrets request (either kind) forces `TaskGroup::SecretsPending`
+    /// regardless of Claude session state, since it needs a specific action
+    /// from you (unlocking, or supplying a value) even when the task is
+    /// otherwise idle. Separate from `group: TaskStatus` (which stays a pure
+    /// fact about Claude session state, used for its glyph/rank) so this
+    /// override doesn't have to invent a fake `TaskStatus` variant to express
+    /// "wants you but idle".
     section: workspace::TaskGroup,
 }
 
@@ -237,7 +246,7 @@ struct Overlay {
     /// Set by `start_unlock` (the `u` key / `:unlock`) to (workspace index,
     /// slug). `run_loop` checks this after every event and, when set,
     /// suspends the TUI (leaves raw mode/alt screen) to run the real
-    /// interactive `cli::secrets::unlock_in` — the identity's passphrase
+    /// interactive `cli::secrets::decrypt_in` — the identity's passphrase
     /// prompt needs a real controlling terminal, which the alternate screen
     /// isn't. Not handled inside `Overlay` itself because only `run_loop` has
     /// the `Terminal` handle needed to leave and re-enter raw mode.
@@ -346,7 +355,8 @@ impl Overlay {
                     .ok()
                     .and_then(|s| s.trim().parse::<u32>().ok());
                 let secrets_pending = workspace::secrets_pending(&task.path);
-                let section = if !secrets_pending.is_empty() {
+                let secrets_pending_set = workspace::secrets_pending_set(&task.path);
+                let section = if !secrets_pending.is_empty() || !secrets_pending_set.is_empty() {
                     workspace::TaskGroup::SecretsPending
                 } else {
                     state.status.group()
@@ -365,6 +375,7 @@ impl Overlay {
                     tab_id,
                     repos: task.repos.clone(),
                     secrets_pending,
+                    secrets_pending_set,
                     section,
                 });
             }
@@ -1242,7 +1253,7 @@ impl Overlay {
         let Some(r) = self.selected_row() else {
             return;
         };
-        if r.secrets_pending.is_empty() {
+        if r.secrets_pending.is_empty() && r.secrets_pending_set.is_empty() {
             self.status_msg = Some("no pending secrets for this task".into());
             return;
         }
@@ -1413,20 +1424,27 @@ fn run_loop(
     Ok(())
 }
 
-/// Suspend the TUI to run the real, interactive `cli::secrets::unlock_in` —
-/// leaves raw mode and the alternate screen so `age`'s passphrase prompt
-/// reaches this pane's *real* controlling terminal (which is unaffected by
-/// raw-mode/alt-screen state either way, but the TUI's own rendering would
-/// otherwise stomp all over the prompt while it's waiting on input). This
-/// works whether the overlay is running in a plain terminal or inside a
-/// zellij pane — either way it's a real interactive terminal, which is all
-/// `age` needs; nothing zellij-specific about this path.
+/// Suspend the TUI to run the real, interactive secrets fulfillment —
+/// leaves raw mode and the alternate screen so `age`'s passphrase prompt (and
+/// `set`'s own value prompt) reach this pane's *real* controlling terminal
+/// (which is unaffected by raw-mode/alt-screen state either way, but the
+/// TUI's own rendering would otherwise stomp all over the prompt while it's
+/// waiting on input). This works whether the overlay is running in a plain
+/// terminal or inside a zellij pane — either way it's a real interactive
+/// terminal, which is all `age`/`set`'s own prompt need; nothing
+/// zellij-specific about this path.
 ///
-/// The plugin's only job here is spawning the real command and getting out of
-/// its way — same principle as the design's other unlock path (a spawned
-/// pane in the `tenx-zellij` overlay, relayed via `write_chars_to_pane_id`):
-/// this function never touches the identity or the encrypted bundle itself,
-/// it just hands the real terminal to the real `age` process.
+/// The plugin's only job here is spawning the real commands and getting out
+/// of its way — same principle as the design's other unlock path (a spawned
+/// pane in the `tenx-zellij` overlay, running the real CLI directly): this
+/// function never touches the identity, the encrypted bundle, or a secret
+/// value itself, it just hands the real terminal to the real `age`/`sops`
+/// process. Delegates the actual sequencing (decrypt if release-pending,
+/// then set once per pending value-name) to `cli::secrets::fulfill_in` —
+/// shared with `tenx-zellij`'s spawned pane, which calls the same logic via
+/// `tenx secrets fulfill` since it can only shell out, not link against
+/// these functions directly. Keeping both overlays on one implementation is
+/// deliberate — see `fulfill_in`'s own doc comment.
 fn run_unlock(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     overlay: &mut Overlay,
@@ -1437,11 +1455,11 @@ fn run_unlock(
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange)?;
     terminal.show_cursor()?;
 
-    println!("unlocking secrets for '{slug}'...\n");
+    println!("secrets for '{slug}'...\n");
     let result = (|| -> Result<()> {
         let ws = overlay.workspaces.get(ws_idx).context("workspace no longer registered")?;
         let task = ws.find_task(slug)?;
-        crate::cli::secrets::unlock_in(ws, &task)
+        crate::cli::secrets::fulfill_in(ws, &task)
     })();
     match &result {
         Ok(()) => println!("\npress Enter to return"),
@@ -1709,7 +1727,7 @@ fn task_items(
         // Claude-session status — same reasoning as `tenx-statusbar`: it needs
         // a different action from you (unlocking) than approving a prompt
         // does, regardless of whether the task also happens to be idle.
-        let has_secrets = !row.secrets_pending.is_empty();
+        let has_secrets = !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty();
         let glyph = if has_secrets {
             "🔒 "
         } else {
@@ -1761,8 +1779,14 @@ fn task_items(
         // waiting-for reason — same priority as the glyph above, and for the
         // same reason: it's a different, more specific thing to act on.
         if has_secrets && show_open {
+            let wants: Vec<String> = row
+                .secrets_pending
+                .iter()
+                .cloned()
+                .chain(row.secrets_pending_set.iter().map(|n| format!("{n} (needs value)")))
+                .collect();
             spans.push(Span::styled(
-                format!("  · wants {}", row.secrets_pending.join(", ")),
+                format!("  · wants {}", wants.join(", ")),
                 Style::default().fg(palette::ACCENT.color()),
             ));
         } else if let Some(reason) = row.waiting_for.as_deref().filter(|_| show_open) {

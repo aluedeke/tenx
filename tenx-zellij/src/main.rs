@@ -109,13 +109,21 @@ struct Task {
     /// against. `default` so an older native binary still deserializes.
     #[serde(default)]
     repos: Vec<String>,
-    /// Secret names pending unlock (`cli::secrets::request`), from
-    /// `workspace::secrets_pending` via `task_json`. Independent of `status`
-    /// — a task can be `idle` (no live session) and still have a pending
-    /// request left over from an agent that already finished. `default` so
-    /// an older native binary still deserializes.
+    /// Secret names pending decrypt (`cli::secrets::enqueue_pending`,
+    /// `decrypt`'s non-interactive fallback) — release something already
+    /// sealed — from `workspace::secrets_pending` via `task_json`.
+    /// Independent of `status` — a task can be `idle` (no live session) and
+    /// still have a pending request left over from an agent that already
+    /// finished. `default` so an older native binary still deserializes.
     #[serde(default)]
     secrets_pending: Vec<String>,
+    /// Secret names a human needs to supply a value for
+    /// (`cli::secrets::enqueue_pending_set`, `set`'s non-interactive
+    /// fallback), from `workspace::secrets_pending_set` via `task_json`.
+    /// Distinct from `secrets_pending` above — nothing sealed to release yet.
+    /// `default` for the same older-binary reason.
+    #[serde(default)]
+    secrets_pending_set: Vec<String>,
 }
 
 /// A repo configured in a workspace (not necessarily one this task uses).
@@ -214,7 +222,7 @@ fn geometry(cols: usize, rows: usize) -> Option<FloatingPaneCoordinates> {
     )
 }
 
-/// Centered coordinates for the spawned `tenx secrets unlock` pane —
+/// Centered coordinates for the spawned `tenx secrets fulfill` pane —
 /// deliberately much smaller than `geometry()` (a single interactive prompt,
 /// not this overlay's own list), but sized sensibly across screen sizes.
 fn unlock_pane_geometry(cols: usize, rows: usize) -> Option<FloatingPaneCoordinates> {
@@ -329,7 +337,7 @@ enum Mode {
     Busy { label: String, hide_on_done: bool },
     /// After `^u`/`start_unlock` on a task with a pending secrets request:
     /// `pane_id` is the real, already-spawned floating pane running `tenx
-    /// secrets unlock` (cwd set to the task directory). Opening a new pane
+    /// secrets fulfill` (cwd set to the task directory). Opening a new pane
     /// focuses it by default, so from this point the user is typing directly
     /// into that *real* terminal — this plugin never captures or relays the
     /// passphrase at all (an earlier version tried to, via a masked field +
@@ -398,13 +406,14 @@ fn status_rank(status: &str) -> usize {
 /// The frozen-order rank a task sorts and sections by — `1 + status_rank`,
 /// except a task with a pending secrets request always ranks `0` regardless
 /// of its Claude-session status. That mirrors the native side's
-/// `TaskGroup::SecretsPending`: a pending request (`cli::secrets::request`)
-/// outlives the session that made it, so a task can be `idle` and still
+/// `TaskGroup::SecretsPending`: a pending request (`cli::secrets::enqueue_pending`,
+/// `decrypt`'s non-interactive fallback) outlives the session that made it,
+/// so a task can be `idle` and still
 /// belong at the very top. Kept as a single `usize` — not a new field on the
 /// `order` snapshot — so `freeze_order`/`frozen_rank`'s existing frozen-order
 /// machinery doesn't need to change shape, only what value it captures.
 fn combined_rank(t: &Task) -> usize {
-    if t.secrets_pending.is_empty() {
+    if t.secrets_pending.is_empty() && t.secrets_pending_set.is_empty() {
         1 + status_rank(&t.status)
     } else {
         0
@@ -1556,16 +1565,22 @@ impl State {
         }
     }
 
-    /// Spawn the real `tenx secrets unlock` as a real floating pane (cwd set
-    /// to the task directory — `unlock` resolves the task from cwd, the same
-    /// way it does when run by hand in a shell), then enter `Mode::Unlock` to
-    /// wait for it. This plugin never runs the decrypt itself, never sees the
-    /// passphrase, and never relays anything into the pane — it only ever
-    /// spawns the real command and gets out of the way; the pane takes
-    /// keyboard focus on its own.
+    /// Spawn the real `tenx secrets fulfill` as a real floating pane (cwd set
+    /// to the task directory — it resolves the task from cwd, the same way
+    /// it does when run by hand in a shell), then enter `Mode::Unlock` to
+    /// wait for it. `fulfill` rather than `decrypt` directly: a task can have
+    /// either or both kinds of pending secrets request (release vs. supply a
+    /// value), and `fulfill` handles whichever apply without this plugin
+    /// needing to know which — same command the native overlay's
+    /// `run_unlock` delegates to internally (`cli::secrets::fulfill_in`),
+    /// kept as one implementation rather than two so the overlays can't
+    /// drift on what "handle everything pending" means. This plugin never
+    /// runs any of it itself, never sees a passphrase or a value, and never
+    /// relays anything into the pane — it only ever spawns the real command
+    /// and gets out of the way; the pane takes keyboard focus on its own.
     fn start_unlock(&mut self) {
         let Some(t) = self.selected_task() else { return };
-        if t.secrets_pending.is_empty() {
+        if t.secrets_pending.is_empty() && t.secrets_pending_set.is_empty() {
             self.message = Some("no pending secrets for this task".into());
             return;
         }
@@ -1573,7 +1588,7 @@ impl State {
         let task_dir = std::path::PathBuf::from(&t.ws_dir).join("tasks").join(&t.slug);
         let cmd = CommandToRun {
             path: std::path::PathBuf::from(&self.tenx_bin),
-            args: vec!["secrets".to_string(), "unlock".to_string()],
+            args: vec!["secrets".to_string(), "fulfill".to_string()],
             cwd: Some(task_dir),
         };
         let coords = self.sized_for.and_then(|(c, r)| unlock_pane_geometry(c, r));
@@ -2211,7 +2226,7 @@ impl State {
                     // native status bar: it needs a different action from you
                     // (unlocking) than approving a prompt does, regardless of
                     // whether the task also happens to be idle/blocked/done.
-                    let has_secrets = !t.secrets_pending.is_empty();
+                    let has_secrets = !t.secrets_pending.is_empty() || !t.secrets_pending_set.is_empty();
                     if has_secrets {
                         put(&mut buf, cx, y, 1, "🔒", base(C_SECRETS));
                     } else {
@@ -2224,8 +2239,15 @@ impl State {
                     // "needs input" can't. Under a NEEDS INPUT header the
                     // generic label adds nothing the section doesn't, so it
                     // shows only in the flat groupings.
-                    let secrets_label =
-                        has_secrets.then(|| format!("wants {}", t.secrets_pending.join(", ")));
+                    let secrets_label = has_secrets.then(|| {
+                        let wants: Vec<String> = t
+                            .secrets_pending
+                            .iter()
+                            .cloned()
+                            .chain(t.secrets_pending_set.iter().map(|n| format!("{n} (needs value)")))
+                            .collect();
+                        format!("wants {}", wants.join(", "))
+                    });
                     let badge = if let Some(label) = secrets_label.as_deref() {
                         Some((label, C_SECRETS, C_BADGE_SECRETS_BG))
                     } else if t.status == "blocked" {

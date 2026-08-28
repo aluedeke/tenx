@@ -1,23 +1,63 @@
 //! Task-scoped secret unlock (Phase 0 CLI baseline — see `PRD.md` at the task
-//! root for the full design). This module intentionally shells out to the
-//! system `age`/`age-keygen` binaries rather than linking a crypto crate,
+//! root for the full design). This module shells out to the system
+//! `age`/`age-keygen`/`sops` binaries rather than linking a crypto crate,
 //! matching `git/mod.rs`'s reasoning for shelling to `git`: it's what the user
 //! already has installed, at whatever version, with no reimplementation risk.
+//! `sops` is the one encrypt/decrypt tool used everywhere now — our own
+//! sealed bundle, agent-added secrets, and adopted secrets (§4.2) all go
+//! through it uniformly — but it has no passphrase prompt of its own: it
+//! always needs an already-decrypted identity file via `SOPS_AGE_KEY_FILE`,
+//! so raw `age -d` is still what actually unwraps a passphrase-protected
+//! identity (see `sops_decrypt`), and `age -p`/`age-keygen` are still what
+//! generates/protects one (see `generate_identity`). `age` never
+//! encrypts/decrypts a *secret value* directly anymore — only the identity
+//! that guards them.
+//!
+//! Command names deliberately track `sops`'s own vocabulary now — `encrypt`
+//! (was `seal`), `decrypt` (was `unlock`), `set` (was `add`) — and, `set`
+//! especially, their actual semantics too, not just the names: `set` is
+//! literally `sops set` under the hood, editing the *existing* sealed bundle
+//! in place. That's a real behavior change from the `add` this replaced, not
+//! just a rename — see `set`'s own doc comment for what that costs.
 //!
 //! Hard rule, enforced throughout this file, not just documented: **no
-//! function here ever writes a decrypted secret value to stdout.** `unlock`
-//! only ever writes to its fixed task-scoped file (`-o`, `Stdio::null()` on
-//! every child process that could theoretically emit plaintext). Stdout an
+//! function here ever writes a decrypted secret value to stdout.** `decrypt`
+//! only ever writes to its fixed task-scoped file (`--output`, `Stdio::null()`
+//! on every child process that could theoretically emit plaintext). Stdout an
 //! agent's Bash tool captures becomes part of its own conversation transcript
 //! — a durable artifact outside the task folder that `task rm`'s cleanup never
 //! reaches, so this is a stricter guarantee than "the agent may read the
 //! plaintext file afterward".
 //!
-//! `request` is the one command in this module safe for an agent to call: it
-//! only ever appends to a durable, per-task marker file. It has no code path
-//! that touches an identity or an encrypted bundle.
+//! `decrypt` is safe for an agent to call, not just a human: before touching
+//! anything, it tries to open `/dev/tty` — the exact file `age`'s own
+//! passphrase prompt reads from (not stdin; confirmed by `age`'s own error
+//! when it's missing: "standard input is not a terminal, and /dev/tty is not
+//! available"). A Bash-tool child process normally has no controlling
+//! terminal, so this fails there, and `decrypt` falls back to enqueue-only
+//! behavior instead of letting a raw `age`/`sops` tty error surface: append
+//! the given name to a durable per-task marker file and return, never
+//! touching the identity or an encrypted bundle. Idempotent — re-requesting
+//! an already-pending name is a no-op, so a chatty agent can't spam repeat
+//! notifications. When `/dev/tty` *is* reachable (a human's real shell, or
+//! the overlay's spawned pane), `decrypt` proceeds straight to the real
+//! decrypt, same passphrase prompt as always. Which behavior a caller gets is
+//! decided entirely by whether a real terminal is actually there, not by
+//! which subcommand name was typed.
 //!
-//! Nothing tenx seals needs a `.gitignore`: `.secrets.age`/`.secrets.env`/
+//! `set` has **no such fallback, on purpose** — it needs a real terminal
+//! unconditionally, every call, no exceptions. `sops set` edits an
+//! *already-encrypted* document in place, which means it has to decrypt that
+//! document's existing data key to reuse it, which needs the identity's
+//! passphrase — there is no "add without the private key" here, unlike the
+//! independent-per-secret design this replaced. An agent's Bash tool call to
+//! `set` will simply fail with no real terminal available; there's nothing to
+//! queue, because `sops` itself has no queuing concept and this module isn't
+//! inventing one — a queued *value* would mean plaintext sitting on disk
+//! before any human ever confirmed anything, which is a strictly worse
+//! exposure than anything else in this design.
+//!
+//! Nothing tenx seals needs a `.gitignore`: `.secrets.enc.env`/`.secrets.env`/
 //! `.secrets-pending` all live directly under a task's own directory
 //! (`tasks/<slug>/`), which is never itself a git repo (only the `<repo>/`
 //! worktree subdirectories under it are) — so they're structurally outside
@@ -43,7 +83,7 @@ pub fn init() -> Result<()> {
 
     if let Ok(path) = resolve_identity_path(&ws) {
         eprintln!("using existing age identity at {}", path.display());
-        eprintln!("(nothing to do — tenx secrets seal/unlock will use it)");
+        eprintln!("(nothing to do — tenx secrets encrypt/set/decrypt will use it)");
         return Ok(());
     }
 
@@ -71,8 +111,9 @@ pub fn init() -> Result<()> {
     Ok(())
 }
 
-/// Encrypt `file` as the sealed secrets bundle for `task_slug`.
-pub fn seal(task_slug: &str, file: &str) -> Result<()> {
+/// Encrypt `file` as the sealed secrets bundle for `task_slug` — `sops
+/// --encrypt`, matching that command's own name.
+pub fn encrypt(task_slug: &str, file: &str) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = ws.find_task(task_slug)?;
@@ -83,33 +124,75 @@ pub fn seal(task_slug: &str, file: &str) -> Result<()> {
     if !src.exists() {
         bail!("no such file: {}", src.display());
     }
-    let bundle_path = task.path.join(".secrets.age");
+    let bundle_path = bundle_path(&task);
 
-    let out = Command::new("age")
-        .args(["-r", &recipient, "-o"])
-        .arg(&bundle_path)
-        .arg(src)
-        .output()
-        .context("run age -e")?;
-    if !out.status.success() {
-        bail!("age encrypt failed: {}", String::from_utf8_lossy(&out.stderr).trim());
-    }
-    eprintln!("✓ sealed {} → {}", src.display(), bundle_path.display());
+    sops_encrypt(&recipient, src, &bundle_path)?;
+    eprintln!("✓ encrypted {} → {}", src.display(), bundle_path.display());
     Ok(())
 }
 
-/// Declare that the current task (resolved from cwd) wants a secret unlocked.
-/// Agent-safe: this is the *only* function in this module reachable without
-/// touching key material — it appends a name to a durable per-task marker
-/// file and returns. Idempotent: re-requesting an already-pending name is a
-/// no-op, so a chatty agent can't spam repeat notifications.
-pub fn request(name: &str) -> Result<()> {
+/// Set one secret in the current task's (resolved from cwd) sealed bundle —
+/// literally `sops set`: decrypts the bundle's existing data key and
+/// re-encrypts with `name` added/updated, leaving every other key as it was.
+/// Same tty-detection shape as `decrypt`, mirrored: no real terminal →
+/// enqueue "someone needs to supply a value for `name`" (own queue, see
+/// `enqueue_pending_set`) and return, never touching the identity or the
+/// bundle. Real terminal → prompt for the value first (masked — tenx's own
+/// prompt, `read_masked_line`, since `age`'s passphrase masking doesn't cover
+/// this), *then* the passphrase, then perform the edit. The value is never a
+/// CLI argument or read from stdin (ps-visible to `ps`/`/proc`, and stdin
+/// specifically would collide with piping a value in non-interactively,
+/// which this command no longer supports on purpose) — always typed directly
+/// into `/dev/tty`, same channel the passphrase itself uses.
+pub fn set(name: &str) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = current_task(&ws, &cwd)?;
-    let pending_path = pending_path(&task);
+    set_in(&ws, &task, name)
+}
 
-    let mut names = read_pending(&task);
+/// Same as [`set`], for an explicit workspace/task rather than cwd — used by
+/// the overlays, same reasoning as [`decrypt_in`]: they pick a task from a
+/// list spanning every workspace rather than being invoked from inside one.
+pub fn set_in(ws: &Workspace, task: &Task, name: &str) -> Result<()> {
+    if name.is_empty() || name.contains(['/', '\\', '"']) || name == "." || name == ".." {
+        bail!("invalid secret name: {name:?}");
+    }
+
+    if !tty_available() {
+        // Mirrors `decrypt`'s tty fallback, but in the opposite direction:
+        // this isn't "release something already sealed", it's "someone needs
+        // to type in a value for something that doesn't exist yet" — a
+        // genuinely different queue (see module docs and
+        // `workspace::SECRETS_PENDING_SET_FILE`), fulfilled by a human simply
+        // re-running `set` from a real terminal, same command either way.
+        enqueue_pending_set(task, name)?;
+        return Ok(());
+    }
+
+    let identity = resolve_identity_path(ws)?;
+    let bundle = bundle_path(task);
+    ensure_bundle_exists(&identity, &bundle)?;
+
+    let value = read_masked_line(&format!("value for '{name}'"))?;
+    if value.is_empty() {
+        bail!("no value given — aborted, nothing was set");
+    }
+
+    sops_set(&identity, &bundle, name, &value)?;
+    clear_pending_set(task, name)?;
+    eprintln!("✓ set '{name}' for task '{}' — released at the next decrypt", task.name);
+    Ok(())
+}
+
+/// Append `name` to the current task's durable pending-request marker file.
+/// This is the enqueue-only half of `decrypt`'s tty-detection fallback (see
+/// module docs) — the only thing that runs when `/dev/tty` isn't reachable.
+/// Idempotent: re-requesting an already-pending name is a no-op, so a chatty
+/// agent re-running `decrypt` can't spam repeat notifications.
+fn enqueue_pending(task: &Task, name: &str) -> Result<()> {
+    let pending_path = pending_path(task);
+    let mut names = read_pending(task);
     if names.iter().any(|n| n == name) {
         eprintln!("'{name}' already pending for task '{}'", task.name);
         return Ok(());
@@ -121,33 +204,122 @@ pub fn request(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Decrypt the current task's (resolved from cwd) sealed bundle into
-/// `tasks/<slug>/.secrets.env`. Human-only in the real flow — never wired as
-/// something an agent's Bash tool would invoke — and prompts for the
-/// identity's passphrase interactively on the real terminal.
-pub fn unlock() -> Result<()> {
+/// Append `name` to the current task's pending-*set* marker file — the
+/// enqueue-only half of `set`'s tty-detection fallback. Separate file from
+/// `enqueue_pending` above: this queue means "a human needs to type in a
+/// value for `name`", not "release something already sealed" — different
+/// fulfillment action, so it can't share `decrypt`'s queue (see module
+/// docs and `workspace::SECRETS_PENDING_SET_FILE`). Idempotent, same
+/// reasoning as `enqueue_pending`.
+fn enqueue_pending_set(task: &Task, name: &str) -> Result<()> {
+    let path = pending_set_path(task);
+    let mut names = read_pending_set(task);
+    if names.iter().any(|n| n == name) {
+        eprintln!("value for '{name}' already requested for task '{}'", task.name);
+        return Ok(());
+    }
+    names.push(name.to_string());
+    std::fs::write(&path, names.join("\n") + "\n").with_context(|| format!("write {}", path.display()))?;
+    eprintln!("requested a value for '{name}' for task '{}' — see: tenx secrets status", task.name);
+    Ok(())
+}
+
+/// Interactive convenience: do whatever's pending for the current task
+/// (resolved from cwd) in one sitting — `decrypt` once if anything is
+/// pending release (satisfies every pending release-name at once, same as
+/// `decrypt` itself), then `set` once per pending value-name (each is an
+/// independent edit, so each gets its own value-then-passphrase round; see
+/// `set_in`'s doc comment for why those can't be batched into one
+/// passphrase entry). Exists specifically for spawn-a-real-pane callers
+/// (`tenx-zellij`, which can only shell out to a subprocess, not link
+/// against `decrypt_in`/`set_in` directly) so they don't have to reimplement
+/// this sequencing themselves — the native overlay's `run_unlock` uses
+/// [`fulfill_in`] for the same reason, even though it *could* call
+/// `decrypt_in`/`set_in` directly, just to keep the two overlays from
+/// drifting on what "handle everything pending for this task" means.
+/// Errors from one step are printed but don't stop the rest; returns `Err`
+/// at the end if anything failed, so a non-interactive caller's exit code
+/// still reflects it.
+pub fn fulfill() -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = current_task(&ws, &cwd)?;
-    unlock_in(&ws, &task)
+    fulfill_in(&ws, &task)
 }
 
-/// Same as [`unlock`], for an explicit workspace/task rather than cwd — used
+/// Same as [`fulfill`], for an explicit workspace/task rather than cwd —
+/// same reasoning as [`decrypt_in`]/[`set_in`].
+pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
+    let mut failed = false;
+    if !workspace::secrets_pending(&task.path).is_empty()
+        && let Err(e) = decrypt_in(ws, task, None)
+    {
+        eprintln!("tenx: {e}");
+        failed = true;
+    }
+    for name in workspace::secrets_pending_set(&task.path) {
+        if let Err(e) = set_in(ws, task, &name) {
+            eprintln!("tenx: {e}");
+            failed = true;
+        }
+    }
+    if failed {
+        bail!("one or more secrets actions failed for task '{}' — see above", task.name);
+    }
+    Ok(())
+}
+
+/// Whether a real controlling terminal is reachable right now — the same
+/// thing `age`'s own passphrase prompt checks (it reads `/dev/tty` directly,
+/// not stdin, specifically so it still works when stdin/stdout are
+/// redirected). An agent's Bash tool child process normally has none; a
+/// human's real shell, or a pane the overlay just spawned, always does.
+fn tty_available() -> bool {
+    std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").is_ok()
+}
+
+/// Decrypt the current task's (resolved from cwd) secrets — or, when no real
+/// terminal is reachable, enqueue `name` for a human to release later. See
+/// module docs for the tty-detection fallback this implements.
+pub fn decrypt(name: Option<&str>) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = workspace::find(&cwd)?;
+    let task = current_task(&ws, &cwd)?;
+    decrypt_in(&ws, &task, name)
+}
+
+/// Same as [`decrypt`], for an explicit workspace/task rather than cwd — used
 /// by the overlays (native `tui::overlay` and the `tenx-zellij` wasm plugin,
 /// via a spawned pane whose cwd is set to the task directory rather than a
 /// direct call), which pick a task from a list spanning every workspace
-/// rather than being invoked from inside one. Same terminal-interactive
-/// passphrase prompt, same file-output-only guarantee.
-pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
+/// rather than being invoked from inside one. Both overlays only ever call
+/// this from a real interactive pane, so `name` is always `None` there — the
+/// tty-detection fallback below exists for the CLI/agent path.
+pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>) -> Result<()> {
+    if let Some(name) = name {
+        enqueue_pending(task, name)?;
+    }
+    if !tty_available() {
+        if name.is_none() {
+            bail!(
+                "no real terminal available (this looks like an agent's Bash tool) — \
+                 pass what you need, e.g.: tenx secrets decrypt STRIPE_KEY"
+            );
+        }
+        // Already enqueued above; that's the whole non-interactive contract
+        // — never touch the identity or an encrypted bundle from here.
+        return Ok(());
+    }
+
     let identity = resolve_identity_path(ws)?;
 
-    let bundle = task.path.join(".secrets.age");
+    let bundle = bundle_path(task);
     let sops_files = find_sops_covered_files(task);
     let pending = workspace::secrets_pending(&task.path);
 
     if !bundle.exists() && sops_files.is_empty() {
         bail!(
-            "no sealed secrets for task '{}' — run: tenx secrets seal {} <file>",
+            "no sealed secrets for task '{}' — run: tenx secrets encrypt {} <file>, or tenx secrets set <name>",
             task.name,
             task.name
         );
@@ -178,17 +350,13 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
 
     if bundle.exists() {
         let out_path = task.path.join(".secrets.env");
-        if is_age_encrypted(&identity)? {
-            decrypt_via_passphrase_identity(&identity, &bundle, &out_path)?;
-        } else {
-            decrypt_via_plain_identity(&identity, &bundle, &out_path)?;
-        }
+        sops_decrypt(&identity, &bundle, &out_path)?;
         set_permissions_600(&out_path)?;
-        eprintln!("✓ unlocked → {}", out_path.display());
-        // The bundle is all-or-nothing (we control what's sealed into it, so
-        // least-privilege already happened at seal time) — releasing it
-        // satisfies any pending name that isn't specifically claimed by a
-        // sops file match above.
+        eprintln!("✓ decrypted → {}", out_path.display());
+        // The bundle is all-or-nothing (we control what's sealed/set into
+        // it, so least-privilege already happened earlier) — satisfies any
+        // pending name that isn't specifically claimed by a sops file match
+        // above.
         for n in &pending {
             if !sops_files.iter().any(|f| file_matches_request(f, n)) {
                 satisfied.insert(n.clone());
@@ -199,15 +367,46 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
     // Adopted secrets (see PRD.md §4.2): a repo the task has a worktree for
     // may already have its own age/sops setup — an existing `.sops.yaml`
     // plus `*.enc.*` files, sealed by that project's own tooling, not by
-    // `tenx secrets seal`. Decrypt each to its conventional sibling name
-    // (`secrets.staging.enc.env` → `secrets.staging.env`), matching how the
-    // project already expects to consume it, rather than forcing everything
-    // through our own single-bundle-per-task shape.
+    // `tenx secrets encrypt`. The real plaintext never lands inside the
+    // worktree at all — it's decrypted to `.secrets-adopted/` directly under
+    // the task directory (never a git repo, same structural guarantee our
+    // own bundle already has), and a relative symlink is placed at the
+    // conventional sibling name (`secrets.staging.enc.env` → the worktree
+    // gets `secrets.staging.env`, pointing back at the real file) so the
+    // project's own tooling finds it exactly where it already expects to —
+    // reading through a symlink is indistinguishable from a real file to
+    // anything that isn't specifically inspecting the filesystem entry type.
+    // This closes a real gap the old direct-write-into-the-worktree approach
+    // had: it trusted that project's own `.gitignore` already covered the
+    // plaintext filename, unverified — a wrong or missing pattern meant a
+    // plain `git add -A` could stage the actual secret. Now even that
+    // mistake only stages a symlink (a relative path, no secret bytes) — the
+    // real content structurally can't be committed by any git operation
+    // inside the worktree, matching the guarantee `.secrets.enc.env` already
+    // has for our own bundle.
     for ciphertext in &selected_sops {
         let plaintext_out = strip_enc_suffix(ciphertext);
-        sops_decrypt(&identity, ciphertext, &plaintext_out)?;
-        set_permissions_600(&plaintext_out)?;
-        eprintln!("✓ unlocked (sops) → {}", plaintext_out.display());
+        let storage_path = adopted_secret_storage_path(task, ciphertext);
+        if let Some(parent) = storage_path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+        }
+        sops_decrypt(&identity, ciphertext, &storage_path)?;
+        set_permissions_600(&storage_path)?;
+
+        // Always recreate the symlink fresh — whatever was previously at
+        // this path (a stale symlink from an earlier decrypt, or a real
+        // plaintext file left over from before this fix existed) is exactly
+        // what a fresh decrypt is supposed to replace.
+        let _ = std::fs::remove_file(&plaintext_out);
+        let target = adopted_symlink_target(task, ciphertext, &storage_path);
+        std::os::unix::fs::symlink(&target, &plaintext_out).with_context(|| {
+            format!("symlink {} -> {}", plaintext_out.display(), target.display())
+        })?;
+        eprintln!(
+            "✓ decrypted (sops) → {} (stored outside the repo at {}, symlinked in)",
+            plaintext_out.display(),
+            storage_path.display()
+        );
     }
     for n in &pending {
         let claimed_by_selection = selected_sops.iter().any(|f| file_matches_request(f, n));
@@ -227,60 +426,135 @@ pub fn unlock_in(ws: &Workspace, task: &Task) -> Result<()> {
     Ok(())
 }
 
-/// Two real child processes wired with a real OS pipe between them — the
-/// process-level equivalent of `age -d identity | age -d -i - -o out bundle`.
-/// The plaintext identity flows stage1 → stage2 entirely inside the pipe; it's
-/// never captured into this process's own memory, and neither stage is ever
-/// given a stdout that isn't `Stdio::null()`/`-o`, so there is no code path
-/// through which a decrypted value could reach this command's own stdout.
-fn decrypt_via_passphrase_identity(identity: &Path, bundle: &Path, out_path: &Path) -> Result<()> {
-    let mut stage1 = Command::new("age")
-        .arg("-d")
-        .arg(identity)
-        .stdin(Stdio::inherit()) // passphrase prompt reaches the real terminal
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .context("run age -d (identity)")?;
-    let piped = stage1.stdout.take().context("capture stage1 stdout")?;
+/// Path of the task's own sealed bundle — a `sops`-encrypted dotenv document.
+/// `.env` on the end isn't cosmetic: `sops` auto-detects format from the
+/// filename extension when `--input-type`/`--output-type` aren't given, and
+/// nothing else in this module passes those explicitly (matching how
+/// `run_sops_decrypt` already relies on it for adopted files).
+fn bundle_path(task: &Task) -> PathBuf {
+    task.path.join(".secrets.enc.env")
+}
 
-    let status = Command::new("age")
-        .args(["-d", "-i", "-", "-o"])
-        .arg(out_path)
-        .arg(bundle)
-        .stdin(piped)
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .status()
-        .context("run age -d (bundle)")?;
-
-    let stage1_status = stage1.wait().context("wait on stage1")?;
-    if !stage1_status.success() {
-        bail!("failed to decrypt the identity (wrong passphrase?)");
+/// `sops set` needs an existing document to edit — it has no "create if
+/// missing" mode of its own (confirmed against the real binary: it rejects
+/// `--age` on `set` outright, there's no way to hand it recipients for a
+/// document that doesn't exist yet). So the first-ever `set` for a task
+/// bootstraps an empty encrypted document, using the same public-key-only
+/// encrypt `seal`'s first bundle uses — after that, every `set` is a genuine
+/// in-place edit of the same document.
+fn ensure_bundle_exists(identity: &Path, bundle: &Path) -> Result<()> {
+    if bundle.exists() {
+        return Ok(());
     }
-    if !status.success() {
-        bail!("failed to decrypt the task's sealed bundle");
+    let recipient = resolve_recipient(identity)?;
+    let tmp = std::env::temp_dir().join(format!("tenx-bootstrap-{}.env", std::process::id()));
+    std::fs::write(&tmp, "").with_context(|| format!("write {}", tmp.display()))?;
+    let result = sops_encrypt(&recipient, &tmp, bundle);
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
+/// Encrypt `plaintext` fresh to `recipient`'s public key via `sops`, writing
+/// to `out`. Needs only the public key — no identity, no passphrase. Used by
+/// `encrypt` (a new bundle) and `ensure_bundle_exists` (bootstrapping an
+/// empty one for `set`'s first use) — never for an edit to a document that
+/// already has content, which is what `set` itself is for.
+fn sops_encrypt(recipient: &str, plaintext: &Path, out: &Path) -> Result<()> {
+    let output = Command::new("sops")
+        .arg("--encrypt")
+        .arg("--age")
+        .arg(recipient)
+        .arg("--output")
+        .arg(out)
+        .arg(plaintext)
+        .output()
+        .context("run sops --encrypt")?;
+    if !output.status.success() {
+        bail!("sops encrypt failed: {}", String::from_utf8_lossy(&output.stderr).trim());
     }
     Ok(())
 }
 
-fn decrypt_via_plain_identity(identity: &Path, bundle: &Path, out_path: &Path) -> Result<()> {
-    let status = Command::new("age")
-        .arg("-d")
-        .arg("-i")
-        .arg(identity)
-        .arg("-o")
-        .arg(out_path)
+/// Set `name` = `value` in `bundle` via `sops set --value-stdin`, editing the
+/// existing document in place rather than creating anything new — needs
+/// `identity`'s decrypt access every call, unwrapped first if it's
+/// passphrase-protected (see `with_plain_identity`). The value goes through
+/// `sops`'s own stdin channel (`--value-stdin`, "avoids leaking secrets in
+/// process listings" per its own `--help`) rather than argv, same reasoning
+/// as everywhere else in this module.
+fn sops_set(identity: &Path, bundle: &Path, name: &str, value: &str) -> Result<()> {
+    with_plain_identity(identity, |plain_identity| run_sops_set(plain_identity, bundle, name, value))
+}
+
+fn run_sops_set(identity_file: &Path, bundle: &Path, name: &str, value: &str) -> Result<()> {
+    // sops's `set` path expression addresses a top-level key as `["key"]`;
+    // the value must be JSON-encoded too (confirmed against the real
+    // binary — even via --value-stdin, a bare string is rejected as "not
+    // valid JSON"). serde_json handles quoting/escaping for both correctly.
+    let path_expr = format!("[{}]", serde_json::to_string(name)?);
+    let json_value = serde_json::to_string(value)?;
+
+    let mut child = Command::new("sops")
+        .env("SOPS_AGE_KEY_FILE", identity_file)
+        .arg("set")
+        .arg("--value-stdin")
         .arg(bundle)
-        .stdin(Stdio::inherit())
+        .arg(&path_expr)
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .status()
-        .context("run age -d")?;
-    if !status.success() {
-        bail!("failed to decrypt the task's sealed bundle");
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawn sops set")?;
+    child
+        .stdin
+        .take()
+        .context("open sops set stdin")?
+        .write_all(json_value.as_bytes())
+        .context("write value to sops set")?;
+    let out = child.wait_with_output().context("wait on sops set")?;
+    if !out.status.success() {
+        bail!("sops set failed: {}", String::from_utf8_lossy(&out.stderr).trim());
     }
     Ok(())
+}
+
+/// Run `f` with a plain (non-passphrase-protected) identity file `sops` can
+/// consume via `SOPS_AGE_KEY_FILE` — `identity` itself if it's already one,
+/// or a one-time-use plain copy unwrapped from it (passphrase prompted on
+/// the real terminal) if it's passphrase-protected. The temp copy lives in a
+/// mode-700 temp directory, used for exactly this one call, and removed
+/// immediately after, success or not — never longer-lived than this call,
+/// never the task folder. Shared by `sops_decrypt` and `sops_set`, the two
+/// operations that actually need decrypt access (`sops_encrypt` never does).
+fn with_plain_identity<T>(identity: &Path, f: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
+    if !is_age_encrypted(identity)? {
+        return f(identity);
+    }
+
+    let tmp_dir = std::env::temp_dir().join(format!("tenx-sops-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir).with_context(|| format!("create {}", tmp_dir.display()))?;
+    set_dir_permissions_700(&tmp_dir)?;
+    let tmp_identity = tmp_dir.join("identity");
+
+    let result = (|| -> Result<T> {
+        let status = Command::new("age")
+            .arg("-d")
+            .arg("-o")
+            .arg(&tmp_identity)
+            .arg(identity)
+            .stdin(Stdio::inherit()) // passphrase prompt reaches the real terminal
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("run age -d (identity)")?;
+        if !status.success() {
+            bail!("failed to decrypt the identity (wrong passphrase?)");
+        }
+        f(&tmp_identity)
+    })();
+
+    let _ = std::fs::remove_dir_all(&tmp_dir); // shred immediately, success or not
+    result
 }
 
 // ── Sops adoption (PRD.md §4.2) ─────────────────────────────────────────────
@@ -338,51 +612,57 @@ fn scan_for_enc_files(dir: &Path, depth: u8, out: &mut Vec<PathBuf>) {
 }
 
 /// `secrets.staging.enc.env` → `secrets.staging.env` — the plaintext sibling
-/// name every sops project already expects (and, in practice, already has
-/// `.gitignore`d — this project's ciphertext-vs-plaintext naming split is
-/// what makes that possible in the first place).
+/// name every sops project already expects. Since the real plaintext moved
+/// to `.secrets-adopted/` (see `adopted_secret_storage_path`), this is now
+/// where the *symlink* to it goes, not real content — kept at this exact
+/// path so the project's own tooling still finds it exactly where it always
+/// expected to, unaware anything changed underneath.
 fn strip_enc_suffix(path: &Path) -> PathBuf {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     path.with_file_name(name.replacen(".enc.", ".", 1))
 }
 
+/// Real, git-safe storage location for an adopted secret's plaintext, given
+/// its ciphertext path — never inside the repo worktree, so no git operation
+/// there can ever stage it, matching the same structural guarantee our own
+/// `.secrets.enc.env` bundle already has (`tasks/<slug>/` is never itself a
+/// git repo). Named after the ciphertext's path relative to the task
+/// directory, with `/` flattened to `__`, so two repos with the same
+/// relative sops filename (e.g. both named `secrets.staging.enc.env`) can't
+/// collide in this single flat directory.
+fn adopted_secret_storage_path(task: &Task, ciphertext: &Path) -> PathBuf {
+    let rel = ciphertext.strip_prefix(&task.path).unwrap_or(ciphertext);
+    let flat = rel.to_string_lossy().replace('/', "__");
+    task.path.join(".secrets-adopted").join(strip_enc_suffix(Path::new(&flat)))
+}
+
+/// Relative symlink target from `strip_enc_suffix(ciphertext)`'s location to
+/// `storage_path` — relative, not absolute, so an accidentally-committed
+/// symlink (the worst case now — see the loop that calls this) leaks a
+/// relative path fragment at most, never this machine's home directory
+/// layout. Depth is derived from how many directory levels under the task
+/// directory the ciphertext (and therefore the symlink, which sits at the
+/// same depth) actually is — `<repo>/secrets.enc.env` needs one `../`,
+/// `<repo>/config/secrets.enc.env` needs two, and so on.
+fn adopted_symlink_target(task: &Task, ciphertext: &Path, storage_path: &Path) -> PathBuf {
+    let rel = ciphertext.strip_prefix(&task.path).unwrap_or(ciphertext);
+    let depth = rel.components().count().saturating_sub(1);
+    let mut target = PathBuf::new();
+    for _ in 0..depth {
+        target.push("..");
+    }
+    let storage_rel = storage_path.strip_prefix(&task.path).unwrap_or(storage_path);
+    target.push(storage_rel);
+    target
+}
+
 /// Decrypt one sops-covered file to `plaintext_out` using `identity`. `sops`
 /// resolves its decryption key via `SOPS_AGE_KEY_FILE`, which — unlike raw
-/// `age -i -` — must be a real file path, not something stdin can feed it.
-/// For a passphrase-protected identity this means a real intermediate file
-/// is unavoidable here (unlike `decrypt_via_passphrase_identity`'s pipe-only
-/// approach for our own bundles): decrypted to a mode-700 temp directory,
-/// used for exactly this one `sops` invocation, and removed immediately
-/// after — never the task folder, never longer-lived than this function call.
+/// `age -i -` — must be a real file path, not something stdin can feed it,
+/// so a passphrase-protected identity needs a real (temporary, immediately
+/// shredded) intermediate file — see `with_plain_identity`.
 fn sops_decrypt(identity: &Path, ciphertext: &Path, plaintext_out: &Path) -> Result<()> {
-    if !is_age_encrypted(identity)? {
-        return run_sops_decrypt(identity, ciphertext, plaintext_out);
-    }
-
-    let tmp_dir = std::env::temp_dir().join(format!("tenx-sops-{}", std::process::id()));
-    std::fs::create_dir_all(&tmp_dir).with_context(|| format!("create {}", tmp_dir.display()))?;
-    set_dir_permissions_700(&tmp_dir)?;
-    let tmp_identity = tmp_dir.join("identity");
-
-    let result = (|| -> Result<()> {
-        let status = Command::new("age")
-            .arg("-d")
-            .arg("-o")
-            .arg(&tmp_identity)
-            .arg(identity)
-            .stdin(Stdio::inherit()) // passphrase prompt reaches the real terminal
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("run age -d (identity)")?;
-        if !status.success() {
-            bail!("failed to decrypt the identity (wrong passphrase?)");
-        }
-        run_sops_decrypt(&tmp_identity, ciphertext, plaintext_out)
-    })();
-
-    let _ = std::fs::remove_dir_all(&tmp_dir); // shred immediately, success or not
-    result
+    with_plain_identity(identity, |plain_identity| run_sops_decrypt(plain_identity, ciphertext, plaintext_out))
 }
 
 fn run_sops_decrypt(identity_file: &Path, ciphertext: &Path, plaintext_out: &Path) -> Result<()> {
@@ -422,20 +702,32 @@ pub fn status() -> Result<()> {
     let mut any = false;
     for task in &tasks {
         let sops_files = find_sops_covered_files(task);
-        let sealed = task.path.join(".secrets.age").exists() || !sops_files.is_empty();
+        let sealed =
+            bundle_path(task).exists() || !sops_files.is_empty();
         let unlocked = task.path.join(".secrets.env").exists()
             || sops_files.iter().any(|f| strip_enc_suffix(f).exists());
         let pending = read_pending(task);
-        if !sealed && !unlocked && pending.is_empty() {
+        let pending_set = read_pending_set(task);
+        if !sealed && !unlocked && pending.is_empty() && pending_set.is_empty() {
             continue;
         }
         any = true;
+        // Two different kinds of pending, shown together but distinguishable
+        // — "release X" (already sealed, waiting on a human to decrypt) vs
+        // "X needs value" (doesn't exist yet, waiting on a human to supply
+        // one via `set`). Same column rather than a new one, to keep this
+        // table from growing sideways for what's still a rare state.
+        let combined: Vec<String> = pending
+            .iter()
+            .cloned()
+            .chain(pending_set.iter().map(|n| format!("{n} (needs value)")))
+            .collect();
         println!(
             "{:<20} {:<8} {:<10} {}",
             task.display_name,
             if sealed { "yes" } else { "no" },
             if unlocked { "yes" } else { "no" },
-            pending.join(", "),
+            combined.join(", "),
         );
     }
     if !any {
@@ -641,7 +933,7 @@ fn current_task(ws: &Workspace, cwd: &Path) -> Result<Task> {
         .strip_prefix(&tasks_dir)
         .ok()
         .filter(|r| !r.as_os_str().is_empty())
-        .context("not inside a task directory (tenx secrets request/unlock take no <task> argument — cd into the task first)")?;
+        .context("not inside a task directory (tenx secrets decrypt takes no <task> argument — cd into the task first)")?;
     let slug = rel
         .components()
         .next()
@@ -682,6 +974,32 @@ fn clear_pending_names(task: &Task, resolved: &std::collections::HashSet<String>
     Ok(())
 }
 
+fn pending_set_path(task: &Task) -> PathBuf {
+    task.path.join(workspace::SECRETS_PENDING_SET_FILE)
+}
+
+/// `workspace::secrets_pending_set` is the shared reader (also used by
+/// `task_json`) — this is just the `Task`-typed convenience wrapper, same
+/// pattern as `read_pending` above for the other queue.
+fn read_pending_set(task: &Task) -> Vec<String> {
+    workspace::secrets_pending_set(&task.path)
+}
+
+/// Remove `name` from the pending-set queue after a successful `set` —
+/// single-name, not a `HashSet` like `clear_pending_names`, since one `set`
+/// call resolves exactly the one name it was called with, never more.
+fn clear_pending_set(task: &Task, name: &str) -> Result<()> {
+    let remaining: Vec<String> = read_pending_set(task).into_iter().filter(|n| n != name).collect();
+    let path = pending_set_path(task);
+    if remaining.is_empty() {
+        let _ = std::fs::remove_file(&path);
+    } else {
+        std::fs::write(&path, remaining.join("\n") + "\n")
+            .with_context(|| format!("write {}", path.display()))?;
+    }
+    Ok(())
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn set_permissions_600(path: &Path) -> Result<()> {
@@ -699,4 +1017,42 @@ fn prompt(label: &str) -> Result<String> {
     let mut line = String::new();
     io::stdin().lock().read_line(&mut line)?;
     Ok(line.trim().to_string())
+}
+
+/// Prompt on the real terminal with input echo disabled, for `set`'s value
+/// prompt — the passphrase itself is masked for free (`age -p` handles its
+/// own prompt), but the secret *value* `set` asks for is tenx's own prompt,
+/// so tenx has to do the masking itself. Reads `/dev/tty` directly rather
+/// than stdin, same reasoning as `tty_available`: works regardless of
+/// whatever stdin happens to be redirected to. Uses `libc` termios directly
+/// rather than pulling in a crate for this one call — `libc` is already a
+/// dependency. Falls back to unmasked (rather than failing outright) if
+/// `tcgetattr`/`tcsetattr` themselves fail, which would only happen on a
+/// `/dev/tty` that isn't a real terminal in some unexpected way.
+fn read_masked_line(label: &str) -> Result<String> {
+    use std::os::fd::AsRawFd;
+
+    let tty = std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").context("open /dev/tty")?;
+    write!(&tty, "{label}: ")?;
+    (&tty).flush()?;
+
+    let fd = tty.as_raw_fd();
+    let mut term: libc::termios = unsafe { std::mem::zeroed() };
+    let masked = unsafe { libc::tcgetattr(fd, &mut term) } == 0;
+    let original = term;
+    if masked {
+        term.c_lflag &= !libc::ECHO;
+        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &term) };
+    }
+
+    let mut line = String::new();
+    let read_result = io::BufReader::new(&tty).read_line(&mut line);
+
+    if masked {
+        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &original) };
+    }
+    let _ = writeln!(&tty); // the Enter keypress wasn't echoed either
+
+    read_result.context("read from /dev/tty")?;
+    Ok(line.trim_end_matches(['\n', '\r']).to_string())
 }

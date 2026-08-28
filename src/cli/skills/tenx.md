@@ -1,5 +1,5 @@
 ---
-description: Show tenx workspace status and task list. Use when the user asks about tasks, workspace structure, active work, or how to migrate existing work into tenx.
+description: Show tenx workspace status and task list. Use when the user asks about tasks, workspace structure, active work, or how to migrate existing work into tenx — and also when you (the agent) need a credential, API key, token, or other secret to do your own work, even if the user never asked about tenx at all.
 allowed-tools: Bash Read
 ---
 
@@ -65,13 +65,19 @@ Keep TASK.md current at all times:
 
 If a task needs a credential (API key, token, DB password) and it isn't already sitting somewhere readable, ask for it — don't try to find, guess, or work around it another way:
 
-    tenx secrets request <NAME>
+    tenx secrets decrypt <NAME>
 
-This only enqueues a request (a durable marker, visible in the tenx status bar and overlay) — it never touches the credential itself, and it's always safe to run even if this workspace hasn't set up secrets at all. Releasing it requires a human to type the decryption passphrase themselves, from a normal shell or the tenx overlay — that's the whole point, so **never** run `tenx secrets unlock`, `init`, or `seal` yourself, and don't wait around for it. Move on to other work, and check back later, or re-run `request` if it's been a while. `tenx secrets status` is safe to run any time — it only shows sealed/unlocked/pending state, never values.
+It's always safe to run, even if this workspace hasn't set up secrets at all: from your Bash tool (no real terminal attached) it can't do anything but enqueue a durable, visible request — see it later in the tenx status bar and overlay — and it never touches the credential itself. It only actually decrypts when run somewhere with a real terminal attached, which your Bash tool isn't, so there's no risk in just running it directly rather than a separate "ask" step. Releasing it for real requires a human typing the decryption passphrase themselves, from a normal shell or the tenx overlay — that's the whole point, so **never** run `tenx secrets init` or `encrypt` yourself, and don't wait around for it. Move on to other work, and check back later, or re-run `decrypt <NAME>` if it's been a while (already-pending names are a no-op, not a repeat notification). `tenx secrets status` is safe to run any time — it only shows sealed/unlocked/pending state, never values.
 
 Two shapes of secret you might find, depending on the repo:
-- **Sealed by tenx** — lands at `tasks/<name>/.secrets.env` (a plain `KEY=VALUE` file). `<NAME>` here is just a label for the human approving it; unlocking always releases the whole file.
+- **Sealed by tenx** — lands at `tasks/<name>/.secrets.env` (a plain `KEY=VALUE` file). `<NAME>` here is just a label for the human approving it; decrypting always releases the whole file.
 - **Adopted from the repo's own setup** (`.sops.yaml` already in a worktree) — lands as a plaintext sibling of its ciphertext, inside that worktree (e.g. `secrets.staging.enc.env` → `secrets.staging.env`). Here `<NAME>` actually matters: it's matched against candidate filenames, so if a repo has more than one (e.g. `secrets.staging.enc.env` *and* `secrets.prod.enc.env`), name the **file** you need (or a distinctive fragment like `staging`) so only that one gets released — not a field inside it, and not the whole set. A name that doesn't match any file falls back to releasing everything found, so still err toward naming the file rather than nothing.
+
+If instead **you need a secret that doesn't exist yet** — nothing to release, someone has to supply a value (an API key you don't have, a password to generate) — ask for it the same way:
+
+    tenx secrets set <NAME>
+
+Safe to run unconditionally, same as `decrypt`: your Bash tool has no real terminal, so this can never actually set anything — it only ever enqueues a durable "someone needs to supply a value for `<NAME>`" request, visible the same way a pending decrypt is. You never type or pipe a value here at all; a human supplies it later, prompted for it directly when they run `set` themselves (from a real shell or the overlay) — you never see or relay the value in either direction, so nothing about it ever touches your own output or the conversation transcript.
 
 ## Common commands
 
@@ -80,7 +86,8 @@ Two shapes of secret you might find, depending on the repo:
     tenx task list             list all tasks and open tabs
     tenx task rm <name>        remove task and worktrees
     tenx repo add <url>        add a repo to the workspace
-    tenx secrets request <n>   ask for a credential (see Secrets above)
+    tenx secrets decrypt <n>   ask for a credential (see Secrets above)
+    tenx secrets set <n>       ask for a secret that doesn't exist yet (see Secrets above)
     tenx secrets status        check sealed/unlocked/pending state
 
 ## Migrating existing work

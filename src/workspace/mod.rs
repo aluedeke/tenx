@@ -401,9 +401,11 @@ pub enum TaskStatus {
 ///
 /// `SecretsPending` is not a `TaskStatus`-derived variant like the other
 /// three — a task can be `Idle` (no live Claude session at all) and still
-/// belong here, because a pending secrets request (`cli::secrets::request`)
-/// outlives the session that made it. Callers that need it (`tui::overlay`)
-/// compute it themselves from `secrets_pending`, overriding the
+/// belong here, because a pending secrets request (either kind — `decrypt`'s
+/// release-request queue via `cli::secrets::enqueue_pending`, or `set`'s
+/// value-request queue via `cli::secrets::enqueue_pending_set`) outlives the
+/// session that made it. Callers that need it (`tui::overlay`) compute it
+/// themselves from `secrets_pending`/`secrets_pending_set`, overriding the
 /// `TaskStatus::group()` result rather than folding it in here — this type
 /// stays a pure function of session state, secrets awareness lives one layer
 /// up where the data actually is.
@@ -582,20 +584,44 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "age_secs": state.changed.and_then(|c| c.elapsed().ok()).map(|d| d.as_secs()),
         "repos": task.repos,
         "secrets_pending": secrets_pending(&task.path),
+        "secrets_pending_set": secrets_pending_set(&task.path),
     })
 }
 
-/// Filename of a task's pending-secrets marker (see `cli::secrets::request`).
+/// Filename of a task's pending-secrets-*release* marker (see
+/// `cli::secrets::enqueue_pending`, `decrypt`'s non-interactive fallback).
 /// Defined here, not only in `cli::secrets`, because `task_json` — the wire
-/// shape shared by the overlay and the status bar pipe — needs to read it too,
-/// and `workspace` is the lower layer both depend on.
+/// shape shared by the overlay and the status bar pipe — needs to read it
+/// too, and `workspace` is the lower layer both depend on. Distinct from
+/// `SECRETS_PENDING_SET_FILE` below: this one means "release something
+/// already sealed"; that one means "someone needs to type in a value for
+/// something that doesn't exist yet" — different fulfillment actions, so
+/// they can't share one queue (see `cli::secrets::set`).
 pub const SECRETS_PENDING_FILE: &str = ".secrets-pending";
 
 /// Secret names currently pending unlock for `task_dir` (see
-/// `cli::secrets::request`), newline-delimited in `SECRETS_PENDING_FILE`.
-/// Empty if there's no marker — most tasks, most of the time.
+/// `cli::secrets::enqueue_pending`, `decrypt`'s non-interactive fallback),
+/// newline-delimited in `SECRETS_PENDING_FILE`. Empty if there's no marker —
+/// most tasks, most of the time.
 pub fn secrets_pending(task_dir: &Path) -> Vec<String> {
-    fs::read_to_string(task_dir.join(SECRETS_PENDING_FILE))
+    read_name_list(&task_dir.join(SECRETS_PENDING_FILE))
+}
+
+/// Filename of a task's pending-secrets-*set* marker — `set`'s non-interactive
+/// fallback (an agent's Bash tool asking a human to supply a value for a
+/// secret that doesn't exist yet). See `SECRETS_PENDING_FILE`'s doc comment
+/// for why this is a separate file rather than folded into that one.
+pub const SECRETS_PENDING_SET_FILE: &str = ".secrets-pending-set";
+
+/// Secret names a human needs to supply a value for, newline-delimited in
+/// `SECRETS_PENDING_SET_FILE`. Empty if there's no marker — most tasks, most
+/// of the time.
+pub fn secrets_pending_set(task_dir: &Path) -> Vec<String> {
+    read_name_list(&task_dir.join(SECRETS_PENDING_SET_FILE))
+}
+
+fn read_name_list(path: &Path) -> Vec<String> {
+    fs::read_to_string(path)
         .unwrap_or_default()
         .lines()
         .map(|l| l.trim().to_string())

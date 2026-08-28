@@ -62,9 +62,10 @@ fn run() -> Result<()> {
 
         Some(Commands::Secrets { command }) => match command {
             SecretsCommands::Init => cli::secrets::init()?,
-            SecretsCommands::Seal { task, file } => cli::secrets::seal(&task, &file)?,
-            SecretsCommands::Request { name } => cli::secrets::request(&name)?,
-            SecretsCommands::Unlock => cli::secrets::unlock()?,
+            SecretsCommands::Encrypt { task, file } => cli::secrets::encrypt(&task, &file)?,
+            SecretsCommands::Set { name } => cli::secrets::set(&name)?,
+            SecretsCommands::Decrypt { name } => cli::secrets::decrypt(name.as_deref())?,
+            SecretsCommands::Fulfill => cli::secrets::fulfill()?,
             SecretsCommands::Status => cli::secrets::status()?,
         },
 
