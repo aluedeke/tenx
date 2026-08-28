@@ -335,7 +335,7 @@ enum Mode {
     /// stays up and says so instead of vanishing into a blank screen — and an
     /// error lands where the user is still looking.
     Busy { label: String, hide_on_done: bool },
-    /// After `^u`/`start_unlock` on a task with a pending secrets request:
+    /// After `u`/`start_unlock` on a task with a pending secrets request:
     /// `pane_id` is the real, already-spawned floating pane running `tenx
     /// secrets fulfill` (cwd set to the task directory). Opening a new pane
     /// focuses it by default, so from this point the user is typing directly
@@ -370,6 +370,25 @@ enum View {
     #[default]
     Tasks,
     Repos,
+}
+
+/// Where the cursor lives in `Mode::List`: the filter box, where plain typing
+/// extends the filter, or a list row, where plain letters are action
+/// shortcuts (`n` new, `r` rename, `d` delete, `e` edit repos, `u` unlock)
+/// instead — never both at once, so a task named "add" can't be both
+/// filtered for and accidentally duplicated by the same keystroke. Mirrors
+/// `tui/overlay.rs`'s Focus/InputMode split (Search≈Insert, List≈Normal) so
+/// the two overlays behave the same way; `/` and `i` step back to the filter
+/// box from the list, matching that implementation's vim-ish escape hatches.
+/// No Ctrl fast path from the filter box any more (an earlier version had
+/// one): showing `^a`/`^e`/`^u`/`^r`/`^d` as live next to "type to filter"
+/// read as actions being reachable while typing, which was never actually
+/// true and undercut the whole point of the split.
+#[derive(Default, Clone, Copy, PartialEq)]
+enum Focus {
+    #[default]
+    Search,
+    List,
 }
 
 /// One repo row in the Repos view, flattened across every registered
@@ -460,6 +479,9 @@ struct State {
     /// tracking by position alone would open a different task on Enter).
     selected_key: Option<(String, String)>,
     filter: String,
+    /// Filter box vs. a list row — see `Focus`. Only meaningful in `Mode::List`;
+    /// reset to `Search` whenever the overlay (re)opens (see `reopen_pending`).
+    focus: Focus,
     grouping: Grouping,
     /// Which list is on screen (⇥ toggles). The Repos view is where `Mode::AddRepo`
     /// actually lives — the task list has nothing to add a repo *to*.
@@ -578,7 +600,7 @@ impl ZellijPlugin for State {
     }
 
     fn update(&mut self, event: Event) -> bool {
-        match event {
+        let needs_render = match event {
             Event::PermissionRequestResult(status) => {
                 self.permissions_ok = matches!(status, PermissionStatus::Granted);
                 if self.permissions_ok {
@@ -694,7 +716,17 @@ impl ZellijPlugin for State {
             Event::Key(key) => self.handle_key(key),
             Event::Mouse(m) => self.handle_mouse(m),
             _ => false,
+        };
+        // The real filter-box cursor — issued from here, an `update` call,
+        // never from `render`. `show_cursor`, like every host command, writes
+        // to the same stdout stream `render`'s ANSI content is captured from;
+        // calling it from inside `render` once blanked the whole pane (state
+        // kept working — only the paint broke) because the extra bytes landed
+        // in that capture. Calling it here instead keeps it out of the way.
+        if self.permissions_ok {
+            show_cursor(self.filter_cursor());
         }
+        needs_render
     }
 
     /// Delivery for the "Ctrl w" keybind (`MessagePlugin`, see `MSG_TOGGLE`).
@@ -736,6 +768,7 @@ impl ZellijPlugin for State {
             self.freeze_order();
             self.selected = 0;
             self.selected_key = None;
+            self.focus = Focus::Search;
             self.apply_filter();
         }
         // Self-correct the pane size. On every (re)open zellij creates the
@@ -756,6 +789,15 @@ impl ZellijPlugin for State {
         }
         let ansi = self.draw(rows, cols);
         print!("{ansi}");
+        // NB: no host command calls (show_cursor, run_command, …) beyond this
+        // point in `render` — every one of them, like `print!` here, writes
+        // to the plugin's stdout (`object_to_stdout` is a `println!`), which
+        // is exactly what the host reads back as this frame's pane content.
+        // One did, once (a `show_cursor` call used to sit right here): its
+        // extra line landed in that same stream and the pane went blank
+        // (state/input kept working — only the paint broke). `filter_cursor`
+        // + the `show_cursor` call in `update` are the fix: same information,
+        // issued from a call that isn't also producing this frame's content.
         // Record what is now on screen, so the next poll can tell whether it
         // still matches and skip a repaint if it does.
         self.fingerprint = self.data_fingerprint();
@@ -822,6 +864,22 @@ impl State {
         let mut ctx = BTreeMap::new();
         ctx.insert(CTX_KIND.to_string(), KIND_TASKS.to_string());
         run_command(&[&self.tenx_bin, "overlay", "--json"], ctx);
+    }
+
+    /// Column/row for the real terminal cursor when the filter box has
+    /// focus, `None` otherwise — fed to `show_cursor` from `update` (see the
+    /// long comment at the end of `render` for why never from `render`
+    /// itself). Deliberately independent of `draw`'s `Buffer`/`Rect`: the
+    /// numbers are the same fixed offsets `draw` derives there (a 1-cell
+    /// border via `Block::inner`, our own 1-cell `pad`, and the 2-char `"⚲ "`
+    /// every focused-search `htext` starts with) — none of which depend on
+    /// pane size, so there is nothing to keep in sync by reading them back.
+    fn filter_cursor(&self) -> Option<(usize, usize)> {
+        if matches!(self.mode, Mode::List) && self.focus == Focus::Search {
+            Some((4 + self.filter.chars().count(), 1))
+        } else {
+            None
+        }
     }
 
     /// Apply pane chrome once a permission-bearing event confirms the grant is
@@ -1166,10 +1224,15 @@ impl State {
         }
     }
 
-    /// List mode: plain chars filter, so all actions live on Ctrl. Ctrl-n/p
-    /// move (emacs-style, alongside arrows); Ctrl-a/r/d add/rename/delete.
+    /// List mode is split by `Focus` (see its doc comment): in the filter box
+    /// plain chars extend the filter; on a list row plain letters are action
+    /// shortcuts instead (`n`ew, `r`ename, `d`elete, `e`dit repos, `u`nlock),
+    /// and `/`/`i` step back to the filter box. `^n`/`^p` (emacs-style
+    /// nav) are the only Ctrl bindings left — they work from either focus,
+    /// since they're navigation rather than an action.
     fn handle_list_key(&mut self, key: KeyWithModifier) -> bool {
         let ctrl = key.has_modifiers(&[KeyModifier::Ctrl]);
+        let list_focused = self.focus == Focus::List;
         match key.bare_key {
             BareKey::Esc if key.has_no_modifiers() => {
                 if self.filter.is_empty() {
@@ -1182,10 +1245,10 @@ impl State {
             BareKey::Enter if key.has_no_modifiers() && self.view == View::Tasks => {
                 return self.jump()
             }
-            BareKey::Down => self.move_sel(1),
-            BareKey::Up => self.move_sel(-1),
-            BareKey::Char('n') if ctrl => self.move_sel(1),
-            BareKey::Char('p') if ctrl => self.move_sel(-1),
+            BareKey::Down if key.has_no_modifiers() => self.nav_down(),
+            BareKey::Up if key.has_no_modifiers() => self.nav_up(),
+            BareKey::Char('n') if ctrl => self.nav_down(),
+            BareKey::Char('p') if ctrl => self.nav_up(),
             // ⇥ toggles the Tasks/Repos view — the list underneath it changes,
             // so it's separate from →/← which only ever re-bucket the task
             // list (meaningless for repos: there's no status to group by).
@@ -1213,28 +1276,97 @@ impl State {
                 };
                 self.apply_filter();
             }
-            // Ctrl-a is "add to the current list": a task on the Tasks view,
-            // a repo on the Repos view — mirroring `tui/overlay.rs`'s dual-use
-            // 'a' key. Add-repo belongs on the repo list, not the task list.
-            BareKey::Char('a') if ctrl => match self.view {
-                View::Tasks => self.start_create(),
-                View::Repos => self.start_add_repo(),
-            },
-            BareKey::Char('r') if ctrl && self.view == View::Tasks => self.start_rename(),
-            BareKey::Char('d') if ctrl && self.view == View::Tasks => self.start_delete(),
-            BareKey::Char('e') if ctrl && self.view == View::Tasks => self.start_edit_repos(),
-            BareKey::Char('u') if ctrl && self.view == View::Tasks => self.start_unlock(),
-            BareKey::Backspace if key.has_no_modifiers() => {
+            // `/` and `i` hand focus back to the filter box from a list row —
+            // the only way back, now that plain letters there are actions.
+            BareKey::Char('/') | BareKey::Char('i') if list_focused && key.has_no_modifiers() => {
+                self.focus = Focus::Search;
+            }
+            // Once a row has focus, plain letters are the ONLY way to act —
+            // no Ctrl fast path from the filter box any more (it used to
+            // dual-run every one of these; showing `^a`/`^e`/`^u`/`^r`/`^d`
+            // in the filter box's own footer next to "type to filter" read
+            // as actions being reachable while typing, which they never
+            // actually were — this makes the two agree). `n` for a new task,
+            // `a` to add a repo — distinct letters since both are bare now.
+            // Mirrors `tui/overlay.rs`'s `:n`/`:new` command, which already
+            // used "new" for this.
+            BareKey::Char('n') if list_focused && key.has_no_modifiers() && self.view == View::Tasks => {
+                self.start_create()
+            }
+            BareKey::Char('a') if list_focused && key.has_no_modifiers() && self.view == View::Repos => {
+                self.start_add_repo()
+            }
+            BareKey::Char('r') if list_focused && key.has_no_modifiers() && self.view == View::Tasks => {
+                self.start_rename()
+            }
+            BareKey::Char('d') if list_focused && key.has_no_modifiers() && self.view == View::Tasks => {
+                self.start_delete()
+            }
+            BareKey::Char('e') if list_focused && key.has_no_modifiers() && self.view == View::Tasks => {
+                self.start_edit_repos()
+            }
+            BareKey::Char('u') if list_focused && key.has_no_modifiers() && self.view == View::Tasks => {
+                self.start_unlock()
+            }
+            // Below this point, plain chars/backspace touch the filter — only
+            // from the filter box. On a list row they're unmapped and do
+            // nothing (typing while a task is focused must never leak into
+            // the filter), matching `tui/overlay.rs`'s Normal mode.
+            BareKey::Backspace if key.has_no_modifiers() && !list_focused => {
                 self.filter.pop();
                 self.apply_filter();
             }
-            BareKey::Char(c) if key.has_no_modifiers() => {
+            BareKey::Char(c) if key.has_no_modifiers() && !list_focused => {
                 self.filter.push(c);
                 self.apply_filter();
             }
             _ => return false,
         }
         true
+    }
+
+    /// Down: from the filter box, hand focus to the list — landing there is
+    /// not itself a move, so it lands on the top row rather than advancing
+    /// past it (that was the bug: since the row highlight never actually
+    /// goes away in the filter box — see `handle_list_key`'s doc comment —
+    /// row 0 already looked selected, and this used to `move_sel(1)`
+    /// unconditionally on the way in, so the very first `↓`, or a `↑` back to
+    /// the filter box followed by `↓`, both skipped straight to row 1).
+    /// Already in the list, this just moves down (wraps at the bottom).
+    fn nav_down(&mut self) {
+        if self.focus == Focus::Search {
+            self.focus = Focus::List;
+            match self.view {
+                View::Tasks => {
+                    self.selected = 0;
+                    self.sync_key();
+                }
+                View::Repos => self.repo_selected = 0,
+            }
+        } else {
+            self.move_sel(1);
+        }
+    }
+
+    /// Up: at the top row, hand focus back to the filter box; elsewhere in
+    /// the list, move up. From the filter box this is a no-op — `↓` is the
+    /// only way to (re-)enter the list, and it always lands on the top row,
+    /// so `↑` has no consistent row to enter *at*. Mirrors `tui/overlay.rs`'s
+    /// Normal-mode `nav_up`, which stays put outside the list for the same
+    /// reason.
+    fn nav_up(&mut self) {
+        if self.focus != Focus::List {
+            return;
+        }
+        let at_top = match self.view {
+            View::Tasks => self.selected == 0,
+            View::Repos => self.repo_selected == 0,
+        };
+        if at_top {
+            self.focus = Focus::Search;
+        } else {
+            self.move_sel(-1);
+        }
     }
 
     /// Create form. Two phases share one modal: `Name` is exactly the old
@@ -1708,13 +1840,17 @@ impl State {
             return false;
         }
         match m {
-            Mouse::ScrollDown(_) => self.move_sel(1),
-            Mouse::ScrollUp(_) => self.move_sel(-1),
+            // Scrolling is browsing, same as an arrow key — `nav_down`/`nav_up`
+            // hand focus to the list too (so a following bare letter acts
+            // rather than typing into the filter), and, coming from the
+            // filter box, land on the top row rather than skipping past it.
+            Mouse::ScrollDown(_) => self.nav_down(),
+            Mouse::ScrollUp(_) => self.nav_up(),
             // Tap a row → select it and, on the Tasks view, jump. Mouse events
             // reach *this* client's plugin instance, so the resulting jump is
             // correctly attributed — the phone tap switches the phone's tab,
             // unlike CLI `go-to-tab`. A repo row has nothing to jump to; a tap
-            // there just moves the selection.
+            // there just moves the selection (and focus, per above).
             Mouse::LeftClick(line, _col) => {
                 let Some(pos) = self.row_at(line) else { return false };
                 match self.view {
@@ -1723,7 +1859,10 @@ impl State {
                         self.sync_key();
                         return self.jump();
                     }
-                    View::Repos => self.repo_selected = pos,
+                    View::Repos => {
+                        self.repo_selected = pos;
+                        self.focus = Focus::List;
+                    }
                 }
             }
             _ => return false,
@@ -1885,19 +2024,24 @@ impl State {
             left_limit = x;
         }
         let (htext, hstyle) = match &self.mode {
-            Mode::List if self.filter.is_empty() && cw >= 60 => (
+            // The one focus-driven difference here is the icon: ⚲ (search) vs.
+            // ▸ (browsing) says at a glance whether typing will filter or act
+            // — the shortcuts themselves live only in the footer below, not
+            // duplicated up here too.
+            Mode::List if self.filter.is_empty() && self.focus == Focus::Search && cw >= 60 => (
                 match self.view {
                     View::Tasks => "⚲ switch task — type to filter, ↑↓ move, ↵ jump".to_string(),
-                    View::Repos => "⚲ browse repos — type to filter, ↑↓ move, ^a add".to_string(),
+                    View::Repos => "⚲ browse repos — type to filter, ↑↓ move".to_string(),
                 },
                 Style::default().fg(C_DIM),
             ),
             Mode::List if self.filter.is_empty() => {
+                let icon = if self.focus == Focus::Search { "⚲" } else { "▸" };
                 let msg = match self.view {
-                    View::Tasks => "⚲ switch task",
-                    View::Repos => "⚲ browse repos",
+                    View::Tasks => format!("{icon} switch task"),
+                    View::Repos => format!("{icon} browse repos"),
                 };
-                (msg.to_string(), Style::default().fg(C_DIM))
+                (msg, Style::default().fg(C_DIM))
             }
             Mode::List => (
                 format!("⚲ {}", self.filter),
@@ -1986,38 +2130,63 @@ impl State {
         // ── Footer: mode hints (left) + summary (right) ── shrinks with width.
         let y_footer = inner.y + inner.height - 1;
         let hints: &[(&str, &str)] = match &self.mode {
-            Mode::List if self.view == View::Repos && cw >= 72 => &[
+            // A row has focus: these letters are the ONLY way to act now —
+            // no Ctrl fast path any more (see `handle_list_key`) — so this is
+            // also the only place they're hinted.
+            Mode::List if self.focus == Focus::List && self.view == View::Tasks && cw >= 86 => &[
+                ("↵", "switch"),
+                ("→", "group"),
+                ("⇥", "repos"),
+                ("n", "new"),
+                ("r", "rename"),
+                ("d", "delete"),
+                ("e", "edit repos"),
+                ("u", "unlock secrets"),
+                ("/", "filter"),
+                ("esc", "close"),
+            ],
+            Mode::List if self.focus == Focus::List && self.view == View::Tasks && cw >= 72 => &[
+                ("↵", "switch"),
+                ("⇥", "repos"),
+                ("n", "new"),
+                ("r", "rename"),
+                ("d", "delete"),
+                ("e", "edit repos"),
+                ("/", "filter"),
+                ("esc", "close"),
+            ],
+            Mode::List if self.focus == Focus::List && self.view == View::Tasks && cw >= 44 => {
+                &[("n", "new"), ("r", "rename"), ("d", "delete"), ("/", "filter"), ("esc", "close")]
+            }
+            Mode::List if self.focus == Focus::List && self.view == View::Tasks => {
+                &[("n", "new"), ("d", "delete"), ("/", "filter")]
+            }
+            Mode::List if self.focus == Focus::List && cw >= 72 => &[
                 ("↑↓", "navigate"),
                 ("⇥", "tasks"),
-                ("^a", "add repo"),
+                ("a", "add repo"),
+                ("/", "filter"),
                 ("esc", "close"),
             ],
-            Mode::List if self.view == View::Repos => &[("⇥", "tasks"), ("^a", "add repo")],
-            Mode::List if cw >= 86 => &[
+            Mode::List if self.focus == Focus::List => {
+                &[("⇥", "tasks"), ("a", "add repo"), ("/", "filter")]
+            }
+            // The filter box: no action shortcuts any more — they only live
+            // on a focused row (above) — just navigation and how to get
+            // there/out.
+            Mode::List if self.view == View::Repos && cw >= 56 => {
+                &[("↑↓", "navigate"), ("⇥", "tasks"), ("esc", "close")]
+            }
+            Mode::List if self.view == View::Repos => &[("⇥", "tasks")],
+            Mode::List if cw >= 72 => &[
                 ("↑↓", "navigate"),
                 ("↵", "switch"),
                 ("→", "group"),
                 ("⇥", "repos"),
-                ("^a", "new"),
-                ("^e", "edit repos"),
-                ("^u", "unlock secrets"),
-                ("^r/^d", "rename/del"),
                 ("esc", "close"),
             ],
-            Mode::List if cw >= 72 => &[
-                ("↵", "switch"),
-                ("→", "group"),
-                ("⇥", "repos"),
-                ("^a", "new"),
-                ("^e", "edit repos"),
-                ("^u", "unlock"),
-                ("^r/^d", "rename/del"),
-                ("esc", "close"),
-            ],
-            Mode::List if cw >= 44 => {
-                &[("↵", "switch"), ("⇥", "repos"), ("^a", "new"), ("esc", "close")]
-            }
-            Mode::List => &[("↵", "switch"), ("⇥", "repos"), ("^a", "new")],
+            Mode::List if cw >= 44 => &[("↵", "switch"), ("⇥", "repos"), ("esc", "close")],
+            Mode::List => &[("↵", "switch"), ("⇥", "repos")],
             Mode::AddRepo { .. } if cw >= 56 => &[
                 ("↵", "clone & add"),
                 ("⇥", "next field"),
@@ -2122,7 +2291,10 @@ impl State {
                 // yet — the latter is the exact case add-repo exists to fix,
                 // so it says so instead of just reading empty.
                 View::Repos if self.workspaces.is_empty() => "loading…",
-                View::Repos if self.repo_rows.is_empty() => "no repos yet — ^a to add one",
+                // `a` only acts once a row has focus (see `Focus`), which an
+                // empty list has none of — spell out the `↓` first, or this
+                // reads as a shortcut that just doesn't work here.
+                View::Repos if self.repo_rows.is_empty() => "no repos yet — ↓ then a to add one",
                 View::Repos => "no match",
             };
             put(&mut buf, name_x, y_list, cw as usize, msg, Style::default().fg(C_DIM));

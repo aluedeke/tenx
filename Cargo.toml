@@ -19,3 +19,8 @@ anyhow = "1"
 thiserror = "2"
 serde_json = "1"
 libc = "0.2.189"
+# Pinned to what ratatui 0.29 itself depends on, so cursor-column math done by
+# hand (see `render_list`'s real terminal cursor) uses the identical width
+# table ratatui's own Buffer rendering does — a mismatched table is exactly
+# the off-by-one-column bug `tenx-statusbar`'s CLAUDE.md notes already hit.
+unicode-width = "=0.2.0"

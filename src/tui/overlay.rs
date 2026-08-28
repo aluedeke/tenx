@@ -2,8 +2,9 @@
 //! one flat list ordered by last agent activity (workspace shown per row),
 //! with each task's Claude-activity status. It's both a
 //! switcher and a task manager — fuzzy-filter + Enter to jump, plus
-//! Ctrl-bindings to create, delete, close, and rename tasks from anywhere
-//! (plain typing always filters, so actions live on Ctrl).
+//! Telescope-style create/delete/rename/close bindings on a selected row
+//! (see `Focus`/`InputMode`: the search field is Insert, plain typing
+//! filters; a list row is Normal, plain letters act — `n` new, `d`d delete).
 //!
 //! Single-session model: all tasks live as (invisible) tabs in the one global
 //! `tenx` zellij session. The overlay runs in two modes: as the session's
@@ -31,6 +32,7 @@ use ratatui::{
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
+use unicode_width::UnicodeWidthStr;
 
 use super::mouse;
 use crate::palette;
@@ -693,10 +695,10 @@ impl Overlay {
             KeyCode::Char('j') | KeyCode::Down => self.nav_down(),
             KeyCode::Char('k') | KeyCode::Up => self.nav_up(),
             KeyCode::Tab | KeyCode::BackTab => self.toggle_tab(),
-            KeyCode::Char('a') => match self.tab {
-                Tab::Tasks => self.start_create(),
-                Tab::Repos => self.start_add_repo(),
-            },
+            // `n` for a new task (matches the `:n`/`:new` command below),
+            // `a` to add a repo — distinct verbs, distinct letters.
+            KeyCode::Char('n') if self.tab == Tab::Tasks => self.start_create(),
+            KeyCode::Char('a') if self.tab == Tab::Repos => self.start_add_repo(),
             KeyCode::Char('r') => {
                 if self.require_tasks() {
                     self.start_rename();
@@ -1531,15 +1533,22 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         Mode::Rename(form) => ("✎ ", Style::default().fg(palette::ACCENT.color()), form.buffer.clone()),
         _ => ("🔎 ", Style::default().fg(palette::ACCENT.color()), overlay.filter.clone()),
     };
-    // Cursor bar only when the cursor lives in the search field (or renaming).
+    // Real terminal cursor only when the cursor lives in the search field (or
+    // renaming) — same condition the old `▏` fill-in bar used, but this is
+    // the actual (blinking) terminal cursor now, so no fake glyph is drawn.
+    // Column math uses `unicode-width` pinned to ratatui's own version (see
+    // Cargo.toml) so it agrees with what `Paragraph` actually renders — the
+    // prefixes are an emoji (wide) or a dingbat (narrow), so a plain
+    // `.chars().count()` would misplace it by a column depending on which.
     let show_cursor = matches!(overlay.mode, Mode::Rename(_)) || overlay.focus == Focus::Search;
-    let mut top_spans = vec![Span::styled(prefix, prefix_style), Span::raw(value)];
-    if show_cursor {
-        top_spans.push(Span::styled("▏", Style::default().fg(palette::MUTED.color())));
-    }
+    let top_spans = vec![Span::styled(prefix, prefix_style), Span::raw(value.clone())];
     let top = Paragraph::new(Line::from(top_spans))
         .block(Block::default().borders(Borders::ALL).title(title));
     f.render_widget(top, chunks[1]);
+    if show_cursor {
+        let col = chunks[1].x + 1 + (prefix.width() + value.width()) as u16;
+        f.set_cursor_position((col, chunks[1].y + 1));
+    }
 
     // ── Body list (tasks or repos) ────────────────────────────────────────────
     let list_width = chunks[2].width.saturating_sub(2) as usize;
@@ -1606,7 +1615,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
             let hint = match (overlay.input_mode, overlay.tab) {
                 (InputMode::Insert, _) => "  type to filter · ↓ list · ⏎ open · ⇥ tab",
                 (InputMode::Normal, Tab::Tasks) => {
-                    "  j/k move · a new · e repos · u unlock · dd del · r rename · x close · gt tab · q quit"
+                    "  j/k move · n new · e repos · u unlock · dd del · r rename · x close · gt tab · q quit"
                 }
                 (InputMode::Normal, Tab::Repos) => {
                     "  j/k move · ↑ search · a add-repo · gt tab · q quit"
