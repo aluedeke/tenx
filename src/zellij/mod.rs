@@ -88,8 +88,23 @@ pub fn pipe_status(payload: &str) {
 
 // ── Session management ────────────────────────────────────────────────────────
 
-/// Parse session names from `zellij list-sessions` output.
-/// Output is one session per line; active session may be marked with a suffix.
+/// Parse **live** session names from `zellij list-sessions` output.
+///
+/// The command also lists dead sessions it can resurrect — "session-name
+/// [Created N ago] (EXITED - attach to resurrect)" — and those lines are
+/// deliberately excluded here, not just filtered elsewhere: every caller of
+/// this (`session_exists`, in turn `open()`'s attach-vs-create branch,
+/// `cli::watch`'s "is the session still alive" exit check, the overlay's
+/// jump/switch logic) means "is something actually running", and an EXITED
+/// session is precisely not that — it's inert state on disk. Treating it as
+/// existing sent `open()` down the plain `attach_session` path (`zellij
+/// attach <name>`, no `--config`, no fresh layout), which for an EXITED
+/// session *is* the resurrection action: a `kill-session` meant to clear a
+/// bloated session came back with the exact pre-kill tab count and plugin
+/// generations seconds later, because this function reported the corpse as
+/// alive. `create_and_attach_session`'s `--new-session-with-layout` (the
+/// branch this fix actually routes to) is what's guaranteed fresh regardless
+/// of any resurrectable cache for the name — see its doc comment.
 pub fn list_sessions() -> Result<Vec<String>> {
     let out = cmd()
         .args(["list-sessions"])
@@ -102,6 +117,9 @@ pub fn list_sessions() -> Result<Vec<String>> {
         .lines()
         .filter_map(|l| {
             let clean = strip_ansi(l);
+            if clean.contains("EXITED") {
+                return None;
+            }
             // Each line: "session-name [Created N ago] (current)"
             // Take the first whitespace-delimited token = session name.
             clean
@@ -288,19 +306,39 @@ fn theme_overlay() -> String {
 ///
 /// Any active `theme "..."` line in the base config is dropped so the appended
 /// `theme "tenx"` is unambiguous.
+///
+/// Also forces `session_serialization false`, for the same reason: zellij's
+/// own crash-recovery cache (`~/Library/Caches/.../session_info/<name>/`)
+/// fights tenx's idea of what should be open rather than helping it. tenx
+/// already tracks live tabs itself (`.tenx-tab-id` per task) and can recreate
+/// any of them on demand (`open_in`'s create-tab-with-`--continue` path), so
+/// there's nothing for zellij's resurrection to usefully restore — only stale
+/// tabs `task rm`/`sweep` closed for a reason, reappearing on next launch.
+/// Measured: a `kill-session` meant to clear a bloated session (stale
+/// plugin-instance generations, hundreds of MB of freed-but-unreturned
+/// heap — see `statusbar_wasm`'s doc comment) instead came back with the exact
+/// pre-kill state seconds later, because the cache predates this fix. Like
+/// `theme`, requires a restart to take effect (zellij reads it at server
+/// startup) — which is exactly when this file is regenerated, so there's
+/// nothing extra to do once the workspace's tenx binary carries this.
 fn write_session_config() -> Result<PathBuf> {
     let home = env::var("HOME").context("HOME not set")?;
     let cfg_dir = PathBuf::from(&home).join(".config/zellij");
     fs::create_dir_all(&cfg_dir).context("create zellij config dir")?;
     let base = fs::read_to_string(cfg_dir.join("config.kdl")).unwrap_or_default();
-    // Strip any active (non-comment) top-level `theme "..."` selection so ours wins.
+    // Strip any active (non-comment) top-level `theme "..."` /
+    // `session_serialization ...` line from the base config so ours is the
+    // only one and can't be shadowed by whichever the base config also sets.
     let base: String = base
         .lines()
-        .filter(|l| !l.trim_start().starts_with("theme "))
+        .filter(|l| {
+            let t = l.trim_start();
+            !t.starts_with("theme ") && !t.starts_with("session_serialization ")
+        })
         .collect::<Vec<_>>()
         .join("\n");
     let generated = cfg_dir.join("tenx-session.kdl");
-    fs::write(&generated, format!("{base}\n{}", theme_overlay()))
+    fs::write(&generated, format!("{base}\nsession_serialization false\n{}", theme_overlay()))
         .context("write tenx session config")?;
     Ok(generated)
 }
