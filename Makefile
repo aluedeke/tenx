@@ -68,7 +68,14 @@ install: plugin
 	  ls -t $(PLUGIN_DIR)/tenx-statusbar-*.wasm | tail -n +6 | while read old; do \
 	    printf '%s\n' "$$keep" | grep -qx "$$(basename $$old)" && continue; \
 	    rm -f "$$old"; done; \
-	  echo "  ✓ status bar -> tenx-statusbar-$$hash.wasm"
+	  echo "  ✓ status bar -> tenx-statusbar-$$hash.wasm"; \
+	  gens=$$(printf '%s\n' "$$keep" | sed '/^$$/d' | wc -l | tr -d ' '); \
+	  if [ "$$gens" -gt 3 ]; then \
+	    tabs=$$($(ZELLIJ) -s tenx action query-tab-names 2>/dev/null | wc -l | tr -d ' '); \
+	    echo "  ! $$gens status-bar generations still live across $$tabs tabs in the tenx session"; \
+	    echo "  ! each is a running plugin instance that outlives this install — consider"; \
+	    echo "  ! restarting the session (zellij kill-session tenx) if it feels sluggish"; \
+	  fi
 	-@$(ZELLIJ) --session tenx action start-or-reload-plugin \
 		"file:$(PLUGIN_DIR)/tenx-zellij.wasm" \
 		-c tenx_bin=$(HOME)/.cargo/bin/tenx >/dev/null 2>&1
