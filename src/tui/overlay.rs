@@ -31,7 +31,7 @@ use ratatui::{
 };
 use std::io;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use unicode_width::UnicodeWidthStr;
 
 use super::mouse;
@@ -264,7 +264,18 @@ struct Overlay {
     tabs_area: Rect,
     search_area: Rect,
     list_area: Rect,
+
+    /// Last time the background idle-tab sweep ran (`maybe_sweep`), so a
+    /// bouncy window manager sending repeated `FocusGained` events can't fire
+    /// it more than once per `SWEEP_INTERVAL`. `None` until the first one.
+    last_swept: Option<Instant>,
 }
+
+/// Minimum spacing between the home pane's automatic idle-tab sweeps — see
+/// `Overlay::maybe_sweep`. `FocusGained` already only triggers a rescan, which
+/// is cheap; this just keeps the sweep itself (a `zellij` subprocess call per
+/// candidate) from re-running on every glance back at the terminal.
+const SWEEP_INTERVAL: Duration = Duration::from_secs(300);
 
 impl Overlay {
     fn new(home: bool) -> Self {
@@ -292,6 +303,7 @@ impl Overlay {
             tabs_area: Rect::default(),
             search_area: Rect::default(),
             list_area: Rect::default(),
+            last_swept: None,
         };
         o.rebuild_rows();
         o
@@ -1244,6 +1256,28 @@ impl Overlay {
         }
     }
 
+    /// Background idle-tab sweep (`cli::task::sweep_quiet`), run on the home
+    /// pane's regular focus-gained rescan — see `run_loop`. Only the home
+    /// pane does this: the Ctrl+w floating overlay exits right after a jump,
+    /// so it would just repeat the same sweep on every glance rather than
+    /// amortize it. Silent on stdout by design (this runs inside the
+    /// alternate screen); a nonzero result gets a status line instead, same
+    /// as any other background-ish action here.
+    fn maybe_sweep(&mut self) {
+        if !self.home {
+            return;
+        }
+        if self.last_swept.is_some_and(|t| t.elapsed() < SWEEP_INTERVAL) {
+            return;
+        }
+        self.last_swept = Some(Instant::now());
+        let n = crate::cli::task::sweep_quiet(crate::cli::task::DEFAULT_SWEEP_AFTER);
+        if n > 0 {
+            self.status_msg = Some(format!("swept {n} idle tab{}", if n == 1 { "" } else { "s" }));
+            self.rebuild_rows();
+        }
+    }
+
     // ── Secrets ───────────────────────────────────────────────────────────────
 
     /// Queue an unlock for the selected row, if it has a pending secrets
@@ -1410,6 +1444,7 @@ fn run_loop(
                 // the activity ordering once, here, not on every tick.
                 Event::FocusGained if matches!(overlay.mode, Mode::List) => {
                     overlay.rebuild_rows();
+                    overlay.maybe_sweep();
                 }
                 _ => {}
             }

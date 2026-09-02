@@ -255,4 +255,32 @@ pub enum TaskCommands {
         #[arg(long)]
         ws_dir: Option<String>,
     },
+    /// Exempt a task from `sweep` — its tab is never auto-closed for being idle.
+    Pin {
+        name: String,
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Undo `pin`.
+    Unpin {
+        name: String,
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Close idle task tabs across every workspace, freeing the claude process
+    /// and zellij plugin instance each resident tab holds. Never touches a
+    /// task waiting on a prompt or mid-turn, the tab you're in, or a pinned
+    /// task, and never deletes anything: `task open` (or the overlay) picks a
+    /// swept task's conversation back up exactly where it left off.
+    Sweep {
+        /// How long a finished ("done, waiting on you") task sits unanswered
+        /// before its tab is swept. A genuinely idle task (no live claude
+        /// session at all) is swept immediately regardless. "<N><unit>",
+        /// e.g. "30m", "4h", "2d". Default: 8h.
+        #[arg(long)]
+        after: Option<String>,
+        /// Report what would be closed without closing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }

@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use std::env;
 use std::io::{self, BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     let cwd = env::current_dir()?;
@@ -343,6 +344,178 @@ pub fn list() -> Result<()> {
         );
     }
     Ok(())
+}
+
+// ── Pin / sweep ───────────────────────────────────────────────────────────────
+//
+// A task's tab (a running `claude` process + a zellij plugin instance) stays
+// resident forever once opened — nothing ever closes it automatically, so a
+// workspace touched over months accumulates a tab per task ever opened, most
+// of them long since abandoned. `sweep` reclaims that: close what's safe to
+// close, leave everything else exactly as it was. Reopening (`task open`, or
+// the overlay) is unaffected — `open_in`'s `find_tab_by_name` just finds no
+// tab and creates a fresh one, and `has_claude_conversation` still finds the
+// prior transcript, so `--continue` picks the conversation back up.
+//
+// Deliberately writes no new per-task state beyond `PINNED_FILE` (an explicit,
+// user-requested opt-out — not a duplicate of anything Claude Code already
+// tracks): "is this tab safe to close" is answered entirely from *live*
+// sources, same as the rest of this codebase's status model —
+// `resolve_task_state` (Claude Code's own session registry) for whether a
+// task is mid-turn or waiting on a prompt, and the zellij session itself for
+// whether a tab is open and which one you're sitting in.
+
+/// Marker file: this task's tab is never auto-swept, no matter how long it's
+/// idle. Plain and empty, same style as `.tenx-tab-id`.
+const PINNED_FILE: &str = ".tenx-pinned";
+
+fn is_pinned(task_dir: &Path) -> bool {
+    task_dir.join(PINNED_FILE).is_file()
+}
+
+/// Exempt a task from `sweep`.
+pub fn pin(ws_dir: Option<&str>, task: &str) -> Result<()> {
+    let (ws, slug) = resolve_task(ws_dir, task)?;
+    let task = ws.find_task(&slug)?;
+    std::fs::write(task.path.join(PINNED_FILE), "")?;
+    println!("pinned '{}' — sweep will never close its tab", task.display_name);
+    Ok(())
+}
+
+/// Undo `pin`.
+pub fn unpin(ws_dir: Option<&str>, task: &str) -> Result<()> {
+    let (ws, slug) = resolve_task(ws_dir, task)?;
+    let task = ws.find_task(&slug)?;
+    let _ = std::fs::remove_file(task.path.join(PINNED_FILE));
+    println!("unpinned '{}'", task.display_name);
+    Ok(())
+}
+
+/// Parse a plain "<N><unit>" duration — "30m", "4h", "2d" — matching the one
+/// place tenx already prints durations (`workspace::format_age`). No combined
+/// units; this is a CLI flag, not a date library.
+pub fn parse_duration(s: &str) -> Result<Duration> {
+    if s.is_empty() {
+        bail!("empty duration");
+    }
+    let (num, unit) = s.split_at(s.len() - 1);
+    let n: u64 = num.parse().with_context(|| format!("invalid duration '{s}' (want e.g. '4h')"))?;
+    let secs = match unit {
+        "m" => n * 60,
+        "h" => n * 3600,
+        "d" => n * 86400,
+        _ => bail!("duration '{s}' must end in m/h/d"),
+    };
+    Ok(Duration::from_secs(secs))
+}
+
+/// Default idle threshold for a `Done` task (finished a turn, waiting on you)
+/// before its tab is swept. Long enough that answering tomorrow morning still
+/// finds it resident; short enough that months of an unanswered "waiting on
+/// you" don't sit there costing a live claude process forever. `Idle` tasks
+/// (no live claude session at all — nothing running, nothing to interrupt)
+/// are swept immediately regardless of this; see `sweep_candidates`.
+pub const DEFAULT_SWEEP_AFTER: Duration = Duration::from_secs(8 * 3600);
+
+/// A task tab `sweep` (or the overlay's background sweep) has decided is safe
+/// to close, and why — computed once, then either printed+closed (`sweep`) or
+/// just closed (`sweep_quiet`, which can't print without corrupting the
+/// overlay's alternate screen).
+pub struct SweepAction {
+    pub ws_name: String,
+    pub title: String,
+    pub tab_id: u32,
+    pub task_dir: PathBuf,
+    pub reason: String,
+}
+
+/// Every task tab, across every registered workspace, that's safe to close
+/// right now. Never includes: a tab that isn't open, the tab you're currently
+/// in, a pinned task, or a task that's `Blocked`/`Working` — those are exactly
+/// the tabs a prompt or an agent is waiting on. Doesn't close anything itself,
+/// so a caller can dry-run, summarize, or act on the list as it needs.
+pub fn sweep_candidates(after: Duration) -> Vec<SweepAction> {
+    let mut out = Vec::new();
+    let Ok(live_tabs) = crate::zellij::list_tabs_in(crate::zellij::SESSION) else {
+        return out; // session isn't running — nothing open to sweep
+    };
+    let sessions = crate::workspace::claude::sessions();
+    for ws in crate::workspace::registered_workspaces() {
+        for task in ws.tasks().unwrap_or_default() {
+            // Tabs are named by slug, which is only unique *within* a
+            // workspace (see `Workspace::check_task_new`) — a name collision
+            // across two workspaces is a pre-existing ambiguity `open_in`'s
+            // `find_tab_by_name` shares, not something sweep introduces.
+            let Some(tab) = live_tabs.iter().find(|t| t.name == task.name) else {
+                continue; // not open
+            };
+            if tab.active || is_pinned(&task.path) {
+                continue;
+            }
+            let state = crate::workspace::resolve_task_state(&task.path, &sessions);
+            let reason = match state.status {
+                crate::workspace::TaskStatus::Blocked | crate::workspace::TaskStatus::Working => {
+                    continue;
+                }
+                crate::workspace::TaskStatus::Idle => "idle, no live session".to_string(),
+                crate::workspace::TaskStatus::Done => {
+                    let Some(changed) = state.changed else { continue };
+                    let Ok(elapsed) = changed.elapsed() else { continue };
+                    if elapsed < after {
+                        continue;
+                    }
+                    format!("done, waiting {} unanswered", crate::workspace::format_age(changed))
+                }
+            };
+            out.push(SweepAction {
+                ws_name: ws.config.name.clone(),
+                title: task.display_name.clone(),
+                tab_id: tab.tab_id,
+                task_dir: task.path.clone(),
+                reason,
+            });
+        }
+    }
+    out
+}
+
+/// `tenx task sweep`: close every current sweep candidate (or, with
+/// `dry_run`, just report them), printing one line per task.
+pub fn sweep(after: Option<Duration>, dry_run: bool) -> Result<()> {
+    let candidates = sweep_candidates(after.unwrap_or(DEFAULT_SWEEP_AFTER));
+    if candidates.is_empty() {
+        println!("nothing to sweep");
+        return Ok(());
+    }
+    for c in candidates {
+        if dry_run {
+            println!("would close {}/{} — {}", c.ws_name, c.title, c.reason);
+            continue;
+        }
+        match crate::zellij::close_tab_in(crate::zellij::SESSION, c.tab_id) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(c.task_dir.join(".tenx-tab-id"));
+                println!("closed {}/{} — {}", c.ws_name, c.title, c.reason);
+            }
+            Err(e) => eprintln!("! {}/{}: {e}", c.ws_name, c.title),
+        }
+    }
+    Ok(())
+}
+
+/// Close every current sweep candidate without printing anything — for the
+/// overlay's background sweep on focus-gained, which runs inside the
+/// alternate screen and would corrupt it by writing to stdout. Returns how
+/// many tabs it actually closed.
+pub fn sweep_quiet(after: Duration) -> usize {
+    let mut n = 0;
+    for c in sweep_candidates(after) {
+        if crate::zellij::close_tab_in(crate::zellij::SESSION, c.tab_id).is_ok() {
+            let _ = std::fs::remove_file(c.task_dir.join(".tenx-tab-id"));
+            n += 1;
+        }
+    }
+    n
 }
 
 pub fn rm(name: &str, force: bool) -> Result<()> {

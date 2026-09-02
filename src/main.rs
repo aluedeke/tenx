@@ -98,6 +98,16 @@ fn run() -> Result<()> {
                 Some(dir) => cli::task::rm_by_dir(&dir, &name)?,
                 None => cli::task::rm(&name, force)?,
             },
+            TaskCommands::Pin { name, ws_dir } => {
+                cli::task::pin(ws_dir.as_deref(), &name)?;
+            }
+            TaskCommands::Unpin { name, ws_dir } => {
+                cli::task::unpin(ws_dir.as_deref(), &name)?;
+            }
+            TaskCommands::Sweep { after, dry_run } => {
+                let after = after.as_deref().map(cli::task::parse_duration).transpose()?;
+                cli::task::sweep(after, dry_run)?;
+            }
         },
     }
 
