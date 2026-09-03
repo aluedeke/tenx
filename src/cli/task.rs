@@ -4,19 +4,34 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub fn new(name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
-    let cwd = env::current_dir()?;
-    let ws = crate::workspace::find(&cwd)?;
-    new_in(&ws, name, repos, no_open)
+/// What to pre-fill in a new task's `TASK.md` beyond its title — a ticket
+/// import passes the ticket's body and URL(s); the overlay passes nothing.
+#[derive(Default)]
+pub struct TaskMd<'a> {
+    pub description: &'a str,
+    /// `(label, value)` rows for `## Links`; see `tenx_core::taskmd::merge_links`.
+    pub links: &'a [(String, String)],
 }
 
-/// Create a task in an explicit workspace (no cwd dependency). Used by `new` and
-/// the overlay's create flow, which targets a workspace the user picks.
-pub fn new_in(
+pub fn new(name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = crate::workspace::find(&cwd)?;
+    new_with(&ws, name, repos, no_open, md)
+}
+
+/// Create a task in an explicit workspace (no cwd dependency), with an empty
+/// `TASK.md` body. Used by the overlay's create flow.
+pub fn new_in(ws: &crate::workspace::Workspace, name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
+    new_with(ws, name, repos, no_open, &TaskMd::default())
+}
+
+/// Create a task in an explicit workspace with a pre-filled `TASK.md`.
+pub fn new_with(
     ws: &crate::workspace::Workspace,
     name: &str,
     repos: Option<&[String]>,
     no_open: bool,
+    md: &TaskMd,
 ) -> Result<()> {
     let display_name = name.to_string();
     let slug = crate::workspace::slugify(name);
@@ -42,7 +57,7 @@ pub fn new_in(
     let bare_dir = ws.bare_dir(&global);
     let task_dir = ws.tasks_dir().join(slug);
     std::fs::create_dir_all(&task_dir)?;
-    write_task_md(&task_dir, &display_name)?;
+    write_task_md(&task_dir, &display_name, md)?;
     write_claude_hooks(&task_dir)?;
 
     for repo_name in &repo_names {
@@ -234,11 +249,11 @@ pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
     open_in(&ws, slug)
 }
 
-/// Create a task in an explicit workspace directory and open a tab for it.
-/// Used by the overlay plugin. `repos` is the picked subset (None = all).
-pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>) -> Result<()> {
+/// Create a task in an explicit workspace directory and open a window for it
+/// (for scripts and front ends). `repos` is the picked subset (None = all).
+pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, md: &TaskMd) -> Result<()> {
     let ws = crate::workspace::load(Path::new(ws_dir))?;
-    new_in(&ws, name, repos, false)
+    new_with(&ws, name, repos, false, md)
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).
@@ -539,12 +554,13 @@ pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Resul
     Ok(())
 }
 
-fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
+fn write_task_md(task_dir: &Path, name: &str, md: &TaskMd) -> Result<()> {
     let path = task_dir.join("TASK.md");
     if path.exists() {
         return Ok(());
     }
-    let content = tenx_core::taskmd::render_task_md(name, "", &tenx_core::taskmd::default_links());
+    let links = tenx_core::taskmd::merge_links(md.links);
+    let content = tenx_core::taskmd::render_task_md(name, md.description, &links);
     std::fs::write(&path, content)?;
     Ok(())
 }

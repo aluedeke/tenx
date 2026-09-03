@@ -83,10 +83,17 @@ fn run() -> Result<()> {
 
 
         Some(Commands::Task { command }) => match command {
-            TaskCommands::New { name, repos, no_open, ws_dir } => match ws_dir {
-                Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref())?,
-                None => cli::task::new(&name, repos.as_deref(), no_open)?,
-            },
+            TaskCommands::New { name, repos, description, links, no_open, ws_dir } => {
+                let links = links
+                    .iter()
+                    .map(|l| tenx_core::taskmd::parse_link(l).ok_or_else(|| anyhow::anyhow!("--link wants \"Label: value\", got {l:?}")))
+                    .collect::<Result<Vec<_>>>()?;
+                let md = cli::task::TaskMd { description: description.as_deref().unwrap_or(""), links: &links };
+                match ws_dir {
+                    Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref(), &md)?,
+                    None => cli::task::new(&name, repos.as_deref(), no_open, &md)?,
+                }
+            }
             TaskCommands::AddRepo { name, repos, ws_dir } => {
                 cli::task::add_repo(ws_dir.as_deref(), &name, &repos)?;
             }

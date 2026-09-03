@@ -36,9 +36,19 @@ pub struct RepoConfig {
     pub url: String,
 }
 
+/// The config shape this binary writes. Bump it with a new entry in
+/// `migrate_config` whenever a field's meaning changes, not just when one is
+/// added (serde defaults cover additions).
+pub const CURRENT_SCHEMA: u32 = 1;
+
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct WorkspaceConfig {
+    /// Which `CURRENT_SCHEMA` wrote this file; 0 = predates versioning.
+    #[serde(default)]
+    pub schema_version: u32,
     pub name: String,
+    /// Executable run to lay out a new task window (see `tmux::TaskWindow`);
+    /// empty = the built-in claude/nvim/shell layout.
     #[serde(default)]
     pub layout: String,
     #[serde(default)]
@@ -231,8 +241,40 @@ pub fn load(dir: &Path) -> Result<Workspace> {
     }
     let text = fs::read_to_string(&cfg_path)
         .with_context(|| format!("read {}", cfg_path.display()))?;
-    let config: WorkspaceConfig = toml::from_str(&text).context("parse workspace config")?;
+    let mut config: WorkspaceConfig = toml::from_str(&text).context("parse workspace config")?;
+    let ws_name = config.name.clone();
+    if migrate_config(&mut config, &ws_name) {
+        // Best-effort: a read-only checkout still loads, it just migrates
+        // again next time.
+        let _ = atomic_write_toml(&cfg_path, &config);
+    }
     Ok(Workspace { dir: dir.to_path_buf(), config })
+}
+
+/// Bring a config up to `CURRENT_SCHEMA`, one numbered step at a time.
+/// Returns whether anything changed (so the caller rewrites the file). Each
+/// step is the whole story of what that version changed, so the next one
+/// has somewhere obvious to go.
+fn migrate_config(config: &mut WorkspaceConfig, ws_name: &str) -> bool {
+    let from = config.schema_version;
+    if from >= CURRENT_SCHEMA {
+        return false;
+    }
+    if from < 1 {
+        // v1: tmux replaced zellij, and `layout` went from a KDL layout file
+        // to an executable. A `.kdl` path can't be run, so drop it back to
+        // the built-in layout and say so once.
+        if config.layout.ends_with(".kdl") {
+            eprintln!(
+                "tenx: workspace '{ws_name}': layout {:?} is a zellij layout; tmux layouts are scripts \
+                 (see `tmux::TaskWindow`) — using the built-in layout",
+                config.layout
+            );
+            config.layout.clear();
+        }
+    }
+    config.schema_version = CURRENT_SCHEMA;
+    true
 }
 
 /// Create a workspace in `dir` with the given name.
@@ -242,7 +284,7 @@ pub fn init(dir: &Path, name: &str) -> Result<Workspace> {
         return Err(WorkspaceError::AlreadyExists.into());
     }
     fs::create_dir_all(dir.join("tasks")).context("create tasks dir")?;
-    let config = WorkspaceConfig { name: name.to_string(), ..Default::default() };
+    let config = WorkspaceConfig { schema_version: CURRENT_SCHEMA, name: name.to_string(), ..Default::default() };
     atomic_write_toml(&dir.join("config.toml"), &config)?;
     Ok(Workspace { dir: dir.to_path_buf(), config })
 }

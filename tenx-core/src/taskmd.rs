@@ -34,6 +34,32 @@ pub fn render_task_md(title: &str, description: &str, links: &[(String, String)]
     out
 }
 
+/// Parse a `--link "Label: value"` argument. The first `:` splits label from
+/// value (URLs keep theirs); a missing value is allowed and leaves the row
+/// blank, so `--link "PR:"` is a no-op rather than an error.
+pub fn parse_link(arg: &str) -> Option<(String, String)> {
+    let (label, value) = arg.split_once(':')?;
+    let label = label.trim();
+    (!label.is_empty()).then(|| (label.to_string(), value.trim().to_string()))
+}
+
+/// The `## Links` rows for a new task: the default labels, in their usual
+/// order, filled from `provided` (matched case-insensitively), then any
+/// extra labels the caller gave, in the order given. So a ticket import
+/// lands in the same rows a hand-written task has, and nothing is lost.
+pub fn merge_links(provided: &[(String, String)]) -> Vec<(String, String)> {
+    let mut out = default_links();
+    let mut extra = Vec::new();
+    for (label, value) in provided {
+        match out.iter_mut().find(|(l, _)| l.eq_ignore_ascii_case(label)) {
+            Some((_, v)) => *v = value.clone(),
+            None => extra.push((label.clone(), value.clone())),
+        }
+    }
+    out.extend(extra);
+    out
+}
+
 /// The display name a `TASK.md` declares: its first line with any leading
 /// `#`s stripped. `None` if the file has no usable first line, so the caller
 /// can fall back to the directory name.
@@ -78,6 +104,25 @@ mod tests {
         let md = render_task_md("Add login", "  Users can log in.\n", &links);
         assert!(md.starts_with("# Add login\n\n## Description\n\nUsers can log in.\n\n## Todo\n"));
         assert!(md.contains("- Linear: https://linear.app/x/ENG-1\n- PR:\n\n## Notes\n\n"));
+    }
+
+    #[test]
+    fn links_parse_and_merge_into_default_rows() {
+        assert_eq!(parse_link("Linear: https://linear.app/x/ENG-1").unwrap(), ("Linear".into(), "https://linear.app/x/ENG-1".into()));
+        assert_eq!(parse_link("PR:").unwrap(), ("PR".into(), String::new()));
+        assert!(parse_link("no separator").is_none());
+        assert!(parse_link(": value").is_none());
+
+        let merged = merge_links(&[
+            ("linear".to_string(), "https://l/1".to_string()),
+            ("Jira".to_string(), "https://j/2".to_string()),
+        ]);
+        let labels: Vec<&str> = merged.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, ["Linear Project", "Linear Milestone", "Linear", "PR", "Jira"]);
+        assert_eq!(merged[2].1, "https://l/1");
+        assert_eq!(merged[4].1, "https://j/2");
+        let md = render_task_md("t", "", &merged);
+        assert!(md.contains("- Linear: https://l/1\n- PR:\n- Jira: https://j/2\n\n## Notes"));
     }
 
     #[test]

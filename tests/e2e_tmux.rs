@@ -205,6 +205,24 @@ fn task_new_open_and_list_against_real_tmux() {
         assert!(found, "port {port} should be attributed to smoke-test");
     }
 
+    // A ticket import: description and links land in TASK.md's own rows.
+    let out = h
+        .tenx()
+        .args([
+            "task", "new", "ENG-7: Add login", "--ws-dir", &h.ws(),
+            "--description", "Users can log in.",
+            "--link", "Linear: https://linear.app/x/ENG-7",
+            "--link", "Jira: https://j/8",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "ticket task new: {}", String::from_utf8_lossy(&out.stderr));
+    let md = fs::read_to_string(h.root.join("ws/tasks/eng-7-add-login/TASK.md")).unwrap();
+    assert!(md.starts_with("# ENG-7: Add login\n\n## Description\n\nUsers can log in.\n\n## Todo\n"), "{md}");
+    assert!(md.contains("- Linear: https://linear.app/x/ENG-7\n- PR:\n- Jira: https://j/8\n\n## Notes\n"), "{md}");
+    let cfg = fs::read_to_string(h.root.join("ws/config.toml")).unwrap();
+    assert!(cfg.contains("schema_version = 1"), "config migrated: {cfg}");
+
     // Closing the window and re-opening recreates it (a swept task comes back).
     h.tmux_out(&["kill-window", "-t", id]);
     let out = h.tenx().args(["task", "open", "smoke-test", "--ws-dir", &h.ws()]).output().unwrap();

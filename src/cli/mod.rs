@@ -193,11 +193,21 @@ pub enum RepoCommands {
 pub enum TaskCommands {
     /// Create a new task
     New {
-        /// Task name (also used as the git branch name)
+        /// Task name — the display title; its slug is the directory, branch
+        /// and window name
         name: String,
         /// Comma-separated repo names to include (default: all workspace repos)
         #[arg(long, value_delimiter = ',')]
         repos: Option<Vec<String>>,
+        /// Fill TASK.md's `## Description` (e.g. a ticket's body)
+        #[arg(long)]
+        description: Option<String>,
+        /// Fill a `## Links` row, as "Label: value" — e.g. `--link "Linear:
+        /// https://linear.app/…"`. Repeatable. Default rows (Linear Project,
+        /// Linear Milestone, Linear, PR) are filled in place; other labels
+        /// are appended.
+        #[arg(long = "link")]
+        links: Vec<String>,
         /// Create worktrees but don't open a window in the tenx session
         #[arg(long)]
         no_open: bool,

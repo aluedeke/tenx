@@ -14,9 +14,8 @@ allowed-tools: Bash Read
 ├── config.toml          # workspace config
 ├── .bare/               # shared bare git clones (one per repo)
 │   └── <repo>.git/
-├── .claude/             # shared Claude config (hooks, settings, skills)
+├── .claude/             # shared Claude config (settings, skills)
 │   ├── settings.json
-│   ├── hooks/
 │   └── skills/
 └── tasks/
     └── <name>/          # one directory per task  ← your working area
@@ -40,17 +39,25 @@ If a task requires something outside these boundaries — adding a repo, changin
 
 ## Creating a new task
 
-`tenx task new <name>` creates the task directory, git worktrees, and a blank TASK.md.
+`tenx task new "<title>"` creates the task directory, git worktrees, and a TASK.md. It can pre-fill the file so you don't have to edit it afterward:
 
-Before running the command, ask the user for:
+    tenx task new "<title>" \
+      --description "<what the task is about>" \
+      --link "Linear: <ticket url>" \
+      --link "Linear Project: <project>" \
+      --link "Linear Milestone: <milestone>"
 
-1. **Linear tickets** — one or more ticket IDs or URLs (e.g. `ENG-123`, `ENG-124`). If given only IDs, look them up with `linear issue view <ID>` to get the full URL and title.
-2. **Linear project** — the project name or URL these tickets belong to (optional).
-3. **Linear milestone** — the milestone or cycle (optional).
+Every `--link` is `"Label: value"`; the default rows (Linear Project, Linear Milestone, Linear, PR) are filled in place, any other label (`Jira:`, `GitHub:`) is added as a new row.
 
-After `tenx task new` completes, fill in the generated `tasks/<name>/TASK.md`:
-- Set the description
-- Populate `Linear Project:`, `Linear Milestone:`, and `Linear:` lines with whatever the user provided; leave a line blank (not remove it) if the user has nothing for it yet
+**From a ticket.** If the user names a ticket (`ENG-123`, a Linear/Jira/GitHub issue URL), fetch it first, then create the task from what you fetched — title from the ticket title, `--description` from its body (trimmed to the essentials), `--link` with its URL:
+
+- **Linear** — use a Linear MCP tool if one is connected (`get_issue` / search by identifier). Without one, ask the user for the URL and title; there is no `linear` CLI to shell out to.
+- **GitHub issues** — `gh issue view <number-or-url> --json title,body,url`.
+- **Jira** — a Jira MCP tool if connected, else ask.
+
+Never store a ticketing credential yourself and never put one in `tenx secrets` — fetching is your job, through tools you already have; tenx only renders what you pass it.
+
+**Otherwise**, ask the user for the tickets (IDs or URLs), the Linear project and milestone (both optional), then run the command above with what they gave you; leave a row blank (don't remove it) when there's nothing for it yet.
 
 ## TASK.md conventions
 
@@ -81,8 +88,9 @@ Safe to run unconditionally, same as `decrypt`: your Bash tool has no real termi
 
 ## Common commands
 
-    tenx task new <name>       create task with worktrees + TASK.md
-    tenx task open <name>      switch to task's zellij tab
+    tenx task new "<title>" [--description …] [--link "Label: value"]…
+                               create task with worktrees + TASK.md
+    tenx task open <name>      switch to the task's window
     tenx task list             list all tasks and open tabs
     tenx task rm <name>        remove task and worktrees
     tenx repo add <url>        add a repo to the workspace
