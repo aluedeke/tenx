@@ -53,8 +53,9 @@ fn tenx_cmd(tenx_bin: &str) -> String {
 pub const SESSION: &str = "tenx";
 /// The overlay's window, created with the session and never closed.
 pub const HOME_WINDOW: &str = "home";
-/// Minimum tmux for `display-popup`, `-P -F` on `new-window`, and user options.
-pub const MIN_VERSION: (u32, u32) = (3, 2);
+/// Minimum tmux: `display-popup -T` and `popup-border-style` are 3.3 (the
+/// popup itself is 3.2, but the generated config uses both).
+pub const MIN_VERSION: (u32, u32) = (3, 3);
 /// Per-task cache of the window id (`@12`) last opened for it. A fast path
 /// only — `find_window` by slug is the source of truth, and a stale id (server
 /// restarted) is simply treated as "not open".
@@ -63,10 +64,10 @@ pub const WINDOW_ID_FILE: &str = ".tenx-window-id";
 /// One tmux window as `list-windows` reports it.
 #[derive(Debug, Clone)]
 pub struct Window {
-    /// Stable for the server's life (`@12`).
+    /// Stable for the server's life (`@12`) — but *only* the server's life:
+    /// ids restart at `@0` after a restart, which is why a cached id is never
+    /// used to kill anything (see `WINDOW_ID_FILE`).
     pub id: String,
-    #[allow(dead_code)]
-    pub index: usize,
     pub name: String,
     /// The session's current window (what an attaching client lands on).
     pub active: bool,
@@ -77,14 +78,19 @@ pub struct Window {
     pub activity: bool,
 }
 
-/// Every open task window's bell/activity flags, keyed by window name (= task
-/// slug). Empty when the server is down.
-pub fn signals() -> crate::workspace::Signals {
-    list_windows()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|w| (w.name, crate::workspace::Signal { bell: w.bell, activity: w.activity }))
+/// The bell/activity flags of every task window, keyed by window name (= task
+/// slug). The home window is excluded: its bells are nobody's task.
+pub fn signals_from(windows: &[Window]) -> crate::workspace::Signals {
+    windows
+        .iter()
+        .filter(|w| w.name != HOME_WINDOW)
+        .map(|w| (w.name.clone(), crate::workspace::Signal { bell: w.bell, activity: w.activity }))
         .collect()
+}
+
+/// `signals_from(list_windows())` — empty when the server is down.
+pub fn signals() -> crate::workspace::Signals {
+    signals_from(&list_windows().unwrap_or_default())
 }
 
 // ── Binary & environment ──────────────────────────────────────────────────────
@@ -161,7 +167,7 @@ pub fn check_version() -> Result<(u32, u32)> {
     let version = parse_version(&text).with_context(|| format!("unrecognised tmux version: {}", text.trim()))?;
     if version < MIN_VERSION {
         bail!(
-            "tmux {}.{} is too old — tenx needs {}.{}+ (display-popup, user options)",
+            "tmux {}.{} is too old — tenx needs {}.{}+ (display-popup with a title, popup styling)",
             version.0,
             version.1,
             MIN_VERSION.0,
@@ -329,12 +335,19 @@ pub fn foreign_client_hint() -> String {
 const WINDOW_FORMAT: &str =
     "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active}\t#{window_bell_flag}\t#{window_activity_flag}";
 
-/// Every window of the session. Empty (not an error) when the server is down.
+/// Every window of the session. Empty (not an error) when the server is down
+/// — one subprocess either way: a failed `list-windows` *is* the liveness
+/// check, so there's no separate `has-session` round trip on a poll path.
 pub fn list_windows() -> Result<Vec<Window>> {
-    if !server_running() {
+    let out = cmd()
+        .args(["list-windows", "-t", SESSION, "-F", WINDOW_FORMAT])
+        .stdin(Stdio::null())
+        .output()
+        .context("run tmux list-windows")?;
+    if !out.status.success() {
         return Ok(vec![]);
     }
-    let text = run(&["list-windows", "-t", SESSION, "-F", WINDOW_FORMAT])?;
+    let text = String::from_utf8_lossy(&out.stdout);
     Ok(text.lines().filter_map(parse_window).collect())
 }
 
@@ -354,9 +367,20 @@ pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
         .collect())
 }
 
-/// The window named exactly `name` (windows are named by task slug).
+/// The task window named exactly `name` (windows are named by task slug).
+/// The home window is never a task window, whatever a task is called — a
+/// task slugged `home` must not be able to select, kill or sweep the overlay.
 pub fn find_window(name: &str) -> Result<Option<Window>> {
+    if name == HOME_WINDOW {
+        return Ok(None);
+    }
     Ok(list_windows()?.into_iter().find(|w| w.name == name))
+}
+
+/// Slugs that can't be task names because they collide with tmux windows
+/// tenx owns itself.
+pub fn is_reserved_slug(slug: &str) -> bool {
+    slug == HOME_WINDOW
 }
 
 pub fn select_window(id: &str) -> Result<()> {
@@ -381,8 +405,9 @@ pub fn set_global_option(option: &str, value: &str) -> Result<()> {
 /// agent's transcript (`tenx internal agent-log`). `-d` keeps focus where it
 /// is: the agent appearing is news, not an interruption. Sized in lines, not
 /// a share, so it costs the same on a tall window as a short one.
-pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32) -> Result<()> {
-    let command = format!("{} internal agent-log {} {pid}", tenx_cmd(tenx_bin), shell_quote(cwd));
+pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, session_id: Option<&str>) -> Result<()> {
+    let session = session_id.map(|s| format!(" --session {}", shell_quote(s))).unwrap_or_default();
+    let command = format!("{} internal agent-log {} {pid}{session}", tenx_cmd(tenx_bin), shell_quote(cwd));
     run(&["split-window", "-d", "-v", "-l", "12", "-t", window_id, "-c", cwd, &command]).map(drop)
 }
 
@@ -457,8 +482,8 @@ fn parse_window(line: &str) -> Option<Window> {
     let mut f = line.split('\t');
     Some(Window {
         id: f.next()?.to_string(),
-        index: f.next()?.parse().ok()?,
-        name: f.next()?.to_string(),
+        name: f.nth(1)?.to_string(), // skip the index column
+
         active: f.next()? == "1",
         bell: f.next()? == "1",
         activity: f.next()? == "1",
@@ -485,9 +510,21 @@ mod tests {
     #[test]
     fn parses_window_lines() {
         let w = parse_window("@3\t2\tadd-repos\t1\t0\t1").unwrap();
-        assert_eq!((w.id.as_str(), w.index, w.name.as_str()), ("@3", 2, "add-repos"));
+        assert_eq!((w.id.as_str(), w.name.as_str()), ("@3", "add-repos"));
         assert!(w.active && !w.bell && w.activity);
         assert!(parse_window("@3\tx").is_none());
+    }
+
+    #[test]
+    fn home_is_never_a_task_window() {
+        let windows = vec![
+            Window { id: "@0".into(), name: HOME_WINDOW.into(), active: true, bell: true, activity: true },
+            Window { id: "@1".into(), name: "foo".into(), active: false, bell: true, activity: false },
+        ];
+        let s = signals_from(&windows);
+        assert!(!s.contains_key(HOME_WINDOW));
+        assert!(s["foo"].bell);
+        assert!(is_reserved_slug("home") && !is_reserved_slug("homer"));
     }
 
     #[test]

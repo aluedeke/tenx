@@ -251,30 +251,44 @@ pub fn load(dir: &Path) -> Result<Workspace> {
     Ok(Workspace { dir: dir.to_path_buf(), config })
 }
 
-/// Bring a config up to `CURRENT_SCHEMA`, one numbered step at a time.
-/// Returns whether anything changed (so the caller rewrites the file). Each
-/// step is the whole story of what that version changed, so the next one
-/// has somewhere obvious to go.
+/// Whether `layout` can serve as a task-window layout script: an existing,
+/// executable file, and not a zellij `.kdl` layout left over from v1.
+pub fn check_layout(layout: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = PathBuf::from(expand_home(layout));
+    if layout.ends_with(".kdl") {
+        bail!("{layout} is a zellij layout; tmux layouts are executables (see `tmux::TaskWindow`)");
+    }
+    let meta = fs::metadata(&path).with_context(|| format!("layout script {layout} not found"))?;
+    if !meta.is_file() || meta.permissions().mode() & 0o111 == 0 {
+        bail!("layout script {layout} is not an executable file");
+    }
+    Ok(())
+}
+
+/// Bring a config up to `CURRENT_SCHEMA`, one numbered step at a time, and
+/// drop a layout that can't run whatever the version says. Returns whether
+/// anything changed (so the caller rewrites the file). Each step is the whole
+/// story of what that version changed, so the next one has somewhere obvious
+/// to go.
 fn migrate_config(config: &mut WorkspaceConfig, ws_name: &str) -> bool {
-    let from = config.schema_version;
-    if from >= CURRENT_SCHEMA {
-        return false;
+    let mut changed = false;
+    // v1: tmux replaced zellij, and `layout` went from a KDL layout file to
+    // an executable. Checked regardless of version: a `.kdl` can arrive in a
+    // v1 file too (edited by hand), and running it would only fail later,
+    // half-way through building a window.
+    if !config.layout.is_empty()
+        && let Err(e) = check_layout(&config.layout)
+    {
+        eprintln!("tenx: workspace '{ws_name}': {e} — using the built-in layout");
+        config.layout.clear();
+        changed = true;
     }
-    if from < 1 {
-        // v1: tmux replaced zellij, and `layout` went from a KDL layout file
-        // to an executable. A `.kdl` path can't be run, so drop it back to
-        // the built-in layout and say so once.
-        if config.layout.ends_with(".kdl") {
-            eprintln!(
-                "tenx: workspace '{ws_name}': layout {:?} is a zellij layout; tmux layouts are scripts \
-                 (see `tmux::TaskWindow`) — using the built-in layout",
-                config.layout
-            );
-            config.layout.clear();
-        }
+    if config.schema_version < CURRENT_SCHEMA {
+        config.schema_version = CURRENT_SCHEMA;
+        changed = true;
     }
-    config.schema_version = CURRENT_SCHEMA;
-    true
+    changed
 }
 
 /// Create a workspace in `dir` with the given name.
@@ -542,4 +556,31 @@ pub fn cloned_repos(bare_dir: &Path, repos: &[RepoConfig]) -> HashSet<String> {
         .filter(|r| bare_dir.join(format!("{}.git", r.name)).exists())
         .map(|r| r.name.clone())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_stamps_version_and_drops_unrunnable_layouts() {
+        let mut c = WorkspaceConfig { layout: "/nonexistent/task.kdl".into(), ..Default::default() };
+        assert!(migrate_config(&mut c, "ws"));
+        assert_eq!(c.schema_version, CURRENT_SCHEMA);
+        assert!(c.layout.is_empty());
+
+        // A current-version file with a hand-edited .kdl is caught too.
+        let mut c = WorkspaceConfig { schema_version: CURRENT_SCHEMA, layout: "x.kdl".into(), ..Default::default() };
+        assert!(migrate_config(&mut c, "ws"));
+        assert!(c.layout.is_empty());
+
+        // Already current with no layout: nothing to do, no rewrite.
+        let mut c = WorkspaceConfig { schema_version: CURRENT_SCHEMA, ..Default::default() };
+        assert!(!migrate_config(&mut c, "ws"));
+
+        // An executable layout survives.
+        let mut c = WorkspaceConfig { schema_version: CURRENT_SCHEMA, layout: "/bin/sh".into(), ..Default::default() };
+        assert!(!migrate_config(&mut c, "ws"));
+        assert_eq!(c.layout, "/bin/sh");
+    }
 }

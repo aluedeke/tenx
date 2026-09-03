@@ -17,30 +17,53 @@ const POLL: Duration = Duration::from_millis(400);
 /// not the whole conversation.
 const TAIL_LINES: usize = 40;
 
-pub fn run(cwd: &str, pid: u32) -> Result<()> {
+/// How far back from the end of an existing transcript to start rendering
+/// history. Transcripts reach tens of MB; the last few hundred KB is plenty
+/// for `TAIL_LINES`, and parsing from byte 0 would stall the pane on open.
+const HISTORY_BYTES: u64 = 512 * 1024;
+
+pub fn run(cwd: &str, pid: u32, session: Option<&str>) -> Result<()> {
     let project = crate::workspace::claude::project_dir(Path::new(cwd)).context("no $HOME")?;
     let mut out = std::io::stdout();
     let name = Path::new(cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     writeln!(out, "\x1b[1magent · {name}\x1b[0m  \x1b[2m(pid {pid}; this pane closes when it exits)\x1b[0m")?;
 
+    // The agent's own transcript when its session id is known; otherwise the
+    // newest in the directory (two agents in one directory would then share a
+    // file, which is why the watcher passes the id whenever it has one).
+    let own = session.map(|s| project.join(format!("{s}.jsonl")));
+
     let mut file: Option<(PathBuf, BufReader<std::fs::File>)> = None;
-    let mut last_scan = Instant::now() - Duration::from_secs(60);
+    // `None` = never scanned; not `Instant::now() - 60s`, which can underflow
+    // (and panic) early after boot.
+    let mut last_scan: Option<Instant> = None;
     let mut printed_history = false;
 
     loop {
-        // (Re)find the newest transcript every few seconds: a session that
-        // starts after we do, or one that rolls over, shows up here.
-        if last_scan.elapsed() > Duration::from_secs(3) {
-            last_scan = Instant::now();
-            if let Some(newest) = newest_jsonl(&project)
+        // (Re)find the transcript every few seconds: a session that starts
+        // after we do shows up here.
+        if last_scan.is_none_or(|t| t.elapsed() > Duration::from_secs(3)) {
+            last_scan = Some(Instant::now());
+            let target = match &own {
+                Some(p) if p.is_file() => Some(p.clone()),
+                Some(_) => None, // not written yet — keep waiting for it
+                None => newest_jsonl(&project),
+            };
+            if let Some(newest) = target
                 && file.as_ref().is_none_or(|(p, _)| *p != newest)
             {
                 let f = std::fs::File::open(&newest).with_context(|| format!("open {}", newest.display()))?;
                 let mut reader = BufReader::new(f);
                 if !printed_history {
                     // Render the tail of the existing transcript, then follow.
-                    let mut lines: Vec<String> = Vec::new();
+                    let len = reader.get_ref().metadata().map(|m| m.len()).unwrap_or(0);
                     let mut buf = String::new();
+                    if len > HISTORY_BYTES {
+                        reader.seek(SeekFrom::Start(len - HISTORY_BYTES))?;
+                        reader.read_line(&mut buf)?; // discard the partial line
+                        buf.clear();
+                    }
+                    let mut lines: Vec<String> = Vec::new();
                     while reader.read_line(&mut buf)? > 0 {
                         if let Some(l) = render_line(&buf) {
                             lines.push(l);

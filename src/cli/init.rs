@@ -181,9 +181,18 @@ fn prompt_repos() -> Result<Vec<crate::workspace::RepoConfig>> {
 }
 
 fn prompt_layout() -> Result<String> {
-    eprintln!("Zellij layout file for task tabs (optional, enter to use built-in default):");
-    let input = prompt("  Layout KDL path")?;
-    Ok(input)
+    eprintln!("Layout script for task windows (optional, enter for the built-in claude/nvim/shell layout).");
+    eprintln!("It runs with TENX_WINDOW, TENX_SLUG, TENX_TASK_DIR, TENX_CLAUDE_CMD and TENX_TMUX set:");
+    loop {
+        let input = prompt("  Layout script path")?;
+        if input.is_empty() {
+            return Ok(input);
+        }
+        match crate::workspace::check_layout(&input) {
+            Ok(()) => return Ok(input),
+            Err(e) => eprintln!("  ! {e} — try again, or enter for the built-in layout"),
+        }
+    }
 }
 
 fn prompt(label: &str) -> Result<String> {

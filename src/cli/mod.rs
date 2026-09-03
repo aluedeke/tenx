@@ -93,6 +93,10 @@ pub enum InternalCommands {
         cwd: String,
         /// The agent's pid — the pane closes when it's gone.
         pid: u32,
+        /// Claude Code's session id: follow exactly `<session>.jsonl` rather
+        /// than whichever transcript in the directory was written last.
+        #[arg(long)]
+        session: Option<String>,
     },
 }
 

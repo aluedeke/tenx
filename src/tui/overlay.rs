@@ -164,7 +164,6 @@ struct Confirm {
     ws_idx: usize,
     slug: String,
     title: String,
-    window_id: Option<String>,
 }
 
 /// Rename-title form.
@@ -274,7 +273,18 @@ struct Overlay {
     /// bouncy window manager sending repeated `FocusGained` events can't fire
     /// it more than once per `SWEEP_INTERVAL`. `None` until the first one.
     last_swept: Option<Instant>,
+
+    /// Window signals as of the last slow refresh (see `refresh_statuses`).
+    signals: workspace::Signals,
+    /// When the slow inputs (tmux, per-task cache files) were last re-read.
+    slow_refreshed: Option<Instant>,
 }
+
+/// How often the idle tick re-reads the *slow* inputs — `tmux list-windows`
+/// (a subprocess) and each row's cache files. The watcher only changes them
+/// every 2 s, so asking more often than that is spawn churn for nothing; the
+/// session registry (a directory read) is still checked every tick.
+const SLOW_REFRESH: Duration = Duration::from_secs(2);
 
 /// Minimum spacing between the home pane's automatic idle-tab sweeps — see
 /// `Overlay::maybe_sweep`. `FocusGained` already only triggers a rescan, which
@@ -309,6 +319,8 @@ impl Overlay {
             search_area: Rect::default(),
             list_area: Rect::default(),
             last_swept: None,
+            signals: workspace::Signals::new(),
+            slow_refreshed: None,
         };
         o.rebuild_rows();
         o
@@ -366,11 +378,13 @@ impl Overlay {
         // group, by last status change newest first. Tasks with no agent
         // activity yet fall back to creation time.
         let sessions = workspace::claude::sessions();
-        let signals = crate::tmux::signals();
+        self.signals = crate::tmux::signals();
+        self.slow_refreshed = Some(Instant::now());
+        let signals = &self.signals;
         let mut rows: Vec<Row> = Vec::new();
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
             for task in ws.tasks().unwrap_or_default() {
-                let state = workspace::resolve_task_state(&task.path, &sessions, &signals);
+                let state = workspace::resolve_task_state(&task.path, &sessions, signals);
                 let window_id = read_window_id(&task.path);
                 let secrets_pending = workspace::secrets_pending(&task.path);
                 let secrets_pending_set = workspace::secrets_pending_set(&task.path);
@@ -418,16 +432,23 @@ impl Overlay {
     /// mutating action (create/delete/rename).
     fn refresh_statuses(&mut self) {
         let sessions = workspace::claude::sessions();
-        let signals = crate::tmux::signals();
+        let slow = self.slow_refreshed.is_none_or(|t| t.elapsed() >= SLOW_REFRESH);
+        if slow {
+            self.signals = crate::tmux::signals();
+            self.slow_refreshed = Some(Instant::now());
+        }
+        let signals = &self.signals;
         let mut rows = std::mem::take(&mut self.rows);
         for r in rows.iter_mut() {
-            let state = workspace::resolve_task_state(&r.path, &sessions, &signals);
+            let state = workspace::resolve_task_state(&r.path, &sessions, signals);
             r.status = state.status;
             r.changed = state.changed;
             r.waiting_for = state.waiting_for;
             r.activity = state.changed.unwrap_or(r.activity);
-            r.window_id = read_window_id(&r.path);
-            r.live = crate::live::read(&r.path);
+            if slow {
+                r.window_id = read_window_id(&r.path);
+                r.live = crate::live::read(&r.path);
+            }
         }
         self.rows = rows;
     }
@@ -1192,7 +1213,6 @@ impl Overlay {
                 ws_idx: r.ws_idx,
                 slug: r.slug.clone(),
                 title: r.title.clone(),
-                window_id: r.window_id.clone(),
             });
         }
     }
@@ -1210,11 +1230,11 @@ impl Overlay {
             return;
         }
         // Close the window first (best-effort) so it doesn't linger after the
-        // dir goes. Look it up live rather than trusting the cached id.
+        // dir goes. By live slug lookup only — never the cached id: tmux
+        // reuses `@N` after a server restart, so a stale cache can name some
+        // *other* task's window.
         if let Some(w) = crate::tmux::find_window(&confirm.slug).ok().flatten() {
             let _ = crate::tmux::kill_window(&w.id);
-        } else if let Some(id) = &confirm.window_id {
-            let _ = crate::tmux::kill_window(id);
         }
         let res = {
             let ws = &self.workspaces[confirm.ws_idx];
@@ -1237,8 +1257,9 @@ impl Overlay {
         };
         let path = r.path.clone();
         let slug = r.slug.clone();
-        // The live window by slug is the truth; the cached id is a fallback.
-        let id = crate::tmux::find_window(&slug).ok().flatten().map(|w| w.id).or_else(|| r.window_id.clone());
+        // The live window by slug is the only truth for a kill — a cached id
+        // can belong to another task after a server restart.
+        let id = crate::tmux::find_window(&slug).ok().flatten().map(|w| w.id);
         match id {
             Some(id) => match crate::tmux::kill_window(&id) {
                 Ok(()) => {
@@ -1772,17 +1793,9 @@ fn task_items(
         // a different action from you (unlocking) than approving a prompt
         // does, regardless of whether the task also happens to be idle.
         let has_secrets = !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty();
-        let glyph = if has_secrets {
-            "🔒 "
-        } else {
-            match row.status {
-                TaskStatus::Blocked => "💬 ",
-                TaskStatus::Signaled => "🔔 ",
-                TaskStatus::Done => "✅ ",
-                TaskStatus::Working => "▷  ",
-                TaskStatus::Idle => "   ",
-            }
-        };
+        // Three columns: the two-column glyph (`TaskStatus::glyph`, shared
+        // with the status line) plus a gap.
+        let glyph = if has_secrets { "🔒 ".to_string() } else { format!("{} ", row.status.glyph()) };
         let title_style = if has_secrets {
             Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)
         } else {

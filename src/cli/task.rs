@@ -39,10 +39,20 @@ pub fn new_with(
     if slug.is_empty() {
         bail!("task name {name:?} has no letters or digits to make a slug from");
     }
+    if crate::tmux::is_reserved_slug(slug) {
+        bail!("task name {name:?} slugs to {slug:?}, which is tenx's own window — pick another name");
+    }
 
     let global = crate::workspace::load_global()?;
 
     ws.check_task_new(slug)?;
+    // A task created before `slugify` tightened up may live at a directory
+    // the new slug doesn't match ("v1.2 hotfix" → `v1.2-hotfix` then,
+    // `v1-2-hotfix` now); catch the duplicate by title so it isn't cloned
+    // twice under two names.
+    if let Some(existing) = ws.tasks()?.into_iter().find(|t| t.display_name.eq_ignore_ascii_case(name)) {
+        bail!(crate::workspace::WorkspaceError::TaskExists(existing.name));
+    }
 
     // Determine which repos to include
     let repo_names: Vec<String> = match repos {
@@ -223,22 +233,34 @@ pub fn set_repos_in(
 }
 
 /// Resolve a workspace (explicit dir, else cwd) and a task slug. An explicit
-/// `ws_dir` means the caller is a UI passing an exact slug; from cwd the name is
-/// slugified, matching how `task open` treats it.
+/// `ws_dir` means the caller is a UI passing an exact slug; from cwd the name
+/// is resolved with [`slug_for`].
 fn resolve_task(ws_dir: Option<&str>, task: &str) -> Result<(crate::workspace::Workspace, String)> {
     match ws_dir {
         Some(dir) => Ok((crate::workspace::load(Path::new(dir))?, task.to_string())),
-        None => Ok((
-            crate::workspace::find(&env::current_dir()?)?,
-            crate::workspace::slugify(task),
-        )),
+        None => {
+            let ws = crate::workspace::find(&env::current_dir()?)?;
+            let slug = slug_for(&ws, task);
+            Ok((ws, slug))
+        }
     }
+}
+
+/// The slug a user-typed task name refers to: the name itself if a task
+/// directory of exactly that name exists (tasks created before `slugify`
+/// tightened up may have punctuation in their directory names), else the
+/// name slugified — what a freshly created task would get.
+fn slug_for(ws: &crate::workspace::Workspace, name: &str) -> String {
+    if !name.is_empty() && !name.contains('/') && ws.tasks_dir().join(name).is_dir() {
+        return name.to_string();
+    }
+    crate::workspace::slugify(name)
 }
 
 pub fn open(name: &str) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
-    let slug = crate::workspace::slugify(name);
+    let slug = slug_for(&ws, name);
     open_in(&ws, &slug)
 }
 
@@ -249,11 +271,11 @@ pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
     open_in(&ws, slug)
 }
 
-/// Create a task in an explicit workspace directory and open a window for it
-/// (for scripts and front ends). `repos` is the picked subset (None = all).
-pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, md: &TaskMd) -> Result<()> {
+/// Create a task in an explicit workspace directory (for scripts and front
+/// ends). `repos` is the picked subset (None = all).
+pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd) -> Result<()> {
     let ws = crate::workspace::load(Path::new(ws_dir))?;
-    new_with(&ws, name, repos, false, md)
+    new_with(&ws, name, repos, no_open, md)
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).
@@ -435,16 +457,16 @@ pub fn sweep_candidates(after: Duration) -> Vec<SweepAction> {
         return out; // session isn't running — nothing open to sweep
     }
     let sessions = crate::workspace::claude::sessions();
-    let signals: crate::workspace::Signals = live
-        .iter()
-        .map(|w| (w.name.clone(), crate::workspace::Signal { bell: w.bell, activity: w.activity }))
-        .collect();
+    let signals = crate::tmux::signals_from(&live);
     for ws in crate::workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
             // Windows are named by slug, which is only unique *within* a
             // workspace (see `Workspace::check_task_new`) — a name collision
             // across two workspaces is a pre-existing ambiguity `open_in`'s
             // `find_window` shares, not something sweep introduces.
+            if crate::tmux::is_reserved_slug(&task.name) {
+                continue; // a pre-rebuild task named like the home window
+            }
             let Some(w) = live.iter().find(|w| w.name == task.name) else {
                 continue; // not open
             };
@@ -512,7 +534,8 @@ pub fn sweep_quiet(after: Duration) -> usize {
 pub fn rm(name: &str, force: bool) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
-    rm_in(&ws, name, force)
+    let slug = slug_for(&ws, name);
+    rm_in(&ws, &slug, force)
 }
 
 /// Delete a task (worktrees, branches, directory) in an explicit workspace.

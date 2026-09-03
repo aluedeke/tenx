@@ -80,8 +80,25 @@ fn applescript_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// Find `bin` on `$PATH`. A PATH scan rather than `command -v`: `command` is
+/// a shell builtin, and only macOS also ships it as `/usr/bin/command`, so
+/// spawning it directly always failed on Linux — silently disabling every
+/// caller (notifications, `gh`).
 pub fn which(bin: &str) -> Option<PathBuf> {
-    let out = Command::new("command").args(["-v", bin]).output().ok()?;
-    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!path.is_empty()).then(|| PathBuf::from(path))
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).map(|dir| dir.join(bin)).find(|p| is_executable(p))
+}
+
+fn is_executable(p: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn which_finds_sh_and_not_nonsense() {
+        assert!(super::which("sh").is_some());
+        assert!(super::which("definitely-not-a-binary-tenx").is_none());
+    }
 }

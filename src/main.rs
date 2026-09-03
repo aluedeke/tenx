@@ -69,7 +69,7 @@ fn run() -> Result<()> {
             InternalCommands::Ports => {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
-            InternalCommands::AgentLog { cwd, pid } => cli::agentlog::run(&cwd, pid)?,
+            InternalCommands::AgentLog { cwd, pid, session } => cli::agentlog::run(&cwd, pid, session.as_deref())?,
         },
 
         Some(Commands::Secrets { command }) => match command {
@@ -90,7 +90,7 @@ fn run() -> Result<()> {
                     .collect::<Result<Vec<_>>>()?;
                 let md = cli::task::TaskMd { description: description.as_deref().unwrap_or(""), links: &links };
                 match ws_dir {
-                    Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref(), &md)?,
+                    Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref(), no_open, &md)?,
                     None => cli::task::new(&name, repos.as_deref(), no_open, &md)?,
                 }
             }

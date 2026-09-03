@@ -81,8 +81,11 @@ pub fn fetch_pr(repo: &str, worktree: &Path) -> Option<PrInfo> {
     tenx_core::live::summarize_pr(repo, &json)
 }
 
+/// Whether `gh` is on `PATH` — resolved once per process; the watcher asks
+/// every tick and the answer doesn't change under it.
 pub fn gh_available() -> bool {
-    crate::cli::notify::which("gh").is_some()
+    static GH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GH.get_or_init(|| crate::cli::notify::which("gh").is_some())
 }
 
 fn run_capture(bin: &str, args: &[&str]) -> String {

@@ -6,57 +6,37 @@
 //! list. This is the piece that watches when you aren't — the gap that let eight
 //! tasks sit 18-23 hours waiting on an answer nobody knew they wanted.
 //!
-//! **Two consumers, one resolve pass** ([`resolve_all`]):
+//! **Several consumers, one resolve pass** ([`resolve_all`]):
 //!
-//! - a desktop notification on the edge into `Blocked`, debounced, so you hear
-//!   about a prompt while you're in another app;
-//! - a `tenx::status` pipe broadcast to the zellij session, which is how the
-//!   status bar in every tab learns that a task you *aren't* looking at changed
-//!   state (see [`crate::zellij::pipe_status`]).
+//! - a desktop notification on the edge into a needs-you state (`Blocked`, or
+//!   a bell → `Signaled`), debounced, so you hear about a prompt while you're
+//!   in another app;
+//! - the tmux status line, via per-window `@tenx_status` and the global
+//!   `@tenx_right` user options ([`push_status`]), which is how every window
+//!   learns that a task you *aren't* looking at changed state;
+//! - a transcript pane for each background agent ([`pane_new_agents`]);
+//! - the per-task `.tenx-live.json` cache of ports and PRs ([`refresh_live`]).
 //!
-//! They deliberately differ on `Done`: a finished turn fires after every single
-//! turn, which is noise as a desktop popup and exactly the right thing to show
-//! quietly in a status bar. Splitting them here rather than at the sender means
-//! neither can drift into a different idea of what a task is doing.
+//! Notification and status line deliberately differ on `Done`: a finished
+//! turn fires after every single turn, which is noise as a desktop popup and
+//! exactly the right thing to show quietly in a status line.
 //!
-//! **Why a process and not a zellij plugin.** A plugin was the obvious home —
-//! it dies with the session, no supervision — and zellij 0.44 *can* run one
-//! paneless, but only down one of the two load paths and only conditionally:
-//!
-//! - `zellij pipe --plugin <url>` (and `pipe_message_to_plugin` addressed by
-//!   URL) launches an instance *with a pane* whether you want one or not
-//!   (measured: session pane count 11 → 13, and `plugin location=...` in the
-//!   layout dump); `zellij plugin` says so in its own help.
-//! - `load_plugins` in the config does load paneless — but only once the
-//!   plugin's permissions are already cached. With the grant missing, zellij
-//!   materialises a floating pane to ask for it (`dump-layout` puts the plugin
-//!   in a `floating_panes` block), so "paneless" would rest on tenx writing
-//!   into zellij's permission cache dir and that write continuing to work.
-//!
-//! A watcher that can sprout a visible pane is exactly the leftover-pane
-//! problem the tabless design avoids. And it would need `RunCommands` anyway to
-//! reach `terminal-notifier`/`osascript` — the very permission whose absence
-//! spawns the pane. A process also serves every consumer, where a plugin can
-//! only pipe to other plugins.
-//!
-//! **Lifecycle.** `tenx` is the only way into the session, and `main::open()` is
-//! the single funnel for all three entry paths, so [`ensure_running`] hangs off
-//! it: start the session, get a watcher. It exits on its own once the zellij
-//! session is gone, so it can't outlive what it's watching.
+//! **Lifecycle.** `tenx` is the only way into the session, and `main::open()`
+//! is the single funnel for every entry path, so [`ensure_running`] hangs off
+//! it: start the session, get a watcher. It exits on its own once the tmux
+//! server is gone, so it can't outlive what it's watching.
 //!
 //! **Why polling rather than a filesystem watch.** `~/.claude/sessions` is
-//! push-updated by Claude Code, so watching it looks right — but a full resolve
-//! costs ~5 ms (measured on 6 workspaces / 43 tasks), which at this interval is
-//! a rounding error, and it avoids both a new dependency and zellij's own
-//! "somewhat unstable" `watch_filesystem`. If this ever gets expensive, the
-//! answer is to watch the directory, not to poll less often.
+//! push-updated by Claude Code, so watching it looks right — but a full
+//! resolve costs ~5 ms (measured on 6 workspaces / 43 tasks), which at this
+//! interval is a rounding error, and tmux's bell flags have to be polled
+//! anyway. If this ever gets expensive, the answer is to watch the directory,
+//! not to poll less often.
 
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::workspace::{self, TaskStatus};
@@ -111,8 +91,8 @@ pub fn run() -> Result<()> {
     // running before the watcher started were either paned by a previous
     // watcher or predate this feature; either way a pane now would be a
     // surprise, not news.
-    let mut paned: HashSet<(PathBuf, u32)> = primed.agents.iter().map(|(_, c, p)| (c.clone(), *p)).collect();
-    let pr_busy = Arc::new(AtomicBool::new(false));
+    let mut paned: HashSet<(PathBuf, u32)> = primed.agents.iter().map(|a| (a.cwd.clone(), a.pid)).collect();
+    let mut pr_lookups = PrLookups::new();
     // Deliberately not seeded from `primed`: the session is still being created
     // at this point (see SESSION_MISSES_BEFORE_EXIT), so no status bar exists to
     // receive a push yet. Starting empty means the first tick always publishes,
@@ -191,17 +171,16 @@ pub fn run() -> Result<()> {
         pending_secrets_set.retain(|k, _| secrets_set_keys.contains(k));
         notified_secrets_set.retain(|k| secrets_set_keys.contains(k));
 
-        pane_new_agents(&snapshot.agents, &mut paned);
-        let live_changed = refresh_live(&snapshot.live_targets, &pr_busy);
+        pane_new_agents(&snapshot.agents, &snapshot.windows, &mut paned);
+        let live_changed = refresh_live(&snapshot.live_targets, &mut pr_lookups);
 
-        // Publish last. Delivery is the slowest thing in this loop — ~0.17 s for
-        // a live-task payload, against ~5 ms to resolve — and the notification
-        // above is the half with a person waiting on it. Only on a real change,
-        // so a quiet session sends nothing at all.
+        // Publish last. Only on a real change, so a quiet session sends
+        // nothing at all: `digest` covers state, `live_changed` the cached
+        // ports/PRs (which `push_status` reads back after the refresh).
         let current = digest(&snapshot.tasks);
         if current != published || live_changed {
             published = current;
-            push_status(&snapshot.tasks);
+            push_status(&snapshot.tasks, &snapshot.windows);
         }
 
         if tick.is_multiple_of(SESSION_CHECK_POLLS) {
@@ -246,13 +225,16 @@ struct Snapshot {
     /// different fulfillment action.
     secrets_pending_set: Vec<(String, Note)>,
     /// Background agents (`--bg`, any non-interactive kind) running under a
-    /// task: (task slug, agent cwd, pid). The watcher gives each a pane in its
-    /// task's window the first time it sees it.
-    agents: Vec<(String, PathBuf, u32)>,
+    /// task. The watcher gives each a pane in its task's window the first
+    /// time it sees it.
+    agents: Vec<Agent>,
     /// Every task, for the live-facts refresh (`refresh_live`): where it is,
     /// which repos it has, and whether it's active (open window or a live
     /// session), which sets how eagerly its PR is re-checked.
     live_targets: Vec<LiveTarget>,
+    /// The session's windows as listed for this pass — one `list-windows`
+    /// serves signals, agent panes and the status push.
+    windows: Vec<crate::tmux::Window>,
     /// Tasks with a live Claude Code session, in the shared wire shape
     /// (`workspace::task_json`).
     ///
@@ -274,9 +256,17 @@ struct LiveTarget {
     active: bool,
 }
 
+struct Agent {
+    slug: String,
+    cwd: PathBuf,
+    pid: u32,
+    session_id: Option<String>,
+}
+
 fn resolve_all() -> Snapshot {
     let sessions = workspace::claude::sessions();
-    let signals = crate::tmux::signals();
+    let windows = crate::tmux::list_windows().unwrap_or_default();
+    let signals = crate::tmux::signals_from(&windows);
     let mut blocked = Vec::new();
     let mut secrets_pending = Vec::new();
     let mut secrets_pending_set = Vec::new();
@@ -295,7 +285,12 @@ fn resolve_all() -> Snapshot {
             });
             for s in tenx_core::status::sessions_for(&sessions, &task.path) {
                 if s.kind != "interactive" && s.cwd != task.path {
-                    agents.push((task.name.clone(), s.cwd.clone(), s.pid));
+                    agents.push(Agent {
+                        slug: task.name.clone(),
+                        cwd: s.cwd.clone(),
+                        pid: s.pid,
+                        session_id: s.session_id.clone(),
+                    });
                 }
             }
             // `Blocked` and `Signaled` are both "waiting on you" edges — a
@@ -354,55 +349,97 @@ fn resolve_all() -> Snapshot {
         secrets_pending_set,
         agents,
         live_targets,
+        windows,
         tasks: tasks.into_iter().map(|(_, v)| v).collect(),
     }
 }
 
+/// PR lookups in flight and their results. The helper thread only *fetches*;
+/// every write to `.tenx-live.json` happens on the watch thread, so the ports
+/// update and the PR update can't race each other's read-modify-write.
+struct PrLookups {
+    busy: bool,
+    tx: std::sync::mpsc::Sender<(PathBuf, Vec<crate::live::PrInfo>)>,
+    rx: std::sync::mpsc::Receiver<(PathBuf, Vec<crate::live::PrInfo>)>,
+}
+
+impl PrLookups {
+    fn new() -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        PrLookups { busy: false, tx, rx }
+    }
+}
+
 /// Refresh every task's `.tenx-live.json`: ports for the open windows every
-/// tick (cheap, local), PRs on a staggered schedule (network). PR lookups run
-/// on a helper thread so a slow `gh` can't hold up the notification path;
-/// `pr_busy` stops a second batch from starting while one is still out.
-/// Returns whether any cache changed, so the caller can republish.
-fn refresh_live(targets: &[LiveTarget], pr_busy: &Arc<AtomicBool>) -> bool {
+/// tick (cheap, local), PRs on a staggered schedule (network, off-thread so a
+/// slow `gh` can't hold up the notification path; one batch in flight at a
+/// time). Returns whether any cache changed, so the caller can republish.
+fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
     let mut changed = false;
+
+    // Land finished PR lookups first — this is the only writer of `prs`. An
+    // empty path is the batch's sentinel: the helper thread is done.
+    while let Ok((path, found)) = prs.rx.try_recv() {
+        if path.as_os_str().is_empty() {
+            prs.busy = false;
+            continue;
+        }
+        let mut live = crate::live::read(&path);
+        if live.prs != found {
+            changed = true;
+        }
+        live.prs = found;
+        live.pr_checked = crate::live::now_secs();
+        let _ = crate::live::write(&path, &live);
+    }
+
+    // A task with no window (closed, swept, server gone) has no ports — clear
+    // them, don't keep showing the last observed set.
     let ports = crate::live::ports_by_window();
     for t in targets {
-        let Some(new_ports) = ports.get(&t.slug) else { continue };
+        let new_ports = ports.get(&t.slug).cloned().unwrap_or_default();
         let mut live = crate::live::read(&t.path);
-        if live.ports != *new_ports {
-            live.ports = new_ports.clone();
+        if live.ports != new_ports {
+            live.ports = new_ports;
             changed |= crate::live::write(&t.path, &live).is_ok();
         }
     }
 
-    if !crate::live::gh_available() || pr_busy.load(Ordering::Relaxed) {
+    if prs.busy || !crate::live::gh_available() {
         return changed;
     }
+    if !targets.iter().any(|t| !t.repos.is_empty()) {
+        return changed;
+    }
+    // Budget counts `gh` calls (one per repo), not tasks: a five-repo task
+    // is five network round trips.
     let now = crate::live::now_secs();
-    let stale: Vec<(PathBuf, Vec<String>)> = targets
-        .iter()
-        .filter(|t| !t.repos.is_empty())
-        .filter(|t| {
-            let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
-            now.saturating_sub(crate::live::read(&t.path).pr_checked) >= ttl.as_secs()
-        })
-        .take(crate::live::PR_LOOKUPS_PER_TICK)
-        .map(|t| (t.path.clone(), t.repos.clone()))
-        .collect();
+    let mut budget = crate::live::PR_LOOKUPS_PER_TICK;
+    let mut stale: Vec<(PathBuf, Vec<String>)> = Vec::new();
+    for t in targets.iter().filter(|t| !t.repos.is_empty()) {
+        if budget == 0 {
+            break;
+        }
+        let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
+        if now.saturating_sub(crate::live::read(&t.path).pr_checked) < ttl.as_secs() {
+            continue;
+        }
+        let repos: Vec<String> = t.repos.iter().take(budget).cloned().collect();
+        budget -= repos.len();
+        stale.push((t.path.clone(), repos));
+    }
     if stale.is_empty() {
         return changed;
     }
-    pr_busy.store(true, Ordering::Relaxed);
-    let busy = Arc::clone(pr_busy);
+    prs.busy = true;
+    let tx = prs.tx.clone();
     std::thread::spawn(move || {
         for (path, repos) in stale {
-            let prs: Vec<_> = repos.iter().filter_map(|r| crate::live::fetch_pr(r, &path.join(r))).collect();
-            let mut live = crate::live::read(&path);
-            live.prs = prs;
-            live.pr_checked = crate::live::now_secs();
-            let _ = crate::live::write(&path, &live);
+            let found: Vec<_> = repos.iter().filter_map(|r| crate::live::fetch_pr(r, &path.join(r))).collect();
+            let _ = tx.send((path, found));
         }
-        busy.store(false, Ordering::Relaxed);
+        // Sentinel: the batch is done, the next tick may start another.
+        let _ = tx.send((PathBuf::new(), Vec::new()));
     });
     changed
 }
@@ -414,82 +451,110 @@ fn refresh_live(targets: &[LiveTarget], pr_busy: &Arc<AtomicBool>) -> bool {
 /// fresh pane; entries for dead agents are pruned so the set can't grow
 /// forever. No window open for the task → nothing to do, and the agent is
 /// tried again next tick in case the window opens later.
-fn pane_new_agents(agents: &[(String, PathBuf, u32)], paned: &mut HashSet<(PathBuf, u32)>) {
-    paned.retain(|(cwd, pid)| agents.iter().any(|(_, c, p)| c == cwd && p == pid));
+fn pane_new_agents(agents: &[Agent], windows: &[crate::tmux::Window], paned: &mut HashSet<(PathBuf, u32)>) {
+    paned.retain(|(cwd, pid)| agents.iter().any(|a| a.cwd == *cwd && a.pid == *pid));
     if agents.is_empty() {
         return;
     }
-    let Ok(windows) = crate::tmux::list_windows() else { return };
     let Ok(bin) = std::env::current_exe() else { return };
-    for (slug, cwd, pid) in agents {
-        let key = (cwd.clone(), *pid);
+    for a in agents {
+        let key = (a.cwd.clone(), a.pid);
         if paned.contains(&key) {
             continue;
         }
-        let Some(w) = windows.iter().find(|w| w.name == *slug) else { continue };
-        if crate::tmux::open_agent_pane(&w.id, &bin.to_string_lossy(), &cwd.to_string_lossy(), *pid).is_ok() {
+        let Some(w) = windows.iter().find(|w| w.name == a.slug) else { continue };
+        let opened = crate::tmux::open_agent_pane(
+            &w.id,
+            &bin.to_string_lossy(),
+            &a.cwd.to_string_lossy(),
+            a.pid,
+            a.session_id.as_deref(),
+        );
+        if opened.is_ok() {
             paned.insert(key);
         }
     }
 }
 
+/// A `Done` task counts as "waiting on you" in the corner only once it has
+/// sat unanswered this long. Every turn ends `Done`; without a gate the
+/// count flips on and off with each prompt you type — the flicker the old
+/// status bar measured and designed out.
+const RIGHT_WAIT_GATE_SECS: u64 = 60;
+
 /// Push the snapshot into tmux: one `@tenx_status` user option per open task
 /// window (what `status-left` shows in that window) and a global `@tenx_right`
-/// (how many other tasks are waiting on you). Called only when `digest`
-/// changed, so a quiet session costs nothing.
-fn push_status(tasks: &[serde_json::Value]) {
-    let Ok(windows) = crate::tmux::list_windows() else { return };
+/// (what *else* is waiting on you). Called only on a real change, so a quiet
+/// session costs nothing. Rows are `workspace::task_json`, which already
+/// carries the live chips — this doesn't re-read anything.
+fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window]) {
     if windows.is_empty() {
         return;
     }
-    let mut waiting = 0usize;
-    let mut blocked = 0usize;
-    for w in &windows {
+    let current = windows.iter().find(|w| w.active).map(|w| w.name.as_str());
+    for w in windows.iter().filter(|w| w.name != crate::tmux::HOME_WINDOW) {
         let task = tasks.iter().find(|t| t["slug"].as_str() == Some(w.name.as_str()));
         let text = match task {
-            Some(t) => {
-                let status = t["status"].as_str().unwrap_or("idle");
-                let title = t["title"].as_str().unwrap_or(&w.name);
-                let glyph = match status {
-                    "blocked" => "💬",
-                    "signaled" => "🔔",
-                    "working" => "▷",
-                    "done" => "✅",
-                    _ => "·",
-                };
-                let mut text = match (status, t["waiting_for"].as_str()) {
-                    ("blocked", Some(reason)) => format!("{glyph} {title} — {reason}"),
-                    _ => format!("{glyph} {title}"),
-                };
-                // Live chips: the PR and any listening ports, straight from
-                // the cache `refresh_live` keeps.
-                let live = crate::live::read(&Path::new(t["ws_dir"].as_str().unwrap_or("")).join("tasks").join(&w.name));
-                for pr in &live.prs {
-                    text.push_str(&format!("  {}", pr.chip()));
-                }
-                if !live.ports.is_empty() {
-                    let ports: Vec<String> = live.ports.iter().map(|p| format!(":{p}")).collect();
-                    text.push_str(&format!("  {}", ports.join(" ")));
-                }
-                text
-            }
-            None => String::new(), // idle: fall back to the window name
+            Some(t) => status_line(t, &w.name),
+            None => String::new(), // idle: the format falls back to the window name
         };
         let _ = crate::tmux::set_window_option(&w.id, "@tenx_status", &text);
     }
-    for t in tasks {
-        match t["status"].as_str() {
-            Some("blocked" | "signaled") => blocked += 1,
-            Some("done") => waiting += 1,
+
+    // The corner is about the tasks you are *not* looking at.
+    let (mut locked, mut need, mut waiting) = (0usize, 0usize, 0usize);
+    for t in tasks.iter().filter(|t| t["slug"].as_str() != current) {
+        if has_secrets_pending(t) {
+            locked += 1;
+            continue;
+        }
+        match TaskStatus::from_token(t["status"].as_str().unwrap_or("")) {
+            s if s.needs_you() => need += 1,
+            TaskStatus::Done if t["age_secs"].as_u64().unwrap_or(0) >= RIGHT_WAIT_GATE_SECS => waiting += 1,
             _ => {}
         }
     }
-    let right = match (blocked, waiting) {
-        (0, 0) => String::new(),
-        (b, w) if b > 0 => format!("💬 {b} need input · {} waiting", b + w),
-        (_, w) => format!("✅ {w} waiting"),
+    let mut parts = Vec::new();
+    if locked > 0 {
+        parts.push(format!("🔒 {locked} secret{}", if locked == 1 { "" } else { "s" }));
+    }
+    if need > 0 {
+        parts.push(format!("💬 {need} need input"));
+    }
+    if waiting > 0 {
+        parts.push(format!("✅ {waiting} waiting"));
+    }
+    let _ = crate::tmux::set_global_option("@tenx_right", &parts.join(" · "));
+}
+
+fn has_secrets_pending(t: &serde_json::Value) -> bool {
+    let non_empty = |k: &str| t[k].as_array().is_some_and(|a| !a.is_empty());
+    non_empty("secrets_pending") || non_empty("secrets_pending_set")
+}
+
+/// One window's `status-left` text from its snapshot row: glyph, title,
+/// Claude's waiting reason, then the PR and port chips the row carries.
+fn status_line(t: &serde_json::Value, slug: &str) -> String {
+    let status = TaskStatus::from_token(t["status"].as_str().unwrap_or(""));
+    let title = t["title"].as_str().unwrap_or(slug);
+    let mut text = if has_secrets_pending(t) {
+        format!("🔒 {title}")
+    } else {
+        match (status, t["waiting_for"].as_str()) {
+            (TaskStatus::Blocked, Some(reason)) => format!("{} {title} — {reason}", status.glyph()),
+            _ => format!("{} {title}", status.glyph().trim_end()),
+        }
     };
-    let _ = crate::tmux::set_global_option("@tenx_right", &right);
+    if let Some(prs) = t["prs"].as_array() {
+        for chip in prs.iter().filter_map(|p| p["chip"].as_str()) {
+            text.push_str(&format!("  {chip}"));
+        }
+    }
+    if let Some(ports) = t["ports"].as_array().filter(|p| !p.is_empty()) {
+        let ports: Vec<String> = ports.iter().filter_map(|p| p.as_u64()).map(|p| format!(":{p}")).collect();
+        text.push_str(&format!("  {}", ports.join(" ")));
+    }
+    text
 }
 
 /// A change key over everything the status bar renders *except* age.

@@ -35,6 +35,9 @@ impl SessionStatus {
 #[derive(Debug, Clone)]
 pub struct Session {
     pub pid: u32,
+    /// Claude Code's session id — its transcript is
+    /// `~/.claude/projects/<encoded cwd>/<session_id>.jsonl`.
+    pub session_id: Option<String>,
     pub cwd: PathBuf,
     pub status: SessionStatus,
     /// Why the session is waiting, straight from Claude Code — "input needed",
@@ -143,6 +146,31 @@ impl TaskStatus {
             TaskStatus::Signaled => "signaled",
             TaskStatus::Done => "done",
             TaskStatus::Idle => "idle",
+        }
+    }
+
+    /// Inverse of [`token`](Self::token); unknown tokens read as idle, the
+    /// same degradation `SessionStatus::from_token` applies.
+    pub fn from_token(token: &str) -> TaskStatus {
+        match token {
+            "working" => TaskStatus::Working,
+            "blocked" => TaskStatus::Blocked,
+            "signaled" => TaskStatus::Signaled,
+            "done" => TaskStatus::Done,
+            _ => TaskStatus::Idle,
+        }
+    }
+
+    /// The one glyph table — the overlay and the status line both draw from
+    /// it, so a new status can't render on one surface and not the other.
+    /// Two columns wide (the emoji) or padded to it.
+    pub fn glyph(self) -> &'static str {
+        match self {
+            TaskStatus::Blocked => "💬",
+            TaskStatus::Signaled => "🔔",
+            TaskStatus::Done => "✅",
+            TaskStatus::Working => "▷ ",
+            TaskStatus::Idle => "  ",
         }
     }
 
@@ -259,6 +287,7 @@ mod tests {
     fn session(cwd: &str, status: SessionStatus, kind: &str, updated: u64) -> Session {
         Session {
             pid: 1,
+            session_id: None,
             cwd: PathBuf::from(cwd),
             status,
             waiting_for: (status == SessionStatus::Waiting).then(|| "input needed".to_string()),
@@ -336,6 +365,15 @@ mod tests {
 
         let waiting = [session(TASK, SessionStatus::Waiting, "interactive", 10)];
         assert_eq!(resolve_task_state(Path::new(TASK), &waiting, BELL).status, TaskStatus::Blocked);
+    }
+
+    #[test]
+    fn tokens_round_trip_and_every_status_has_a_glyph() {
+        for s in [TaskStatus::Blocked, TaskStatus::Signaled, TaskStatus::Working, TaskStatus::Done, TaskStatus::Idle] {
+            assert_eq!(TaskStatus::from_token(s.token()), s);
+            assert!(!s.glyph().is_empty());
+        }
+        assert_eq!(TaskStatus::from_token("whatever"), TaskStatus::Idle);
     }
 
     #[test]

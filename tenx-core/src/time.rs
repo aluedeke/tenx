@@ -28,16 +28,19 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
     if s.is_empty() {
         return Err("empty duration".into());
     }
-    let (num, unit) = s.split_at(s.len() - 1);
-    let n: u64 = num
-        .parse()
-        .map_err(|_| format!("invalid duration '{s}' (want e.g. '4h')"))?;
-    let secs = match unit {
-        "m" => n * 60,
-        "h" => n * 3600,
-        "d" => n * 86400,
-        _ => return Err(format!("duration '{s}' must end in m/h/d")),
+    // `strip_suffix` rather than `split_at(len - 1)`: the latter panics on a
+    // multi-byte last character ("4é").
+    let (num, per) = if let Some(n) = s.strip_suffix('m') {
+        (n, 60)
+    } else if let Some(n) = s.strip_suffix('h') {
+        (n, 3600)
+    } else if let Some(n) = s.strip_suffix('d') {
+        (n, 86400)
+    } else {
+        return Err(format!("duration '{s}' must end in m/h/d"));
     };
+    let n: u64 = num.parse().map_err(|_| format!("invalid duration '{s}' (want e.g. '4h')"))?;
+    let secs = n.checked_mul(per).ok_or_else(|| format!("duration '{s}' is too large"))?;
     Ok(Duration::from_secs(secs))
 }
 
@@ -68,5 +71,7 @@ mod tests {
         assert!(parse_duration("4x").is_err());
         assert!(parse_duration("h").is_err());
         assert!(parse_duration("1h30m").is_err());
+        assert!(parse_duration("4é").is_err()); // multi-byte last char must not panic
+        assert!(parse_duration("99999999999999999999d").is_err());
     }
 }

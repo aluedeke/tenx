@@ -45,6 +45,8 @@ struct RawSession {
     #[serde(rename = "statusUpdatedAt")]
     status_updated_at: Option<u64>,
     kind: Option<String>,
+    #[serde(rename = "sessionId")]
+    session_id: Option<String>,
 }
 
 /// Every live Claude Code session. Dead entries are dropped: a crashed session
@@ -81,6 +83,7 @@ pub fn sessions() -> Vec<Session> {
         }
         out.push(Session {
             pid,
+            session_id: raw.session_id,
             cwd: PathBuf::from(cwd),
             status: raw.status.as_deref().map(SessionStatus::from_token).unwrap_or(SessionStatus::Idle),
             waiting_for: raw.waiting_for,
