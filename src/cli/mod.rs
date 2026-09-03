@@ -1,5 +1,7 @@
+pub mod agentlog;
 pub mod hooks;
 pub mod init;
+pub mod notify;
 pub mod repo;
 pub mod secrets;
 pub mod standup;
@@ -38,10 +40,8 @@ pub enum Commands {
         /// without exiting; quit keys are disabled)
         #[arg(long)]
         home: bool,
-        /// Print all tasks as JSON (activity-sorted) instead of running the
-        /// TUI. Data source for the tenx-zellij overlay plugin, which runs in
-        /// a wasm sandbox whose reachable dirs (`/data`, `/tmp`, `/host`) don't
-        /// include the workspace, so it cannot read task state itself.
+        /// Print all tasks and workspaces as JSON (activity-sorted) instead of
+        /// running the TUI — for scripts and other front ends.
         #[arg(long)]
         json: bool,
     },
@@ -69,6 +69,27 @@ pub enum Commands {
     Secrets {
         #[command(subcommand)]
         command: SecretsCommands,
+    },
+    /// Plumbing for tmux hooks and debugging — not part of the user-facing CLI.
+    #[command(hide = true)]
+    Internal {
+        #[command(subcommand)]
+        command: InternalCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum InternalCommands {
+    /// Print the tmux config tenx generates for its server (what
+    /// `~/.config/tenx/tmux.conf` will contain on the next session creation).
+    TmuxConf,
+    /// Follow a background agent's transcript in a pane; exits when the agent
+    /// does. Opened by `tenx watch` when a `--bg` session appears under a task.
+    AgentLog {
+        /// The agent's working directory (its `cwd` in Claude Code's registry).
+        cwd: String,
+        /// The agent's pid — the pane closes when it's gone.
+        pid: u32,
     },
 }
 
@@ -151,9 +172,8 @@ pub enum RepoCommands {
         /// Override the repo name (default: inferred from URL)
         #[arg(long)]
         name: Option<String>,
-        /// Resolve the workspace from this directory instead of cwd — used by
-        /// the tenx-zellij overlay plugin, which shells out from an arbitrary
-        /// cwd and can't link against `workspace::find`.
+        /// Resolve the workspace from this directory instead of cwd (for
+        /// scripts and front ends that don't run inside the workspace).
         #[arg(long)]
         ws_dir: Option<String>,
     },
@@ -175,11 +195,10 @@ pub enum TaskCommands {
         /// Comma-separated repo names to include (default: all workspace repos)
         #[arg(long, value_delimiter = ',')]
         repos: Option<Vec<String>>,
-        /// Create worktrees but don't open a zellij tab
+        /// Create worktrees but don't open a window in the tenx session
         #[arg(long)]
         no_open: bool,
-        /// Create the task in this workspace directory instead of cwd. Used by
-        /// the overlay plugin, which has no meaningful cwd.
+        /// Create the task in this workspace directory instead of cwd.
         #[arg(long)]
         ws_dir: Option<String>,
     },
@@ -193,12 +212,11 @@ pub enum TaskCommands {
         #[arg(long)]
         ws_dir: Option<String>,
     },
-    /// Open a task's zellij tab (or switch to it if already open)
+    /// Open a task's window in the tenx session (or switch to it if already open)
     Open {
         name: String,
         /// Resolve the task in this workspace directory instead of cwd. `name`
-        /// is treated as an exact slug (not slugified). Used by the overlay
-        /// plugin, which jumps across workspaces and has no meaningful cwd.
+        /// is treated as an exact slug (not slugified).
         #[arg(long)]
         ws_dir: Option<String>,
     },
@@ -251,11 +269,11 @@ pub enum TaskCommands {
         #[arg(long)]
         force: bool,
         /// Resolve the task in this workspace directory instead of cwd. `name`
-        /// is treated as an exact slug. Used by the overlay plugin.
+        /// is treated as an exact slug.
         #[arg(long)]
         ws_dir: Option<String>,
     },
-    /// Exempt a task from `sweep` — its tab is never auto-closed for being idle.
+    /// Exempt a task from `sweep` — its window is never auto-closed for being idle.
     Pin {
         name: String,
         #[arg(long)]
@@ -267,14 +285,14 @@ pub enum TaskCommands {
         #[arg(long)]
         ws_dir: Option<String>,
     },
-    /// Close idle task tabs across every workspace, freeing the claude process
-    /// and zellij plugin instance each resident tab holds. Never touches a
-    /// task waiting on a prompt or mid-turn, the tab you're in, or a pinned
-    /// task, and never deletes anything: `task open` (or the overlay) picks a
-    /// swept task's conversation back up exactly where it left off.
+    /// Close idle task windows across every workspace, freeing the claude
+    /// process each resident window holds. Never touches a task waiting on a
+    /// prompt or mid-turn, the current window, or a pinned task, and never
+    /// deletes anything: `task open` (or the overlay) picks a swept task's
+    /// conversation back up exactly where it left off.
     Sweep {
         /// How long a finished ("done, waiting on you") task sits unanswered
-        /// before its tab is swept. A genuinely idle task (no live claude
+        /// before its window is swept. A genuinely idle task (no live claude
         /// session at all) is swept immediately regardless. "<N><unit>",
         /// e.g. "30m", "4h", "2d". Default: 8h.
         #[arg(long)]

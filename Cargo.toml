@@ -1,8 +1,8 @@
-# Root package + workspace: `tenx` is the native CLI/TUI binary; `tenx-zellij`
-# (the Ctrl+w overlay) and `tenx-statusbar` (the per-tab status line) are WASM
-# zellij plugins (build with --target wasm32-wasip1).
+# Root package + workspace: `tenx` is the CLI/TUI binary (the overlay, the
+# watcher, every command); `tenx-core` is the pure logic it and any future
+# front end share. tmux is the session layer — see REBUILD-PLAN.md.
 [workspace]
-members = ["tenx-zellij", "tenx-statusbar"]
+members = ["tenx-core"]
 
 [package]
 name = "tenx"
@@ -10,6 +10,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tenx-core = { path = "tenx-core" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
@@ -24,3 +25,6 @@ libc = "0.2.189"
 # table ratatui's own Buffer rendering does — a mismatched table is exactly
 # the off-by-one-column bug `tenx-statusbar`'s CLAUDE.md notes already hit.
 unicode-width = "=0.2.0"
+
+[dev-dependencies]
+serde_json = "1"

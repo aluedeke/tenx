@@ -21,6 +21,9 @@ pub fn new_in(
     let display_name = name.to_string();
     let slug = crate::workspace::slugify(name);
     let slug = slug.as_str();
+    if slug.is_empty() {
+        bail!("task name {name:?} has no letters or digits to make a slug from");
+    }
 
     let global = crate::workspace::load_global()?;
 
@@ -47,27 +50,25 @@ pub fn new_in(
     }
 
     if !no_open {
-        if crate::zellij::current_session().as_deref() != Some(crate::zellij::SESSION) {
-            eprintln!("! not inside the '{}' session — run: tenx", crate::zellij::SESSION);
+        if !crate::tmux::server_running() {
+            eprintln!("! the '{}' session isn't running — run: tenx", crate::tmux::SESSION);
             eprintln!("  to open later: tenx task open {}", slug);
             return Ok(());
         }
         let layout = ws.config.layout.as_str();
-        let opts = crate::zellij::TabOptions {
-            // Name the zellij tab by the immutable slug, not the editable
-            // title. Tab names are never shown (tabless layout) and are used
-            // only to correlate task↔tab; the slug can't drift or collide, so
-            // the correlation stays reliable even when the title is edited.
-            name: slug,
-            // The status bar shows the title; the tab is still keyed by slug.
+        let opts = crate::tmux::TaskWindow {
+            // Name the window by the immutable slug, not the editable title.
+            // Window names are never shown (tabless) and only correlate
+            // task↔window; the slug can't drift or collide.
+            slug,
             title: name,
-            cwd: &task_dir.to_string_lossy(),
+            task_dir: &task_dir.to_string_lossy(),
             workspace_dir: &ws.dir.to_string_lossy(),
-            layout_file: if layout.is_empty() { None } else { Some(layout) },
+            layout_script: if layout.is_empty() { None } else { Some(layout) },
             resume: false, // brand-new task — no conversation to continue
         };
-        let tab_id = crate::zellij::open_or_switch(&opts)?;
-        std::fs::write(task_dir.join(".tenx-tab-id"), tab_id.to_string())?;
+        let id = crate::tmux::open_task_window(&opts)?;
+        std::fs::write(task_dir.join(crate::tmux::WINDOW_ID_FILE), &id)?;
     }
     Ok(())
 }
@@ -261,45 +262,44 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
     Ok(())
 }
 
-/// Focus a task's zellij tab within the current session (creating it if needed),
-/// given an explicit workspace and slug. Used by `open` and the overlay, neither
-/// of which can rely on cwd matching the task.
+/// Focus a task's window in the tenx session (creating it if needed), given an
+/// explicit workspace and slug. Used by `open` and the overlay, neither of
+/// which can rely on cwd matching the task. Works from any client of the tenx
+/// server, and from outside it as long as the server is up — `select-window`
+/// changes the *session's* current window, which is what an attaching client
+/// lands on.
 pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     let task = ws.find_task(slug)?;
 
-    if crate::zellij::current_session().as_deref() != Some(crate::zellij::SESSION) {
-        bail!(
-            "not inside the '{}' session — run 'tenx' to attach first",
-            crate::zellij::SESSION
-        );
+    if !crate::tmux::server_running() {
+        bail!("the '{}' session isn't running — run 'tenx' to start it first", crate::tmux::SESSION);
     }
 
-    // Correlate to a live tab by its name == the task SLUG. Slugs are immutable
-    // and unique, so this never drifts (unlike the title) or collides (unlike
-    // the reused numeric tab id). Tab names aren't shown anywhere (tabless
-    // layout), so using the slug costs nothing.
-    let tab_id_file = task.path.join(".tenx-tab-id");
-    if let Some(tab) = crate::zellij::find_tab_by_name(slug)? {
-        crate::zellij::go_to_tab_position(tab.position)?;
-        // Refresh the stored id to the current session's live one.
-        let _ = std::fs::write(&tab_id_file, tab.tab_id.to_string());
+    // Correlate to a live window by its name == the task SLUG. Slugs are
+    // immutable and unique, so this never drifts (unlike the title). Window
+    // names aren't shown anywhere (tabless), so using the slug costs nothing.
+    let id_file = task.path.join(crate::tmux::WINDOW_ID_FILE);
+    if let Some(w) = crate::tmux::find_window(slug)? {
+        crate::tmux::select_window(&w.id)?;
+        // Refresh the cached id to the live one.
+        let _ = std::fs::write(&id_file, &w.id);
         return Ok(());
     }
 
     // Not open — create it (named by slug) and record the new id.
     let layout = ws.config.layout.as_str();
-    let opts = crate::zellij::TabOptions {
-        name: slug,
+    let opts = crate::tmux::TaskWindow {
+        slug,
         title: &task.display_name,
-        cwd: &task.path.to_string_lossy(),
+        task_dir: &task.path.to_string_lossy(),
         workspace_dir: &ws.dir.to_string_lossy(),
-        layout_file: if layout.is_empty() { None } else { Some(layout) },
+        layout_script: if layout.is_empty() { None } else { Some(layout) },
         // Only `--continue` if claude actually has a conversation for this cwd;
-        // otherwise it exits 1 and the close_on_exit pane vanishes.
+        // otherwise it exits 1 and the pane vanishes.
         resume: has_claude_conversation(&task.path),
     };
-    let tab_id = crate::zellij::open_or_switch(&opts)?;
-    std::fs::write(&tab_id_file, tab_id.to_string())?;
+    let id = crate::tmux::open_task_window(&opts)?;
+    std::fs::write(&id_file, &id)?;
     Ok(())
 }
 
@@ -307,11 +307,9 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
 /// resume instead of exiting 1). Claude encodes each project dir as its path
 /// with `/` → `-` under `~/.claude/projects/`.
 fn has_claude_conversation(cwd: &Path) -> bool {
-    let Some(home) = env::var_os("HOME") else {
+    let Some(project_dir) = crate::workspace::claude::project_dir(cwd) else {
         return false;
     };
-    let encoded = cwd.to_string_lossy().replace('/', "-");
-    let project_dir = Path::new(&home).join(".claude/projects").join(encoded);
     match std::fs::read_dir(&project_dir) {
         Ok(entries) => entries
             .flatten()
@@ -325,13 +323,13 @@ pub fn list() -> Result<()> {
     let ws = crate::workspace::find(&cwd)?;
     let tasks = ws.tasks()?;
 
-    // Try to get open tabs from the tenx session (silently ignore if it's not
-    // running). Works from anywhere via the cross-session listing.
-    let open_tabs: std::collections::HashSet<String> = crate::zellij::list_tabs_in(crate::zellij::SESSION)
-        .map(|tabs| tabs.into_iter().map(|t| t.name).collect())
+    // Open windows in the tenx session (empty if it isn't running). Works from
+    // anywhere: it's a server query, not a client one.
+    let open_tabs: std::collections::HashSet<String> = crate::tmux::list_windows()
+        .map(|ws| ws.into_iter().map(|w| w.name).collect())
         .unwrap_or_default();
 
-    println!("{:<20} {:<25} {:<20} {:<6} {}", "NAME", "REPOS", "BRANCH", "AGE", "OPEN");
+    println!("{:<20} {:<25} {:<20} {:<6} OPEN", "NAME", "REPOS", "BRANCH", "AGE");
     println!("{}", "-".repeat(80));
     for task in &tasks {
         let repos = task.repos.join(", ");
@@ -348,22 +346,21 @@ pub fn list() -> Result<()> {
 
 // ── Pin / sweep ───────────────────────────────────────────────────────────────
 //
-// A task's tab (a running `claude` process + a zellij plugin instance) stays
-// resident forever once opened — nothing ever closes it automatically, so a
-// workspace touched over months accumulates a tab per task ever opened, most
-// of them long since abandoned. `sweep` reclaims that: close what's safe to
-// close, leave everything else exactly as it was. Reopening (`task open`, or
-// the overlay) is unaffected — `open_in`'s `find_tab_by_name` just finds no
-// tab and creates a fresh one, and `has_claude_conversation` still finds the
-// prior transcript, so `--continue` picks the conversation back up.
+// A task's window (a running `claude` process plus its panes) stays resident
+// forever once opened — nothing ever closes it automatically, so a workspace
+// touched over months accumulates a window per task ever opened, most of them
+// long since abandoned. `sweep` reclaims that: close what's safe to close,
+// leave everything else exactly as it was. Reopening (`task open`, or the
+// overlay) is unaffected — `open_in`'s `find_window` just finds none and
+// creates a fresh one, and `has_claude_conversation` still finds the prior
+// transcript, so `--continue` picks the conversation back up.
 //
 // Deliberately writes no new per-task state beyond `PINNED_FILE` (an explicit,
-// user-requested opt-out — not a duplicate of anything Claude Code already
-// tracks): "is this tab safe to close" is answered entirely from *live*
-// sources, same as the rest of this codebase's status model —
-// `resolve_task_state` (Claude Code's own session registry) for whether a
-// task is mid-turn or waiting on a prompt, and the zellij session itself for
-// whether a tab is open and which one you're sitting in.
+// user-requested opt-out): "is this window safe to close" is answered
+// entirely from *live* sources — `resolve_task_state` (Claude Code's own
+// session registry) for whether a task is mid-turn or waiting on a prompt, and
+// the tmux server itself for whether a window is open and which one is current.
+// The rule itself is `tenx_core::sweep::sweep_reason`.
 
 /// Marker file: this task's tab is never auto-swept, no matter how long it's
 /// idle. Plain and empty, same style as `.tenx-tab-id`.
@@ -391,31 +388,13 @@ pub fn unpin(ws_dir: Option<&str>, task: &str) -> Result<()> {
     Ok(())
 }
 
-/// Parse a plain "<N><unit>" duration — "30m", "4h", "2d" — matching the one
-/// place tenx already prints durations (`workspace::format_age`). No combined
-/// units; this is a CLI flag, not a date library.
+/// Parse a plain "<N><unit>" duration — "30m", "4h", "2d". The parser lives in
+/// `tenx_core::time` (unit-tested); this only maps its error into anyhow.
 pub fn parse_duration(s: &str) -> Result<Duration> {
-    if s.is_empty() {
-        bail!("empty duration");
-    }
-    let (num, unit) = s.split_at(s.len() - 1);
-    let n: u64 = num.parse().with_context(|| format!("invalid duration '{s}' (want e.g. '4h')"))?;
-    let secs = match unit {
-        "m" => n * 60,
-        "h" => n * 3600,
-        "d" => n * 86400,
-        _ => bail!("duration '{s}' must end in m/h/d"),
-    };
-    Ok(Duration::from_secs(secs))
+    tenx_core::time::parse_duration(s).map_err(|e| anyhow::anyhow!(e))
 }
 
-/// Default idle threshold for a `Done` task (finished a turn, waiting on you)
-/// before its tab is swept. Long enough that answering tomorrow morning still
-/// finds it resident; short enough that months of an unanswered "waiting on
-/// you" don't sit there costing a live claude process forever. `Idle` tasks
-/// (no live claude session at all — nothing running, nothing to interrupt)
-/// are swept immediately regardless of this; see `sweep_candidates`.
-pub const DEFAULT_SWEEP_AFTER: Duration = Duration::from_secs(8 * 3600);
+pub use tenx_core::sweep::DEFAULT_SWEEP_AFTER;
 
 /// A task tab `sweep` (or the overlay's background sweep) has decided is safe
 /// to close, and why — computed once, then either printed+closed (`sweep`) or
@@ -424,53 +403,50 @@ pub const DEFAULT_SWEEP_AFTER: Duration = Duration::from_secs(8 * 3600);
 pub struct SweepAction {
     pub ws_name: String,
     pub title: String,
-    pub tab_id: u32,
+    pub window_id: String,
     pub task_dir: PathBuf,
     pub reason: String,
 }
 
-/// Every task tab, across every registered workspace, that's safe to close
-/// right now. Never includes: a tab that isn't open, the tab you're currently
-/// in, a pinned task, or a task that's `Blocked`/`Working` — those are exactly
-/// the tabs a prompt or an agent is waiting on. Doesn't close anything itself,
-/// so a caller can dry-run, summarize, or act on the list as it needs.
+/// Every task window, across every registered workspace, that's safe to close
+/// right now. Never includes: a window that isn't open, the session's current
+/// window, a pinned task, or a task that's `Blocked`/`Working` — those are
+/// exactly the windows a prompt or an agent is waiting on. Doesn't close
+/// anything itself, so a caller can dry-run, summarize, or act on the list.
 pub fn sweep_candidates(after: Duration) -> Vec<SweepAction> {
     let mut out = Vec::new();
-    let Ok(live_tabs) = crate::zellij::list_tabs_in(crate::zellij::SESSION) else {
+    let live = crate::tmux::list_windows().unwrap_or_default();
+    if live.is_empty() {
         return out; // session isn't running — nothing open to sweep
-    };
+    }
     let sessions = crate::workspace::claude::sessions();
+    let signals: crate::workspace::Signals = live
+        .iter()
+        .map(|w| (w.name.clone(), crate::workspace::Signal { bell: w.bell, activity: w.activity }))
+        .collect();
     for ws in crate::workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
-            // Tabs are named by slug, which is only unique *within* a
+            // Windows are named by slug, which is only unique *within* a
             // workspace (see `Workspace::check_task_new`) — a name collision
             // across two workspaces is a pre-existing ambiguity `open_in`'s
-            // `find_tab_by_name` shares, not something sweep introduces.
-            let Some(tab) = live_tabs.iter().find(|t| t.name == task.name) else {
+            // `find_window` shares, not something sweep introduces.
+            let Some(w) = live.iter().find(|w| w.name == task.name) else {
                 continue; // not open
             };
-            if tab.active || is_pinned(&task.path) {
+            let state = crate::workspace::resolve_task_state(&task.path, &sessions, &signals);
+            let input = tenx_core::sweep::SweepInput {
+                status: state.status,
+                changed: state.changed,
+                active: w.active,
+                pinned: is_pinned(&task.path),
+            };
+            let Some(reason) = tenx_core::sweep::sweep_reason(&input, after, std::time::SystemTime::now()) else {
                 continue;
-            }
-            let state = crate::workspace::resolve_task_state(&task.path, &sessions);
-            let reason = match state.status {
-                crate::workspace::TaskStatus::Blocked | crate::workspace::TaskStatus::Working => {
-                    continue;
-                }
-                crate::workspace::TaskStatus::Idle => "idle, no live session".to_string(),
-                crate::workspace::TaskStatus::Done => {
-                    let Some(changed) = state.changed else { continue };
-                    let Ok(elapsed) = changed.elapsed() else { continue };
-                    if elapsed < after {
-                        continue;
-                    }
-                    format!("done, waiting {} unanswered", crate::workspace::format_age(changed))
-                }
             };
             out.push(SweepAction {
                 ws_name: ws.config.name.clone(),
                 title: task.display_name.clone(),
-                tab_id: tab.tab_id,
+                window_id: w.id.clone(),
                 task_dir: task.path.clone(),
                 reason,
             });
@@ -492,9 +468,9 @@ pub fn sweep(after: Option<Duration>, dry_run: bool) -> Result<()> {
             println!("would close {}/{} — {}", c.ws_name, c.title, c.reason);
             continue;
         }
-        match crate::zellij::close_tab_in(crate::zellij::SESSION, c.tab_id) {
+        match crate::tmux::kill_window(&c.window_id) {
             Ok(()) => {
-                let _ = std::fs::remove_file(c.task_dir.join(".tenx-tab-id"));
+                let _ = std::fs::remove_file(c.task_dir.join(crate::tmux::WINDOW_ID_FILE));
                 println!("closed {}/{} — {}", c.ws_name, c.title, c.reason);
             }
             Err(e) => eprintln!("! {}/{}: {e}", c.ws_name, c.title),
@@ -506,12 +482,12 @@ pub fn sweep(after: Option<Duration>, dry_run: bool) -> Result<()> {
 /// Close every current sweep candidate without printing anything — for the
 /// overlay's background sweep on focus-gained, which runs inside the
 /// alternate screen and would corrupt it by writing to stdout. Returns how
-/// many tabs it actually closed.
+/// many windows it actually closed.
 pub fn sweep_quiet(after: Duration) -> usize {
     let mut n = 0;
     for c in sweep_candidates(after) {
-        if crate::zellij::close_tab_in(crate::zellij::SESSION, c.tab_id).is_ok() {
-            let _ = std::fs::remove_file(c.task_dir.join(".tenx-tab-id"));
+        if crate::tmux::kill_window(&c.window_id).is_ok() {
+            let _ = std::fs::remove_file(c.task_dir.join(crate::tmux::WINDOW_ID_FILE));
             n += 1;
         }
     }
@@ -568,26 +544,7 @@ fn write_task_md(task_dir: &Path, name: &str) -> Result<()> {
     if path.exists() {
         return Ok(());
     }
-    let content = format!(
-        "# {name}\n\
-         \n\
-         ## Description\n\
-         \n\
-         \n\
-         ## Todo\n\
-         \n\
-         - [ ] \n\
-         \n\
-         ## Links\n\
-         \n\
-         - Linear Project:\n\
-         - Linear Milestone:\n\
-         - Linear:\n\
-         - PR:\n\
-         \n\
-         ## Notes\n\
-         \n"
-    );
+    let content = tenx_core::taskmd::render_task_md(name, "", &tenx_core::taskmd::default_links());
     std::fs::write(&path, content)?;
     Ok(())
 }
@@ -641,15 +598,14 @@ fn remove_tenx_hooks(workspace_dir: &Path) -> Result<()> {
     if let Some(mut settings) = std::fs::read_to_string(&settings_path)
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        && let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut())
     {
-        if let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) {
-            hooks.retain(|_, matchers| !mentions_tenx_hook(matchers));
-            let empty = hooks.is_empty();
-            if empty {
-                settings.as_object_mut().map(|o| o.remove("hooks"));
-            }
-            std::fs::write(&settings_path, format!("{:#}\n", settings))?;
+        hooks.retain(|_, matchers| !mentions_tenx_hook(matchers));
+        let empty = hooks.is_empty();
+        if empty {
+            settings.as_object_mut().map(|o| o.remove("hooks"));
         }
+        std::fs::write(&settings_path, format!("{:#}\n", settings))?;
     }
 
     for script in ["event.sh", "notify.sh", "notify-clear.sh"] {

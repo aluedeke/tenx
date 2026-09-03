@@ -7,19 +7,18 @@ pub fn run_overlay(home: bool) -> anyhow::Result<()> {
 
 /// `tenx overlay --json`: dump every task across all registered workspaces as
 /// JSON, sorted by last agent activity (newest first) — same ordering as the
-/// TUI. Consumed by the tenx-zellij overlay plugin, which runs in zellij's
-/// wasm sandbox whose only reachable dirs are `/data`, `/tmp` and `/host` —
-/// task directories are not among them, so it cannot discover tasks itself.
+/// TUI. For scripts and other front ends (the future native client reads the
+/// same shape).
 ///
-/// Two collections, because the plugin needs both axes: `tasks` (what to list)
-/// and `workspaces` (which repos exist, so the create/edit repo checklists can
-/// be built without reaching the workspace dirs). Each task carries the repos
-/// it actually has worktrees for, which is what the edit checklist diffs against.
+/// Two collections: `tasks` (what to list) and `workspaces` (which repos
+/// exist, so a repo checklist can be built without reaching the workspace
+/// dirs). Each task carries the repos it actually has worktrees for.
 pub fn dump_json() -> anyhow::Result<()> {
     let global = crate::workspace::load_global().unwrap_or_default();
     // One registry read for the whole dump — every task's live state is resolved
     // against this same snapshot.
     let sessions = crate::workspace::claude::sessions();
+    let signals = crate::tmux::signals();
     let mut entries = Vec::new();
     let mut workspaces = Vec::new();
     for ws in crate::workspace::registered_workspaces() {
@@ -39,7 +38,7 @@ pub fn dump_json() -> anyhow::Result<()> {
                 .collect::<Vec<_>>(),
         }));
         for task in ws.tasks().unwrap_or_default() {
-            let state = crate::workspace::resolve_task_state(&task.path, &sessions);
+            let state = crate::workspace::resolve_task_state(&task.path, &sessions, &signals);
             let activity = state.changed.unwrap_or(task.created_at);
             entries.push((activity, crate::workspace::task_json(&ws, &task, &state)));
         }

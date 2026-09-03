@@ -348,219 +348,36 @@ fn discover_task(task_dir: &Path) -> Result<Task> {
 pub fn set_task_title(task_dir: &Path, title: &str) -> Result<()> {
     let path = task_dir.join("TASK.md");
     let new = match fs::read_to_string(&path) {
-        Ok(content) => {
-            let mut lines: Vec<&str> = content.lines().collect();
-            let heading = format!("# {title}");
-            if lines.first().map(|l| l.trim_start().starts_with('#')).unwrap_or(false) {
-                lines[0] = heading.as_str();
-                lines.join("\n") + "\n"
-            } else {
-                format!("{heading}\n{content}")
-            }
-        }
+        Ok(content) => tenx_core::taskmd::with_title(&content, title),
         Err(_) => format!("# {title}\n"),
     };
     fs::write(&path, new).with_context(|| format!("write {}", path.display()))
 }
 
 pub fn read_task_display_name(task_dir: &Path) -> String {
-    if let Ok(content) = fs::read_to_string(task_dir.join("TASK.md")) {
-        if let Some(first) = content.lines().next() {
-            let title = first.trim_start_matches('#').trim().to_string();
-            if !title.is_empty() {
-                return title;
-            }
-        }
-    }
-    task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    fs::read_to_string(task_dir.join("TASK.md"))
+        .ok()
+        .and_then(|content| tenx_core::taskmd::display_name(&content))
+        .unwrap_or_else(|| task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
 }
 
-/// A task's Claude-activity state, derived entirely from Claude Code's own
-/// session registry (`claude::sessions`) — tenx installs no hooks and writes no
-/// state of its own. Every variant is a fact about live sessions in the task's
-/// directory tree; see `resolve_task_state`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskStatus {
-    /// A session has a dialog open and cannot proceed until you answer it —
-    /// permission prompt, elicitation, sandbox request (the 💬 indicator).
-    Blocked,
-    /// A turn is in flight.
-    Working,
-    /// A session is live but quiet: the turn is over and it's your move.
-    Done,
-    /// No Claude session running in this task at all.
-    Idle,
-}
+// The status model — `TaskStatus`, `TaskGroup`, `TaskState`, `Signal` and the
+// resolution rule — is pure logic and lives in `tenx_core::status`
+// (unit-tested there). Re-exported so call sites keep the `workspace::` path.
+pub use tenx_core::status::{Signal, TaskGroup, TaskState, TaskStatus};
 
-/// The section a status is listed under. Coarser than `TaskStatus` on purpose:
-/// `Blocked` and `Done` are both *waiting on you* — one has a dialog open, the
-/// other finished a turn — and splitting them put two near-identical headers
-/// back to back. They share a section; the row's glyph (💬 vs ✅) and Claude's
-/// waiting reason carry the difference, and `TaskStatus::rank` floats the
-/// blocked ones to the top of it.
-///
-/// `SecretsPending` is not a `TaskStatus`-derived variant like the other
-/// three — a task can be `Idle` (no live Claude session at all) and still
-/// belong here, because a pending secrets request (either kind — `decrypt`'s
-/// release-request queue via `cli::secrets::enqueue_pending`, or `set`'s
-/// value-request queue via `cli::secrets::enqueue_pending_set`) outlives the
-/// session that made it. Callers that need it (`tui::overlay`) compute it
-/// themselves from `secrets_pending`/`secrets_pending_set`, overriding the
-/// `TaskStatus::group()` result rather than folding it in here — this type
-/// stays a pure function of session state, secrets awareness lives one layer
-/// up where the data actually is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskGroup {
-    /// A pending secrets request — needs a specific action (typing a
-    /// passphrase), ranked above ordinary waiting for that reason.
-    SecretsPending,
-    /// An agent is waiting on you — a prompt to answer, or a finished turn.
-    Waiting,
-    /// A turn is in flight. Nothing for you to do.
-    Working,
-    /// No Claude session running at all.
-    Inactive,
-}
+/// Per-task window signals keyed by slug, from `tmux::signals()`. Empty when
+/// the server is down, which reads as "no bells" — correct, since no window
+/// exists to ring one in.
+pub type Signals = std::collections::HashMap<String, Signal>;
 
-impl TaskGroup {
-    /// Section order: secrets pending (needs a specific action from you),
-    /// then what needs you, then what's running, then what isn't.
-    pub fn rank(self) -> u8 {
-        match self {
-            TaskGroup::SecretsPending => 0,
-            TaskGroup::Waiting => 1,
-            TaskGroup::Working => 2,
-            TaskGroup::Inactive => 3,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            TaskGroup::SecretsPending => "SECRETS PENDING",
-            TaskGroup::Waiting => "WAITING FOR INPUT",
-            TaskGroup::Working => "WORKING",
-            TaskGroup::Inactive => "INACTIVE",
-        }
-    }
-}
-
-impl TaskStatus {
-    /// The wire token for this status; used by `tenx overlay --json` for the
-    /// overlay plugin.
-    pub fn token(self) -> &'static str {
-        match self {
-            TaskStatus::Working => "working",
-            TaskStatus::Blocked => "blocked",
-            TaskStatus::Done => "done",
-            TaskStatus::Idle => "idle",
-        }
-    }
-
-    /// Which section this status is listed under.
-    pub fn group(self) -> TaskGroup {
-        match self {
-            TaskStatus::Blocked | TaskStatus::Done => TaskGroup::Waiting,
-            TaskStatus::Working => TaskGroup::Working,
-            TaskStatus::Idle => TaskGroup::Inactive,
-        }
-    }
-
-    /// Ordering *within* a section. Only `Blocked` vs `Done` matters in
-    /// practice: an agent parked on a prompt goes above one that merely
-    /// finished, because seconds of yours restart minutes of its work.
-    pub fn rank(self) -> u8 {
-        match self {
-            TaskStatus::Blocked => 0,
-            TaskStatus::Working => 1,
-            TaskStatus::Done => 2,
-            TaskStatus::Idle => 3,
-        }
-    }
-}
-
-/// A task's resolved activity state: what Claude Code says right now, backed by
-/// the hook file for the two states it can't express.
-#[derive(Debug, Clone)]
-pub struct TaskState {
-    pub status: TaskStatus,
-    /// When the state last changed: the session's `statusUpdatedAt`. For a
-    /// quiet session that's the busy→idle transition, so the age reads "waiting
-    /// on you this long".
-    pub changed: Option<SystemTime>,
-    /// Claude Code's reason for waiting ("input needed", "sandbox request", the
-    /// open dialog's label). Only set for `Blocked`, and only when the registry
-    /// is what decided it.
-    pub waiting_for: Option<String>,
-    /// Live sessions in this task's directory tree.
-    pub sessions: usize,
-    /// How many of those are background agents (`--bg`) rather than the
-    /// interactive session in the task's tab. They run in subdirectories of the
-    /// task, so the retired hooks never saw them at all — their status writes
-    /// landed in a directory no task reads.
-    pub agents: usize,
-}
-
-/// Resolve a task's state from Claude Code's session registry, falling back to
-/// the hook file. Pass `sessions` from [`claude::sessions`] once per refresh
-/// rather than per task.
-///
-/// The registry is authoritative for anything a live session can report, and
-/// the hook file only fills the gap it can't express:
-///
-/// - any session `waiting` → `Blocked`, with Claude Code's own reason. This is
-///   a live value, so unlike the old `Notification` latch it clears itself the
-///   moment you answer the prompt.
-/// - else any session `busy` → `Working`.
-/// - else a session exists and is quiet → `Done`. Not "a `Stop` hook fired" —
-///   for a live session `done` and `idle` are the same situation (not busy, no
-///   dialog), and the registry already timestamps it: an idle session's
-///   `statusUpdatedAt` *is* the busy→idle transition, i.e. when the turn ended.
-///   `Stop` was writing a fact the registry states outright, so it's gone too.
-/// - no live session at all → `Idle`. This is the line that actually matters:
-///   `Done` means an agent is sitting there waiting on you, `Idle` means nothing
-///   is running. Lumping those together (which the previous cut did whenever no
-///   `Stop` had been recorded) buries the first in a list of the second.
-pub fn resolve_task_state(task_dir: &Path, sessions: &[claude::Session]) -> TaskState {
-    let live = claude::sessions_for(sessions, task_dir);
-    let count = live.len();
-    let agents = live.iter().filter(|s| s.kind != "interactive").count();
-    if let Some(s) = live.iter().find(|s| s.status == claude::SessionStatus::Waiting) {
-        return TaskState {
-            status: TaskStatus::Blocked,
-            changed: s.status_updated_at,
-            waiting_for: s.waiting_for.clone(),
-            sessions: count,
-            agents,
-        };
-    }
-    if let Some(s) = live.iter().find(|s| s.status == claude::SessionStatus::Busy) {
-        return TaskState {
-            status: TaskStatus::Working,
-            changed: s.status_updated_at,
-            waiting_for: None,
-            sessions: count,
-            agents,
-        };
-    }
-    if live.is_empty() {
-        return TaskState {
-            status: TaskStatus::Idle,
-            changed: None,
-            waiting_for: None,
-            sessions: 0,
-            agents: 0,
-        };
-    }
-    // Quiet live session: the turn is over and it's your move. `changed` is the
-    // busy→idle transition, so the age column reads "waiting on you this long".
-    let quiet_since = live.iter().filter_map(|s| s.status_updated_at).max();
-    TaskState {
-        status: TaskStatus::Done,
-        changed: quiet_since,
-        waiting_for: None,
-        sessions: count,
-        agents,
-    }
+/// A task's state: Claude Code's sessions plus its window's bell, resolved by
+/// `tenx_core::status::resolve_task_state`. Pass `sessions` and `signals`
+/// gathered once per refresh, not per task.
+pub fn resolve_task_state(task_dir: &Path, sessions: &[claude::Session], signals: &Signals) -> TaskState {
+    let slug = task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let signal = signals.get(&slug).copied().unwrap_or_default();
+    tenx_core::status::resolve_task_state(task_dir, sessions, signal)
 }
 
 /// One task as the JSON shape every out-of-process consumer reads: the `tasks`
@@ -654,10 +471,10 @@ fn atomic_write_toml<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 /// `pub(crate)`: also used by `cli::secrets` to resolve identity paths that may
 /// be given with a `~/` prefix (e.g. a workspace's `age_identity` override).
 pub(crate) fn expand_home(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{home}/{rest}");
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{home}/{rest}");
     }
     path.to_string()
 }
@@ -668,29 +485,8 @@ pub(crate) fn home_dir() -> Result<PathBuf> {
     std::env::var("HOME").map(PathBuf::from).context("$HOME not set")
 }
 
-/// Convert a user-supplied task name into a filesystem/branch-safe slug:
-/// lowercase, spaces and underscores replaced with dashes.
-pub fn slugify(name: &str) -> String {
-    name.to_lowercase()
-        .chars()
-        .map(|c| if c == ' ' || c == '_' { '-' } else { c })
-        .collect()
-}
-
-pub fn format_age(t: SystemTime) -> String {
-    let secs = t.elapsed().unwrap_or_default().as_secs();
-    if secs < 3600 {
-        format!("{}m", secs / 60)
-    } else if secs < 86400 {
-        format!("{}h", secs / 3600)
-    } else if secs < 86400 * 7 {
-        format!("{}d", secs / 86400)
-    } else if secs < 86400 * 30 {
-        format!("{}w", secs / (86400 * 7))
-    } else {
-        format!("{}mo", secs / (86400 * 30))
-    }
-}
+pub use tenx_core::slug::slugify;
+pub use tenx_core::time::format_age;
 
 pub fn cloned_repos(bare_dir: &Path, repos: &[RepoConfig]) -> HashSet<String> {
     repos

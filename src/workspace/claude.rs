@@ -14,7 +14,7 @@
 //!
 //! What it can't express is *how* a turn ended — a failed one goes quiet exactly
 //! like a successful one. That distinction was dropped rather than keep a hook
-//! for it; see `workspace::resolve_task_state`.
+//! for it; see `tenx_core::status::resolve_task_state`.
 //!
 //! The registry is Claude Code's internal file, not a published API — the
 //! supported reader is `claude agents --json`, which costs ~310 ms of node
@@ -22,50 +22,16 @@
 //! every field is optional and a parse failure drops that one file. If the
 //! format ever changes wholesale, the visible result is every task reading as
 //! `Inactive`, not a broken overlay.
+//!
+//! This module is the impure half (filesystem + pid checks); the types and the
+//! meaning of a session list live in `tenx_core::status`.
+
+pub use tenx_core::status::{Session, SessionStatus};
 
 use serde::Deserialize;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-/// Statuses Claude Code writes (its own `["busy","shell","idle","waiting"]`).
-/// `shell` is idle-with-a-background-shell; we treat it as idle. Anything
-/// unrecognised is treated as idle too, so a new status in a future version
-/// degrades to "session present, nothing to report" rather than a wrong glyph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionStatus {
-    Busy,
-    Waiting,
-    Idle,
-}
-
-impl SessionStatus {
-    fn from_token(token: &str) -> SessionStatus {
-        match token {
-            "busy" => SessionStatus::Busy,
-            "waiting" => SessionStatus::Waiting,
-            _ => SessionStatus::Idle,
-        }
-    }
-}
-
-/// One live Claude Code session.
-#[derive(Debug, Clone)]
-pub struct Session {
-    pub cwd: PathBuf,
-    pub status: SessionStatus,
-    /// Why the session is waiting, straight from Claude Code — "input needed",
-    /// "sandbox request", or the open dialog's own label. `None` unless
-    /// `status` is `Waiting`.
-    pub waiting_for: Option<String>,
-    /// When the status last changed. Drives the age column for a waiting task
-    /// (how long it's been sitting on the prompt).
-    pub status_updated_at: Option<SystemTime>,
-    /// `interactive`, `bg`, `daemon`, … Background agents run in a task's
-    /// subdirectory and are invisible to our hooks, so they only show up here —
-    /// which is why a task's session count can exceed the one tab you opened.
-    pub kind: String,
-}
+use std::path::PathBuf;
+use std::time::{Duration, UNIX_EPOCH};
 
 /// The on-disk shape. Everything optional: this file belongs to another program
 /// and may gain or lose fields between Claude Code releases.
@@ -81,10 +47,10 @@ struct RawSession {
     kind: Option<String>,
 }
 
-/// Every live Claude Code session, newest status first. Dead entries are
-/// dropped: a crashed session leaves its file behind (Claude Code's own
-/// concurrent-session count pid-checks for the same reason), and a stale `busy`
-/// or `waiting` would be exactly the kind of lie the hooks used to tell.
+/// Every live Claude Code session. Dead entries are dropped: a crashed session
+/// leaves its file behind (Claude Code's own concurrent-session count
+/// pid-checks for the same reason), and a stale `busy` or `waiting` would be
+/// exactly the kind of lie the hooks used to tell.
 ///
 /// Returns empty on any failure — no `~/.claude`, no permission, no sessions.
 pub fn sessions() -> Vec<Session> {
@@ -114,31 +80,27 @@ pub fn sessions() -> Vec<Session> {
             continue;
         }
         out.push(Session {
+            pid,
             cwd: PathBuf::from(cwd),
             status: raw.status.as_deref().map(SessionStatus::from_token).unwrap_or(SessionStatus::Idle),
             waiting_for: raw.waiting_for,
-            status_updated_at: raw
-                .status_updated_at
-                .map(|ms| UNIX_EPOCH + Duration::from_millis(ms)),
+            status_updated_at: raw.status_updated_at.map(|ms| UNIX_EPOCH + Duration::from_millis(ms)),
             kind: raw.kind.unwrap_or_default(),
         });
     }
     out
 }
 
-/// Sessions running in `task_dir` or anywhere beneath it. Background agents get
-/// their own subdirectory (`tasks/<slug>/ios-agent`), so this is a prefix match,
-/// not equality — which is also why the retired hooks never saw them: they wrote
-/// their status into a directory no task ever reads.
-pub fn sessions_for<'a>(sessions: &'a [Session], task_dir: &Path) -> Vec<&'a Session> {
-    sessions
-        .iter()
-        .filter(|s| s.cwd == task_dir || s.cwd.starts_with(task_dir))
-        .collect()
+/// Where Claude Code keeps a directory's transcripts: `~/.claude/projects/`
+/// plus the absolute path with every `/` turned into `-`.
+pub fn project_dir(cwd: &std::path::Path) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let encoded = cwd.to_string_lossy().replace('/', "-");
+    Some(PathBuf::from(home).join(".claude/projects").join(encoded))
 }
 
 /// True if the process exists. `kill(pid, 0)` performs the permission and
-/// existence checks without sending anything.
+/// existence checks without sending anything. POSIX, so identical on Linux.
 pub fn pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }

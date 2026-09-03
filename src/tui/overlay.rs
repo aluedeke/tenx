@@ -6,11 +6,12 @@
 //! (see `Focus`/`InputMode`: the search field is Insert, plain typing
 //! filters; a list row is Normal, plain letters act — `n` new, `d`d delete).
 //!
-//! Single-session model: all tasks live as (invisible) tabs in the one global
-//! `tenx` zellij session. The overlay runs in two modes: as the session's
-//! *home* base pane (`--home`, long-lived, jump switches tabs without exiting)
-//! and as the Ctrl+w *floating* pane (exits after a jump; the tenx-zellij
-//! plugin closes the pane).
+//! Single-session model: all tasks live as (invisible) windows in the one
+//! global `tenx` tmux session. The overlay runs in two modes: as the session's
+//! *home* window (`--home`, long-lived, jump switches windows without exiting)
+//! and as the Ctrl+w popup (`tmux display-popup -E`: exits after a jump, and
+//! tmux closes the popup with it). Same binary, same code — there is exactly
+//! one overlay implementation.
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -57,7 +58,9 @@ struct Row {
     /// Sort key within a status group: last status change, or creation time for
     /// a task Claude has never touched.
     activity: SystemTime,
-    tab_id: Option<u32>,
+    /// The task's tmux window id (`@12`) if its window is open — from the
+    /// per-task cache, refreshed on the tick.
+    window_id: Option<String>,
     /// Repos this task currently has worktrees for (what the repo editor diffs
     /// against). Refreshed on `rebuild_rows`, not on the idle tick.
     repos: Vec<String>,
@@ -158,7 +161,7 @@ struct Confirm {
     ws_idx: usize,
     slug: String,
     title: String,
-    tab_id: Option<u32>,
+    window_id: Option<String>,
 }
 
 /// Rename-title form.
@@ -214,12 +217,11 @@ enum Mode {
 }
 
 /// A task to land on after the overlay tears down its TUI. Recorded when the
-/// user jumps while *outside* zellij (a plain terminal): we can't
-/// `switch-session` in place, so we exit the overlay cleanly and then attach to
-/// the tenx session.
+/// user jumps while *outside* tmux (a plain terminal): there's no client to
+/// switch in place, so we exit the overlay cleanly and then attach to the tenx
+/// session with that window selected.
 struct AttachTarget {
-    tab_id: Option<u32>,
-    title: String,
+    window_id: Option<String>,
 }
 
 struct Overlay {
@@ -243,7 +245,7 @@ struct Overlay {
     repo_selected: usize,
     status_msg: Option<String>,
     mode: Mode,
-    /// Set when a jump from outside zellij should attach after teardown.
+    /// Set when a jump from outside tmux should attach after teardown.
     attach: Option<AttachTarget>,
     /// Set by `start_unlock` (the `u` key / `:unlock`) to (workspace index,
     /// slug). `run_loop` checks this after every event and, when set,
@@ -361,13 +363,12 @@ impl Overlay {
         // group, by last status change newest first. Tasks with no agent
         // activity yet fall back to creation time.
         let sessions = workspace::claude::sessions();
+        let signals = crate::tmux::signals();
         let mut rows: Vec<Row> = Vec::new();
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
             for task in ws.tasks().unwrap_or_default() {
-                let state = workspace::resolve_task_state(&task.path, &sessions);
-                let tab_id = std::fs::read_to_string(task.path.join(".tenx-tab-id"))
-                    .ok()
-                    .and_then(|s| s.trim().parse::<u32>().ok());
+                let state = workspace::resolve_task_state(&task.path, &sessions, &signals);
+                let window_id = read_window_id(&task.path);
                 let secrets_pending = workspace::secrets_pending(&task.path);
                 let secrets_pending_set = workspace::secrets_pending_set(&task.path);
                 let section = if !secrets_pending.is_empty() || !secrets_pending_set.is_empty() {
@@ -386,7 +387,7 @@ impl Overlay {
                     changed: state.changed,
                     waiting_for: state.waiting_for,
                     activity: state.changed.unwrap_or(task.created_at),
-                    tab_id,
+                    window_id,
                     repos: task.repos.clone(),
                     secrets_pending,
                     secrets_pending_set,
@@ -413,16 +414,15 @@ impl Overlay {
     /// mutating action (create/delete/rename).
     fn refresh_statuses(&mut self) {
         let sessions = workspace::claude::sessions();
+        let signals = crate::tmux::signals();
         let mut rows = std::mem::take(&mut self.rows);
         for r in rows.iter_mut() {
-            let state = workspace::resolve_task_state(&r.path, &sessions);
+            let state = workspace::resolve_task_state(&r.path, &sessions, &signals);
             r.status = state.status;
             r.changed = state.changed;
             r.waiting_for = state.waiting_for;
             r.activity = state.changed.unwrap_or(r.activity);
-            r.tab_id = std::fs::read_to_string(r.path.join(".tenx-tab-id"))
-                .ok()
-                .and_then(|s| s.trim().parse::<u32>().ok());
+            r.window_id = read_window_id(&r.path);
         }
         self.rows = rows;
     }
@@ -828,57 +828,50 @@ impl Overlay {
         };
         let ws_idx = row.ws_idx;
         let slug = row.slug.clone();
-        let tab_id = row.tab_id;
-        let title = row.title.clone();
 
-        match crate::zellij::current_session() {
-            Some(cur) if cur == crate::zellij::SESSION => {
-                let ws = &self.workspaces[ws_idx];
-                if let Err(e) = crate::cli::task::open_in(ws, &slug) {
-                    self.status_msg = Some(e.to_string());
-                    return Ok(false);
-                }
-                if self.home {
-                    // Stay alive as the session's home pane — zellij already
-                    // switched the visible tab to the task. Reset the filter
-                    // and re-sort by activity so the next visit starts fresh,
-                    // with the most recently active task selected on top.
-                    self.filter.clear();
-                    self.rebuild_rows();
-                    self.selected = 0;
-                    self.focus_search();
-                    self.status_msg = None;
-                    return Ok(false);
-                }
-                Ok(true)
+        if crate::tmux::inside_tenx_session() {
+            // `open_in` selects the window for the session, which is what this
+            // client (the home pane or the popup) is looking at.
+            let ws = &self.workspaces[ws_idx];
+            if let Err(e) = crate::cli::task::open_in(ws, &slug) {
+                self.status_msg = Some(e.to_string());
+                return Ok(false);
             }
-            // Inside a *foreign* zellij session: focus the task's tab in the
-            // tenx session and switch the client there in place. If the tenx
-            // session doesn't exist yet, create-and-switch to it (lands in the
-            // home overlay; the exact task is one Enter away there).
-            Some(_) => {
-                let res = if crate::zellij::session_exists(crate::zellij::SESSION).unwrap_or(false) {
-                    crate::zellij::switch_to_task(crate::zellij::SESSION, tab_id, &title)
-                } else {
-                    let bin = std::env::current_exe()?;
-                    crate::zellij::switch_to_tenx_session(&bin.to_string_lossy())
-                };
-                match res {
-                    Ok(()) => Ok(true),
-                    Err(e) => {
-                        self.status_msg = Some(e.to_string());
-                        Ok(false)
-                    }
-                }
+            if self.home {
+                // Stay alive as the session's home pane — tmux already
+                // switched the current window to the task. Reset the filter
+                // and re-sort by activity so the next visit starts fresh,
+                // with the most recently active task selected on top.
+                self.filter.clear();
+                self.rebuild_rows();
+                self.selected = 0;
+                self.focus_search();
+                self.status_msg = None;
+                return Ok(false);
             }
-            // Outside zellij entirely (a plain terminal) → can't switch in
-            // place. Record the target and close; `run()` attaches after the TUI
-            // tears down, so zellij gets a clean terminal.
-            None => {
-                self.attach = Some(AttachTarget { tab_id, title });
-                Ok(true)
+            return Ok(true);
+        }
+
+        if crate::tmux::inside_any_tmux() {
+            // A client of some other tmux server: nothing can switch it here.
+            self.status_msg = Some(crate::tmux::foreign_client_hint());
+            return Ok(false);
+        }
+
+        // Outside tmux entirely (a plain terminal) → can't switch in place.
+        // Open/select the window now (the server may be up without a client
+        // attached), record it, and close; `run()` attaches after the TUI
+        // tears down so tmux gets a clean terminal.
+        if crate::tmux::server_running() {
+            let ws = &self.workspaces[ws_idx];
+            if let Err(e) = crate::cli::task::open_in(ws, &slug) {
+                self.status_msg = Some(e.to_string());
+                return Ok(false);
             }
         }
+        let window_id = crate::tmux::find_window(&slug).ok().flatten().map(|w| w.id);
+        self.attach = Some(AttachTarget { window_id });
+        Ok(true)
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -1202,7 +1195,7 @@ impl Overlay {
                 ws_idx: r.ws_idx,
                 slug: r.slug.clone(),
                 title: r.title.clone(),
-                tab_id: r.tab_id,
+                window_id: r.window_id.clone(),
             });
         }
     }
@@ -1219,9 +1212,12 @@ impl Overlay {
             self.status_msg = None; // cancelled
             return;
         }
-        // Close the tab first (best-effort) so it doesn't linger after the dir goes.
-        if let Some(id) = confirm.tab_id {
-            let _ = crate::zellij::close_tab_in(crate::zellij::SESSION, id);
+        // Close the window first (best-effort) so it doesn't linger after the
+        // dir goes. Look it up live rather than trusting the cached id.
+        if let Some(w) = crate::tmux::find_window(&confirm.slug).ok().flatten() {
+            let _ = crate::tmux::kill_window(&w.id);
+        } else if let Some(id) = &confirm.window_id {
+            let _ = crate::tmux::kill_window(id);
         }
         let res = {
             let ws = &self.workspaces[confirm.ws_idx];
@@ -1243,16 +1239,19 @@ impl Overlay {
             return;
         };
         let path = r.path.clone();
-        match r.tab_id {
-            Some(id) => match crate::zellij::close_tab_in(crate::zellij::SESSION, id) {
+        let slug = r.slug.clone();
+        // The live window by slug is the truth; the cached id is a fallback.
+        let id = crate::tmux::find_window(&slug).ok().flatten().map(|w| w.id).or_else(|| r.window_id.clone());
+        match id {
+            Some(id) => match crate::tmux::kill_window(&id) {
                 Ok(()) => {
-                    let _ = std::fs::remove_file(path.join(".tenx-tab-id"));
+                    let _ = std::fs::remove_file(path.join(crate::tmux::WINDOW_ID_FILE));
                     self.rebuild_rows();
-                    self.status_msg = Some("closed tab".into());
+                    self.status_msg = Some("closed window".into());
                 }
                 Err(e) => self.status_msg = Some(e.to_string()),
             },
-            None => self.status_msg = Some("no open tab".into()),
+            None => self.status_msg = Some("no open window".into()),
         }
     }
 
@@ -1375,11 +1374,8 @@ fn subseq_match(needle: &str, haystack: &str) -> bool {
     true
 }
 
-// Note: single-instance/toggle behaviour lives in the tenx-zellij plugin now
-// (it tracks the overlay pane it opened and closes it on the next toggle). The
-// old per-session lock-file toggle was removed: with the plugin owning the
-// lifecycle it could only misfire — a second spawn would SIGTERM the first and
-// exit, so the overlay flickered and vanished instead of opening.
+// Note: the Ctrl+w popup's lifecycle is tmux's (`display-popup -E` closes it
+// when this process exits), so there is no toggle state to keep here.
 
 pub fn run(home: bool) -> Result<()> {
     let orig = std::panic::take_hook();
@@ -1403,19 +1399,26 @@ pub fn run(home: bool) -> Result<()> {
     terminal.show_cursor()?;
     result?;
 
-    // The TUI is fully torn down now. If a jump from outside zellij was queued,
-    // attach to (or create) the tenx session; attach/create exec() and replace
-    // this process.
+    // The TUI is fully torn down now. If a jump from outside tmux was queued,
+    // attach to (or create) the tenx session; both exec() and replace this
+    // process.
     if let Some(t) = overlay.attach.take() {
-        if crate::zellij::session_exists(crate::zellij::SESSION)? {
-            crate::zellij::pre_focus_tab(crate::zellij::SESSION, t.tab_id, &t.title);
-            crate::zellij::attach_session(crate::zellij::SESSION)?;
+        if crate::tmux::server_running() {
+            crate::tmux::attach_at(t.window_id.as_deref())?;
         } else {
             let bin = std::env::current_exe()?;
-            crate::zellij::create_and_attach_session(&bin.to_string_lossy())?;
+            crate::tmux::attach_or_create(&bin.to_string_lossy())?;
         }
     }
     Ok(())
+}
+
+/// The task's cached tmux window id, if any (`tmux::WINDOW_ID_FILE`).
+fn read_window_id(task_dir: &std::path::Path) -> Option<String> {
+    std::fs::read_to_string(task_dir.join(crate::tmux::WINDOW_ID_FILE))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 const TICK: Duration = Duration::from_millis(500);
@@ -1777,6 +1780,7 @@ fn task_items(
         } else {
             match row.status {
                 TaskStatus::Blocked => "💬 ",
+                TaskStatus::Signaled => "🔔 ",
                 TaskStatus::Done => "✅ ",
                 TaskStatus::Working => "▷  ",
                 TaskStatus::Idle => "   ",
@@ -1786,7 +1790,9 @@ fn task_items(
             Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)
         } else {
             match row.status {
-                TaskStatus::Blocked => Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD),
+                TaskStatus::Blocked | TaskStatus::Signaled => {
+                    Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD)
+                }
                 TaskStatus::Done => Style::default().fg(palette::BRIGHT.color()),
                 TaskStatus::Working | TaskStatus::Idle => Style::default().fg(palette::TEXT.color()),
             }
@@ -1794,14 +1800,14 @@ fn task_items(
         // Age is only meaningful for resting states (how long it's waited/sat).
         let show_age = matches!(
             row.status,
-            TaskStatus::Blocked | TaskStatus::Done
+            TaskStatus::Blocked | TaskStatus::Signaled | TaskStatus::Done
         );
         let age = row
             .changed
             .filter(|_| show_age)
             .map(workspace::format_age)
             .unwrap_or_default();
-        let open_cell = if row.tab_id.is_some() { "open" } else { "    " };
+        let open_cell = if row.window_id.is_some() { "open" } else { "    " };
 
         let dim = Style::default().fg(palette::MUTED.color());
         let mut spans = vec![

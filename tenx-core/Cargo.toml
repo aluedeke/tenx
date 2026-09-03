@@ -1,0 +1,11 @@
+# Pure logic shared by the `tenx` binary and (later) the native client: task
+# status resolution, slugging, durations, sweep rules, TASK.md rendering.
+# Deliberately no `std::process::Command`, no filesystem access beyond what a
+# caller hands in as data — everything here is unit-testable with fixtures and
+# compiles for any target.
+[package]
+name = "tenx-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

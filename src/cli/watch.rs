@@ -105,6 +105,11 @@ pub fn run() -> Result<()> {
     let mut pending_secrets_set: HashMap<String, u32> = HashMap::new();
     let mut tick: u32 = 0;
     let mut session_misses: u32 = 0;
+    // Agents already given a pane. Primed from the current state: agents
+    // running before the watcher started were either paned by a previous
+    // watcher or predate this feature; either way a pane now would be a
+    // surprise, not news.
+    let mut paned: HashSet<(PathBuf, u32)> = primed.agents.iter().map(|(_, c, p)| (c.clone(), *p)).collect();
     // Deliberately not seeded from `primed`: the session is still being created
     // at this point (see SESSION_MISSES_BEFORE_EXIT), so no status bar exists to
     // receive a push yet. Starting empty means the first tick always publishes,
@@ -183,6 +188,8 @@ pub fn run() -> Result<()> {
         pending_secrets_set.retain(|k, _| secrets_set_keys.contains(k));
         notified_secrets_set.retain(|k| secrets_set_keys.contains(k));
 
+        pane_new_agents(&snapshot.agents, &mut paned);
+
         // Publish last. Delivery is the slowest thing in this loop — ~0.17 s for
         // a live-task payload, against ~5 ms to resolve — and the notification
         // above is the half with a person waiting on it. Only on a real change,
@@ -190,12 +197,11 @@ pub fn run() -> Result<()> {
         let current = digest(&snapshot.tasks);
         if current != published {
             published = current;
-            let payload = serde_json::json!({ "tasks": snapshot.tasks });
-            crate::zellij::pipe_status(&payload.to_string());
+            push_status(&snapshot.tasks);
         }
 
         if tick % SESSION_CHECK_POLLS == 0 {
-            let alive = crate::zellij::session_exists(crate::zellij::SESSION).unwrap_or(true);
+            let alive = crate::tmux::server_running();
             session_misses = if alive { 0 } else { session_misses + 1 };
             if session_misses >= SESSION_MISSES_BEFORE_EXIT {
                 let _ = std::fs::remove_file(pid_path()?);
@@ -235,6 +241,10 @@ struct Snapshot {
     /// separately from `secrets_pending` above: different marker file,
     /// different fulfillment action.
     secrets_pending_set: Vec<(String, Note)>,
+    /// Background agents (`--bg`, any non-interactive kind) running under a
+    /// task: (task slug, agent cwd, pid). The watcher gives each a pane in its
+    /// task's window the first time it sees it.
+    agents: Vec<(String, PathBuf, u32)>,
     /// Tasks with a live Claude Code session, in the shared wire shape
     /// (`workspace::task_json`).
     ///
@@ -251,15 +261,25 @@ struct Snapshot {
 
 fn resolve_all() -> Snapshot {
     let sessions = workspace::claude::sessions();
+    let signals = crate::tmux::signals();
     let mut blocked = Vec::new();
     let mut secrets_pending = Vec::new();
     let mut secrets_pending_set = Vec::new();
+    let mut agents = Vec::new();
     let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
-            let state = workspace::resolve_task_state(&task.path, &sessions);
+            let state = workspace::resolve_task_state(&task.path, &sessions, &signals);
             let key = format!("{}/{}", ws.dir.display(), task.name);
-            if state.status == TaskStatus::Blocked {
+            for s in tenx_core::status::sessions_for(&sessions, &task.path) {
+                if s.kind != "interactive" && s.cwd != task.path {
+                    agents.push((task.name.clone(), s.cwd.clone(), s.pid));
+                }
+            }
+            // `Blocked` and `Signaled` are both "waiting on you" edges — a
+            // prompt, or a bell from anything in the window. One list, one
+            // debounce, one notification shape.
+            if state.status.needs_you() {
                 blocked.push((
                     key.clone(),
                     Note {
@@ -310,8 +330,83 @@ fn resolve_all() -> Snapshot {
         blocked,
         secrets_pending,
         secrets_pending_set,
+        agents,
         tasks: tasks.into_iter().map(|(_, v)| v).collect(),
     }
+}
+
+/// Give every background agent a pane in its task's window, once. An agent
+/// is another process with no terminal of its own, so the pane follows its
+/// transcript (`cli::agentlog`) and closes when the agent exits. `paned` is
+/// keyed by (cwd, pid) so a restarted agent in the same directory gets a
+/// fresh pane; entries for dead agents are pruned so the set can't grow
+/// forever. No window open for the task → nothing to do, and the agent is
+/// tried again next tick in case the window opens later.
+fn pane_new_agents(agents: &[(String, PathBuf, u32)], paned: &mut HashSet<(PathBuf, u32)>) {
+    paned.retain(|(cwd, pid)| agents.iter().any(|(_, c, p)| c == cwd && p == pid));
+    if agents.is_empty() {
+        return;
+    }
+    let Ok(windows) = crate::tmux::list_windows() else { return };
+    let Ok(bin) = std::env::current_exe() else { return };
+    for (slug, cwd, pid) in agents {
+        let key = (cwd.clone(), *pid);
+        if paned.contains(&key) {
+            continue;
+        }
+        let Some(w) = windows.iter().find(|w| w.name == *slug) else { continue };
+        if crate::tmux::open_agent_pane(&w.id, &bin.to_string_lossy(), &cwd.to_string_lossy(), *pid).is_ok() {
+            paned.insert(key);
+        }
+    }
+}
+
+/// Push the snapshot into tmux: one `@tenx_status` user option per open task
+/// window (what `status-left` shows in that window) and a global `@tenx_right`
+/// (how many other tasks are waiting on you). Called only when `digest`
+/// changed, so a quiet session costs nothing.
+fn push_status(tasks: &[serde_json::Value]) {
+    let Ok(windows) = crate::tmux::list_windows() else { return };
+    if windows.is_empty() {
+        return;
+    }
+    let mut waiting = 0usize;
+    let mut blocked = 0usize;
+    for w in &windows {
+        let task = tasks.iter().find(|t| t["slug"].as_str() == Some(w.name.as_str()));
+        let text = match task {
+            Some(t) => {
+                let status = t["status"].as_str().unwrap_or("idle");
+                let title = t["title"].as_str().unwrap_or(&w.name);
+                let glyph = match status {
+                    "blocked" => "💬",
+                    "signaled" => "🔔",
+                    "working" => "▷",
+                    "done" => "✅",
+                    _ => "·",
+                };
+                match (status, t["waiting_for"].as_str()) {
+                    ("blocked", Some(reason)) => format!("{glyph} {title} — {reason}"),
+                    _ => format!("{glyph} {title}"),
+                }
+            }
+            None => String::new(), // idle: fall back to the window name
+        };
+        let _ = crate::tmux::set_window_option(&w.id, "@tenx_status", &text);
+    }
+    for t in tasks {
+        match t["status"].as_str() {
+            Some("blocked" | "signaled") => blocked += 1,
+            Some("done") => waiting += 1,
+            _ => {}
+        }
+    }
+    let right = match (blocked, waiting) {
+        (0, 0) => String::new(),
+        (b, w) if b > 0 => format!("💬 {b} need input · {} waiting", b + w),
+        (_, w) => format!("✅ {w} waiting"),
+    };
+    let _ = crate::tmux::set_global_option("@tenx_right", &right);
 }
 
 /// A change key over everything the status bar renders *except* age.
@@ -331,52 +426,23 @@ fn digest(tasks: &[serde_json::Value]) -> String {
     out
 }
 
-/// Deliver one notification. `terminal-notifier` when it's installed (it can
-/// carry a subtitle and group by task), `osascript` otherwise — always present
-/// on macOS, so there's no path where the watcher runs but can't speak.
+/// Deliver one notification through the platform backend (`cli::notify`).
 fn notify(note: &Note, title: &str) {
     let subtitle = format!("{} · {}", note.task, note.workspace);
     let body = note.reason.clone().unwrap_or_else(|| "waiting for you".into());
-
-    if which("terminal-notifier").is_some() {
-        let _ = Command::new("terminal-notifier")
-            .args(["-title", title, "-subtitle", &subtitle, "-message", &body])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        return;
-    }
-    let script = format!(
-        "display notification {} with title {} subtitle {}",
-        applescript_str(&body),
-        applescript_str(title),
-        applescript_str(&subtitle),
-    );
-    let _ = Command::new("osascript")
-        .args(["-e", &script])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
-/// Quote a string for AppleScript. Task titles come from `TASK.md`, i.e. from
-/// whatever anyone typed — an unescaped quote would turn a notification into a
-/// syntax error at best.
-fn applescript_str(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
-fn which(bin: &str) -> Option<PathBuf> {
-    let out = Command::new("command").args(["-v", bin]).output().ok()?;
-    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!path.is_empty()).then(|| PathBuf::from(path))
+    crate::cli::notify::platform().notify(title, &subtitle, &body);
 }
 
 // ── Single-instance bookkeeping ───────────────────────────────────────────────
 
+/// One watcher per tmux server: a non-default `TENX_TMUX_SOCKET` (a build
+/// being tried alongside an installed one) gets its own pidfile, so the two
+/// never mistake each other for "already running".
 fn pid_path() -> Result<PathBuf> {
     let home = std::env::var("HOME").context("$HOME not set")?;
-    Ok(PathBuf::from(home).join(".config/tenx/watch.pid"))
+    let sock = crate::tmux::socket();
+    let name = if sock == crate::tmux::SOCKET { "watch.pid".to_string() } else { format!("watch-{sock}.pid") };
+    Ok(PathBuf::from(home).join(".config/tenx").join(name))
 }
 
 fn write_pidfile() -> Result<()> {

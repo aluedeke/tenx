@@ -1,11 +1,10 @@
 //! The tenx colour palette — the single source of truth shared by both the
-//! overlay TUI (ratatui) and the zellij chrome theme, so the whole surface
+//! overlay TUI (ratatui) and the tmux chrome theme, so the whole surface
 //! reads as one design: charcoal ground, purple accent, muted greys.
 //!
 //! Two consumers, two representations from the same values:
 //! - the overlay calls [`Rgb::color`] to get a ratatui [`Color`];
-//! - the zellij theme (`zellij::theme_overlay`) calls [`Rgb::rgb`] to emit
-//!   `"r g b"` triples for the theme KDL's semantic components.
+//! - the generated tmux config (`tmux::render_config`) calls [`Rgb::hex`].
 //!
 //! Roles are semantic, not colour names — call sites say what a colour *means*
 //! (`ACCENT`, `DANGER`), so the palette can shift without touching them.
@@ -21,10 +20,9 @@ impl Rgb {
         Color::Rgb(self.0, self.1, self.2)
     }
 
-    /// As `"r g b"` space-separated decimals, for zellij semantic theme
-    /// components (`frame_selected { base R G B }`).
-    pub fn rgb(&self) -> String {
-        format!("{} {} {}", self.0, self.1, self.2)
+    /// As `#rrggbb`, for the generated tmux config (`fg=#a78bfa`).
+    pub fn hex(&self) -> String {
+        format!("#{:02x}{:02x}{:02x}", self.0, self.1, self.2)
     }
 }
 

@@ -52,7 +52,7 @@ pub fn list() -> Result<()> {
     let bare_dir = ws.bare_dir(&global);
     let cloned = crate::workspace::cloned_repos(&bare_dir, &ws.config.repos);
 
-    println!("{:<20} {:<50} {}", "NAME", "URL", "BARE");
+    println!("{:<20} {:<50} BARE", "NAME", "URL");
     println!("{}", "-".repeat(75));
     for repo in &ws.config.repos {
         let mark = if cloned.contains(&repo.name) { "✓" } else { "✗" };

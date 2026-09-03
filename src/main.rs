@@ -2,13 +2,13 @@ mod cli;
 mod git;
 mod palette;
 mod progress;
+mod tmux;
 mod tui;
 mod workspace;
-mod zellij;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Commands, HooksCommands, RepoCommands, SecretsCommands, TaskCommands};
+use cli::{Cli, Commands, HooksCommands, InternalCommands, RepoCommands, SecretsCommands, TaskCommands};
 use std::env;
 
 fn main() {
@@ -59,6 +59,14 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Watch) => cli::watch::run()?,
+
+        Some(Commands::Internal { command }) => match command {
+            InternalCommands::TmuxConf => {
+                let bin = env::current_exe()?;
+                print!("{}", tmux::render_config(&bin.to_string_lossy()));
+            }
+            InternalCommands::AgentLog { cwd, pid } => cli::agentlog::run(&cwd, pid)?,
+        },
 
         Some(Commands::Secrets { command }) => match command {
             SecretsCommands::Init => cli::secrets::init()?,
@@ -115,10 +123,9 @@ fn run() -> Result<()> {
 }
 
 /// Connect to the single global tenx session, regardless of cwd: attach (or
-/// create) it from a plain terminal, switch to it in place from a foreign
-/// zellij session, or run the overlay directly when already inside it. If cwd
-/// is inside a workspace, self-heal the registry first so it shows up in the
-/// overlay.
+/// create) it from a plain terminal, or run the overlay directly when already
+/// inside it. If cwd is inside a workspace, self-heal the registry first so it
+/// shows up in the overlay.
 fn open() -> Result<()> {
     let cwd = env::current_dir()?;
     if let Some(ws) = workspace::find_opt(&cwd)? {
@@ -128,25 +135,25 @@ fn open() -> Result<()> {
     let bin = env::current_exe()?;
     let bin_str = bin.to_string_lossy().into_owned();
 
+    tmux::check_version()?;
+
     // Every route into the session lands here, so this is the one place that
     // guarantees a watcher exists. No-op when one is already running.
     cli::watch::ensure_running(&bin);
 
-    match zellij::current_session().as_deref() {
+    if tmux::inside_tenx_session() {
         // Already inside the tenx session → run the overlay in this pane.
-        Some(zellij::SESSION) => tui::run_overlay(false)?,
-        // Inside a different zellij session → switch the client in place
-        // (creating the tenx session from the home layout if needed).
-        Some(_) => zellij::switch_to_tenx_session(&bin_str)?,
-        // Outside zellij entirely → attach, creating the session if missing.
-        None => {
-            if zellij::session_exists(zellij::SESSION)? {
-                zellij::attach_session(zellij::SESSION)?;
-            } else {
-                eprintln!("  creating session '{}'", zellij::SESSION);
-                zellij::create_and_attach_session(&bin_str)?;
-            }
+        tui::run_overlay(false)?;
+    } else if tmux::inside_any_tmux() {
+        // A client of some other tmux server: no in-place switch exists.
+        anyhow::bail!("{}", tmux::foreign_client_hint());
+    } else {
+        // Outside tmux entirely → attach, creating the server/session if
+        // missing (exec; does not return on success).
+        if !tmux::server_running() {
+            eprintln!("  creating session '{}'", tmux::SESSION);
         }
+        tmux::attach_or_create(&bin_str)?;
     }
 
     Ok(())
