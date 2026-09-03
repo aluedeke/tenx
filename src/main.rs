@@ -1,5 +1,6 @@
 mod cli;
 mod git;
+mod live;
 mod palette;
 mod progress;
 mod tmux;
@@ -64,6 +65,9 @@ fn run() -> Result<()> {
             InternalCommands::TmuxConf => {
                 let bin = env::current_exe()?;
                 print!("{}", tmux::render_config(&bin.to_string_lossy()));
+            }
+            InternalCommands::Ports => {
+                println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
             InternalCommands::AgentLog { cwd, pid } => cli::agentlog::run(&cwd, pid)?,
         },

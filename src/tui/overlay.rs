@@ -61,6 +61,9 @@ struct Row {
     /// The task's tmux window id (`@12`) if its window is open — from the
     /// per-task cache, refreshed on the tick.
     window_id: Option<String>,
+    /// PR chips and listening ports from `.tenx-live.json` (written by
+    /// `tenx watch`), refreshed on the tick.
+    live: crate::live::Live,
     /// Repos this task currently has worktrees for (what the repo editor diffs
     /// against). Refreshed on `rebuild_rows`, not on the idle tick.
     repos: Vec<String>,
@@ -388,6 +391,7 @@ impl Overlay {
                     waiting_for: state.waiting_for,
                     activity: state.changed.unwrap_or(task.created_at),
                     window_id,
+                    live: crate::live::read(&task.path),
                     repos: task.repos.clone(),
                     secrets_pending,
                     secrets_pending_set,
@@ -423,6 +427,7 @@ impl Overlay {
             r.waiting_for = state.waiting_for;
             r.activity = state.changed.unwrap_or(r.activity);
             r.window_id = read_window_id(&r.path);
+            r.live = crate::live::read(&r.path);
         }
         self.rows = rows;
     }
@@ -1824,6 +1829,22 @@ fn task_items(
         if show_age {
             spans.push(Span::raw("  "));
             spans.push(Span::styled(age, dim));
+        }
+        // Live chips — PR state and listening ports — only when there's room
+        // for the other extras too; a phone-width pane keeps the title.
+        if show_open {
+            for pr in &row.live.prs {
+                let color = match pr.checks.as_str() {
+                    "failure" => palette::DANGER.color(),
+                    "success" => palette::SUCCESS.color(),
+                    _ => palette::INFO.color(),
+                };
+                spans.push(Span::styled(format!("  {}", pr.chip()), Style::default().fg(color)));
+            }
+            if !row.live.ports.is_empty() {
+                let ports: Vec<String> = row.live.ports.iter().map(|p| format!(":{p}")).collect();
+                spans.push(Span::styled(format!("  {}", ports.join(" ")), dim));
+            }
         }
         // Which secret(s) it wants takes priority over Claude Code's own
         // waiting-for reason — same priority as the glyph above, and for the

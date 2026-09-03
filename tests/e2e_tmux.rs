@@ -177,6 +177,34 @@ fn task_new_open_and_list_against_real_tmux() {
     assert_eq!(status, "signaled", "bell in a pane should surface as signaled");
     assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_bell_flag}"]), "1");
 
+    // A process listening in one of the task's panes shows up as the task's
+    // port (pane pid → descendants → lsof), when python3 is around to listen.
+    if Command::new("python3").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success()) {
+        let listen = "python3 -c 'import socket,time;s=socket.socket();s.bind((\"127.0.0.1\",0));s.listen();print(\"PORT\",s.getsockname()[1],flush=True);time.sleep(300)'";
+        h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.2", listen, "Enter"]);
+        let mut port = None;
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let screen = h.tmux_out(&["capture-pane", "-p", "-t", "tenx:smoke-test.2"]);
+            port = screen.lines().find_map(|l| l.strip_prefix("PORT ")).and_then(|p| p.trim().parse::<u16>().ok());
+            if port.is_some() {
+                break;
+            }
+        }
+        let port = port.expect("listener printed its port");
+        let mut found = false;
+        for _ in 0..30 {
+            let out = h.tenx().args(["internal", "ports"]).output().unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+            if json["smoke-test"].as_array().is_some_and(|ps| ps.iter().any(|p| p.as_u64() == Some(port as u64))) {
+                found = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        assert!(found, "port {port} should be attributed to smoke-test");
+    }
+
     // Closing the window and re-opening recreates it (a swept task comes back).
     h.tmux_out(&["kill-window", "-t", id]);
     let out = h.tenx().args(["task", "open", "smoke-test", "--ws-dir", &h.ws()]).output().unwrap();

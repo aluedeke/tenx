@@ -338,6 +338,22 @@ pub fn list_windows() -> Result<Vec<Window>> {
     Ok(text.lines().filter_map(parse_window).collect())
 }
 
+/// Every pane in the session as (window name, pane pid) — the process roots
+/// `live::ports_by_window` walks. Empty when the server is down.
+pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
+    if !server_running() {
+        return Ok(vec![]);
+    }
+    let text = run(&["list-panes", "-s", "-t", SESSION, "-F", "#{window_name}\t#{pane_pid}"])?;
+    Ok(text
+        .lines()
+        .filter_map(|l| {
+            let (w, p) = l.split_once('\t')?;
+            Some((w.to_string(), p.trim().parse().ok()?))
+        })
+        .collect())
+}
+
 /// The window named exactly `name` (windows are named by task slug).
 pub fn find_window(name: &str) -> Result<Option<Window>> {
     Ok(list_windows()?.into_iter().find(|w| w.name == name))

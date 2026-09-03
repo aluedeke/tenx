@@ -83,6 +83,9 @@ pub enum InternalCommands {
     /// Print the tmux config tenx generates for its server (what
     /// `~/.config/tenx/tmux.conf` will contain on the next session creation).
     TmuxConf,
+    /// Print listening ports per open task window as JSON — what `tenx watch`
+    /// caches into each task's `.tenx-live.json`.
+    Ports,
     /// Follow a background agent's transcript in a pane; exits when the agent
     /// does. Opened by `tenx watch` when a `--bg` session appears under a task.
     AgentLog {

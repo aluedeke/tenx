@@ -389,7 +389,13 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[claude::Session], signals
 /// here the consumers are in another process and another language runtime, where
 /// a silent mismatch surfaces as a missing field at runtime, not a compile error.
 pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::Value {
+    let live = crate::live::read(&task.path);
     serde_json::json!({
+        "ports": live.ports,
+        "prs": live.prs.iter().map(|p| serde_json::json!({
+            "repo": p.repo, "number": p.number, "state": p.state, "url": p.url,
+            "draft": p.draft, "review": p.review, "checks": p.checks, "chip": p.chip(),
+        })).collect::<Vec<_>>(),
         "ws": ws.config.name,
         "ws_dir": ws.dir,
         "slug": task.name,

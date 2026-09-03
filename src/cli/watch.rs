@@ -55,6 +55,8 @@ use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::workspace::{self, TaskStatus};
@@ -110,6 +112,7 @@ pub fn run() -> Result<()> {
     // watcher or predate this feature; either way a pane now would be a
     // surprise, not news.
     let mut paned: HashSet<(PathBuf, u32)> = primed.agents.iter().map(|(_, c, p)| (c.clone(), *p)).collect();
+    let pr_busy = Arc::new(AtomicBool::new(false));
     // Deliberately not seeded from `primed`: the session is still being created
     // at this point (see SESSION_MISSES_BEFORE_EXIT), so no status bar exists to
     // receive a push yet. Starting empty means the first tick always publishes,
@@ -189,13 +192,14 @@ pub fn run() -> Result<()> {
         notified_secrets_set.retain(|k| secrets_set_keys.contains(k));
 
         pane_new_agents(&snapshot.agents, &mut paned);
+        let live_changed = refresh_live(&snapshot.live_targets, &pr_busy);
 
         // Publish last. Delivery is the slowest thing in this loop — ~0.17 s for
         // a live-task payload, against ~5 ms to resolve — and the notification
         // above is the half with a person waiting on it. Only on a real change,
         // so a quiet session sends nothing at all.
         let current = digest(&snapshot.tasks);
-        if current != published {
+        if current != published || live_changed {
             published = current;
             push_status(&snapshot.tasks);
         }
@@ -245,6 +249,10 @@ struct Snapshot {
     /// task: (task slug, agent cwd, pid). The watcher gives each a pane in its
     /// task's window the first time it sees it.
     agents: Vec<(String, PathBuf, u32)>,
+    /// Every task, for the live-facts refresh (`refresh_live`): where it is,
+    /// which repos it has, and whether it's active (open window or a live
+    /// session), which sets how eagerly its PR is re-checked.
+    live_targets: Vec<LiveTarget>,
     /// Tasks with a live Claude Code session, in the shared wire shape
     /// (`workspace::task_json`).
     ///
@@ -259,6 +267,13 @@ struct Snapshot {
     tasks: Vec<serde_json::Value>,
 }
 
+struct LiveTarget {
+    slug: String,
+    path: PathBuf,
+    repos: Vec<String>,
+    active: bool,
+}
+
 fn resolve_all() -> Snapshot {
     let sessions = workspace::claude::sessions();
     let signals = crate::tmux::signals();
@@ -266,11 +281,18 @@ fn resolve_all() -> Snapshot {
     let mut secrets_pending = Vec::new();
     let mut secrets_pending_set = Vec::new();
     let mut agents = Vec::new();
+    let mut live_targets = Vec::new();
     let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
             let state = workspace::resolve_task_state(&task.path, &sessions, &signals);
             let key = format!("{}/{}", ws.dir.display(), task.name);
+            live_targets.push(LiveTarget {
+                slug: task.name.clone(),
+                path: task.path.clone(),
+                repos: task.repos.clone(),
+                active: state.status != TaskStatus::Idle || signals.contains_key(&task.name),
+            });
             for s in tenx_core::status::sessions_for(&sessions, &task.path) {
                 if s.kind != "interactive" && s.cwd != task.path {
                     agents.push((task.name.clone(), s.cwd.clone(), s.pid));
@@ -331,8 +353,58 @@ fn resolve_all() -> Snapshot {
         secrets_pending,
         secrets_pending_set,
         agents,
+        live_targets,
         tasks: tasks.into_iter().map(|(_, v)| v).collect(),
     }
+}
+
+/// Refresh every task's `.tenx-live.json`: ports for the open windows every
+/// tick (cheap, local), PRs on a staggered schedule (network). PR lookups run
+/// on a helper thread so a slow `gh` can't hold up the notification path;
+/// `pr_busy` stops a second batch from starting while one is still out.
+/// Returns whether any cache changed, so the caller can republish.
+fn refresh_live(targets: &[LiveTarget], pr_busy: &Arc<AtomicBool>) -> bool {
+    let mut changed = false;
+    let ports = crate::live::ports_by_window();
+    for t in targets {
+        let Some(new_ports) = ports.get(&t.slug) else { continue };
+        let mut live = crate::live::read(&t.path);
+        if live.ports != *new_ports {
+            live.ports = new_ports.clone();
+            changed |= crate::live::write(&t.path, &live).is_ok();
+        }
+    }
+
+    if !crate::live::gh_available() || pr_busy.load(Ordering::Relaxed) {
+        return changed;
+    }
+    let now = crate::live::now_secs();
+    let stale: Vec<(PathBuf, Vec<String>)> = targets
+        .iter()
+        .filter(|t| !t.repos.is_empty())
+        .filter(|t| {
+            let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
+            now.saturating_sub(crate::live::read(&t.path).pr_checked) >= ttl.as_secs()
+        })
+        .take(crate::live::PR_LOOKUPS_PER_TICK)
+        .map(|t| (t.path.clone(), t.repos.clone()))
+        .collect();
+    if stale.is_empty() {
+        return changed;
+    }
+    pr_busy.store(true, Ordering::Relaxed);
+    let busy = Arc::clone(pr_busy);
+    std::thread::spawn(move || {
+        for (path, repos) in stale {
+            let prs: Vec<_> = repos.iter().filter_map(|r| crate::live::fetch_pr(r, &path.join(r))).collect();
+            let mut live = crate::live::read(&path);
+            live.prs = prs;
+            live.pr_checked = crate::live::now_secs();
+            let _ = crate::live::write(&path, &live);
+        }
+        busy.store(false, Ordering::Relaxed);
+    });
+    changed
 }
 
 /// Give every background agent a pane in its task's window, once. An agent
@@ -385,10 +457,21 @@ fn push_status(tasks: &[serde_json::Value]) {
                     "done" => "✅",
                     _ => "·",
                 };
-                match (status, t["waiting_for"].as_str()) {
+                let mut text = match (status, t["waiting_for"].as_str()) {
                     ("blocked", Some(reason)) => format!("{glyph} {title} — {reason}"),
                     _ => format!("{glyph} {title}"),
+                };
+                // Live chips: the PR and any listening ports, straight from
+                // the cache `refresh_live` keeps.
+                let live = crate::live::read(&Path::new(t["ws_dir"].as_str().unwrap_or("")).join("tasks").join(&w.name));
+                for pr in &live.prs {
+                    text.push_str(&format!("  {}", pr.chip()));
                 }
+                if !live.ports.is_empty() {
+                    let ports: Vec<String> = live.ports.iter().map(|p| format!(":{p}")).collect();
+                    text.push_str(&format!("  {}", ports.join(" ")));
+                }
+                text
             }
             None => String::new(), // idle: fall back to the window name
         };
