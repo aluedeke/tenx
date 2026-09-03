@@ -692,11 +692,7 @@ impl Overlay {
             match (p, key.code) {
                 ('g', KeyCode::Char('g')) => self.move_top(),
                 ('g', KeyCode::Char('t' | 'T')) => self.toggle_tab(),
-                ('d', KeyCode::Char('d')) => {
-                    if self.require_tasks() {
-                        self.start_delete();
-                    }
-                }
+                ('d', KeyCode::Char('d')) if self.require_tasks() => self.start_delete(),
                 _ => {} // incomplete/unknown sequence — cancel
             }
             return Ok(false);
@@ -948,11 +944,7 @@ impl Overlay {
                     form.name.pop();
                 }
             }
-            KeyCode::Char(c) if !ctrl => {
-                if form.focus == 0 {
-                    form.name.push(c);
-                }
-            }
+            KeyCode::Char(c) if !ctrl && form.focus == 0 => form.name.push(c),
             _ => {}
         }
         self.mode = Mode::Create(form);

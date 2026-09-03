@@ -204,7 +204,7 @@ pub fn run() -> Result<()> {
             push_status(&snapshot.tasks);
         }
 
-        if tick % SESSION_CHECK_POLLS == 0 {
+        if tick.is_multiple_of(SESSION_CHECK_POLLS) {
             let alive = crate::tmux::server_running();
             session_misses = if alive { 0 } else { session_misses + 1 };
             if session_misses >= SESSION_MISSES_BEFORE_EXIT {
@@ -347,7 +347,7 @@ fn resolve_all() -> Snapshot {
     // the same shape. Same bytes in a different order is still a different wire
     // format to anyone who reads position; cheap to guarantee here, awkward to
     // rediscover in a consumer that assumed it.
-    tasks.sort_by(|a, b| b.0.cmp(&a.0));
+    tasks.sort_by_key(|t| std::cmp::Reverse(t.0));
     Snapshot {
         blocked,
         secrets_pending,

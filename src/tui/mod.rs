@@ -43,7 +43,7 @@ pub fn dump_json() -> anyhow::Result<()> {
             entries.push((activity, crate::workspace::task_json(&ws, &task, &state)));
         }
     }
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.0));
     let tasks: Vec<_> = entries.into_iter().map(|(_, v)| v).collect();
     println!("{}", serde_json::json!({ "workspaces": workspaces, "tasks": tasks }));
     Ok(())
