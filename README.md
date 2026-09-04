@@ -1,6 +1,8 @@
-# tenx
+<p align="center">
+  <img src="docs/logo/tenx-lockup.svg" alt="tenx" width="232" height="80">
+</p>
 
-Work on many tasks in parallel, each with its own coding agent, and always know which one needs you.
+<p align="center">Work on many tasks in parallel, each with its own coding agent, and always know which one needs you.</p>
 
 Coding agents make it cheap to have several pieces of work in flight at once. The expensive part is everything around them: each task needs its own branch and checkout in every repo it touches, its own agent session, an editor and a shell, and you need to know at a glance which agent is stuck waiting on you and which is still working. Switching between five terminal tabs to find out does not scale.
 

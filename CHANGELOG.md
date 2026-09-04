@@ -20,5 +20,6 @@ First public release candidate.
 - `/tenx` skill for Claude Code sessions, installed by `tenx init`.
 - `--ws-dir` on every mutating command and `tenx overlay --json` for scripts and other front ends.
 - CI on macOS and Ubuntu with an end-to-end test against a throwaway tmux server.
+- Logo: the Lanes mark (four task bars, one stopped with an amber dot), lockup and favicons under `docs/logo/`.
 
 [Unreleased]: https://github.com/aluedeke/tenx/commits/main
