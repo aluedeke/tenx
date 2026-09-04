@@ -35,28 +35,48 @@
 //! passphrase prompt reads from (not stdin; confirmed by `age`'s own error
 //! when it's missing: "standard input is not a terminal, and /dev/tty is not
 //! available"). A Bash-tool child process normally has no controlling
-//! terminal, so this fails there, and `decrypt` falls back to enqueue-only
-//! behavior instead of letting a raw `age`/`sops` tty error surface: append
-//! the given name to a durable per-task marker file and return, never
-//! touching the identity or an encrypted bundle. Idempotent — re-requesting
-//! an already-pending name is a no-op, so a chatty agent can't spam repeat
-//! notifications. When `/dev/tty` *is* reachable (a human's real shell, or
-//! the overlay's spawned pane), `decrypt` proceeds straight to the real
-//! decrypt, same passphrase prompt as always. Which behavior a caller gets is
-//! decided entirely by whether a real terminal is actually there, not by
-//! which subcommand name was typed.
+//! terminal, so this fails there, and `decrypt` falls back to enqueue-then-
+//! wait behavior instead of letting a raw `age`/`sops` tty error surface:
+//! append the given name to a durable per-task marker file, never touching
+//! the identity or an encrypted bundle, then **block** until a human acts on
+//! it (see *Waiting* below). Idempotent — re-requesting an already-pending
+//! name is a no-op, so a chatty agent can't spam repeat notifications. When
+//! `/dev/tty` *is* reachable (a human's real shell, or the overlay's spawned
+//! pane), `decrypt` proceeds straight to the real decrypt, same passphrase
+//! prompt as always. Which behavior a caller gets is decided entirely by
+//! whether a real terminal is actually there, not by which subcommand name
+//! was typed.
 //!
-//! `set` has **no such fallback, on purpose** — it needs a real terminal
-//! unconditionally, every call, no exceptions. `sops set` edits an
-//! *already-encrypted* document in place, which means it has to decrypt that
-//! document's existing data key to reuse it, which needs the identity's
-//! passphrase — there is no "add without the private key" here, unlike the
-//! independent-per-secret design this replaced. An agent's Bash tool call to
-//! `set` will simply fail with no real terminal available; there's nothing to
-//! queue, because `sops` itself has no queuing concept and this module isn't
-//! inventing one — a queued *value* would mean plaintext sitting on disk
-//! before any human ever confirmed anything, which is a strictly worse
-//! exposure than anything else in this design.
+//! `set` mirrors that shape with its own queue (`enqueue_pending_set`): with
+//! no terminal it records "someone needs to type in a value for `name`" and
+//! waits; with one it prompts for the value (masked) and the passphrase and
+//! performs the edit. What it never does is queue a *value* — `sops set`
+//! edits an already-encrypted document in place, which needs the identity's
+//! passphrase, so an agent can't add a secret without a human, and a queued
+//! plaintext value sitting on disk before any human confirmed anything would
+//! be a strictly worse exposure than anything else in this design. Only the
+//! *name* is queued; the value is typed by the human, on the real terminal,
+//! when they fulfil it.
+//!
+//! **Waiting.** The point of an agent asking for a credential is usually
+//! that it can't continue without it, so on the no-terminal path both
+//! `decrypt` and `set` block after enqueueing (`wait_for_human`): poll the
+//! queue once a second until the name is gone, then decide what that meant
+//! — `tenx_core::secrets::wait_outcome` — from the disk alone: an output
+//! file (the released plaintext, or the re-encrypted bundle for `set`)
+//! modified at or after the request means *fulfilled*, nothing modified
+//! means *withdrawn* (`cancel`). No receipt or tombstone is recorded — the
+//! queue removal is already the commit point, because every fulfilment path
+//! writes its output *before* clearing the name. The wait is bounded
+//! (`--timeout`, default `DEFAULT_WAIT`) because an agent's shell tool kills
+//! long-running commands: on timeout the request stays queued and the exit
+//! message says to re-run the same command, which resumes waiting thanks to
+//! the idempotent enqueue. `--no-wait` restores the fire-and-forget behavior.
+//!
+//! `cancel` withdraws a request — removes the name from either queue (or
+//! `--all`) and nothing else. It never touches key material, so it is safe
+//! from anywhere, and a waiter blocked on that name sees the removal and
+//! exits reporting the withdrawal rather than silently succeeding.
 //!
 //! Nothing tenx seals needs a `.gitignore`: `.secrets.enc.env`/`.secrets.env`/
 //! `.secrets-pending` all live directly under a task's own directory
@@ -74,6 +94,9 @@ use std::env;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant, SystemTime};
+
+use tenx_core::secrets::{wait_outcome, WaitOutcome};
 
 use crate::workspace::{self, Task, Workspace};
 
@@ -144,18 +167,19 @@ pub fn encrypt(task_slug: &str, file: &str) -> Result<()> {
 /// CLI argument or read from stdin (ps-visible to `ps`/`/proc`, and stdin
 /// specifically would collide with piping a value in non-interactively,
 /// which this command no longer supports on purpose) — always typed directly
-/// into `/dev/tty`, same channel the passphrase itself uses.
-pub fn set(name: &str) -> Result<()> {
+/// into `/dev/tty`, same channel the passphrase itself uses. `wait` is how
+/// long the no-terminal path blocks for a human (`None`: enqueue and return).
+pub fn set(name: &str, wait: Option<Duration>) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = current_task(&ws, &cwd)?;
-    set_in(&ws, &task, name)
+    set_in(&ws, &task, name, wait)
 }
 
 /// Same as [`set`], for an explicit workspace/task rather than cwd — used by
 /// the overlays, same reasoning as [`decrypt_in`]: they pick a task from a
 /// list spanning every workspace rather than being invoked from inside one.
-pub fn set_in(ws: &Workspace, task: &Task, name: &str) -> Result<()> {
+pub fn set_in(ws: &Workspace, task: &Task, name: &str, wait: Option<Duration>) -> Result<()> {
     if name.is_empty() || name.contains(['/', '\\', '"']) || name == "." || name == ".." {
         bail!("invalid secret name: {name:?}");
     }
@@ -167,7 +191,11 @@ pub fn set_in(ws: &Workspace, task: &Task, name: &str) -> Result<()> {
         // genuinely different queue (see module docs and
         // `workspace::SECRETS_PENDING_SET_FILE`), fulfilled by a human simply
         // re-running `set` from a real terminal, same command either way.
+        let requested_at = request_instant();
         enqueue_pending_set(task, name)?;
+        if let Some(timeout) = wait {
+            wait_for_human(task, Queue::Set, name, requested_at, timeout)?;
+        }
         return Ok(());
     }
 
@@ -253,13 +281,13 @@ pub fn fulfill() -> Result<()> {
 pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
     let mut failed = false;
     if !workspace::secrets_pending(&task.path).is_empty()
-        && let Err(e) = decrypt_in(ws, task, None)
+        && let Err(e) = decrypt_in(ws, task, None, None)
     {
         eprintln!("tenx: {e}");
         failed = true;
     }
     for name in workspace::secrets_pending_set(&task.path) {
-        if let Err(e) = set_in(ws, task, &name) {
+        if let Err(e) = set_in(ws, task, &name, None) {
             eprintln!("tenx: {e}");
             failed = true;
         }
@@ -267,6 +295,168 @@ pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
     if failed {
         bail!("one or more secrets actions failed for task '{}' — see above", task.name);
     }
+    Ok(())
+}
+
+/// How long the no-terminal path waits by default. Deliberately under the
+/// two minutes Claude Code's Bash tool allows a command before killing it
+/// (which would be a noisy failure instead of this clean "still pending,
+/// re-run" exit); the `/tenx` skill tells the agent to raise both when it
+/// really can't continue without the secret.
+pub const DEFAULT_WAIT: Duration = Duration::from_secs(100);
+
+/// Poll interval while waiting — the same order as the watcher's 2 s tick;
+/// a human typing a passphrase is the slow part, not this.
+const WAIT_POLL: Duration = Duration::from_secs(1);
+
+/// Which queue a wait or cancel is about. The two queues have different
+/// fulfilment actions and therefore different outputs to watch for.
+#[derive(Clone, Copy)]
+enum Queue {
+    /// `decrypt`'s queue: fulfilled by releasing plaintext.
+    Release,
+    /// `set`'s queue: fulfilled by `sops set` rewriting the sealed bundle.
+    Set,
+}
+
+impl Queue {
+    fn names(self, task: &Task) -> Vec<String> {
+        match self {
+            Queue::Release => read_pending(task),
+            Queue::Set => read_pending_set(task),
+        }
+    }
+
+    /// Modification times of every file a fulfilment of this queue would
+    /// have written — `tenx_core::secrets::wait_outcome`'s evidence. Files
+    /// that don't exist contribute nothing.
+    fn output_mtimes(self, task: &Task) -> Vec<SystemTime> {
+        let mut paths = Vec::new();
+        match self {
+            Queue::Release => {
+                paths.push(task.path.join(".secrets.env"));
+                if let Ok(entries) = std::fs::read_dir(task.path.join(".secrets-adopted")) {
+                    paths.extend(entries.flatten().map(|e| e.path()));
+                }
+            }
+            Queue::Set => paths.push(bundle_path(task)),
+        }
+        paths.iter().filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()).collect()
+    }
+
+    fn verb(self) -> &'static str {
+        match self {
+            Queue::Release => "release",
+            Queue::Set => "supply a value for",
+        }
+    }
+}
+
+/// The instant a request is considered made, for `wait_outcome`'s "written at
+/// or after the request" test. Padded back by a couple of seconds so a
+/// filesystem with coarse (whole-second) mtimes can't round a fulfilment
+/// that landed in the same second to *before* the request and make it look
+/// like a cancellation; a genuine cancellation can't be confused by this,
+/// because it writes no output at all.
+fn request_instant() -> SystemTime {
+    SystemTime::now() - Duration::from_secs(2)
+}
+
+/// Block until `name` leaves `queue` — or `timeout` passes — and say which.
+/// See the module docs (*Waiting*) for the contract; this is the I/O half,
+/// the decision is `tenx_core::secrets::wait_outcome`. Errors on both
+/// withdrawal and timeout so an agent's exit code reflects that it did *not*
+/// get what it asked for; the message tells the two apart.
+fn wait_for_human(task: &Task, queue: Queue, name: &str, requested_at: SystemTime, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    eprintln!(
+        "waiting for someone to {} '{name}' (up to {}) — withdraw with: tenx secrets cancel {name}",
+        queue.verb(),
+        fmt_wait(timeout)
+    );
+    loop {
+        let still_pending = queue.names(task).iter().any(|n| n == name);
+        match wait_outcome(still_pending, &queue.output_mtimes(task), requested_at) {
+            WaitOutcome::Fulfilled => {
+                match queue {
+                    Queue::Release => eprintln!(
+                        "✓ '{name}' released for task '{}' — see {}",
+                        task.name,
+                        task.path.join(".secrets.env").display()
+                    ),
+                    Queue::Set => eprintln!(
+                        "✓ a value for '{name}' was set for task '{}' — run: tenx secrets decrypt {name}",
+                        task.name
+                    ),
+                }
+                return Ok(());
+            }
+            WaitOutcome::Cancelled => {
+                bail!("the request for '{name}' was withdrawn before it was fulfilled")
+            }
+            WaitOutcome::Pending => {}
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "'{name}' is still pending for task '{}' after {} — it stays queued; re-run the same \
+                 command to keep waiting, or withdraw it with: tenx secrets cancel {name}",
+                task.name,
+                fmt_wait(timeout)
+            );
+        }
+        std::thread::sleep(WAIT_POLL);
+    }
+}
+
+/// "100s" / "9m" — exact, unlike `tenx_core::time::format_duration`, which
+/// buckets to the nearest unit for the overlay's age column and would call
+/// the default wait "1m".
+fn fmt_wait(d: Duration) -> String {
+    let secs = d.as_secs();
+    if secs > 0 && secs.is_multiple_of(60) { format!("{}m", secs / 60) } else { format!("{secs}s") }
+}
+
+/// Withdraw pending requests for the current task (resolved from cwd): one
+/// `name` from whichever queue holds it, or everything when `name` is
+/// `None`. Touches nothing but the two queue files — no identity, no bundle,
+/// no plaintext — so it is safe to run from anywhere, agent's Bash tool
+/// included. A waiter blocked on a withdrawn name exits with an error saying
+/// so (see `wait_for_human`).
+pub fn cancel(name: Option<&str>) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = workspace::find(&cwd)?;
+    let task = current_task(&ws, &cwd)?;
+    cancel_in(&task, name)
+}
+
+/// Same as [`cancel`], for an explicit task — used by the overlay's `:cancel`,
+/// same reasoning as [`decrypt_in`].
+pub fn cancel_in(task: &Task, name: Option<&str>) -> Result<()> {
+    let release = read_pending(task);
+    let set = read_pending_set(task);
+    let (drop_release, drop_set): (Vec<String>, Vec<String>) = match name {
+        None => (release, set),
+        Some(n) => (
+            release.into_iter().filter(|x| x == n).collect(),
+            set.into_iter().filter(|x| x == n).collect(),
+        ),
+    };
+    if drop_release.is_empty() && drop_set.is_empty() {
+        match name {
+            Some(n) => eprintln!("nothing pending named '{n}' for task '{}'", task.name),
+            None => eprintln!("nothing pending for task '{}'", task.name),
+        }
+        return Ok(());
+    }
+    clear_pending_names(task, &drop_release.iter().cloned().collect())?;
+    for n in &drop_set {
+        clear_pending_set(task, n)?;
+    }
+    let withdrawn: Vec<String> = drop_release
+        .into_iter()
+        .chain(drop_set.into_iter().map(|n| format!("{n} (needs value)")))
+        .collect();
+    eprintln!("withdrew {} for task '{}'", withdrawn.join(", "), task.name);
     Ok(())
 }
 
@@ -280,13 +470,14 @@ fn tty_available() -> bool {
 }
 
 /// Decrypt the current task's (resolved from cwd) secrets — or, when no real
-/// terminal is reachable, enqueue `name` for a human to release later. See
-/// module docs for the tty-detection fallback this implements.
-pub fn decrypt(name: Option<&str>) -> Result<()> {
+/// terminal is reachable, enqueue `name` for a human to release and wait up
+/// to `wait` for that to happen (`None`: enqueue and return). See module
+/// docs for the tty-detection fallback this implements.
+pub fn decrypt(name: Option<&str>, wait: Option<Duration>) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = current_task(&ws, &cwd)?;
-    decrypt_in(&ws, &task, name)
+    decrypt_in(&ws, &task, name, wait)
 }
 
 /// Same as [`decrypt`], for an explicit workspace/task rather than cwd — used
@@ -296,19 +487,24 @@ pub fn decrypt(name: Option<&str>) -> Result<()> {
 /// rather than being invoked from inside one. Both overlays only ever call
 /// this from a real interactive pane, so `name` is always `None` there — the
 /// tty-detection fallback below exists for the CLI/agent path.
-pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>) -> Result<()> {
+pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>, wait: Option<Duration>) -> Result<()> {
+    let requested_at = request_instant();
     if let Some(name) = name {
         enqueue_pending(task, name)?;
     }
     if !tty_available() {
-        if name.is_none() {
+        let Some(name) = name else {
             bail!(
                 "no real terminal available (this looks like an agent's Bash tool) — \
                  pass what you need, e.g.: tenx secrets decrypt STRIPE_KEY"
             );
-        }
+        };
         // Already enqueued above; that's the whole non-interactive contract
-        // — never touch the identity or an encrypted bundle from here.
+        // — never touch the identity or an encrypted bundle from here. All
+        // that's left is to wait for a human to do it.
+        if let Some(timeout) = wait {
+            wait_for_human(task, Queue::Release, name, requested_at, timeout)?;
+        }
         return Ok(());
     }
 

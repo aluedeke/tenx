@@ -8,6 +8,7 @@
 
 pub mod dialog;
 pub mod live;
+pub mod secrets;
 pub mod slug;
 pub mod status;
 pub mod sweep;

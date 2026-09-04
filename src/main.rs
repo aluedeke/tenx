@@ -75,9 +75,14 @@ fn run() -> Result<()> {
         Some(Commands::Secrets { command }) => match command {
             SecretsCommands::Init => cli::secrets::init()?,
             SecretsCommands::Encrypt { task, file } => cli::secrets::encrypt(&task, &file)?,
-            SecretsCommands::Set { name } => cli::secrets::set(&name)?,
-            SecretsCommands::Decrypt { name } => cli::secrets::decrypt(name.as_deref())?,
+            SecretsCommands::Set { name, no_wait, timeout } => {
+                cli::secrets::set(&name, secrets_wait(no_wait, timeout.as_deref())?)?
+            }
+            SecretsCommands::Decrypt { name, no_wait, timeout } => {
+                cli::secrets::decrypt(name.as_deref(), secrets_wait(no_wait, timeout.as_deref())?)?
+            }
             SecretsCommands::Fulfill => cli::secrets::fulfill()?,
+            SecretsCommands::Cancel { name, all: _ } => cli::secrets::cancel(name.as_deref())?,
             SecretsCommands::Status => cli::secrets::status()?,
         },
 
@@ -137,6 +142,18 @@ fn run() -> Result<()> {
 /// create) it from a plain terminal, or run the overlay directly when already
 /// inside it. If cwd is inside a workspace, self-heal the registry first so it
 /// shows up in the overlay.
+/// `--no-wait`/`--timeout` → how long `secrets decrypt`/`set` block for a
+/// human on the no-terminal path (`None`: enqueue and return).
+fn secrets_wait(no_wait: bool, timeout: Option<&str>) -> Result<Option<std::time::Duration>> {
+    if no_wait {
+        return Ok(None);
+    }
+    Ok(Some(match timeout {
+        Some(t) => cli::task::parse_duration(t)?,
+        None => cli::secrets::DEFAULT_WAIT,
+    }))
+}
+
 fn open() -> Result<()> {
     let cwd = env::current_dir()?;
     if let Some(ws) = workspace::find_opt(&cwd)? {

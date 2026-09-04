@@ -16,6 +16,7 @@ First public release candidate.
 - The attention watcher: desktop notifications when a task starts waiting, per-window status in the tmux status bar, PR and listening-port chips, and a log pane for background agents.
 - Sweep and pin: close windows nobody is waiting on, keep conversations resumable.
 - `tenx secrets`: per-task credentials via `age` and `sops`, safe to call from an agent, values never written to stdout. Adopts repos that already use sops.
+- `tenx secrets decrypt`/`set` from an agent block until a human fulfils the request (`--timeout`, default 100 s; `--no-wait` to enqueue and return), so the agent resumes the moment a secret lands. `tenx secrets cancel <name>|--all` and the overlay's `:cancel` withdraw a request; a waiting agent is told it was withdrawn.
 - `tenx standup`: a summary of recent activity across tasks, with a `/standup` skill to format it.
 - `/tenx` skill for Claude Code sessions, installed by `tenx init`.
 - `--ws-dir` on every mutating command and `tenx overlay --json` for scripts and other front ends.

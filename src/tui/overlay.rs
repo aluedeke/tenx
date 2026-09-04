@@ -898,6 +898,7 @@ impl Overlay {
             "u" | "unlock" => self.start_unlock(),
             "y" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
             "deny" => self.answer(tenx_core::dialog::Answer::No),
+            "cancel" => self.cancel_secrets(),
             "o" | "open" => return self.jump(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
         }
@@ -1474,6 +1475,33 @@ impl Overlay {
             return;
         }
         self.pending_unlock = Some((r.ws_idx, r.slug.clone()));
+    }
+
+    /// `:cancel` — withdraw every pending secrets request for the selected
+    /// row, the human-side counterpart of `tenx secrets cancel --all`. Needs
+    /// no terminal handoff (unlike `start_unlock`): it only edits the two
+    /// queue files, so it runs inline and the row leaves SECRETS PENDING at
+    /// once.
+    fn cancel_secrets(&mut self) {
+        let Some(r) = self.selected_row() else {
+            return;
+        };
+        if r.secrets_pending.is_empty() && r.secrets_pending_set.is_empty() {
+            self.status_msg = Some("no pending secrets for this task".into());
+            return;
+        }
+        let (ws_idx, slug) = (r.ws_idx, r.slug.clone());
+        let result = self
+            .workspaces
+            .get(ws_idx)
+            .context("workspace no longer registered")
+            .and_then(|ws| ws.find_task(&slug))
+            .and_then(|task| crate::cli::secrets::cancel_in(&task, None));
+        self.status_msg = Some(match result {
+            Ok(()) => format!("withdrew pending secrets requests for '{slug}'"),
+            Err(e) => e.to_string(),
+        });
+        self.rebuild_rows();
     }
 
     // ── Rename ────────────────────────────────────────────────────────────────

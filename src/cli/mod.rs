@@ -65,10 +65,11 @@ pub enum Commands {
     /// Manage per-task encrypted secrets (age + sops)
     ///
     /// Commands are named and behave like their `sops` equivalents:
-    /// `encrypt`, `set`, `decrypt`, plus `fulfill` (do whatever is pending)
-    /// and `status`. `decrypt` and `set` are agent-safe: without a real
-    /// terminal each can only enqueue its own kind of request (release a
-    /// bundle, or supply a value) and never touches key material or a secret
+    /// `encrypt`, `set`, `decrypt`, plus `fulfill` (do whatever is pending),
+    /// `cancel` (withdraw a request) and `status`. `decrypt` and `set` are
+    /// agent-safe: without a real terminal each can only enqueue its own
+    /// kind of request (release a bundle, or supply a value) and then wait
+    /// for a human to act on it — never touching key material or a secret
     /// value. Decrypted values are written to files, never to stdout.
     Secrets {
         #[command(subcommand)]
@@ -125,11 +126,22 @@ pub enum SecretsCommands {
     /// mirrored: real terminal reachable → prompts for the value (masked),
     /// then the passphrase, then edits; not reachable → enqueues "someone
     /// needs to supply a value for this" instead, agent-safe, own queue
-    /// separate from `decrypt`'s. The value itself is never a CLI argument
-    /// or read from stdin — always typed directly into the real terminal.
+    /// separate from `decrypt`'s, and waits for a human to fulfil it (same
+    /// --timeout/--no-wait as `decrypt`). The value itself is never a CLI
+    /// argument or read from stdin — always typed directly into the real
+    /// terminal.
     Set {
         /// Secret name (becomes its key in the decrypted .secrets.env)
         name: String,
+        /// Enqueue and return immediately instead of waiting (no-terminal path only)
+        #[arg(long)]
+        no_wait: bool,
+        /// How long to wait for a human before giving up — "<N><unit>", e.g.
+        /// "90s", "9m". The request stays queued on timeout; re-running
+        /// resumes waiting. Default: 100s, under a shell tool's usual kill
+        /// limit.
+        #[arg(long, conflicts_with = "no_wait")]
+        timeout: Option<String>,
     },
     /// Ask for the current task's secrets (task resolved from cwd)
     ///
@@ -139,8 +151,9 @@ pub enum SecretsCommands {
     /// thing age's own prompt reads from), never on how it's invoked: from a
     /// human's real shell or the overlay's spawned pane it decrypts straight
     /// away; from an agent's Bash tool (no controlling terminal) it falls
-    /// back to enqueue-only — never touches the identity or the encrypted
-    /// bundle in that case. When it does decrypt: the task's own sealed
+    /// back to enqueueing the request and waiting for a human to release it
+    /// — never touches the identity or the encrypted bundle in that case.
+    /// When it does decrypt: the task's own sealed
     /// bundle into tasks/<slug>/.secrets.env, and/or any sops-covered files
     /// an adopted repo already has (to their plaintext sibling, inside the
     /// worktree) — filtered by pending names when any match a filename,
@@ -158,6 +171,15 @@ pub enum SecretsCommands {
         /// real terminal is reachable (nothing else to do in that case);
         /// optional otherwise.
         name: Option<String>,
+        /// Enqueue and return immediately instead of waiting (no-terminal path only)
+        #[arg(long)]
+        no_wait: bool,
+        /// How long to wait for a human before giving up — "<N><unit>", e.g.
+        /// "90s", "9m". The request stays queued on timeout; re-running
+        /// resumes waiting. Default: 100s, under a shell tool's usual kill
+        /// limit.
+        #[arg(long, conflicts_with = "no_wait")]
+        timeout: Option<String>,
     },
     /// Do whatever is pending for the current task in one sitting (task resolved from cwd)
     ///
@@ -167,6 +189,20 @@ pub enum SecretsCommands {
     /// the overlay's spawned pane, so it doesn't need to know which of the
     /// two pending kinds a task has before deciding what to run.
     Fulfill,
+    /// Withdraw a pending request for the current task (task resolved from cwd)
+    ///
+    /// Removes the name from whichever queue holds it (release or value)
+    /// and nothing else — never touches the identity, a bundle or a
+    /// plaintext, so it is safe from an agent's Bash tool too. A `decrypt`
+    /// or `set` still waiting on that name exits reporting the withdrawal.
+    Cancel {
+        /// Name to withdraw (required unless --all)
+        #[arg(required_unless_present = "all")]
+        name: Option<String>,
+        /// Withdraw every pending request for the task, both queues
+        #[arg(long, conflicts_with = "name")]
+        all: bool,
+    },
     /// Show sealed/unlocked/pending state across all tasks (metadata only —
     /// never secret values)
     Status,
