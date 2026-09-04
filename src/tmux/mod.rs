@@ -256,9 +256,13 @@ set -g mode-style "bg={accent},fg={ground}"
 set -g pane-border-style "fg={border}"
 set -g pane-active-border-style "fg={border_active}"
 set -g pane-border-lines single
-set -g popup-border-style "fg={border}"
+# The border cells need the ground too: without a bg they take the terminal's
+# own default (black), which reads as a thick dark frame around the popup.
+# Accent for the line itself: the popup sits on the same surface as the panes
+# beneath it, so a muted frame would leave it with no edge at all.
+set -g popup-border-style "fg={accent},bg={ground}"
 set -g popup-border-lines rounded
-set -g popup-style "bg={ground}"
+set -g popup-style "bg={ground},fg={text}"
 
 # Every pane sits on the same ground as the chrome, with the palette's text
 # colour as the default foreground — not the terminal's own white-on-black,
@@ -549,6 +553,8 @@ mod tests {
     fn config_embeds_binary_and_palette() {
         let c = render_config("/usr/local/bin/tenx");
         assert!(c.contains("display-popup -E -w 85% -h 85% -T \" tenx \" "));
+        // The popup border must sit on the ground, not the terminal's default bg.
+        assert!(c.contains(&format!("popup-border-style \"fg={},bg={}\"", palette::ACCENT.hex(), palette::GROUND.hex())));
         assert!(c.contains("'/usr/local/bin/tenx' overlay"));
         assert!(c.contains(&palette::ACCENT.hex()));
         assert!(c.contains("set -g monitor-bell on"));
