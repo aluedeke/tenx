@@ -22,22 +22,24 @@ pub fn format_age(t: SystemTime) -> String {
     format_duration(t.elapsed().unwrap_or_default())
 }
 
-/// Parse a plain "<N><unit>" duration — "30m", "4h", "2d". No combined units;
-/// this is a CLI flag, not a date library.
+/// Parse a plain "<N><unit>" duration — "90s", "30m", "4h", "2d". No combined
+/// units; this is a CLI flag, not a date library.
 pub fn parse_duration(s: &str) -> Result<Duration, String> {
     if s.is_empty() {
         return Err("empty duration".into());
     }
     // `strip_suffix` rather than `split_at(len - 1)`: the latter panics on a
     // multi-byte last character ("4é").
-    let (num, per) = if let Some(n) = s.strip_suffix('m') {
+    let (num, per) = if let Some(n) = s.strip_suffix('s') {
+        (n, 1)
+    } else if let Some(n) = s.strip_suffix('m') {
         (n, 60)
     } else if let Some(n) = s.strip_suffix('h') {
         (n, 3600)
     } else if let Some(n) = s.strip_suffix('d') {
         (n, 86400)
     } else {
-        return Err(format!("duration '{s}' must end in m/h/d"));
+        return Err(format!("duration '{s}' must end in s/m/h/d"));
     };
     let n: u64 = num.parse().map_err(|_| format!("invalid duration '{s}' (want e.g. '4h')"))?;
     let secs = n.checked_mul(per).ok_or_else(|| format!("duration '{s}' is too large"))?;
@@ -60,6 +62,7 @@ mod tests {
 
     #[test]
     fn parse_accepts_m_h_d() {
+        assert_eq!(parse_duration("90s"), Ok(Duration::from_secs(90)));
         assert_eq!(parse_duration("30m"), Ok(Duration::from_secs(1800)));
         assert_eq!(parse_duration("4h"), Ok(Duration::from_secs(4 * 3600)));
         assert_eq!(parse_duration("2d"), Ok(Duration::from_secs(2 * 86400)));

@@ -165,10 +165,11 @@ tenx secrets init                  # find or create a passphrase-protected age i
 tenx secrets encrypt <slug> .env   # seal a file as the task's bundle
 tenx secrets set <NAME>            # add one value, typed into the terminal, never an argument
 tenx secrets decrypt [NAME]        # release the bundle to tasks/<slug>/.secrets.env
+tenx secrets cancel <NAME> | --all # withdraw a pending request
 tenx secrets status
 ```
 
-`decrypt` and `set` decide what to do by whether a real terminal is reachable. From your shell they prompt for the passphrase and act. From an agent's shell tool, which has no controlling terminal, they only enqueue a request. The overlay then shows the task under "secrets pending" and `u` unlocks it in a pane where you type the passphrase. Repos that already use sops with their own `.sops.yaml` are adopted as-is. Decrypted values are written to files, never to stdout.
+`decrypt` and `set` decide what to do by whether a real terminal is reachable. From your shell they prompt for the passphrase and act. From an agent's shell tool, which has no controlling terminal, they enqueue a request and then block until you act on it, so the agent picks up the moment the secret lands. The overlay shows the task under "secrets pending" and `u` unlocks it in a pane where you type the passphrase; `:cancel` withdraws the request instead, and the waiting agent is told. The wait is bounded (`--timeout`, default 100 s, under a shell tool's usual kill limit) and the request survives a timeout, so re-running resumes waiting; `--no-wait` enqueues and returns. Repos that already use sops with their own `.sops.yaml` are adopted as-is. Decrypted values are written to files, never to stdout.
 
 ## Configuration
 
