@@ -36,6 +36,9 @@ use std::time::{Duration, Instant, SystemTime};
 use unicode_width::UnicodeWidthStr;
 
 use super::mouse;
+
+#[cfg(test)]
+mod screenshot;
 use crate::palette;
 use crate::workspace::{self, TaskStatus, Workspace};
 
@@ -297,10 +300,19 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(300);
 
 impl Overlay {
     fn new(home: bool) -> Self {
-        let workspaces = workspace::registered_workspaces();
-        let mut o = Overlay {
+        let mut o = Self::empty(home);
+        o.workspaces = workspace::registered_workspaces();
+        o.rebuild_rows();
+        o
+    }
+
+    /// An overlay with no workspaces and no rows, touching nothing outside the
+    /// process — `new` fills it from the registry; the screenshot test fills
+    /// it with fixtures.
+    fn empty(home: bool) -> Self {
+        Overlay {
             home,
-            workspaces,
+            workspaces: vec![],
             tab: Tab::Tasks,
             input_mode: InputMode::Insert,
             focus: Focus::Search,
@@ -325,9 +337,7 @@ impl Overlay {
             signals: workspace::Signals::new(),
             current: None,
             slow_refreshed: None,
-        };
-        o.rebuild_rows();
-        o
+        }
     }
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
