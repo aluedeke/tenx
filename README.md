@@ -8,7 +8,7 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
 
 `tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and a full-screen overlay (`Ctrl+w`) lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
-![The tenx overlay: tasks grouped by whether they need you](docs/overlay.svg)
+![The tenx overlay in motion: filtering, the delete prompt, the command line, and an agent that stops and needs you](docs/overlay-demo.svg)
 
 ## How it works
 
@@ -223,8 +223,11 @@ make test        # cargo test + clippy -D warnings for both crates
 make try         # run this build on its own tmux socket, without installing
 make try-stop
 make screenshot  # regenerate docs/overlay.svg from the overlay's widgets and fixture data
+make demo        # regenerate the animated docs/overlay-demo.svg and .cast by playing a scripted scene
 cargo run -- task list
 ```
+
+The README's screenshot and demo are generated, not captured: `src/tui/overlay/screenshot.rs` and `demo.rs` render fixture data through the real widgets, so neither can show a real task or drift from the UI.
 
 The workspace has two crates. `tenx-core` is pure logic with the unit tests: status resolution, slugs, sweep rules, `TASK.md` rendering. `tenx` is the binary that does I/O. Decision logic goes in core with a test first. See [ARCHITECTURE.md](ARCHITECTURE.md) for the map and [CLAUDE.md](CLAUDE.md) for the conventions an agent editing this repo follows.
 

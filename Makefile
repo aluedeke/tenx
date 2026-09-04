@@ -1,4 +1,4 @@
-.PHONY: build install test clean try try-stop screenshot
+.PHONY: build install test clean try try-stop screenshot demo
 
 build:
 	cargo build --release
@@ -31,6 +31,12 @@ test:
 # data (src/tui/overlay/screenshot.rs) — no real workspace involved.
 screenshot:
 	TENX_SCREENSHOT=1 cargo test -p tenx --bin tenx screenshot -- --nocapture
+
+# Regenerate docs/overlay-demo.svg (animated) and docs/overlay-demo.cast
+# (asciinema) by playing a scripted scene against the fixture overlay
+# (src/tui/overlay/demo.rs). Nothing is recorded; every frame is rendered.
+demo:
+	TENX_DEMO=1 cargo test -p tenx --bin tenx demo -- --nocapture
 
 clean:
 	cargo clean

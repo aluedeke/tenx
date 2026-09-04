@@ -38,6 +38,8 @@ use unicode_width::UnicodeWidthStr;
 use super::mouse;
 
 #[cfg(test)]
+mod demo;
+#[cfg(test)]
 mod screenshot;
 use crate::palette;
 use crate::workspace::{self, TaskStatus, Workspace};

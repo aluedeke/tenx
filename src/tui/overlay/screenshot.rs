@@ -13,8 +13,8 @@ use ratatui::style::Color;
 use std::fmt::Write as _;
 use tenx_core::live::{Live, PrInfo};
 
-const COLS: u16 = 150;
-const ROWS: u16 = 36;
+pub(super) const COLS: u16 = 150;
+pub(super) const ROWS: u16 = 36;
 
 /// One fixture task. `age` is seconds since its last status change.
 struct Fx {
@@ -92,7 +92,7 @@ fn row(f: Fx) -> Row {
 /// Every section and every kind of chip, on invented tasks. Rows are listed
 /// in display order (section, then status rank, then recency), as
 /// `rebuild_rows` would sort them.
-fn fixture_overlay() -> Overlay {
+pub(super) fn fixture_overlay() -> Overlay {
     use TaskStatus::*;
     let m = 60;
     let h = 3600;
@@ -185,7 +185,7 @@ fn fixture_overlay() -> Overlay {
 
 /// What a Claude Code pane looks like on a permission prompt, as
 /// `capture-pane -e` would hand it over (a few SGR sequences included).
-const PREVIEW_FIXTURE: &str = "\
+pub(super) const PREVIEW_FIXTURE: &str = "\
 \x1b[1m⏺\x1b[0m I'll add the release workflow next to the CI one and wire the
   tag push to it.
 
@@ -200,7 +200,7 @@ const PREVIEW_FIXTURE: &str = "\
  \x1b[2mEsc to cancel · Tab to amend\x1b[0m
 ";
 
-fn hex(c: Color, fallback: &palette::Rgb) -> String {
+pub(super) fn hex(c: Color, fallback: &palette::Rgb) -> String {
     match c {
         Color::Rgb(r, g, b) => palette::Rgb(r, g, b).hex(),
         _ => fallback.hex(),
@@ -217,23 +217,26 @@ fn escape(s: &str) -> String {
 /// `<text>` per run of identically styled cells, each pinned to its cell
 /// width with `textLength` so the columns line up in whatever monospace font
 /// the viewer has.
-fn svg(buf: &Buffer) -> String {
-    const CW: f32 = 8.4;
-    const LH: f32 = 18.0;
-    const PAD: f32 = 10.0;
+pub(super) const CW: f32 = 8.4;
+pub(super) const LH: f32 = 18.0;
+pub(super) const PAD: f32 = 10.0;
+
+/// Pixel size of a rendered buffer, padding included.
+pub(super) fn svg_size(buf: &Buffer) -> (f32, f32) {
+    (
+        buf.area.width as f32 * CW + 2.0 * PAD,
+        buf.area.height as f32 * LH + 2.0 * PAD,
+    )
+}
+
+/// The buffer as SVG elements (no `<svg>` wrapper, no ground): one `<rect>`
+/// per run of non-ground background, one `<text>` per run of identically
+/// styled cells, each pinned to its cell width with `textLength` so the
+/// columns line up in whatever monospace font the viewer has.
+pub(super) fn svg_body(buf: &Buffer) -> String {
     let (w, h) = (buf.area.width, buf.area.height);
-    let (width, height) = (w as f32 * CW + 2.0 * PAD, h as f32 * LH + 2.0 * PAD);
     let ground = palette::GROUND.hex();
     let mut out = String::new();
-    let _ = writeln!(
-        out,
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}" font-family="JetBrains Mono, SF Mono, Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="14">"#
-    );
-    let _ = writeln!(out, r#"<title>The tenx overlay</title>"#);
-    let _ = writeln!(
-        out,
-        r#"<rect width="{width:.0}" height="{height:.0}" rx="6" fill="{ground}"/>"#
-    );
     for y in 0..h {
         let mut x = 0;
         while x < w {
@@ -274,11 +277,29 @@ fn svg(buf: &Buffer) -> String {
             }
         }
     }
+    out
+}
+
+/// One buffer as a complete SVG document.
+fn svg(buf: &Buffer) -> String {
+    let (width, height) = svg_size(buf);
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}" font-family="JetBrains Mono, SF Mono, Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="14">"#
+    );
+    let _ = writeln!(out, r#"<title>The tenx overlay</title>"#);
+    let _ = writeln!(
+        out,
+        r#"<rect width="{width:.0}" height="{height:.0}" rx="6" fill="{}"/>"#,
+        palette::GROUND.hex()
+    );
+    out.push_str(&svg_body(buf));
     out.push_str("</svg>\n");
     out
 }
 
-fn plain_text(buf: &Buffer) -> String {
+pub(super) fn plain_text(buf: &Buffer) -> String {
     let mut s = String::new();
     for y in 0..buf.area.height {
         for x in 0..buf.area.width {
