@@ -276,6 +276,9 @@ struct Overlay {
 
     /// Window signals as of the last slow refresh (see `refresh_statuses`).
     signals: workspace::Signals,
+    /// Slug of the session's current window, if it's a task — gets the
+    /// "current" chip.
+    current: Option<String>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
 }
@@ -320,6 +323,7 @@ impl Overlay {
             list_area: Rect::default(),
             last_swept: None,
             signals: workspace::Signals::new(),
+            current: None,
             slow_refreshed: None,
         };
         o.rebuild_rows();
@@ -378,8 +382,7 @@ impl Overlay {
         // group, by last status change newest first. Tasks with no agent
         // activity yet fall back to creation time.
         let sessions = workspace::claude::sessions();
-        self.signals = crate::tmux::signals();
-        self.slow_refreshed = Some(Instant::now());
+        self.refresh_windows();
         let signals = &self.signals;
         let mut rows: Vec<Row> = Vec::new();
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
@@ -434,8 +437,7 @@ impl Overlay {
         let sessions = workspace::claude::sessions();
         let slow = self.slow_refreshed.is_none_or(|t| t.elapsed() >= SLOW_REFRESH);
         if slow {
-            self.signals = crate::tmux::signals();
-            self.slow_refreshed = Some(Instant::now());
+            self.refresh_windows();
         }
         let signals = &self.signals;
         let mut rows = std::mem::take(&mut self.rows);
@@ -451,6 +453,17 @@ impl Overlay {
             }
         }
         self.rows = rows;
+    }
+
+    /// One `list-windows` for both the bell signals and the current window.
+    fn refresh_windows(&mut self) {
+        let windows = crate::tmux::list_windows().unwrap_or_default();
+        self.signals = crate::tmux::signals_from(&windows);
+        self.current = windows
+            .iter()
+            .find(|w| w.active && w.name != crate::tmux::HOME_WINDOW)
+            .map(|w| w.name.clone());
+        self.slow_refreshed = Some(Instant::now());
     }
 
     fn apply_filter(&mut self) {
@@ -1542,6 +1555,13 @@ fn run_unlock(
 // therefore always renders full-pane (`f.area()`).
 
 fn render(f: &mut ratatui::Frame, overlay: &mut Overlay) {
+    // Paint the ground first: cells left on the terminal's default background
+    // render black inside a tmux popup (the popup frame, styled by tmux, is
+    // charcoal), so without this the overlay looks like a hole in the popup.
+    f.render_widget(
+        Block::default().style(Style::default().bg(palette::GROUND.color()).fg(palette::TEXT.color())),
+        f.area(),
+    );
     // Dispatch on a discriminant (not `match &overlay.mode`) so the list path can
     // take `&mut overlay` without a live immutable borrow of `overlay.mode`.
     if matches!(overlay.mode, Mode::Create(_)) {
@@ -1599,7 +1619,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     let show_cursor = matches!(overlay.mode, Mode::Rename(_)) || overlay.focus == Focus::Search;
     let top_spans = vec![Span::styled(prefix, prefix_style), Span::raw(value.clone())];
     let top = Paragraph::new(Line::from(top_spans))
-        .block(Block::default().borders(Borders::ALL).title(title));
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(title));
     f.render_widget(top, chunks[1]);
     if show_cursor {
         let col = chunks[1].x + 1 + (prefix.width() + value.width()) as u16;
@@ -1619,13 +1639,10 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         .list_state
         .select(if overlay.focus == Focus::List { line_of_selected } else { None });
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL))
-        .highlight_style(
-            Style::default()
-                .bg(palette::ACCENT.color())
-                .fg(palette::GROUND.color())
-                .add_modifier(Modifier::BOLD),
-        )
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())))
+        // A background bar: the row keeps its own status colours and chips
+        // while selected, instead of collapsing into one accent colour.
+        .highlight_style(Style::default().bg(palette::SEL_BG.color()))
         .highlight_spacing(HighlightSpacing::Never);
     f.render_stateful_widget(list, chunks[2], &mut overlay.list_state);
 
@@ -1793,20 +1810,20 @@ fn task_items(
         // a different action from you (unlocking) than approving a prompt
         // does, regardless of whether the task also happens to be idle.
         let has_secrets = !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty();
-        // Three columns: the two-column glyph (`TaskStatus::glyph`, shared
-        // with the status line) plus a gap.
-        let glyph = if has_secrets { "🔒 ".to_string() } else { format!("{} ", row.status.glyph()) };
-        let title_style = if has_secrets {
-            Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)
+        // Three columns: a one-column glyph (`TaskStatus::glyph`, shared with
+        // the status line) in its status colour, plus a gap. The secrets
+        // lock is the one emoji: it needs to look different from any status.
+        let (glyph, glyph_style) = if has_secrets {
+            ("🔒 ".to_string(), Style::default().fg(palette::ACCENT.color()))
         } else {
-            match row.status {
-                TaskStatus::Blocked | TaskStatus::Signaled => {
-                    Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD)
-                }
-                TaskStatus::Done => Style::default().fg(palette::BRIGHT.color()),
-                TaskStatus::Working | TaskStatus::Idle => Style::default().fg(palette::TEXT.color()),
-            }
+            (format!("{}  ", row.status.glyph()), Style::default().fg(palette::status_color(row.status).color()))
         };
+        // Names are always bold — that's what made the old overlay read as
+        // crisp; the status colour lives in the glyph and chip, not the name.
+        let selected = pos == overlay.selected && overlay.focus == Focus::List;
+        let title_style = Style::default()
+            .fg(if selected { palette::SEL_TEXT.color() } else { palette::TEXT.color() })
+            .add_modifier(Modifier::BOLD);
         // Age is only meaningful for resting states (how long it's waited/sat).
         let show_age = matches!(
             row.status,
@@ -1822,7 +1839,7 @@ fn task_items(
         let dim = Style::default().fg(palette::MUTED.color());
         let mut spans = vec![
             Span::raw("  "),
-            Span::raw(glyph),
+            Span::styled(glyph, glyph_style),
             Span::styled(pad_cell(&row.title, title_w), title_style),
             Span::raw("  "),
             Span::styled(pad_cell(&row.ws_name, ws_w), dim),
@@ -1854,24 +1871,31 @@ fn task_items(
         // Which secret(s) it wants takes priority over Claude Code's own
         // waiting-for reason — same priority as the glyph above, and for the
         // same reason: it's a different, more specific thing to act on.
-        if has_secrets && show_open {
+        // One chip per row, on a tinted pill: what it wants unlocked, else
+        // Claude Code's own words for what it's waiting on ("input needed",
+        // the open dialog's label — you can tell a permission prompt from a
+        // question without switching), else "current" for the window you're
+        // sitting in.
+        let chip: Option<(String, &palette::Rgb, &palette::Rgb)> = if has_secrets {
             let wants: Vec<String> = row
                 .secrets_pending
                 .iter()
                 .cloned()
                 .chain(row.secrets_pending_set.iter().map(|n| format!("{n} (needs value)")))
                 .collect();
+            Some((format!("wants {}", wants.join(", ")), &palette::ACCENT, &palette::CHIP_SECRETS_BG))
+        } else if let Some(reason) = row.waiting_for.as_deref() {
+            Some((reason.to_string(), &palette::WARN, &palette::CHIP_INPUT_BG))
+        } else if overlay.current.as_deref() == Some(row.slug.as_str()) {
+            Some(("current".to_string(), &palette::CURRENT, &palette::CHIP_CURRENT_BG))
+        } else {
+            None
+        };
+        if let Some((label, fg, bg)) = chip.filter(|_| show_open) {
+            spans.push(Span::raw("  "));
             spans.push(Span::styled(
-                format!("  · wants {}", wants.join(", ")),
-                Style::default().fg(palette::ACCENT.color()),
-            ));
-        } else if let Some(reason) = row.waiting_for.as_deref().filter(|_| show_open) {
-            // Claude Code's own words for what it's waiting on ("input
-            // needed", the open dialog's label). Beats a bare 💬: you can tell
-            // a permission prompt from a question without switching to the tab.
-            spans.push(Span::styled(
-                format!("  · {reason}"),
-                Style::default().fg(palette::WARN.color()),
+                format!(" {label} "),
+                Style::default().fg(fg.color()).bg(bg.color()).add_modifier(Modifier::BOLD),
             ));
         }
         items.push(ListItem::new(Line::from(spans)));
@@ -1994,7 +2018,7 @@ fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay) {
     ];
 
     let body = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(" add repo "));
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" add repo "));
     f.render_widget(body, chunks[0]);
 
     let footer = if let Some(msg) = &overlay.status_msg {
@@ -2060,7 +2084,7 @@ fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay) {
     }
 
     let body =
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" task repos "));
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" task repos "));
     f.render_widget(body, chunks[0]);
 
     let footer = if form.confirm {
@@ -2122,7 +2146,7 @@ fn render_create(f: &mut ratatui::Frame, overlay: &Overlay) {
     }
 
     let body = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(" new task "));
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" new task "));
     f.render_widget(body, chunks[0]);
 
     let footer = if let Some(msg) = &overlay.status_msg {

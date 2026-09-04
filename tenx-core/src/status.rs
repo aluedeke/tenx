@@ -185,14 +185,16 @@ impl TaskStatus {
 
     /// The one glyph table — the overlay and the status line both draw from
     /// it, so a new status can't render on one surface and not the other.
-    /// Two columns wide (the emoji) or padded to it.
+    /// Plain one-column text glyphs, coloured by the caller: they render in
+    /// the terminal's own font at its own weight, where emoji are bitmaps
+    /// that ignore both and sit heavy next to text.
     pub fn glyph(self) -> &'static str {
         match self {
-            TaskStatus::Blocked => "💬",
-            TaskStatus::Signaled => "🔔",
-            TaskStatus::Done => "✅",
-            TaskStatus::Working => "▷ ",
-            TaskStatus::Idle => "  ",
+            TaskStatus::Blocked => "●",
+            TaskStatus::Signaled => "▲",
+            TaskStatus::Done => "✔",
+            TaskStatus::Working => "◐",
+            TaskStatus::Idle => "·",
         }
     }
 

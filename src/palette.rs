@@ -28,19 +28,49 @@ impl Rgb {
 
 /// Primary accent — selection, prompt, active highlights, rename mode. (purple)
 pub const ACCENT: Rgb = Rgb(0xa7, 0x8b, 0xfa);
-/// Muted secondary text — dividers, hints, dim labels, frame borders.
-pub const MUTED: Rgb = Rgb(0x6b, 0x72, 0x80);
-/// Mid-weight body text — working / idle rows.
-pub const TEXT: Rgb = Rgb(0xc8, 0xcc, 0xd4);
+/// Muted secondary text — workspace column, ages, dividers.
+pub const MUTED: Rgb = Rgb(120, 127, 140);
+/// Body text — task names. Bright enough that a regular-weight glyph in a
+/// light terminal font doesn't read as grey.
+pub const TEXT: Rgb = Rgb(214, 219, 227);
+/// Selected row: a background bar, not a colour swap, so the row keeps its
+/// own status colours while selected.
+pub const SEL_BG: Rgb = Rgb(33, 39, 52);
+pub const SEL_TEXT: Rgb = Rgb(236, 239, 245);
+/// Resting rows' glyph.
+pub const IDLE: Rgb = Rgb(96, 104, 120);
+/// Frames: pane borders, the popup border, the overlay's boxes. Quiet, so a
+/// frame never competes with the content it holds; the active pane's frame
+/// is one step lighter, not a colour.
+pub const BORDER: Rgb = Rgb(52, 58, 70);
+pub const BORDER_ACTIVE: Rgb = Rgb(96, 104, 120);
+/// Chip backgrounds (label on a tinted pill): needs-input, current, secrets.
+pub const CHIP_INPUT_BG: Rgb = Rgb(58, 46, 24);
+pub const CHIP_CURRENT_BG: Rgb = Rgb(28, 40, 60);
+pub const CHIP_SECRETS_BG: Rgb = Rgb(42, 36, 64);
+/// "current" chip foreground.
+pub const CURRENT: Rgb = Rgb(120, 160, 230);
 /// Bright/primary text — done & blocked rows, key labels, titles.
 pub const BRIGHT: Rgb = Rgb(0xe2, 0xe6, 0xee);
 /// Failure / error / destructive.
 pub const DANGER: Rgb = Rgb(0xe5, 0x70, 0x7b);
-/// Success / additions.
-pub const SUCCESS: Rgb = Rgb(0x9c, 0xc3, 0x79);
-/// Warning / workspace headers (amber).
-pub const WARN: Rgb = Rgb(0xd6, 0xa1, 0x5b);
-/// Info / links.
-pub const INFO: Rgb = Rgb(0x7a, 0xa2, 0xf7);
+/// Success / done (green).
+pub const SUCCESS: Rgb = Rgb(122, 194, 124);
+/// Warning / needs input (amber).
+pub const WARN: Rgb = Rgb(228, 168, 84);
+/// Info / working (blue).
+pub const INFO: Rgb = Rgb(104, 150, 220);
 /// Ground — the charcoal background; also the foreground on colour-filled chips.
 pub const GROUND: Rgb = Rgb(0x17, 0x18, 0x20);
+
+/// The colour a task's status glyph is drawn in — one table for the overlay
+/// (`.color()`) and the tmux status line (`.hex()`).
+pub fn status_color(status: tenx_core::status::TaskStatus) -> &'static Rgb {
+    use tenx_core::status::TaskStatus::*;
+    match status {
+        Blocked | Signaled => &WARN,
+        Working => &INFO,
+        Done => &SUCCESS,
+        Idle => &IDLE,
+    }
+}

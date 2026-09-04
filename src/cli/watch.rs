@@ -516,15 +516,20 @@ fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window]) {
     }
     let mut parts = Vec::new();
     if locked > 0 {
-        parts.push(format!("🔒 {locked} secret{}", if locked == 1 { "" } else { "s" }));
+        parts.push(format!("#[fg={}]🔒 {locked} secret{}", crate::palette::ACCENT.hex(), if locked == 1 { "" } else { "s" }));
     }
     if need > 0 {
-        parts.push(format!("💬 {need} need input"));
+        parts.push(format!("#[fg={}]● {need} need input", crate::palette::WARN.hex()));
     }
     if waiting > 0 {
-        parts.push(format!("✅ {waiting} waiting"));
+        parts.push(format!("#[fg={}]✔ {waiting} waiting", crate::palette::SUCCESS.hex()));
     }
-    let _ = crate::tmux::set_global_option("@tenx_right", &parts.join(" · "));
+    let sep = format!("#[fg={}] · ", crate::palette::MUTED.hex());
+    let mut right = parts.join(&sep);
+    if !right.is_empty() {
+        right.push_str("#[default]");
+    }
+    let _ = crate::tmux::set_global_option("@tenx_right", &right);
 }
 
 fn has_secrets_pending(t: &serde_json::Value) -> bool {
@@ -537,23 +542,39 @@ fn has_secrets_pending(t: &serde_json::Value) -> bool {
 fn status_line(t: &serde_json::Value, slug: &str) -> String {
     let status = TaskStatus::from_token(t["status"].as_str().unwrap_or(""));
     let title = t["title"].as_str().unwrap_or(slug);
+    // tmux style directives (`#[fg=…]`): the option is expanded with `E:` in
+    // the generated config, so the glyph gets its status colour and the
+    // title its own, same table as the overlay (`palette::status_color`).
+    let text_fg = crate::palette::TEXT.hex();
     let mut text = if has_secrets_pending(t) {
-        format!("🔒 {title}")
+        format!("#[fg={}]🔒#[fg={text_fg},bold] {title}", crate::palette::ACCENT.hex())
     } else {
+        let glyph = format!("#[fg={}]{}", crate::palette::status_color(status).hex(), status.glyph());
         match (status, t["waiting_for"].as_str()) {
-            (TaskStatus::Blocked, Some(reason)) => format!("{} {title} — {reason}", status.glyph()),
-            _ => format!("{} {title}", status.glyph().trim_end()),
+            (TaskStatus::Blocked, Some(reason)) => {
+                format!("{glyph}#[fg={text_fg},bold] {title}#[fg={},nobold] · {reason}", crate::palette::WARN.hex())
+            }
+            _ => format!("{glyph}#[fg={text_fg},bold] {title}"),
         }
     };
+    text.push_str("#[nobold]");
     if let Some(prs) = t["prs"].as_array() {
-        for chip in prs.iter().filter_map(|p| p["chip"].as_str()) {
-            text.push_str(&format!("  {chip}"));
+        for p in prs {
+            let color = match p["checks"].as_str() {
+                Some("failure") => crate::palette::DANGER.hex(),
+                Some("success") => crate::palette::SUCCESS.hex(),
+                _ => crate::palette::INFO.hex(),
+            };
+            if let Some(chip) = p["chip"].as_str() {
+                text.push_str(&format!("  #[fg={color}]{chip}"));
+            }
         }
     }
     if let Some(ports) = t["ports"].as_array().filter(|p| !p.is_empty()) {
         let ports: Vec<String> = ports.iter().filter_map(|p| p.as_u64()).map(|p| format!(":{p}")).collect();
-        text.push_str(&format!("  {}", ports.join(" ")));
+        text.push_str(&format!("  #[fg={}]{}", crate::palette::MUTED.hex(), ports.join(" ")));
     }
+    text.push_str("#[default]");
     text
 }
 

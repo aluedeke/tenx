@@ -225,6 +225,10 @@ pub fn render_config(tenx_bin: &str) -> String {
 
 set -g default-terminal "tmux-256color"
 set -ga terminal-overrides ",*:Tc"
+# No "faint" (SGR 2): terminals draw it at half brightness, and agents use
+# it for most of their secondary text — hard to read on a dark ground.
+# zellij never honoured it either, which is what that text used to look like.
+set -ga terminal-overrides ",*:dim@"
 set -g escape-time 10
 set -g focus-events on
 set -g mouse on
@@ -249,11 +253,18 @@ set -g status-style "bg={ground},fg={text}"
 set -g message-style "bg={ground},fg={bright}"
 set -g message-command-style "bg={ground},fg={accent}"
 set -g mode-style "bg={accent},fg={ground}"
-set -g pane-border-style "fg={muted}"
-set -g pane-active-border-style "fg={accent}"
+set -g pane-border-style "fg={border}"
+set -g pane-active-border-style "fg={border_active}"
 set -g pane-border-lines single
-set -g popup-border-style "fg={accent}"
+set -g popup-border-style "fg={border}"
 set -g popup-border-lines rounded
+set -g popup-style "bg={ground}"
+
+# Every pane sits on the same ground as the chrome, with the palette's text
+# colour as the default foreground — not the terminal's own white-on-black,
+# which reads harsher and makes the popup look like a different app.
+set -g window-style "fg={text},bg={ground}"
+set -g window-active-style "fg={text},bg={ground}"
 
 # Tabless: the overlay is the only task list. Hide tmux's window list entirely.
 set -g window-status-format ""
@@ -262,10 +273,10 @@ set -g window-status-separator ""
 
 # Left: this window's task + status (pushed by `tenx watch`), else its name.
 set -g status-left-length 80
-set -g status-left "#[fg={accent},bold] #{{?#{{@tenx_status}},#{{@tenx_status}},#W}} #[default]"
+set -g status-left " #{{?#{{@tenx_status}},#{{E:@tenx_status}},#[fg={accent}]#W}} #[default]"
 # Right: what else is waiting on you, pushed by `tenx watch`.
 set -g status-right-length 100
-set -g status-right "#{{@tenx_right}} "
+set -g status-right "#{{E:@tenx_right}} "
 
 # Ctrl+w: the overlay as a per-client popup. `-E` closes it when the overlay
 # exits, which it does right after a jump.
@@ -277,7 +288,8 @@ bind -n C-w display-popup -E -w 85% -h 85% -T " tenx " {tenx} overlay
         text = palette::TEXT.hex(),
         bright = palette::BRIGHT.hex(),
         accent = palette::ACCENT.hex(),
-        muted = palette::MUTED.hex(),
+        border = palette::BORDER.hex(),
+        border_active = palette::BORDER_ACTIVE.hex(),
     )
 }
 
@@ -540,6 +552,8 @@ mod tests {
         assert!(c.contains("'/usr/local/bin/tenx' overlay"));
         assert!(c.contains(&palette::ACCENT.hex()));
         assert!(c.contains("set -g monitor-bell on"));
-        assert!(c.contains("#{?#{@tenx_status},#{@tenx_status},#W}"));
+        assert!(c.contains("#{?#{@tenx_status},#{E:@tenx_status},"));
+        assert!(c.contains(",*:dim@"));
+        assert!(c.contains("set -g window-style \"fg="));
     }
 }
