@@ -23,15 +23,25 @@
 //! format ever changes wholesale, the visible result is every task reading as
 //! `Inactive`, not a broken overlay.
 //!
+//! Two liveness filters apply to every read. A pid check drops crashed
+//! sessions (their file stays behind). A *scope* check drops live sessions that
+//! aren't in tenx's tmux server — `tenx_core::status::in_panes`, fed by
+//! `tmux list-panes` and one `ps` — because the registry is per user, not per
+//! server: a Claude left running in an abandoned multiplexer, or started in a
+//! plain terminal in the same task directory, would otherwise report for a
+//! pane nobody can see. That is exactly how a task once sat on "permission
+//! prompt" for a day while its visible session was idle.
+//!
 //! This module is the impure half (filesystem + pid checks); the types and the
 //! meaning of a session list live in `tenx_core::status`.
 
-pub use tenx_core::status::{Session, SessionStatus};
+pub use tenx_core::status::{Session, SessionStatus, in_panes};
 
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{Duration, UNIX_EPOCH};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 /// The on-disk shape. Everything optional: this file belongs to another program
 /// and may gain or lose fields between Claude Code releases.
@@ -49,12 +59,15 @@ struct RawSession {
     session_id: Option<String>,
 }
 
-/// Every live Claude Code session. Dead entries are dropped: a crashed session
-/// leaves its file behind (Claude Code's own concurrent-session count
-/// pid-checks for the same reason), and a stale `busy` or `waiting` would be
-/// exactly the kind of lie the hooks used to tell.
+/// Every live Claude Code session *in tenx's tmux server*. Dead entries are
+/// dropped: a crashed session leaves its file behind (Claude Code's own
+/// concurrent-session count pid-checks for the same reason), and a stale `busy`
+/// or `waiting` would be exactly the kind of lie the hooks used to tell. Live
+/// sessions outside our panes are dropped too (see the module doc and
+/// [`in_panes`]).
 ///
-/// Returns empty on any failure — no `~/.claude`, no permission, no sessions.
+/// Returns empty on any failure — no `~/.claude`, no permission, no sessions,
+/// no server.
 pub fn sessions() -> Vec<Session> {
     let Ok(home) = std::env::var("HOME") else {
         return vec![];
@@ -91,7 +104,44 @@ pub fn sessions() -> Vec<Session> {
             kind: raw.kind.unwrap_or_default(),
         });
     }
-    out
+    if out.is_empty() {
+        return out;
+    }
+    let scope = pane_scope();
+    in_panes(out, &scope.pane_pids, &scope.tree)
+}
+
+/// Snapshot of what `in_panes` needs: the server's pane pids and the process
+/// tree. Cached for [`SCOPE_TTL`] because the overlay calls `sessions()` on
+/// every 500 ms tick and this costs two `tmux` calls and a `ps` — the same
+/// cadence `tmux::signals` already refreshes at. A session that opens in a new
+/// pane can therefore lag by up to that long; nothing else does, since the pid
+/// check above stays per-call.
+fn pane_scope() -> PaneScope {
+    static CACHE: Mutex<Option<(Instant, PaneScope)>> = Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, scope)) = cache.as_ref()
+        && at.elapsed() < SCOPE_TTL
+    {
+        return scope.clone();
+    }
+    let pane_pids: Vec<u32> = crate::tmux::list_pane_pids().unwrap_or_default().into_iter().map(|(_, pid)| pid).collect();
+    let tree = if pane_pids.is_empty() {
+        vec![]
+    } else {
+        tenx_core::live::parse_ps(&crate::live::run_capture("ps", &["-axo", "pid=,ppid="]))
+    };
+    let scope = PaneScope { pane_pids, tree };
+    *cache = Some((Instant::now(), scope.clone()));
+    scope
+}
+
+const SCOPE_TTL: Duration = Duration::from_secs(2);
+
+#[derive(Clone)]
+struct PaneScope {
+    pane_pids: Vec<u32>,
+    tree: Vec<(u32, u32)>,
 }
 
 /// Where Claude Code keeps a directory's transcripts: `~/.claude/projects/`

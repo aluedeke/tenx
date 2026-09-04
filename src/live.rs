@@ -88,7 +88,7 @@ pub fn gh_available() -> bool {
     *GH.get_or_init(|| crate::cli::notify::which("gh").is_some())
 }
 
-fn run_capture(bin: &str, args: &[&str]) -> String {
+pub(crate) fn run_capture(bin: &str, args: &[&str]) -> String {
     Command::new(bin)
         .args(args)
         .stdin(Stdio::null())

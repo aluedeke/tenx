@@ -64,6 +64,28 @@ pub fn sessions_for<'a>(sessions: &'a [Session], task_dir: &Path) -> Vec<&'a Ses
         .collect()
 }
 
+/// Only the sessions running inside tenx's own multiplexer: those whose pid is
+/// one of `pane_pids` (Claude is usually the pane's command itself) or descends
+/// from one (`tree` is `(pid, ppid)` pairs, as `ps -axo pid=,ppid=` prints).
+///
+/// The registry is per user, not per server, and `sessions_for` matches by
+/// cwd alone — so without this, a Claude session started in a plain terminal,
+/// in a second tmux server (`TENX_TMUX_SOCKET`), or left behind in an
+/// abandoned multiplexer, is counted as the task's. The failure mode is not
+/// cosmetic: a session nobody is attached to can sit on a permission prompt
+/// forever, and its `waiting` pins the task to `Blocked` no matter what the
+/// visible pane does.
+///
+/// With no panes (server down) every session is dropped: the rule is "in our
+/// server", and nothing is.
+pub fn in_panes(sessions: Vec<Session>, pane_pids: &[u32], tree: &[(u32, u32)]) -> Vec<Session> {
+    if pane_pids.is_empty() {
+        return vec![];
+    }
+    let mine = crate::live::descendants(pane_pids, tree);
+    sessions.into_iter().filter(|s| mine.contains(&s.pid)).collect()
+}
+
 /// What the multiplexer knows about a task's window that Claude Code doesn't:
 /// a process in one of its panes rang the bell (`printf '\a'`, a test runner,
 /// anything) or produced output, since the window was last looked at. The
@@ -341,6 +363,22 @@ mod tests {
         let st = resolve_task_state(Path::new(TASK), &s, QUIET);
         assert_eq!(st.status, TaskStatus::Done);
         assert_eq!(st.changed, Some(at(30)));
+    }
+
+    #[test]
+    fn only_sessions_under_our_panes_survive() {
+        let mut a = session(TASK, SessionStatus::Waiting, "interactive", 1);
+        a.pid = 300; // grandchild of pane 100
+        let mut b = session(TASK, SessionStatus::Busy, "interactive", 2);
+        b.pid = 200; // the pane's own process
+        let mut c = session(TASK, SessionStatus::Waiting, "interactive", 3);
+        c.pid = 900; // alive, same cwd, but in another server / a plain terminal
+        // pane 100 → 250 → 300; pane 200; 900 hangs off init like a stray.
+        let tree = vec![(100, 1), (250, 100), (300, 250), (200, 1), (900, 1)];
+        let kept: Vec<u32> = in_panes(vec![a.clone(), b.clone(), c.clone()], &[100, 200], &tree).iter().map(|s| s.pid).collect();
+        assert_eq!(kept, vec![300, 200]);
+        // Server down: nothing is "ours", even a session that would otherwise match.
+        assert!(in_panes(vec![a, b, c], &[], &tree).is_empty());
     }
 
     #[test]
