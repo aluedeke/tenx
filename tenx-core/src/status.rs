@@ -51,6 +51,9 @@ pub struct Session {
     /// subdirectory, which is why a task's session count can exceed the one
     /// pane you opened.
     pub kind: String,
+    /// The tmux pane the session runs in (`%40`), from the registry's own
+    /// `tmux` field. What the overlay previews and sends keys to.
+    pub pane: Option<String>,
 }
 
 /// Sessions running in `task_dir` or anywhere beneath it. Background agents get
@@ -243,6 +246,9 @@ pub struct TaskState {
     /// How many of those are background agents (`--bg`) rather than the
     /// interactive session in the task's pane.
     pub agents: usize,
+    /// The pane to look at for this task: the waiting session's when
+    /// `Blocked`, else the interactive session's, else any session's.
+    pub pane: Option<String>,
 }
 
 /// Resolve a task's state from the session list plus the window's signal.
@@ -264,6 +270,11 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
     let live = sessions_for(sessions, task_dir);
     let count = live.len();
     let agents = live.iter().filter(|s| s.kind != "interactive").count();
+    let pane = live
+        .iter()
+        .find(|s| s.kind == "interactive")
+        .or(live.first())
+        .and_then(|s| s.pane.clone());
     if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Waiting) {
         return TaskState {
             status: TaskStatus::Blocked,
@@ -271,6 +282,7 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
             waiting_for: s.waiting_for.clone(),
             sessions: count,
             agents,
+            pane: s.pane.clone().or(pane),
         };
     }
     if signal.bell {
@@ -281,6 +293,7 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
             waiting_for: Some("bell".to_string()),
             sessions: count,
             agents,
+            pane,
         };
     }
     if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Busy) {
@@ -290,13 +303,14 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
             waiting_for: None,
             sessions: count,
             agents,
+            pane,
         };
     }
     if live.is_empty() {
-        return TaskState { status: TaskStatus::Idle, changed: None, waiting_for: None, sessions: 0, agents: 0 };
+        return TaskState { status: TaskStatus::Idle, changed: None, waiting_for: None, sessions: 0, agents: 0, pane: None };
     }
     let quiet_since = live.iter().filter_map(|s| s.status_updated_at).max();
-    TaskState { status: TaskStatus::Done, changed: quiet_since, waiting_for: None, sessions: count, agents }
+    TaskState { status: TaskStatus::Done, changed: quiet_since, waiting_for: None, sessions: count, agents, pane }
 }
 
 #[cfg(test)]
@@ -317,6 +331,7 @@ mod tests {
             waiting_for: (status == SessionStatus::Waiting).then(|| "input needed".to_string()),
             status_updated_at: Some(at(updated)),
             kind: kind.to_string(),
+            pane: None,
         }
     }
 

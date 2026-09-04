@@ -57,6 +57,9 @@ struct RawSession {
     kind: Option<String>,
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
+    /// `"tenx:@14.%40"` — the pane the session runs in, as Claude Code itself
+    /// reports it. Only the pane id is kept (`tenx_core::dialog::pane_id`).
+    tmux: Option<String>,
 }
 
 /// Every live Claude Code session *in tenx's tmux server*. Dead entries are
@@ -102,6 +105,7 @@ pub fn sessions() -> Vec<Session> {
             waiting_for: raw.waiting_for,
             status_updated_at: raw.status_updated_at.map(|ms| UNIX_EPOCH + Duration::from_millis(ms)),
             kind: raw.kind.unwrap_or_default(),
+            pane: raw.tmux.as_deref().and_then(tenx_core::dialog::pane_id),
         });
     }
     if out.is_empty() {

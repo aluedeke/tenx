@@ -6,6 +6,7 @@
 //! fresh `TASK.md` contains — lives here, as functions over plain data, so it
 //! can be tested with fixtures and reused by any future front end.
 
+pub mod dialog;
 pub mod live;
 pub mod slug;
 pub mod status;

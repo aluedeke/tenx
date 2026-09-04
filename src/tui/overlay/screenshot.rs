@@ -13,7 +13,7 @@ use ratatui::style::Color;
 use std::fmt::Write as _;
 use tenx_core::live::{Live, PrInfo};
 
-const COLS: u16 = 100;
+const COLS: u16 = 150;
 const ROWS: u16 = 36;
 
 /// One fixture task. `age` is seconds since its last status change.
@@ -76,6 +76,7 @@ fn row(f: Fx) -> Row {
         waiting_for: f.waiting_for.map(str::to_string),
         activity: changed.unwrap_or(SystemTime::UNIX_EPOCH),
         window_id: f.open.then(|| "@1".to_string()),
+        pane: (f.open && f.status != TaskStatus::Idle).then(|| "%1".to_string()),
         live: Live {
             ports: f.ports,
             prs: f.prs,
@@ -102,7 +103,7 @@ fn fixture_overlay() -> Overlay {
             ..fx("stripe webhook signing", "ledger", Idle)
         },
         Fx {
-            waiting_for: Some("input needed"),
+            waiting_for: Some("permission prompt"),
             open: true,
             age: 4 * m,
             ..fx("add release workflow", "tenx-workspace", Blocked)
@@ -173,9 +174,31 @@ fn fixture_overlay() -> Overlay {
     o.current = Some("overlay-screenshot".into());
     o.input_mode = InputMode::Normal;
     o.focus = Focus::List;
-    o.selected = 4; // "flaky checkout e2e"
+    o.selected = 1; // "add release workflow" — the blocked one, so the preview shows its dialog
+    o.preview = Preview {
+        pane: Some("%1".into()),
+        lines: PREVIEW_FIXTURE.lines().map(super::super::ansi::line).collect(),
+        gone: false,
+    };
     o
 }
+
+/// What a Claude Code pane looks like on a permission prompt, as
+/// `capture-pane -e` would hand it over (a few SGR sequences included).
+const PREVIEW_FIXTURE: &str = "\
+\x1b[1m⏺\x1b[0m I'll add the release workflow next to the CI one and wire the
+  tag push to it.
+
+\x1b[1m Bash command\x1b[0m
+
+   gh workflow run release.yml --ref v0.2.0
+   Kick off the release workflow for the tag
+
+ Do you want to proceed?
+ \x1b[36m❯ 1. Yes\x1b[0m
+   2. No
+ \x1b[2mEsc to cancel · Tab to amend\x1b[0m
+";
 
 fn hex(c: Color, fallback: &palette::Rgb) -> String {
     match c {
@@ -279,8 +302,11 @@ fn renders_every_section_and_chip_from_fixtures() {
         "WORKING",
         "INACTIVE",
         "wants STRIPE_WEBHOOK_SECRET",
-        "input needed",
+        "permission prompt",
         "flaky checkout e2e",
+        "Do you want to proceed?",
+        "1. Yes",
+        "y approve",
         " current ",
         "#781 merged",
         "#14 …",

@@ -64,6 +64,10 @@ struct Row {
     /// The task's tmux window id (`@12`) if its window is open — from the
     /// per-task cache, refreshed on the tick.
     window_id: Option<String>,
+    /// The pane its Claude session runs in (`%40`), from the session registry
+    /// — what the preview panel shows and `y`/`N` answer. Refreshed on the
+    /// tick with the status.
+    pane: Option<String>,
     /// PR chips and listening ports from `.tenx-live.json` (written by
     /// `tenx watch`), refreshed on the tick.
     live: crate::live::Live,
@@ -221,6 +225,32 @@ enum Mode {
     Rename(RenameForm),
 }
 
+/// The preview panel's contents: the visible screen of the selected task's
+/// Claude pane, captured with `tmux capture-pane -e` and kept as styled
+/// lines. Per-client and read-only — the way to see what a blocked task is
+/// asking without switching the session's window under every other client
+/// (and without clearing the window's bell flag by visiting it).
+#[derive(Default)]
+struct Preview {
+    /// The pane the lines came from; `None` when the selected task has no
+    /// live session (or nothing is selected).
+    pane: Option<String>,
+    lines: Vec<Line<'static>>,
+    /// The capture failed (pane gone) — distinct from an empty pane.
+    gone: bool,
+}
+
+/// Capture at most this many lines; the panel shows the tail that fits.
+const PREVIEW_LINES: usize = 80;
+/// Side-by-side list and preview from this width; below it, stacked under
+/// the list and only for a blocked task; none when the pane is too small.
+const PREVIEW_SIDE_MIN_COLS: u16 = 96;
+/// Side by side, the list is as wide as its widest row but never more than
+/// this share of the body, nor narrower than this many columns.
+const PREVIEW_LIST_MAX_PERCENT: u16 = 60;
+const PREVIEW_LIST_MIN_COLS: u16 = 40;
+const PREVIEW_STACK_MIN_ROWS: u16 = 26;
+
 /// A task to land on after the overlay tears down its TUI. Recorded when the
 /// user jumps while *outside* tmux (a plain terminal): there's no client to
 /// switch in place, so we exit the overlay cleanly and then attach to the tenx
@@ -284,6 +314,8 @@ struct Overlay {
     current: Option<String>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
+    /// What the preview panel shows for the selected task (see `Preview`).
+    preview: Preview,
 }
 
 /// How often the idle tick re-reads the *slow* inputs — `tmux list-windows`
@@ -337,6 +369,7 @@ impl Overlay {
             signals: workspace::Signals::new(),
             current: None,
             slow_refreshed: None,
+            preview: Preview::default(),
         }
     }
 
@@ -418,6 +451,7 @@ impl Overlay {
                     waiting_for: state.waiting_for,
                     activity: state.changed.unwrap_or(task.created_at),
                     window_id,
+                    pane: state.pane,
                     live: crate::live::read(&task.path),
                     repos: task.repos.clone(),
                     secrets_pending,
@@ -456,6 +490,7 @@ impl Overlay {
             r.status = state.status;
             r.changed = state.changed;
             r.waiting_for = state.waiting_for;
+            r.pane = state.pane;
             r.activity = state.changed.unwrap_or(r.activity);
             if slow {
                 r.window_id = read_window_id(&r.path);
@@ -771,6 +806,8 @@ impl Overlay {
                     self.close_selected_tab();
                 }
             }
+            KeyCode::Char('y') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
+            KeyCode::Char('N') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::No),
             KeyCode::Char('u') => {
                 if self.require_tasks() {
                     self.start_unlock();
@@ -859,10 +896,99 @@ impl Overlay {
             "e" | "edit" | "edit-repos" => self.start_edit_repos(),
             "x" | "close" => self.close_selected_tab(),
             "u" | "unlock" => self.start_unlock(),
+            "y" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
+            "deny" => self.answer(tenx_core::dialog::Answer::No),
             "o" | "open" => return self.jump(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
         }
         Ok(false)
+    }
+
+    // ── Preview ───────────────────────────────────────────────────────────────
+
+    /// Re-capture the selected task's pane for the preview panel. Cheap to
+    /// call after every event: without `force` it only spawns `tmux` when
+    /// the selection moved to a different pane; the idle tick passes `force`
+    /// so a blocked pane's dialog (and a working one's output) stay live.
+    fn refresh_preview(&mut self, force: bool) {
+        let pane = match (self.tab, &self.mode) {
+            (Tab::Tasks, Mode::List | Mode::Command(_)) => self.selected_row().and_then(|r| r.pane.clone()),
+            _ => None,
+        };
+        if pane == self.preview.pane && !force {
+            return;
+        }
+        let Some(target) = pane.clone() else {
+            self.preview = Preview::default();
+            return;
+        };
+        match crate::tmux::capture_pane(&target) {
+            Ok(text) => {
+                let lines = tenx_core::dialog::preview_tail(&text, PREVIEW_LINES).into_iter().map(super::ansi::line).collect();
+                self.preview = Preview { pane: Some(target), lines, gone: false };
+            }
+            Err(_) => self.preview = Preview { pane: Some(target), lines: vec![], gone: true },
+        }
+    }
+
+    // ── Answering a permission prompt ─────────────────────────────────────────
+
+    /// `y` / `N` on a blocked row: answer Claude Code's permission dialog in
+    /// the task's own pane without visiting it. The row's status may be up to
+    /// a tick old, so the truth is re-read right before the key goes out: the
+    /// session must still be waiting on a *permission prompt* (not an
+    /// elicitation, which `Enter` would answer wrongly) and the dialog must
+    /// still be on screen (`tenx_core::dialog::permission_dialog_visible`).
+    /// Anything else is refused with a message, never sent.
+    fn answer(&mut self, answer: tenx_core::dialog::Answer) {
+        let Some(row) = self.selected_row() else {
+            return;
+        };
+        let (title, path) = (row.title.clone(), row.path.clone());
+        let sessions = workspace::claude::sessions();
+        let state = workspace::resolve_task_state(&path, &sessions, &self.signals);
+        if state.status != TaskStatus::Blocked {
+            self.status_msg = Some(format!("'{title}' is not waiting on a prompt"));
+            return;
+        }
+        if state.waiting_for.as_deref() != Some(tenx_core::dialog::PERMISSION_PROMPT) {
+            let reason = state.waiting_for.unwrap_or_default();
+            self.status_msg = Some(format!("'{title}' is waiting on {reason} — open it to answer (⏎)"));
+            return;
+        }
+        let Some(pane) = state.pane else {
+            self.status_msg = Some(format!("'{title}': no pane known for its session"));
+            return;
+        };
+        let capture = match crate::tmux::capture_pane(&pane) {
+            Ok(c) => c,
+            Err(e) => {
+                self.status_msg = Some(e.to_string());
+                return;
+            }
+        };
+        if !tenx_core::dialog::permission_dialog_visible(&capture) {
+            self.status_msg = Some(format!("'{title}': no permission dialog on screen — open it to check (⏎)"));
+            return;
+        }
+        match crate::tmux::send_keys(&pane, answer.key()) {
+            Ok(()) => self.status_msg = Some(format!("{} '{title}'", answer.verb())),
+            Err(e) => self.status_msg = Some(e.to_string()),
+        }
+        self.refresh_statuses();
+        self.refresh_preview(true);
+    }
+
+    /// The selected row is waiting on some prompt (permission or otherwise).
+    fn selected_blocked(&self) -> bool {
+        self.tab == Tab::Tasks && self.selected_row().is_some_and(|r| r.status == TaskStatus::Blocked)
+    }
+
+    /// The selected row has a permission dialog the overlay can answer.
+    fn selected_answerable(&self) -> bool {
+        self.selected_row().is_some_and(|r| {
+            r.status == TaskStatus::Blocked && r.waiting_for.as_deref() == Some(tenx_core::dialog::PERMISSION_PROMPT)
+        })
     }
 
     // ── Jump ──────────────────────────────────────────────────────────────────
@@ -1491,11 +1617,13 @@ fn run_loop(
                     if overlay.handle_key(key)? {
                         break;
                     }
+                    overlay.refresh_preview(false);
                 }
                 Event::Mouse(m) => {
                     if overlay.handle_mouse(m)? {
                         break;
                     }
+                    overlay.refresh_preview(false);
                 }
                 // Coming back to look at the overlay (home tab refocused, or
                 // the terminal regained focus) counts as a reopen — recompute
@@ -1508,8 +1636,10 @@ fn run_loop(
             }
         } else if matches!(overlay.mode, Mode::List) {
             // Idle tick — update status glyphs/ages in place; the row order
-            // stays frozen (see `refresh_statuses`).
+            // stays frozen (see `refresh_statuses`). The preview follows the
+            // pane live at the same cadence.
             overlay.refresh_statuses();
+            overlay.refresh_preview(true);
         }
 
         if let Some((ws_idx, slug)) = overlay.pending_unlock.take() {
@@ -1610,10 +1740,46 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         ])
         .split(f.area());
 
+    // The body is the list plus, when there's room, the preview panel:
+    // beside it on a wide terminal, under it on a tall narrow one (a phone),
+    // absent on a small one.
+    let (list_area, preview_area) = if chunks[2].width >= PREVIEW_SIDE_MIN_COLS {
+        // The list takes only what its widest row needs (laid out as if it
+        // had the whole width, so no column is dropped), capped so the
+        // preview keeps a readable share; the preview gets the rest.
+        let full = chunks[2].width.saturating_sub(2) as usize;
+        let natural = match overlay.tab {
+            Tab::Tasks => task_items(overlay, full).0,
+            Tab::Repos => repo_items(overlay, full).0,
+        }
+        .iter()
+        .map(|i| i.width())
+        .max()
+        .unwrap_or(0) as u16;
+        let cap = chunks[2].width * PREVIEW_LIST_MAX_PERCENT / 100;
+        let list_w = (natural + 2).clamp(PREVIEW_LIST_MIN_COLS.min(cap), cap);
+        let split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(list_w), Constraint::Min(20)])
+            .split(chunks[2]);
+        (split[0], Some(split[1]))
+    } else if chunks[2].height >= PREVIEW_STACK_MIN_ROWS && overlay.selected_blocked() {
+        // Narrow (a phone): the list keeps the whole screen, and the
+        // preview only appears under it when the selected task has a
+        // prompt to read — the one time the space is worth giving up.
+        let split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(8), Constraint::Percentage(40)])
+            .split(chunks[2]);
+        (split[0], Some(split[1]))
+    } else {
+        (chunks[2], None)
+    };
+
     // Record clickable chrome/list areas for the mouse handler.
     overlay.tabs_area = chunks[0];
     overlay.search_area = chunks[1];
-    overlay.list_area = chunks[2];
+    overlay.list_area = list_area;
 
     // ── Tab bar (its own row, not on a border) ────────────────────────────────
     let tabs = Tabs::new(vec![" Tasks ", " Repos "])
@@ -1654,7 +1820,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     }
 
     // ── Body list (tasks or repos) ────────────────────────────────────────────
-    let list_width = chunks[2].width.saturating_sub(2) as usize;
+    let list_width = list_area.width.saturating_sub(2) as usize;
     let (items, line_of_selected, line_to_pos) = match overlay.tab {
         Tab::Tasks => task_items(overlay, list_width),
         Tab::Repos => repo_items(overlay, list_width),
@@ -1671,7 +1837,11 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         // while selected, instead of collapsing into one accent colour.
         .highlight_style(Style::default().bg(palette::SEL_BG.color()))
         .highlight_spacing(HighlightSpacing::Never);
-    f.render_stateful_widget(list, chunks[2], &mut overlay.list_state);
+    f.render_stateful_widget(list, list_area, &mut overlay.list_state);
+
+    if let Some(area) = preview_area {
+        render_preview(f, overlay, area);
+    }
 
     // ── Footer / hints ────────────────────────────────────────────────────────
     let footer = match (&overlay.mode, &overlay.status_msg) {
@@ -1714,6 +1884,9 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
             };
             let hint = match (overlay.input_mode, overlay.tab) {
                 (InputMode::Insert, _) => "  type to filter · ↓ list · ⏎ open · ⇥ tab",
+                (InputMode::Normal, Tab::Tasks) if overlay.selected_answerable() => {
+                    "  y approve · N deny · ⏎ open · j/k move · n new · dd del · r rename · x close · q quit"
+                }
                 (InputMode::Normal, Tab::Tasks) => {
                     "  j/k move · n new · e repos · u unlock · dd del · r rename · x close · gt tab · q quit"
                 }
@@ -1728,6 +1901,43 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
         }
     };
     f.render_widget(Paragraph::new(footer), chunks[3]);
+}
+
+/// The preview panel: the tail of the selected task's Claude pane, or why
+/// there is none. Lines are the pane's own, so a narrow panel truncates them
+/// on the right — the dialog's question and options are left-aligned, which
+/// is what matters.
+fn render_preview(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
+    let row = match overlay.tab {
+        Tab::Tasks => overlay.selected_row(),
+        Tab::Repos => None,
+    };
+    let title = match row {
+        Some(r) => format!(" {} ", truncate(&r.title, area.width.saturating_sub(4) as usize)),
+        None => " preview ".to_string(),
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette::BORDER.color()))
+        .title(Span::styled(title, Style::default().fg(palette::MUTED.color())));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.height == 0 || inner.width == 0 {
+        return;
+    }
+    let muted = Style::default().fg(palette::MUTED.color());
+    let placeholder = |msg: &str| Paragraph::new(Line::from(Span::styled(msg.to_string(), muted)));
+    match (&overlay.preview.pane, row) {
+        (None, Some(_)) => f.render_widget(placeholder("no live session"), inner),
+        (None, None) => f.render_widget(placeholder("select a task"), inner),
+        (Some(_), _) if overlay.preview.gone => f.render_widget(placeholder("pane closed"), inner),
+        (Some(_), _) => {
+            let lines = &overlay.preview.lines;
+            let skip = lines.len().saturating_sub(inner.height as usize);
+            let tail: Vec<Line<'static>> = lines[skip..].to_vec();
+            f.render_widget(Paragraph::new(tail), inner);
+        }
+    }
 }
 
 /// Pad `s` with spaces to exactly `w` chars, truncating with `…` if longer.

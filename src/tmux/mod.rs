@@ -56,6 +56,10 @@ pub const HOME_WINDOW: &str = "home";
 /// Minimum tmux: `display-popup -T` and `popup-border-style` are 3.3 (the
 /// popup itself is 3.2, but the generated config uses both).
 pub const MIN_VERSION: (u32, u32) = (3, 3);
+/// A client narrower or shorter than this gets the overlay full screen
+/// instead of as a bordered 85% popup (see `render_config`).
+pub const SMALL_CLIENT_COLS: u32 = 100;
+pub const SMALL_CLIENT_ROWS: u32 = 30;
 /// Per-task cache of the window id (`@12`) last opened for it. A fast path
 /// only — `find_window` by slug is the source of truth, and a stale id (server
 /// restarted) is simply treated as "not open".
@@ -283,9 +287,18 @@ set -g status-right-length 100
 set -g status-right "#{{E:@tenx_right}} "
 
 # Ctrl+w: the overlay as a per-client popup. `-E` closes it when the overlay
-# exits, which it does right after a jump.
-bind -n C-w display-popup -E -w 85% -h 85% -T " tenx " {tenx} overlay
+# exits, which it does right after a jump. On a small client (a phone) the
+# popup fills the screen with no border — an 85% window on 40 columns wastes
+# a fifth of them; `if-shell -F` evaluates the format against the client
+# that pressed the key.
+bind -n C-w if-shell -F "#{{||:#{{<:#{{client_width}},{small_cols}}},#{{<:#{{client_height}},{small_rows}}}}}" {{
+    display-popup -E -B -w 100% -h 100% {tenx} overlay
+}} {{
+    display-popup -E -w 85% -h 85% -T " tenx " {tenx} overlay
+}}
 "##,
+        small_cols = SMALL_CLIENT_COLS,
+        small_rows = SMALL_CLIENT_ROWS,
         socket = socket(),
         tenx = q,
         ground = palette::GROUND.hex(),
@@ -401,6 +414,19 @@ pub fn is_reserved_slug(slug: &str) -> bool {
 
 pub fn select_window(id: &str) -> Result<()> {
     run(&["select-window", "-t", id]).map(drop)
+}
+
+/// The visible contents of a pane, with its colours (`-e` keeps the SGR
+/// sequences) — what the overlay's preview panel shows for the selected task.
+pub fn capture_pane(target: &str) -> Result<String> {
+    run(&["capture-pane", "-p", "-e", "-t", target])
+}
+
+/// Type one tmux key name (`Enter`, `Escape`) into a pane — how the overlay
+/// answers a permission dialog without visiting the window. Callers check the
+/// dialog is actually on screen first (`tenx_core::dialog`).
+pub fn send_keys(target: &str, key: &str) -> Result<()> {
+    run(&["send-keys", "-t", target, key]).map(drop)
 }
 
 pub fn kill_window(id: &str) -> Result<()> {
@@ -553,6 +579,8 @@ mod tests {
     fn config_embeds_binary_and_palette() {
         let c = render_config("/usr/local/bin/tenx");
         assert!(c.contains("display-popup -E -w 85% -h 85% -T \" tenx \" "));
+        assert!(c.contains("display-popup -E -B -w 100% -h 100% "));
+        assert!(c.contains("#{||:#{<:#{client_width},100},#{<:#{client_height},30}}"));
         // The popup border must sit on the ground, not the terminal's default bg.
         assert!(c.contains(&format!("popup-border-style \"fg={},bg={}\"", palette::ACCENT.hex(), palette::GROUND.hex())));
         assert!(c.contains("'/usr/local/bin/tenx' overlay"));

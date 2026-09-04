@@ -81,7 +81,7 @@ tenx                               # attach to the session
 
 Inside the session:
 
-- `Ctrl+w` opens the overlay from any window.
+- `Ctrl+w` opens the overlay from any window, as a popup on a desktop terminal and full screen on a phone.
 - `tenx` from a task's shell does the same.
 - `tenx` from any other terminal attaches to the same session.
 
@@ -93,7 +93,7 @@ tenx task rm fix-login-timeout     # removes worktrees, branches and the window
 
 ## The overlay
 
-The overlay lists every task from every registered workspace, sectioned by attention: secrets pending, waiting for input, working, inactive. It is Telescope-style: typing filters, and the list has its own keys.
+The overlay lists every task from every registered workspace, sectioned by attention: secrets pending, waiting for input, working, inactive. It is Telescope-style: typing filters, and the list has its own keys. Beside the list (below it on a narrow terminal) a preview panel shows the selected task's Claude pane, live, so you can read a permission prompt without leaving the overlay and answer it with `y` or `N`. The answer is typed into the task's pane by tmux, and only after tenx has checked that the session is still waiting on a permission dialog and that the dialog is still on screen; anything else (a question from Claude, a prompt already answered) is refused with a message, so `Enter` never lands somewhere unintended.
 
 | Key | Action |
 |---|---|
@@ -106,6 +106,7 @@ The overlay lists every task from every registered workspace, sectioned by atten
 | `r` | Rename the task |
 | `x` | Close the task's window (the conversation resumes on next open) |
 | `u` | Unlock pending secrets |
+| `y`, `N` | Approve or deny the task's permission prompt without visiting it |
 | `dd` | Delete the task |
 | `:` | Command line |
 
@@ -142,7 +143,7 @@ Everything runs in one tmux session on one machine, so any terminal that can SSH
 ssh devbox -t tenx
 ```
 
-The overlay adapts to narrow terminals. As the width shrinks it drops the age column first, then the open column, and the workspace column never takes more than a third of the width, so task titles and their status glyphs stay readable on a 40-column phone screen. Jumping into a task from the overlay gives you the agent's pane, where you can answer its prompt and detach again. The desktop notification goes to the machine running the session, not to the phone.
+The overlay adapts to narrow terminals. As the width shrinks it drops the age column first, then the open column, and the workspace column never takes more than a third of the width, so task titles and their status glyphs stay readable on a 40-column phone screen. When the selected task is waiting on a prompt, the preview panel appears under the list, so a permission prompt can be read and answered with `y` right there; otherwise the list keeps the whole screen. Jumping into a task gives you the agent's whole pane, where you can answer anything else and detach again. The desktop notification goes to the machine running the session, not to the phone.
 
 ## Sweep and pin
 

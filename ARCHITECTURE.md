@@ -6,7 +6,7 @@ A map of the code for someone getting oriented. `CLAUDE.md` covers the same grou
 
 Two crates in one Cargo workspace:
 
-- **`tenx-core/`** holds pure logic: no `std::process::Command`, no filesystem access beyond data a caller hands in. Everything tenx *decides* lives here, as functions over plain values, with unit tests. Modules: `status` (what a task's state is), `slug`, `time`, `sweep`, `taskmd` (`TASK.md` rendering and parsing), `live` (parsing the per-task cache of ports and PRs).
+- **`tenx-core/`** holds pure logic: no `std::process::Command`, no filesystem access beyond data a caller hands in. Everything tenx *decides* lives here, as functions over plain values, with unit tests. Modules: `status` (what a task's state is), `dialog` (recognising and answering a permission prompt), `slug`, `time`, `sweep`, `taskmd` (`TASK.md` rendering and parsing), `live` (parsing the per-task cache of ports and PRs).
 - **`tenx`** (the root package) is the binary. It does I/O: shells out to `git`, `tmux`, `gh`, `age` and `sops`, reads Claude Code's session registry, and renders the overlay.
 
 Inside the binary the layers are independent and wired together by the CLI dispatch in `main.rs`. Each layer only knows about the layers below it.
@@ -73,6 +73,10 @@ The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on
 `tui/overlay.rs` is the single overlay implementation. It lists every task from every registered workspace, sectioned by attention group, fuzzy-filtered, with a search field in insert mode and a list in normal mode. Actions call straight into the `cli::task` and `cli::repo` functions rather than duplicating their logic.
 
 It runs in two modes. *Home* is window 0 of the session: a jump selects the task's window and the overlay stays; quit keys are swallowed. *Popup* is the `Ctrl+w` instance: a jump exits, and tmux closes the popup. Run from a plain terminal outside tmux, a jump records the target and the process attaches after teardown.
+
+Next to the list, a preview panel shows the selected task's Claude pane: `tmux capture-pane -e` on the pane the session registry names, refreshed on every tick. It is read-only and per client, which is why the overlay previews instead of switching the real window under itself: the current window is per session, so switching it would move every attached client, and merely visiting a window clears its bell flag.
+
+A blocked task's permission prompt can be answered from the list with `y` or `N`. Claude Code has no API for this, so the answer is a keystroke sent into the pane, guarded twice right before sending: the registry must still say the session waits on a permission prompt (not a question, which `Enter` would answer wrongly), and the captured pane must still show the dialog. The check is `tenx_core::dialog`.
 
 ## Task lifecycle
 
