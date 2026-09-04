@@ -297,3 +297,25 @@ fn renders_every_section_and_chip_from_fixtures() {
         eprintln!("wrote {}", path.display());
     }
 }
+
+#[test]
+fn empty_overlay_shows_the_mark() {
+    let mut overlay = Overlay::empty(false);
+    overlay.apply_filter();
+    let mut term = Terminal::new(TestBackend::new(60, 14)).unwrap();
+    term.draw(|f| render(f, &mut overlay)).unwrap();
+    let text = plain_text(term.backend().buffer());
+    for needle in [
+        "━━━━━━━",
+        "━━━━ ●",
+        "tenx",
+        "no tasks yet — :n to create one",
+    ] {
+        assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
+    }
+    if std::env::var_os("TENX_SCREENSHOT").is_some() {
+        let path = std::env::temp_dir().join("tenx-overlay-empty.svg");
+        std::fs::write(&path, svg(term.backend().buffer())).unwrap();
+        eprintln!("wrote {}", path.display());
+    }
+}

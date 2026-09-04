@@ -1930,13 +1930,42 @@ fn task_items(
     }
 
     if items.is_empty() {
-        items.push(ListItem::new(Line::from(Span::styled(
-            "  no tasks — :n to create one",
-            Style::default().fg(palette::MUTED.color()),
-        ))));
-        line_to_pos.push(None);
+        for line in empty_state_lines() {
+            items.push(ListItem::new(line));
+            line_to_pos.push(None);
+        }
     }
     (items, selected_line, line_to_pos)
+}
+
+/// The first-run screen: the mark (`docs/logo/tenx-mark.svg`) drawn in text
+/// with the same colours — two bright bars, the amber dot, two muted bars —
+/// next to the wordmark and the one thing there is to do.
+fn empty_state_lines() -> Vec<Line<'static>> {
+    let bright = Style::default().fg(palette::TEXT.color());
+    let muted = Style::default().fg(palette::MUTED.color());
+    let dot = Style::default().fg(palette::WARN.color());
+    let word = Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD);
+    let x = Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD);
+    vec![
+        Line::from(""),
+        Line::from(vec![Span::raw("   "), Span::styled("━━━━━━━", bright)]),
+        Line::from(vec![
+            Span::raw("   "),
+            Span::styled("━━━━ ", bright),
+            Span::styled("●", dot),
+            Span::raw("       "),
+            Span::styled("ten", word),
+            Span::styled("x", x),
+        ]),
+        Line::from(vec![
+            Span::raw("   "),
+            Span::styled("━━━━━━", muted),
+            Span::raw("       "),
+            Span::styled("no tasks yet — :n to create one", muted),
+        ]),
+        Line::from(vec![Span::raw("   "), Span::styled("━━━", muted)]),
+    ]
 }
 
 /// Build the grouped repo list (lean: clone dot + last commit).
