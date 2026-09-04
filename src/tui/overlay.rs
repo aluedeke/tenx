@@ -958,7 +958,12 @@ impl Overlay {
         match key.code {
             KeyCode::Esc => return Ok(false), // cancel; mode is already List
             KeyCode::Enter => match self.submit_create(&form) {
-                Ok(()) => return Ok(false), // created; stay in List
+                // Created and selected — go straight to it. `jump` handles
+                // every surface (home pane, popup, plain terminal) and, when
+                // it can't switch (a foreign tmux client), leaves the row
+                // selected with a hint so Enter still gets you there.
+                Ok(true) => return self.jump(),
+                Ok(false) => return Ok(false), // created but not listed; stay in List
                 Err(e) => self.status_msg = Some(e),
             },
             KeyCode::Tab | KeyCode::Down => form.focus_next(),
@@ -985,7 +990,10 @@ impl Overlay {
         Ok(false)
     }
 
-    fn submit_create(&mut self, form: &CreateForm) -> Result<(), String> {
+    /// Create the task and select its row. `Ok(true)` when the new row is now
+    /// the selection (so a `jump` lands on it), `Ok(false)` if it couldn't be
+    /// found in the rebuilt list.
+    fn submit_create(&mut self, form: &CreateForm) -> Result<bool, String> {
         let name = form.name.trim().to_string();
         if name.is_empty() {
             return Err("task name cannot be empty".into());
@@ -1001,23 +1009,29 @@ impl Overlay {
         }
         let ws_idx = form.ws_idx;
         let slug = crate::workspace::slugify(&name);
-        // no_open=true: the task's workspace may not be the current session, so
-        // we don't create a tab here — the user jumps to it (Enter) afterwards.
+        // no_open=true: the window is opened by the `jump` the caller runs
+        // right after this, which also knows which surface it's on (home
+        // pane, popup, plain terminal) and switches/attaches accordingly.
         {
             let ws = &self.workspaces[ws_idx];
             crate::cli::task::new_in(ws, &name, Some(&repos), true).map_err(|e| e.to_string())?;
         }
         self.filter.clear();
         self.rebuild_rows();
-        if let Some(pos) = self
+        let selected = match self
             .filtered
             .iter()
             .position(|&i| self.rows[i].ws_idx == ws_idx && self.rows[i].slug == slug)
         {
-            self.selected = pos;
-        }
+            Some(pos) => {
+                self.tab = Tab::Tasks;
+                self.selected = pos;
+                true
+            }
+            None => false,
+        };
         self.status_msg = Some(format!("created '{name}'"));
-        Ok(())
+        Ok(selected)
     }
 
     // ── Add repo (Repos tab) ──────────────────────────────────────────────────
@@ -1607,15 +1621,18 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
     };
     let (prefix, prefix_style, value) = match &overlay.mode {
         Mode::Rename(form) => ("✎ ", Style::default().fg(palette::ACCENT.color()), form.buffer.clone()),
-        _ => ("🔎 ", Style::default().fg(palette::ACCENT.color()), overlay.filter.clone()),
+        // `/` — the vim search prompt, a sibling of the `:` command line
+        // below. A text glyph takes the accent colour and renders one column
+        // wide everywhere; the emoji it replaced did neither.
+        _ => ("/ ", Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD), overlay.filter.clone()),
     };
     // Real terminal cursor only when the cursor lives in the search field (or
     // renaming) — same condition the old `▏` fill-in bar used, but this is
     // the actual (blinking) terminal cursor now, so no fake glyph is drawn.
     // Column math uses `unicode-width` pinned to ratatui's own version (see
     // Cargo.toml) so it agrees with what `Paragraph` actually renders — the
-    // prefixes are an emoji (wide) or a dingbat (narrow), so a plain
-    // `.chars().count()` would misplace it by a column depending on which.
+    // rename prefix is a dingbat, so a plain `.chars().count()` could
+    // misplace it by a column on some terminals.
     let show_cursor = matches!(overlay.mode, Mode::Rename(_)) || overlay.focus == Focus::Search;
     let top_spans = vec![Span::styled(prefix, prefix_style), Span::raw(value.clone())];
     let top = Paragraph::new(Line::from(top_spans))

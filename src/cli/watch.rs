@@ -538,23 +538,30 @@ fn has_secrets_pending(t: &serde_json::Value) -> bool {
 }
 
 /// One window's `status-left` text from its snapshot row: glyph, title,
-/// Claude's waiting reason, then the PR and port chips the row carries.
+/// workspace (muted, like the overlay's row), Claude's waiting reason, then
+/// the PR and port chips the row carries.
 fn status_line(t: &serde_json::Value, slug: &str) -> String {
     let status = TaskStatus::from_token(t["status"].as_str().unwrap_or(""));
     let title = t["title"].as_str().unwrap_or(slug);
+    // The workspace name, so two same-named tasks in different workspaces
+    // (and any task you land on cold) read unambiguously.
+    let ws = match t["ws"].as_str().filter(|w| !w.is_empty()) {
+        Some(w) => format!("#[fg={},nobold] {w}", crate::palette::MUTED.hex()),
+        None => String::new(),
+    };
     // tmux style directives (`#[fg=…]`): the option is expanded with `E:` in
     // the generated config, so the glyph gets its status colour and the
     // title its own, same table as the overlay (`palette::status_color`).
     let text_fg = crate::palette::TEXT.hex();
     let mut text = if has_secrets_pending(t) {
-        format!("#[fg={}]🔒#[fg={text_fg},bold] {title}", crate::palette::ACCENT.hex())
+        format!("#[fg={}]🔒#[fg={text_fg},bold] {title}{ws}", crate::palette::ACCENT.hex())
     } else {
         let glyph = format!("#[fg={}]{}", crate::palette::status_color(status).hex(), status.glyph());
         match (status, t["waiting_for"].as_str()) {
             (TaskStatus::Blocked, Some(reason)) => {
-                format!("{glyph}#[fg={text_fg},bold] {title}#[fg={},nobold] · {reason}", crate::palette::WARN.hex())
+                format!("{glyph}#[fg={text_fg},bold] {title}{ws}#[fg={},nobold] · {reason}", crate::palette::WARN.hex())
             }
-            _ => format!("{glyph}#[fg={text_fg},bold] {title}"),
+            _ => format!("{glyph}#[fg={text_fg},bold] {title}{ws}"),
         }
     };
     text.push_str("#[nobold]");
@@ -660,4 +667,64 @@ pub fn ensure_running(bin: &Path) {
         });
     }
     let _ = cmd.spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn plain(line: &str) -> String {
+        // Strip tmux style directives so the assertions read the visible text.
+        let mut out = String::new();
+        let mut rest = line;
+        while let Some(i) = rest.find("#[") {
+            out.push_str(&rest[..i]);
+            match rest[i..].find(']') {
+                Some(j) => rest = &rest[i + j + 1..],
+                None => break,
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    #[test]
+    fn status_line_shows_workspace_after_title() {
+        let t = json!({"status": "working", "title": "Fix login", "ws": "acme"});
+        let line = status_line(&t, "fix-login");
+        assert_eq!(plain(&line), format!("{} Fix login acme", TaskStatus::Working.glyph()));
+        // The workspace is muted and not bold, the title bold.
+        let ws_style = format!("#[fg={},nobold] acme", crate::palette::MUTED.hex());
+        assert!(line.contains(&ws_style), "{line}");
+        assert!(line.find(",bold] Fix login").unwrap() < line.find(&ws_style).unwrap());
+    }
+
+    #[test]
+    fn status_line_keeps_reason_and_chips_after_workspace() {
+        let t = json!({
+            "status": "blocked",
+            "title": "Deploy",
+            "ws": "acme",
+            "waiting_for": "permission",
+            "prs": [{"chip": "PR #12 ✔", "checks": "success"}],
+            "ports": [3000],
+        });
+        let text = plain(&status_line(&t, "deploy"));
+        assert_eq!(text, format!("{} Deploy acme · permission  PR #12 ✔  :3000", TaskStatus::Blocked.glyph()));
+    }
+
+    #[test]
+    fn status_line_without_workspace_or_title_falls_back_to_slug() {
+        let t = json!({"status": "idle"});
+        let text = plain(&status_line(&t, "my-task"));
+        assert_eq!(text, format!("{} my-task", TaskStatus::Idle.glyph()));
+    }
+
+    #[test]
+    fn status_line_secrets_pending_shows_workspace() {
+        let t = json!({"status": "idle", "title": "Rotate keys", "ws": "acme", "secrets_pending": ["API_KEY"]});
+        let text = plain(&status_line(&t, "rotate-keys"));
+        assert_eq!(text, "🔒 Rotate keys acme");
+    }
 }
