@@ -413,7 +413,7 @@ fn wait_for_human(task: &Task, queue: Queue, name: &str, requested_at: SystemTim
 /// the default wait "1m".
 fn fmt_wait(d: Duration) -> String {
     let secs = d.as_secs();
-    if secs > 0 && secs % 60 == 0 { format!("{}m", secs / 60) } else { format!("{secs}s") }
+    if secs > 0 && secs.is_multiple_of(60) { format!("{}m", secs / 60) } else { format!("{secs}s") }
 }
 
 /// Withdraw pending requests for the current task (resolved from cwd): one
