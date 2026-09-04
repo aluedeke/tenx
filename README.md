@@ -4,7 +4,7 @@ Work on many tasks in parallel, each with its own coding agent, and always know 
 
 Coding agents make it cheap to have several pieces of work in flight at once. The expensive part is everything around them: each task needs its own branch and checkout in every repo it touches, its own agent session, an editor and a shell, and you need to know at a glance which agent is stuck waiting on you and which is still working. Switching between five terminal tabs to find out does not scale.
 
-`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and a full-screen overlay (`Ctrl+w`) lists them grouped by what they need from you: waiting for input, working, done, idle. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
+`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and a full-screen overlay (`Ctrl+w`) lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
 ![The tenx overlay: tasks grouped by whether they need you](docs/overlay.svg)
 
@@ -81,7 +81,7 @@ Inside the session:
 
 - `Ctrl+w` opens the overlay from any window.
 - `tenx` from a task's shell does the same.
-- `tenx` from any other terminal, including over SSH, attaches to the same session.
+- `tenx` from any other terminal attaches to the same session.
 
 When you are done with a task:
 
@@ -131,6 +131,16 @@ tenx secrets ...         per-task encrypted secrets, see below
 ```
 
 Every mutating command accepts `--ws-dir` so scripts and other front ends can run it from anywhere. `tenx overlay --json` is the same data the overlay renders.
+
+## From a phone or tablet
+
+Everything runs in one tmux session on one machine, so any terminal that can SSH there can take over:
+
+```sh
+ssh devbox -t tenx
+```
+
+The overlay adapts to narrow terminals. As the width shrinks it drops the age column first, then the open column, and the workspace column never takes more than a third of the width, so task titles and their status glyphs stay readable on a 40-column phone screen. Jumping into a task from the overlay gives you the agent's pane, where you can answer its prompt and detach again. The desktop notification goes to the machine running the session, not to the phone.
 
 ## Sweep and pin
 
@@ -193,6 +203,7 @@ Two other projects target the same pain of running many coding agents at once. T
 | Agents | Claude Code for state; anything runs in a pane | Any terminal agent | 14+ agents out of the box |
 | Detach and reattach over SSH | Yes, it is a tmux session | Attaches to remote tmux sessions (beta) | Yes |
 | Platforms | macOS, Linux | macOS | macOS, Linux, Windows beta |
+| From a phone or tablet | Any SSH client; the overlay adapts to narrow terminals | iOS app in beta | Any SSH client |
 | License | MIT or Apache-2.0 | GPL-3.0-or-later | Apache-2.0 |
 
 cmux and herdr replace your terminal or your multiplexer and give every pane an attention state, whichever agent runs in it. tenx keeps your terminal and your tmux and instead owns what happens before the agent starts: the branch, the worktrees across every repo, the notes file, the window, and the secrets. Its state model is narrower on purpose. It reads Claude Code's own session registry rather than guessing from screen output, so a Blocked task is one where Claude is actually waiting on you.
