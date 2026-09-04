@@ -1,6 +1,6 @@
 # Root package + workspace: `tenx` is the CLI/TUI binary (the overlay, the
 # watcher, every command); `tenx-core` is the pure logic it and any future
-# front end share. tmux is the session layer — see REBUILD-PLAN.md.
+# front end share. tmux is the session layer — see ARCHITECTURE.md.
 [workspace]
 members = ["tenx-core"]
 
@@ -8,6 +8,13 @@ members = ["tenx-core"]
 name = "tenx"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.87"
+description = "Multi-repo workspaces and git-worktree tasks for running many Claude Code sessions in one tmux session, with an overlay that shows which ones need you"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/aluedeke/tenx"
+readme = "README.md"
+keywords = ["tmux", "git-worktree", "tui", "claude-code", "workspace"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 tenx-core = { path = "tenx-core" }

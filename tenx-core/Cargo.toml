@@ -7,6 +7,12 @@
 name = "tenx-core"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.87"
+description = "Pure, side-effect-free logic shared by the tenx CLI and its front ends: task status, slugs, sweep rules, TASK.md rendering"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/aluedeke/tenx"
+keywords = ["tmux", "git-worktree", "claude-code", "workspace"]
+categories = ["development-tools"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -45,8 +45,11 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Watch for tasks that start waiting on you and send a notification
-    /// (started automatically when tenx opens the session; runs until it ends)
+    /// Watch tasks and notify when one starts waiting on you
+    ///
+    /// Started automatically when tenx opens the session and runs until the
+    /// tmux server exits. Also pushes each task's status into the tmux status
+    /// bar and opens a log pane for background agents.
     Watch,
     /// Generate a daily standup from recent activity and task files
     Standup {
@@ -59,13 +62,14 @@ pub enum Commands {
         #[command(subcommand)]
         command: HooksCommands,
     },
-    /// Manage per-task encrypted secrets (age + sops). See PRD.md for the
-    /// full design — this covers the CLI baseline (Phase 0): identity
-    /// resolution, `encrypt`/`set`/`decrypt` (named and behaved after their
-    /// `sops` equivalents), and `fulfill`. Both `decrypt` and `set` are
-    /// agent-safe the same way: non-interactively each can only enqueue its
-    /// own kind of request (release, or supply-a-value), never touch key
-    /// material or an actual secret value either direction.
+    /// Manage per-task encrypted secrets (age + sops)
+    ///
+    /// Commands are named and behave like their `sops` equivalents:
+    /// `encrypt`, `set`, `decrypt`, plus `fulfill` (do whatever is pending)
+    /// and `status`. `decrypt` and `set` are agent-safe: without a real
+    /// terminal each can only enqueue its own kind of request (release a
+    /// bundle, or supply a value) and never touches key material or a secret
+    /// value. Decrypted values are written to files, never to stdout.
     Secrets {
         #[command(subcommand)]
         command: SecretsCommands,
@@ -105,16 +109,18 @@ pub enum SecretsCommands {
     /// Resolve an existing age identity ($SOPS_AGE_KEY_FILE, ~/.config/sops/age,
     /// ~/.config/age) or generate a new passphrase-protected one
     Init,
-    /// Encrypt a file as the sealed secrets bundle for a task — `sops
-    /// --encrypt`, matching that command's own name
+    /// Encrypt a file as the sealed secrets bundle for a task
+    ///
+    /// Equivalent to `sops --encrypt`, and named after it.
     Encrypt {
         /// Exact task slug
         task: String,
         /// File to encrypt (typically a .env)
         file: String,
     },
-    /// Set one secret in the current task's sealed bundle (task resolved
-    /// from cwd) — literally `sops set`: edits the existing document in
+    /// Set one secret in the current task's sealed bundle (task resolved from cwd)
+    ///
+    /// Literally `sops set`: edits the existing document in
     /// place, reusing its data key. Same tty-detection shape as `decrypt`,
     /// mirrored: real terminal reachable → prompts for the value (masked),
     /// then the passphrase, then edits; not reachable → enqueues "someone
@@ -125,9 +131,10 @@ pub enum SecretsCommands {
         /// Secret name (becomes its key in the decrypted .secrets.env)
         name: String,
     },
-    /// Ask for the current task's secrets — the one command both an agent
-    /// and a human use, resolved from cwd. Whether it prompts for a
-    /// passphrase or just enqueues a durable request depends entirely on
+    /// Ask for the current task's secrets (task resolved from cwd)
+    ///
+    /// The one command both an agent and a human use. Whether it prompts for
+    /// a passphrase or just enqueues a durable request depends entirely on
     /// whether a real terminal is reachable (checked via /dev/tty, the same
     /// thing age's own prompt reads from), never on how it's invoked: from a
     /// human's real shell or the overlay's spawned pane it decrypts straight
@@ -140,9 +147,10 @@ pub enum SecretsCommands {
     /// otherwise every sops file found. Never prints a decrypted value to
     /// stdout — file output only.
     Decrypt {
-        /// Secret name to ask for (shown in `status`), for the non-interactive
-        /// fallback and to seed the request queue before an interactive
-        /// decrypt. For the task's own sealed bundle this is just a label —
+        /// Secret name to ask for (shown in `status`)
+        ///
+        /// Used by the non-interactive fallback and to seed the request queue
+        /// before an interactive decrypt. For the task's own sealed bundle this is just a label —
         /// decrypt always releases the whole bundle. For an adopted repo with
         /// its own .sops.yaml, it's matched against candidate filenames and
         /// *does* select which file gets decrypted (e.g. "staging" vs
@@ -151,9 +159,10 @@ pub enum SecretsCommands {
         /// optional otherwise.
         name: Option<String>,
     },
-    /// Interactive convenience: do whatever's pending for the current task in
-    /// one sitting (task resolved from cwd) — decrypt if anything is pending
-    /// release, then set once per pending value-request. Human-only in
+    /// Do whatever is pending for the current task in one sitting (task resolved from cwd)
+    ///
+    /// Decrypts if anything is pending release, then runs `set` once per
+    /// pending value-request. Human-only in
     /// practice (each step still needs a real terminal); exists mainly for
     /// the overlay's spawned pane, so it doesn't need to know which of the
     /// two pending kinds a task has before deciding what to run.
@@ -302,8 +311,9 @@ pub enum TaskCommands {
         #[arg(long)]
         ws_dir: Option<String>,
     },
-    /// Close idle task windows across every workspace, freeing the claude
-    /// process each resident window holds. Never touches a task waiting on a
+    /// Close idle task windows across every workspace, freeing the claude process each holds
+    ///
+    /// Never touches a task waiting on a
     /// prompt or mid-turn, the current window, or a pinned task, and never
     /// deletes anything: `task open` (or the overlay) picks a swept task's
     /// conversation back up exactly where it left off.

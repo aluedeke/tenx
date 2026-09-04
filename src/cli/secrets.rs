@@ -1,10 +1,11 @@
-//! Task-scoped secret unlock (Phase 0 CLI baseline — see `PRD.md` at the task
-//! root for the full design). This module shells out to the system
+//! Task-scoped secret unlock (`ARCHITECTURE.md` § Secrets has the overview;
+//! this doc comment is the authoritative detail). This module shells out to the system
 //! `age`/`age-keygen`/`sops` binaries rather than linking a crypto crate,
 //! matching `git/mod.rs`'s reasoning for shelling to `git`: it's what the user
 //! already has installed, at whatever version, with no reimplementation risk.
 //! `sops` is the one encrypt/decrypt tool used everywhere now — our own
-//! sealed bundle, agent-added secrets, and adopted secrets (§4.2) all go
+//! sealed bundle, agent-added secrets, and adopted secrets (see *Sops
+//! adoption* below) all go
 //! through it uniformly — but it has no passphrase prompt of its own: it
 //! always needs an already-decrypted identity file via `SOPS_AGE_KEY_FILE`,
 //! so raw `age -d` is still what actually unwraps a passphrase-protected
@@ -364,7 +365,7 @@ pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>) -> Result<()>
         }
     }
 
-    // Adopted secrets (see PRD.md §4.2): a repo the task has a worktree for
+    // Adopted secrets (see *Sops adoption* below): a repo the task has a worktree for
     // may already have its own age/sops setup — an existing `.sops.yaml`
     // plus `*.enc.*` files, sealed by that project's own tooling, not by
     // `tenx secrets encrypt`. The real plaintext never lands inside the
@@ -557,7 +558,7 @@ fn with_plain_identity<T>(identity: &Path, f: impl FnOnce(&Path) -> Result<T>) -
     result
 }
 
-// ── Sops adoption (PRD.md §4.2) ─────────────────────────────────────────────
+// ── Sops adoption ───────────────────────────────────────────────────────────
 
 /// Whether a pending request name plausibly refers to this specific
 /// sops-covered file — a loose, case-insensitive substring match against the
@@ -741,7 +742,7 @@ pub fn status() -> Result<()> {
 /// Resolve the age identity to use: an explicit per-workspace override first,
 /// then the standard locations `sops`/`age` themselves already look at, so a
 /// workspace picks up whatever's already on the machine with zero
-/// tenx-specific setup. See PRD.md §4.1.
+/// tenx-specific setup. See `ARCHITECTURE.md` § Secrets, *Identity*.
 pub(crate) fn resolve_identity_path(ws: &Workspace) -> Result<PathBuf> {
     if let Some(p) = ws.config.age_identity.as_deref().filter(|p| !p.is_empty()) {
         let path = PathBuf::from(workspace::expand_home(p));
@@ -865,9 +866,9 @@ fn pubkey_from_identity_bytes(identity_plaintext: &[u8]) -> Result<String> {
 }
 
 /// Generate a fresh identity at `target`, passphrase-protected via `age -p` —
-/// this passphrase is the entire "confirm every time" gate (see PRD.md §5:
-/// `age` has no daemon and no cache, so there's nothing to layer `sudo` on top
-/// of). The unencrypted intermediate is written to a sibling `.tmp` file only
+/// this passphrase is the entire "confirm every time" gate (`age` has no
+/// daemon and no cache, so there's nothing to layer `sudo` on top of). The
+/// unencrypted intermediate is written to a sibling `.tmp` file only
 /// because `age-keygen`/`age -p` are separate processes that need a real file
 /// to hand off through, and it's best-effort removed immediately after.
 fn generate_identity(target: &Path) -> Result<()> {
