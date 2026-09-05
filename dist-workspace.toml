@@ -39,3 +39,9 @@ install-success-msg = "tenx needs tmux 3.3+ and git on PATH. Run `tenx` to creat
 # Becomes `depends_on "tmux"` in the generated formula.
 [dist.dependencies.homebrew]
 tmux = { stage = ["run"] }
+
+# publish-homebrew.yml checks this repo out (for .sops.yaml and
+# secrets/ci.enc.env), so its job needs contents: read; a reusable workflow
+# may not ask for more than its caller's job grants.
+[dist.github-custom-job-permissions]
+publish-homebrew = { contents = "read" }
