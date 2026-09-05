@@ -168,7 +168,7 @@ pub(super) fn fixture_overlay() -> Overlay {
         fx("nightly load test", "infra", Idle),
         fx("reverse proxy", "homelab", Idle),
     ];
-    let mut o = Overlay::empty(false);
+    let mut o = Overlay::empty(Surface::Popup);
     o.rows = rows.into_iter().map(row).collect();
     o.apply_filter();
     o.current = Some("overlay-screenshot".into());
@@ -345,9 +345,63 @@ fn renders_every_section_and_chip_from_fixtures() {
     }
 }
 
+/// The sidebar surface: the same rows in a 36-column pane, two lines per
+/// task. No preview, the current task's title in the "current" colour
+/// instead of a chip, chips on the second line, and a footer that fits.
+#[test]
+fn sidebar_renders_narrow() {
+    let mut overlay = fixture_overlay();
+    overlay.sidebar = true;
+    overlay.preview = Preview::default();
+    let mut term = Terminal::new(TestBackend::new(36, 48)).unwrap();
+    term.draw(|f| render(f, &mut overlay)).unwrap();
+    let buf = term.backend().buffer();
+    let text = plain_text(buf);
+    for needle in [
+        "SECRETS PENDING",
+        "WAITING FOR INPUT",
+        "WORKING",
+        "INACTIVE",
+        "overlay screenshot",
+        "     tenx-workspace",              // second line, indented under the title
+        "      permission prompt  · 4m",    // the reason first, then what else fits
+        "     acme-api · 54m · :8080",
+        "     ledger · 23h · #31 ✓",
+        "wants STRIPE_WEBHOOK_SECRET",
+        " NORMAL ",
+        "⏎ open",
+    ] {
+        assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
+    }
+    assert!(!text.contains("Do you want to proceed?"), "no preview in the sidebar:\n{text}");
+    // A click on either line of a task selects that task: both screen lines
+    // of the second task (filtered position 1, past a spacer and a header)
+    // map back to it, and a header line maps to nothing.
+    let heights: Vec<u16> = overlay.item_heights.clone();
+    assert!(heights.contains(&2), "task rows are two lines: {heights:?}");
+    let list = overlay.list_area;
+    let item = overlay.line_to_pos.iter().position(|p| *p == Some(1)).unwrap();
+    let y = list.y + 1 + heights[..item].iter().sum::<u16>();
+    for line in [y, y + 1] {
+        let hit = mouse::item_at_heights(list, 1, 0, &heights, list.x + 2, line).unwrap();
+        assert_eq!(overlay.line_to_pos[hit], Some(1), "line {line}");
+    }
+    let hit = mouse::item_at_heights(list, 1, 0, &heights, list.x + 2, list.y + 1).unwrap();
+    assert_eq!(overlay.line_to_pos[hit], None, "the header line is not a task");
+    // The current task's title is drawn in the "current" colour.
+    let y = text.lines().position(|l| l.contains("overlay screenshot")).unwrap() as u16;
+    let x = text.lines().nth(y as usize).unwrap().find("overlay").unwrap() as u16;
+    assert_eq!(buf.cell((x, y)).unwrap().fg, palette::CURRENT.color());
+    if std::env::var_os("TENX_SCREENSHOT").is_some() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/sidebar.svg");
+        std::fs::write(&path, svg(buf)).unwrap();
+        eprintln!("wrote {}", path.display());
+    }
+}
+
 #[test]
 fn empty_overlay_shows_the_mark() {
-    let mut overlay = Overlay::empty(false);
+    let mut overlay = Overlay::empty(Surface::Popup);
     overlay.apply_filter();
     let mut term = Terminal::new(TestBackend::new(60, 14)).unwrap();
     term.draw(|f| render(f, &mut overlay)).unwrap();
@@ -366,3 +420,5 @@ fn empty_overlay_shows_the_mark() {
         eprintln!("wrote {}", path.display());
     }
 }
+
+

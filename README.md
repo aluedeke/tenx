@@ -6,11 +6,15 @@
 
 Coding agents make it cheap to have several pieces of work in flight at once. The expensive part is everything around them: each task needs its own branch and checkout in every repo it touches, its own agent session, an editor and a shell, and you need to know at a glance which agent is stuck waiting on you and which is still working. Switching between five terminal tabs to find out does not scale.
 
-`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and a full-screen overlay (`Ctrl+w`) lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
+`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and a sidebar beside every task (or a full-screen overlay on `Ctrl+w`) lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
 ![The tenx overlay in motion: filtering, the delete prompt, the command line, and an agent that stops and needs you](docs/overlay-demo.gif)
 
 <sub>Generated, not recorded: a scripted scene rendered through the overlay's own widgets. Crisper as an [animated SVG](docs/overlay-demo.svg); the [asciinema cast](docs/overlay-demo.cast) plays in a terminal.</sub>
+
+The same list sits as a column on the left of every task window, so switching is always one glance and one keystroke away:
+
+![The sidebar: the task list as a column beside the task](docs/sidebar.svg)
 
 ## How it works
 
@@ -101,7 +105,7 @@ tenx                               # attach to the session
 
 Inside the session:
 
-- `Ctrl+w` opens the overlay from any window, as a popup on a desktop terminal and full screen on a phone.
+- `Ctrl+w` shows the task list beside the task and focuses it; pressed again from the list, it hides the column. On a phone it opens the overlay full screen.
 - `tenx` from a task's shell does the same.
 - `tenx` from any other terminal attaches to the same session.
 
@@ -131,6 +135,10 @@ The overlay lists every task from every registered workspace, sectioned by atten
 | `:` | Command line |
 
 Window 0 of the session is a permanent home instance of the overlay.
+
+### The sidebar
+
+Every task window also carries the list as a column on its left, about a fifth of the window wide, the layout cmux made familiar. Each task takes two lines there: the title, then a muted line with what it is waiting on, its workspace, how long it has been resting, and its PR and port chips, as far as they fit. It has the same keys as the overlay, minus the preview panel, since the task itself is right there. `Ctrl+w` from the task shows the column, opening it if hidden, and focuses it; `Ctrl+w` from inside the column hides it and gives the space back. Typing filters, as in the overlay. The arrow keys start from the task you are in, and moving the selection with them or with `j`/`k` switches windows as it goes, landing in that window's sidebar so you can keep moving; a task with no open window is only selected. `Enter` opens the chosen task and puts the cursor in its pane; `q` or `Esc` puts the cursor back in the current task and leaves the column showing. Hiding is per window: `:sidebar` from the popup or the home window adds or removes the column in the current window without moving the cursor. The sidebars do not resolve task state themselves: the watcher publishes a snapshot of every task, and each sidebar renders that, so a dozen open windows cost one resolve pass. With no watcher running a sidebar resolves on its own and says so in its footer.
 
 ## Commands
 
@@ -208,7 +216,13 @@ url = "git@github.com:org/api.git"
 # age_identity = "~/.config/age/work.txt"   # optional, for tenx secrets
 ```
 
-Global `~/.config/tenx/config.toml` accepts a single `bare_dir` override for where bare clones live.
+Global `~/.config/tenx/config.toml`:
+
+```toml
+bare_dir = ""        # optional override for where bare clones live
+sidebar = true       # a sidebar in every new task window; false for the popup-only layout
+sidebar_width = 0    # columns; 0 = a fifth of the window, between 30 and 48
+```
 
 A layout script replaces the default three-pane window. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_CLAUDE_CMD` and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
 
@@ -242,7 +256,7 @@ Feature claims for the other two are from their READMEs as of September 2026.
 make test        # cargo test + clippy -D warnings for both crates
 make try         # run this build on its own tmux socket, without installing
 make try-stop
-make screenshot  # regenerate docs/overlay.svg from the overlay's widgets and fixture data
+make screenshot  # regenerate docs/overlay.svg and docs/sidebar.svg from the overlay's widgets and fixture data
 make demo        # regenerate the animated docs/overlay-demo.svg and .cast by playing a scripted scene
 make demo-gif    # render docs/overlay-demo.gif from the cast (needs agg: brew install agg)
 cargo run -- task list

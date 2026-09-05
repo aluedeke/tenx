@@ -15,6 +15,7 @@ First public release.
 - Tasks: one branch and worktree per repo, a `TASK.md`, and a tmux window with Claude Code, an editor and a shell. Repos can be added to or detached from a task after creation.
 - A single tmux session on a dedicated socket with a generated config; the user's own tmux config is untouched.
 - The overlay: every task across every workspace, grouped by attention, fuzzy-filtered, with keys for jump, new, rename, edit repos, close, unlock secrets and delete. Bound to `Ctrl+w` and running permanently in window 0.
+- The sidebar: the same list as a column on the left of every task window, fed by the watcher's snapshot so a dozen panes cost one resolve pass. `Ctrl+w` shows and focuses it, and hides it again from inside; `:hide` and `:sidebar` do the same from the command line; `sidebar = false` in the global config keeps the popup-only layout.
 - Live task state from Claude Code's session registry and tmux's bell flag: Blocked, Signaled, Working, Done, Idle. No hooks installed.
 - The attention watcher: desktop notifications when a task starts waiting, per-window status in the tmux status bar, PR and listening-port chips, and a log pane for background agents.
 - Sweep and pin: close windows nobody is waiting on, keep conversations resumable.

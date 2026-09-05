@@ -15,7 +15,10 @@
 //!   `@tenx_right` user options ([`push_status`]), which is how every window
 //!   learns that a task you *aren't* looking at changed state;
 //! - a transcript pane for each background agent ([`pane_new_agents`]);
-//! - the per-task `.tenx-live.json` cache of ports and PRs ([`refresh_live`]).
+//! - the per-task `.tenx-live.json` cache of ports and PRs ([`refresh_live`]);
+//! - the sidebar snapshot (`crate::snapshot`, every task with its state and
+//!   chips), which each task window's sidebar pane renders instead of
+//!   resolving for itself — one resolve pass serving a dozen panes.
 //!
 //! Notification and status line deliberately differ on `Done`: a finished
 //! turn fires after every single turn, which is noise as a desktop popup and
@@ -98,6 +101,7 @@ pub fn run() -> Result<()> {
     // receive a push yet. Starting empty means the first tick always publishes,
     // which is what gives a freshly opened session its initial state.
     let mut published = String::new();
+    let mut published_snapshot = String::new();
 
     loop {
         std::thread::sleep(POLL);
@@ -182,6 +186,10 @@ pub fn run() -> Result<()> {
             published = current;
             push_status(&snapshot.tasks, &snapshot.windows);
         }
+        // Every tick, unlike the status push: the write only happens when
+        // the document changed, and an unchanged tick still bumps the
+        // file's mtime, which is how a sidebar knows the watcher is alive.
+        let _ = crate::snapshot::publish(&snapshot.sidebar, &mut published_snapshot);
 
         if tick.is_multiple_of(SESSION_CHECK_POLLS) {
             let alive = crate::tmux::server_running();
@@ -247,6 +255,10 @@ struct Snapshot {
     /// tasks you have ever created; sending the live ones makes it grow with how
     /// many agents are actually running.
     tasks: Vec<serde_json::Value>,
+    /// Every task, idle ones included, for the sidebar panes
+    /// (`crate::snapshot`). Unlike `tasks` this is a file, not a pipe, so
+    /// its size doesn't cost latency.
+    sidebar: crate::snapshot::Snapshot,
 }
 
 struct LiveTarget {
@@ -273,10 +285,12 @@ fn resolve_all() -> Snapshot {
     let mut agents = Vec::new();
     let mut live_targets = Vec::new();
     let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
+    let mut sidebar_tasks = Vec::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
             let state = workspace::resolve_task_state(&task.path, &sessions, &signals);
             let key = format!("{}/{}", ws.dir.display(), task.name);
+            sidebar_tasks.push(task_snap(&ws, &task, &state, &windows));
             live_targets.push(LiveTarget {
                 slug: task.name.clone(),
                 path: task.path.clone(),
@@ -343,6 +357,7 @@ fn resolve_all() -> Snapshot {
     // format to anyone who reads position; cheap to guarantee here, awkward to
     // rediscover in a consumer that assumed it.
     tasks.sort_by_key(|t| std::cmp::Reverse(t.0));
+    let current = windows.iter().find(|w| w.active && w.name != crate::tmux::HOME_WINDOW).map(|w| w.name.clone());
     Snapshot {
         blocked,
         secrets_pending,
@@ -351,6 +366,37 @@ fn resolve_all() -> Snapshot {
         live_targets,
         windows,
         tasks: tasks.into_iter().map(|(_, v)| v).collect(),
+        sidebar: crate::snapshot::Snapshot { current, tasks: sidebar_tasks },
+    }
+}
+
+/// One task as the sidebar snapshot carries it — the row's facts with
+/// absolute timestamps, so the document only changes when something did.
+fn task_snap(
+    ws: &workspace::Workspace,
+    task: &workspace::Task,
+    state: &workspace::TaskState,
+    windows: &[crate::tmux::Window],
+) -> crate::snapshot::TaskSnap {
+    let secs = |t: std::time::SystemTime| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let live = crate::live::read(&task.path);
+    crate::snapshot::TaskSnap {
+        ws: ws.config.name.clone(),
+        ws_dir: ws.dir.to_string_lossy().into_owned(),
+        slug: task.name.clone(),
+        title: task.display_name.clone(),
+        path: task.path.to_string_lossy().into_owned(),
+        status: state.status.token().to_string(),
+        waiting_for: state.waiting_for.clone(),
+        changed_at: state.changed.map(secs),
+        created_at: secs(task.created_at),
+        window_id: windows.iter().find(|w| w.name == task.name).map(|w| w.id.clone()),
+        pane: state.pane.clone(),
+        prs: live.prs,
+        ports: live.ports,
+        repos: task.repos.clone(),
+        secrets_pending: workspace::secrets_pending(&task.path),
+        secrets_pending_set: workspace::secrets_pending_set(&task.path),
     }
 }
 

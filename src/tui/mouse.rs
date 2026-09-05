@@ -19,22 +19,11 @@ pub fn hit(area: Rect, col: u16, row: u16) -> bool {
         && row < area.y + area.height
 }
 
-/// Which list item sits under a click at terminal (`col`, `row`).
-///
-/// `border` is how many rows/cols the widget's block border steals from the
-/// top/left edges (0 for a borderless list, 1 for a bordered one). `offset` is
-/// the list's current scroll offset in items and `item_height` how many terminal
-/// rows each item occupies (1 for a normal list; the repos list uses several).
-/// Returns `None` when the point is outside the item region.
-pub fn item_at(
-    area: Rect,
-    border: u16,
-    offset: usize,
-    item_height: u16,
-    col: u16,
-    row: u16,
-) -> Option<usize> {
-    let item_height = item_height.max(1);
+/// Which list item sits under a click when items have differing heights
+/// (`heights`, one per item, in render order): walk the visible rows from
+/// the scroll `offset` (in items) until the click's row is reached. `None`
+/// outside the item region or past the last item.
+pub fn item_at_heights(area: Rect, border: u16, offset: usize, heights: &[u16], col: u16, row: u16) -> Option<usize> {
     let x0 = area.x + border;
     let y0 = area.y + border;
     let x1 = area.x + area.width.saturating_sub(border);
@@ -42,5 +31,13 @@ pub fn item_at(
     if col < x0 || col >= x1 || row < y0 || row >= y1 {
         return None;
     }
-    Some(offset + ((row - y0) / item_height) as usize)
+    let mut y = y0;
+    for (i, h) in heights.iter().enumerate().skip(offset) {
+        let next = y + (*h).max(1);
+        if row < next {
+            return Some(i);
+        }
+        y = next;
+    }
+    None
 }

@@ -57,7 +57,10 @@ impl Harness {
         fs::write(&conf, out.stdout).unwrap();
         let st = h
             .tmux()
-            .args(["-f", s(&conf), "new-session", "-d", "-s", "tenx", "-n", "home", "-c", s(&h.root), "sleep 600"])
+            // A desktop-sized window: a detached server defaults to 80×24,
+            // where a sidebar plus three task panes leaves a shell too
+            // narrow to print a port number on one line.
+            .args(["-f", s(&conf), "new-session", "-d", "-x", "200", "-y", "50", "-s", "tenx", "-n", "home", "-c", s(&h.root), "sleep 600"])
             .status()
             .unwrap();
         assert!(st.success(), "tmux new-session failed (config rejected?)");
@@ -67,6 +70,9 @@ impl Harness {
     fn tmux(&self) -> Command {
         let mut c = Command::new(&self.tmux);
         c.args(["-L", &self.socket]);
+        // The server's environment is what its panes inherit — the sidebar
+        // pane runs this build's `tenx`, which must see the isolated home.
+        c.env("HOME", self.root.join("home"));
         c
     }
 
@@ -134,12 +140,71 @@ fn task_new_open_and_list_against_real_tmux() {
     let smoke = windows.lines().find(|l| l.contains(" smoke-test ")).expect("smoke-test window exists");
     let mut f = smoke.split(' ');
     let id = f.next().unwrap();
-    assert_eq!(f.nth(1), Some("3"), "three panes: claude, nvim, shell");
+    assert_eq!(f.nth(1), Some("4"), "four panes: sidebar, claude, nvim, shell");
     assert_eq!(f.next(), Some("1"), "new window is the session's current one");
     assert_eq!(fs::read_to_string(task_dir.join(".tenx-window-id")).unwrap().trim(), id);
 
     let branch = h.tmux_out(&["list-panes", "-t", "tenx:smoke-test", "-F", "#{pane_current_path}"]);
     assert!(branch.lines().all(|l| l.ends_with("smoke-test")), "every pane starts in the task dir: {branch}");
+
+    // The sidebar: one pane carrying the marker option, leftmost (tmux
+    // numbers panes by position, so it is pane 0 and claude is pane 1), full
+    // height, and not the one with focus — a new task lands you in claude.
+    let panes = h.tmux_out(&[
+        "list-panes", "-t", "tenx:smoke-test", "-F",
+        "#{pane_index} #{pane_left} #{pane_height} #{window_height} #{pane_active} [#{@tenx_sidebar}]",
+    ]);
+    let sidebars: Vec<&str> = panes.lines().filter(|l| l.ends_with("[1]")).collect();
+    assert_eq!(sidebars.len(), 1, "exactly one sidebar pane: {panes}");
+    let mut sb = sidebars[0].split(' ');
+    assert_eq!(sb.next(), Some("0"), "sidebar is pane 0: {panes}");
+    assert_eq!(sb.next(), Some("0"), "sidebar is leftmost: {panes}");
+    let (ph, wh) = (sb.next().unwrap(), sb.next().unwrap());
+    assert_eq!(ph, wh, "sidebar is full height: {panes}");
+    assert_eq!(sb.next(), Some("0"), "sidebar does not take focus: {panes}");
+    let active = panes.lines().find(|l| l.contains(" 1 [")).expect("an active pane");
+    assert!(active.starts_with("1 "), "claude (pane 1) has focus: {panes}");
+
+    // Ctrl+w's handler: from the task, focus the sidebar; from the sidebar,
+    // hide it (claude becomes pane 0 again, and gets the focus back); from
+    // the task again, it comes back focused. Each hide and show restores
+    // the pane sizes it found — tmux alone would shrink the right-hand
+    // panes a little more on every round trip.
+    let sizes = || h.tmux_out(&["list-panes", "-t", "tenx:smoke-test", "-F", "#{pane_width}x#{pane_height}"]).replace('\n', " ");
+    let with_sidebar = sizes();
+    let out = h.tenx().args(["internal", "sidebar", "cycle", &format!("{id}.1")]).output().unwrap();
+    assert!(out.status.success(), "sidebar cycle (focus): {}", String::from_utf8_lossy(&out.stderr));
+    let active = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{@tenx_sidebar}"]);
+    assert_eq!(active, "1", "focus moved to the sidebar");
+    let sidebar_id = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane_id}"]);
+    let out = h.tenx().args(["internal", "sidebar", "cycle", &sidebar_id]).output().unwrap();
+    assert!(out.status.success(), "sidebar cycle (hide): {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "3");
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane_index}"]), "0", "back on claude");
+    let without_sidebar = sizes();
+    let widths: Vec<u32> = without_sidebar.split(' ').map(|p| p.split('x').next().unwrap().parse().unwrap()).collect();
+    assert!(widths[0].abs_diff(widths[1]) <= 1, "hidden: claude and the right column split the window evenly again: {without_sidebar}");
+    let out = h.tenx().args(["internal", "sidebar", "cycle", &format!("{id}.0")]).output().unwrap();
+    assert!(out.status.success(), "sidebar cycle (show): {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "4");
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{@tenx_sidebar}"]), "1", "shown with focus");
+    assert_eq!(sizes(), with_sidebar, "shown: the same sizes as before hiding");
+    for _ in 0..3 {
+        let sb = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane_id}"]);
+        h.tenx().args(["internal", "sidebar", "cycle", &sb]).output().unwrap();
+        assert_eq!(sizes(), without_sidebar, "hidden again: same layout");
+        h.tenx().args(["internal", "sidebar", "cycle", &format!("{id}.0")]).output().unwrap();
+    }
+    assert_eq!(sizes(), with_sidebar, "stable across repeated round trips");
+
+    // `toggle` removes and adds it without moving the focus.
+    let out = h.tenx().args(["internal", "sidebar", "toggle", &format!("{id}.1")]).output().unwrap();
+    assert!(out.status.success(), "sidebar toggle off: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "3");
+    let out = h.tenx().args(["internal", "sidebar", "toggle", &format!("{id}.0")]).output().unwrap();
+    assert!(out.status.success(), "sidebar toggle on: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "4");
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{@tenx_sidebar}"]), "", "focus stayed on the task");
 
     // task list sees the open window.
     let out = h.tenx().args(["task", "list"]).current_dir(h.root.join("ws")).output().unwrap();
@@ -162,7 +227,7 @@ fn task_new_open_and_list_against_real_tmux() {
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
     h.tmux_out(&["select-window", "-t", "tenx:home"]);
-    h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.2", "printf '\\a'", "Enter"]);
+    h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.3", "printf '\\a'", "Enter"]);
     let mut status = String::new();
     for _ in 0..20 {
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -181,11 +246,11 @@ fn task_new_open_and_list_against_real_tmux() {
     // port (pane pid → descendants → lsof), when python3 is around to listen.
     if Command::new("python3").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success()) {
         let listen = "python3 -c 'import socket,time;s=socket.socket();s.bind((\"127.0.0.1\",0));s.listen();print(\"PORT\",s.getsockname()[1],flush=True);time.sleep(300)'";
-        h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.2", listen, "Enter"]);
+        h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.3", listen, "Enter"]);
         let mut port = None;
         for _ in 0..50 {
             std::thread::sleep(std::time::Duration::from_millis(100));
-            let screen = h.tmux_out(&["capture-pane", "-p", "-t", "tenx:smoke-test.2"]);
+            let screen = h.tmux_out(&["capture-pane", "-p", "-t", "tenx:smoke-test.3"]);
             port = screen.lines().find_map(|l| l.strip_prefix("PORT ")).and_then(|p| p.trim().parse::<u16>().ok());
             if port.is_some() {
                 break;
@@ -202,7 +267,9 @@ fn task_new_open_and_list_against_real_tmux() {
             }
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        assert!(found, "port {port} should be attributed to smoke-test");
+        let panes = h.tmux_out(&["list-panes", "-s", "-t", "tenx", "-F", "#{window_name} #{pane_index} w=#{pane_width} h=#{pane_height} #{pane_current_command} [#{@tenx_sidebar}]"]);
+        let out = h.tenx().args(["internal", "ports"]).output().unwrap();
+        assert!(found, "port {port} should be attributed to smoke-test\npanes:\n{panes}\nports: {}", String::from_utf8_lossy(&out.stdout));
     }
 
     // A ticket import: description and links land in TASK.md's own rows.

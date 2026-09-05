@@ -9,7 +9,9 @@
 pub mod dialog;
 pub mod live;
 pub mod secrets;
+pub mod sidebar;
 pub mod slug;
+pub mod snapshot;
 pub mod status;
 pub mod sweep;
 pub mod taskmd;

@@ -91,6 +91,8 @@ pub fn new_with(
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_script: if layout.is_empty() { None } else { Some(layout) },
             resume: false, // brand-new task — no conversation to continue
+            sidebar: global.sidebar.then_some(global.sidebar_width),
+            tenx_bin: &tenx_bin()?,
         };
         let id = crate::tmux::open_task_window(&opts)?;
         std::fs::write(task_dir.join(crate::tmux::WINDOW_ID_FILE), &id)?;
@@ -299,6 +301,11 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
     Ok(())
 }
 
+/// This binary's path, for panes tmux spawns on our behalf (the sidebar).
+fn tenx_bin() -> Result<String> {
+    Ok(env::current_exe()?.to_string_lossy().into_owned())
+}
+
 /// Focus a task's window in the tenx session (creating it if needed), given an
 /// explicit workspace and slug. Used by `open` and the overlay, neither of
 /// which can rely on cwd matching the task. Works from any client of the tenx
@@ -334,6 +341,8 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
         // Only `--continue` if claude actually has a conversation for this cwd;
         // otherwise it exits 1 and the pane vanishes.
         resume: has_claude_conversation(&task.path),
+        sidebar: crate::cli::sidebar::wanted(),
+        tenx_bin: &tenx_bin()?,
     };
     let id = crate::tmux::open_task_window(&opts)?;
     std::fs::write(&id_file, &id)?;

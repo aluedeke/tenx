@@ -2,8 +2,22 @@ mod ansi;
 mod mouse;
 mod overlay;
 
-pub fn run_overlay(home: bool) -> anyhow::Result<()> {
-    overlay::run(home)
+/// Where an overlay instance runs — see `overlay.rs`'s module doc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Surface {
+    /// `tenx overlay` under Ctrl+w's `display-popup` (or a plain terminal):
+    /// exits after a jump.
+    Popup,
+    /// `--home`: the session's permanent window 0; never quits.
+    Home,
+    /// `--sidebar`: a pane beside the task in every task window, rendering
+    /// the watcher's snapshot; a jump hands focus to the task, quit keys
+    /// hand it back.
+    Sidebar,
+}
+
+pub fn run_overlay(surface: Surface) -> anyhow::Result<()> {
+    overlay::run(surface)
 }
 
 /// `tenx overlay --json`: dump every task across all registered workspaces as

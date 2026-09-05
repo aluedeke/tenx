@@ -3,6 +3,7 @@ mod git;
 mod live;
 mod palette;
 mod progress;
+mod snapshot;
 mod tmux;
 mod tui;
 mod workspace;
@@ -25,11 +26,18 @@ fn run() -> Result<()> {
     match cli.command {
         None => open()?,
 
-        Some(Commands::Overlay { home, json }) => {
+        Some(Commands::Overlay { home, sidebar, json }) => {
             if json {
                 tui::dump_json()?;
             } else {
-                tui::run_overlay(home)?;
+                let surface = if home {
+                    tui::Surface::Home
+                } else if sidebar {
+                    tui::Surface::Sidebar
+                } else {
+                    tui::Surface::Popup
+                };
+                tui::run_overlay(surface)?;
             }
         }
 
@@ -70,6 +78,16 @@ fn run() -> Result<()> {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
             InternalCommands::AgentLog { cwd, pid, session } => cli::agentlog::run(&cwd, pid, session.as_deref())?,
+            InternalCommands::Sidebar { action, pane } => {
+                let pane = match pane.or_else(|| env::var("TMUX_PANE").ok()) {
+                    Some(p) => p,
+                    None => anyhow::bail!("not inside a tmux pane — pass the pane id"),
+                };
+                match action {
+                    cli::SidebarAction::Cycle => cli::sidebar::cycle(&pane)?,
+                    cli::SidebarAction::Toggle => cli::sidebar::toggle(&tmux::window_of_pane(&pane)?)?,
+                }
+            }
         },
 
         Some(Commands::Secrets { command }) => match command {
@@ -176,7 +194,7 @@ fn open() -> Result<()> {
 
     if tmux::inside_tenx_session() {
         // Already inside the tenx session → run the overlay in this pane.
-        tui::run_overlay(false)?;
+        tui::run_overlay(tui::Surface::Popup)?;
         if let Some(hint) = &stale {
             eprintln!("{hint}");
         }

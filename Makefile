@@ -34,8 +34,9 @@ test:
 	cargo test -p tenx-cli -p tenx-core
 	cargo clippy -p tenx-cli -p tenx-core --all-targets -- -D warnings
 
-# Regenerate docs/overlay.svg from the overlay's own widgets and fixture
-# data (src/tui/overlay/screenshot.rs) — no real workspace involved.
+# Regenerate docs/overlay.svg and docs/sidebar.svg from the overlay's own
+# widgets and fixture data (src/tui/overlay/screenshot.rs) — no real
+# workspace involved.
 screenshot:
 	TENX_SCREENSHOT=1 cargo test -p tenx-cli --bin tenx screenshot -- --nocapture
 
