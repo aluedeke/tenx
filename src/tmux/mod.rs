@@ -671,8 +671,10 @@ mod tests {
     #[test]
     fn stale_server_hint_only_on_mismatch() {
         assert!(stale_server_hint(env!("CARGO_PKG_VERSION")).is_none());
-        let hint = stale_server_hint("0.0.1").unwrap();
-        assert!(hint.contains("0.0.1") && hint.contains("kill-server"));
+        // A version no build can have, so the mismatch is real whatever
+        // Cargo.toml says.
+        let hint = stale_server_hint("0.0.0-stale").unwrap();
+        assert!(hint.contains("0.0.0-stale") && hint.contains("kill-server"));
     }
 
     #[test]
