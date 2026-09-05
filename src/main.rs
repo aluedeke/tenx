@@ -63,7 +63,7 @@ fn run() -> Result<()> {
 
         Some(Commands::Internal { command }) => match command {
             InternalCommands::TmuxConf => {
-                let bin = env::current_exe()?;
+                let bin = tmux::self_bin()?;
                 print!("{}", tmux::render_config(&bin.to_string_lossy()));
             }
             InternalCommands::Ports => {
@@ -160,10 +160,15 @@ fn open() -> Result<()> {
         let _ = workspace::register_workspace(&ws.dir);
     }
 
-    let bin = env::current_exe()?;
+    let bin = tmux::self_bin()?;
     let bin_str = bin.to_string_lossy().into_owned();
 
     tmux::check_version()?;
+
+    // After an upgrade the server still runs the old binary's config (tmux
+    // reads it once, at start), so say so — here, before tmux takes the
+    // terminal, and again after an in-session overlay run below.
+    let stale = tmux::server_version().and_then(|v| tmux::stale_server_hint(&v));
 
     // Every route into the session lands here, so this is the one place that
     // guarantees a watcher exists. No-op when one is already running.
@@ -172,6 +177,9 @@ fn open() -> Result<()> {
     if tmux::inside_tenx_session() {
         // Already inside the tenx session → run the overlay in this pane.
         tui::run_overlay(false)?;
+        if let Some(hint) = &stale {
+            eprintln!("{hint}");
+        }
     } else if tmux::inside_any_tmux() {
         // A client of some other tmux server: no in-place switch exists.
         anyhow::bail!("{}", tmux::foreign_client_hint());
@@ -180,6 +188,11 @@ fn open() -> Result<()> {
         // missing (exec; does not return on success).
         if !tmux::server_running() {
             eprintln!("  creating session '{}'", tmux::SESSION);
+        }
+        if let Some(hint) = &stale {
+            // Attaching clears the screen; leave the notice readable first.
+            eprintln!("{hint}");
+            std::thread::sleep(std::time::Duration::from_millis(2500));
         }
         tmux::attach_or_create(&bin_str)?;
     }
