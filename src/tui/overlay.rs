@@ -265,10 +265,28 @@ struct AttachTarget {
     window_id: Option<String>,
 }
 
-struct Overlay {
+/// What the client's column asks the client to do, since it cannot move
+/// focus or hide itself through tmux the way the sidebar pane does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ClientRequest {
+    /// Put the keyboard in the embedded terminal (a jump landed, or a quit
+    /// key: the column stays).
+    FocusTerminal,
+    /// `:hide` — take the column away.
+    Hide,
+    /// `:q` — leave the client altogether.
+    Quit,
+}
+
+pub(super) struct Overlay {
     /// Running as the session's home base pane (long-lived, never quits) rather
     /// than the Ctrl+w floating pane (exits after a jump).
     home: bool,
+    /// `Surface::Client`: `sidebar` rendering and data, but the window
+    /// switch is the whole of a jump — the embedded terminal shows it —
+    /// and focus moves via `client_request`.
+    client: bool,
+    client_request: Option<ClientRequest>,
     /// Running as a task window's sidebar pane (`Surface::Sidebar`): rows
     /// come from the watcher's snapshot while it is fresh, there is no
     /// preview panel (the task is right there), a jump focuses the task and
@@ -357,15 +375,30 @@ const SLOW_REFRESH: Duration = Duration::from_secs(2);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(300);
 
 impl Overlay {
-    fn new(surface: Surface) -> Self {
+    pub(super) fn new(surface: Surface) -> Self {
         let mut o = Self::empty(surface);
         o.workspaces = workspace::registered_workspaces();
-        if o.sidebar {
+        if o.sidebar && !o.client {
             o.own_window = std::env::var("TMUX_PANE").ok().and_then(|p| crate::tmux::window_of_pane(&p).ok());
             o.own_slug = o.own_window.as_deref().and_then(|w| crate::tmux::window_name(w).ok());
         }
         o.rebuild_rows();
         o
+    }
+
+    /// The client's pending request, if the last event made one.
+    pub(super) fn take_request(&mut self) -> Option<ClientRequest> {
+        self.client_request.take()
+    }
+
+    /// Whether the list (not a form or the command line) is showing — when
+    /// the idle tick may refresh rows.
+    pub(super) fn in_list_mode(&self) -> bool {
+        matches!(self.mode, Mode::List)
+    }
+
+    pub(super) fn take_unlock(&mut self) -> Option<(usize, String)> {
+        self.pending_unlock.take()
     }
 
     /// An overlay with no workspaces and no rows, touching nothing outside the
@@ -374,7 +407,9 @@ impl Overlay {
     fn empty(surface: Surface) -> Self {
         Overlay {
             home: surface == Surface::Home,
-            sidebar: surface == Surface::Sidebar,
+            client: surface == Surface::Client,
+            client_request: None,
+            sidebar: matches!(surface, Surface::Sidebar | Surface::Client),
             own_window: None,
             own_slug: None,
             snapshot_mtime: None,
@@ -455,7 +490,7 @@ impl Overlay {
     /// Rescan all workspaces for tasks + status. All file reads: the task tree,
     /// plus one snapshot of Claude Code's session registry that every row
     /// resolves against (`workspace::resolve_task_state`).
-    fn rebuild_rows(&mut self) {
+    pub(super) fn rebuild_rows(&mut self) {
         if self.sidebar
             && let Some((snap, mtime)) = crate::snapshot::read_fresh()
         {
@@ -611,7 +646,7 @@ impl Overlay {
     /// only recomputed when the list is (re)opened: floating overlay spawn,
     /// home-pane startup, regaining focus, returning after a jump, or a
     /// mutating action (create/delete/rename).
-    fn refresh_statuses(&mut self) {
+    pub(super) fn refresh_statuses(&mut self) {
         if self.sidebar {
             if self.refresh_from_snapshot() {
                 return;
@@ -793,9 +828,10 @@ impl Overlay {
         if !self.sidebar || self.tab != Tab::Tasks {
             return None;
         }
+        let own_slug = if self.client { self.current.as_deref() } else { self.own_slug.as_deref() };
         self.filtered.iter().position(|&i| {
             let r = &self.rows[i];
-            (r.window_id.is_some() && r.window_id == self.own_window) || Some(r.slug.as_str()) == self.own_slug.as_deref()
+            (r.window_id.is_some() && r.window_id == self.own_window) || Some(r.slug.as_str()) == own_slug
         })
     }
 
@@ -809,7 +845,8 @@ impl Overlay {
             return;
         }
         let Some(row) = self.selected_row() else { return };
-        if row.window_id.is_none() || Some(row.slug.as_str()) == self.own_slug.as_deref() {
+        let own_slug = if self.client { self.current.as_deref() } else { self.own_slug.as_deref() };
+        if row.window_id.is_none() || Some(row.slug.as_str()) == own_slug {
             return;
         }
         let slug = row.slug.clone();
@@ -818,7 +855,13 @@ impl Overlay {
             return;
         }
         if crate::tmux::select_window(&w.id).is_ok() {
-            let _ = crate::cli::sidebar::ensure_focused(&w.id);
+            if self.client {
+                // The embedded terminal shows the new window; the column is
+                // the same process, so the selection simply carries on.
+                self.current = Some(slug);
+            } else {
+                let _ = crate::cli::sidebar::ensure_focused(&w.id);
+            }
         }
     }
 
@@ -838,7 +881,7 @@ impl Overlay {
     /// jump guarantees the jumping client just sent a keystroke and is
     /// therefore the one zellij switches. Returns `Ok(true)` when the overlay
     /// should close (a jump completed).
-    fn handle_mouse(&mut self, m: MouseEvent) -> Result<bool> {
+    pub(super) fn handle_mouse(&mut self, m: MouseEvent) -> Result<bool> {
         if !matches!(self.mode, Mode::List) {
             return Ok(false);
         }
@@ -879,7 +922,7 @@ impl Overlay {
     // ── Key dispatch ──────────────────────────────────────────────────────────
 
     /// Returns `Ok(true)` when the overlay should close.
-    fn handle_key(&mut self, key: KeyEvent) -> Result<bool> {
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<bool> {
         enum Kind {
             List,
             Command,
@@ -920,6 +963,10 @@ impl Overlay {
         // The sidebar is part of the window; a quit key means "back to the
         // task", leaving the column showing (Ctrl+w from here hides it —
         // `cli::sidebar::cycle`).
+        if close && self.client {
+            self.client_request = Some(ClientRequest::FocusTerminal);
+            return Ok(false);
+        }
         if close && self.sidebar {
             self.focus_task();
             return Ok(false);
@@ -1088,7 +1135,13 @@ impl Overlay {
                 self.select_repos_tab();
                 return Ok(false);
             }
-            "q" | "quit" => return Ok(true),
+            "q" | "quit" => {
+                if self.client {
+                    self.client_request = Some(ClientRequest::Quit);
+                    return Ok(false);
+                }
+                return Ok(true);
+            }
             // `:n` works from either tab — it uses the selected item's workspace.
             "n" | "new" => {
                 self.start_create();
@@ -1112,6 +1165,7 @@ impl Overlay {
             "y" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
             "deny" => self.answer(tenx_core::dialog::Answer::No),
             "cancel" => self.cancel_secrets(),
+            "sidebar" | "hide" if self.client => self.client_request = Some(ClientRequest::Hide),
             "sidebar" => self.toggle_sidebar(),
             "hide" if self.sidebar => self.toggle_sidebar(),
             "o" | "open" => return self.jump(),
@@ -1246,7 +1300,11 @@ impl Overlay {
         let ws_idx = row.ws_idx;
         let slug = row.slug.clone();
 
-        if crate::tmux::inside_tenx_session() {
+        // The client's terminal is a tmux client of the session whatever
+        // `$TMUX` says about the process itself (it may well run inside
+        // some other tmux); `open_in` selects the window and the embedded
+        // terminal shows it.
+        if self.client || crate::tmux::inside_tenx_session() {
             // `open_in` selects the window for the session, which is what this
             // client (the home pane or the popup) is looking at.
             let ws = &self.workspaces[ws_idx];
@@ -1254,7 +1312,7 @@ impl Overlay {
                 self.status_msg = Some(e.to_string());
                 return Ok(false);
             }
-            if self.sidebar {
+            if self.sidebar && !self.client {
                 // The window switched under every client; land the cursor
                 // in the task's pane (not that window's own sidebar).
                 if let Some(w) = crate::tmux::find_window(&slug).ok().flatten()
@@ -1262,6 +1320,10 @@ impl Overlay {
                 {
                     let _ = crate::tmux::select_pane(&main);
                 }
+            }
+            if self.client {
+                self.current = Some(slug.clone());
+                self.client_request = Some(ClientRequest::FocusTerminal);
             }
             if self.home || self.sidebar {
                 // Stay alive as the session's home pane — tmux already
@@ -1956,7 +2018,7 @@ fn run_loop(
 /// `tenx secrets fulfill` since it can only shell out, not link against
 /// these functions directly. Keeping both overlays on one implementation is
 /// deliberate — see `fulfill_in`'s own doc comment.
-fn run_unlock(
+pub(super) fn run_unlock(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     overlay: &mut Overlay,
     ws_idx: usize,
@@ -1995,27 +2057,33 @@ fn run_unlock(
 // therefore always renders full-pane (`f.area()`).
 
 fn render(f: &mut ratatui::Frame, overlay: &mut Overlay) {
+    render_in(f, overlay, f.area());
+}
+
+/// Draw the overlay into `area` — the whole frame on its own surfaces, the
+/// column beside the embedded terminal in the client.
+pub(super) fn render_in(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
     // Paint the ground first: cells left on the terminal's default background
     // render black inside a tmux popup (the popup frame, styled by tmux, is
     // charcoal), so without this the overlay looks like a hole in the popup.
     f.render_widget(
         Block::default().style(Style::default().bg(palette::GROUND.color()).fg(palette::TEXT.color())),
-        f.area(),
+        area,
     );
     // Dispatch on a discriminant (not `match &overlay.mode`) so the list path can
     // take `&mut overlay` without a live immutable borrow of `overlay.mode`.
     if matches!(overlay.mode, Mode::Create(_)) {
-        render_create(f, overlay);
+        render_create(f, overlay, area);
     } else if matches!(overlay.mode, Mode::AddRepo(_)) {
-        render_addrepo(f, overlay);
+        render_addrepo(f, overlay, area);
     } else if matches!(overlay.mode, Mode::EditRepos(_)) {
-        render_editrepos(f, overlay);
+        render_editrepos(f, overlay, area);
     } else {
-        render_list(f, overlay);
+        render_list(f, overlay, area);
     }
 }
 
-fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
+fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -2024,7 +2092,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay) {
             Constraint::Min(1),    // list
             Constraint::Length(1), // footer
         ])
-        .split(f.area());
+        .split(area);
 
     // The body is the list plus, when there's room, the preview panel:
     // beside it on a wide terminal, under it on a tall narrow one (a phone),
@@ -2706,12 +2774,12 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{cut}…")
 }
 
-fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay) {
+fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
     let Mode::AddRepo(form) = &overlay.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(f.area());
+        .split(area);
 
     let ws_name = overlay
         .workspaces
@@ -2760,12 +2828,12 @@ fn cursor(on: bool) -> &'static str {
 /// Repo checklist for an existing task: ticked rows the task already has read
 /// as "worktree", the pending diff is called out per row, and detaching is
 /// spelled out in the footer before it's confirmed.
-fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay) {
+fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
     let Mode::EditRepos(form) = &overlay.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(f.area());
+        .split(area);
 
     let mut lines = vec![
         Line::from(vec![
@@ -2824,12 +2892,12 @@ fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay) {
     f.render_widget(Paragraph::new(footer), chunks[1]);
 }
 
-fn render_create(f: &mut ratatui::Frame, overlay: &Overlay) {
+fn render_create(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
     let Mode::Create(form) = &overlay.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(f.area());
+        .split(area);
 
     let ws_name = overlay
         .workspaces

@@ -425,6 +425,33 @@ pub fn attach_or_create(tenx_bin: &str) -> Result<()> {
     Err(err).context("exec tmux new-session")
 }
 
+/// Start the server and session detached if they aren't running — the
+/// non-exec half of [`attach_or_create`], for a client that attaches in a
+/// pty of its own (`tui::client`).
+pub fn ensure_session(tenx_bin: &str) -> Result<()> {
+    if server_running() {
+        return Ok(());
+    }
+    let conf = write_config(tenx_bin)?;
+    let home = env::var("HOME").context("HOME not set")?;
+    let home_cmd = format!("while :; do {} overlay --home; sleep 1; done", tenx_cmd(tenx_bin));
+    let status = cmd()
+        .current_dir(&home)
+        .args(["-f", &conf.to_string_lossy()])
+        .args(["new-session", "-d", "-s", SESSION, "-n", HOME_WINDOW, "-c", &home, &home_cmd])
+        .status()
+        .context("run tmux new-session")?;
+    if !status.success() {
+        bail!("tmux new-session exited with {status}");
+    }
+    Ok(())
+}
+
+/// The `tmux -L <socket> attach-session -t tenx` a client runs in its pty.
+pub fn attach_command() -> (PathBuf, Vec<String>) {
+    (find_bin(), vec!["-L".into(), socket(), "attach-session".into(), "-t".into(), SESSION.into()])
+}
+
 /// Focus `window_id` for the session, then attach. Used when the overlay was
 /// run from a plain terminal and the user jumped: the overlay tears down, and
 /// this lands the new client on the chosen task.

@@ -51,6 +51,14 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Run the tenx client: the task list as a column beside the tmux
+    /// session, embedded in this terminal (experimental)
+    ///
+    /// One client per terminal. Ctrl+w shows and focuses the column, or
+    /// hides it from inside; moving the selection switches the task shown
+    /// on the right; ⏎ opens a task and puts the cursor in it. `:q` quits
+    /// the client, the session keeps running.
+    Client,
     /// Watch tasks and notify when one starts waiting on you
     ///
     /// Started automatically when tenx opens the session and runs until the

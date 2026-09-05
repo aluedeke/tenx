@@ -1,6 +1,8 @@
 mod ansi;
+pub mod client;
 mod mouse;
 mod overlay;
+mod term;
 
 /// Where an overlay instance runs — see `overlay.rs`'s module doc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +16,11 @@ pub enum Surface {
     /// the watcher's snapshot; a jump hands focus to the task, quit keys
     /// hand it back.
     Sidebar,
+    /// The column inside `tenx client` (`client.rs`): drawn like the
+    /// sidebar, but the task is an embedded terminal in the same process,
+    /// so jumps and quit keys hand focus to it via `ClientRequest` instead
+    /// of tmux.
+    Client,
 }
 
 pub fn run_overlay(surface: Surface) -> anyhow::Result<()> {
