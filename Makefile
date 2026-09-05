@@ -1,7 +1,14 @@
-.PHONY: build install test clean try try-stop screenshot demo release auto patch minor major
+.PHONY: build install test clean try try-stop screenshot demo release auto patch minor major hooks
 
 build:
 	cargo build --release
+
+# Point git at the versioned hooks (.githooks/): commit-msg rejects messages
+# that are not Conventional Commits, since they become the changelog and
+# decide the version bump. Once per clone; worktrees of it inherit the setting.
+hooks:
+	git config core.hooksPath .githooks
+	@echo "  ✓ hooks enabled (core.hooksPath = .githooks)"
 
 # Try this build without installing it: its own tmux server (`-L try`), its
 # own generated config and watcher, the same workspaces and tasks. Ctrl+w and

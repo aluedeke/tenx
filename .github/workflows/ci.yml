@@ -5,6 +5,25 @@ on:
   pull_request:
 
 jobs:
+  # Every commit message must be a Conventional Commit (scripts/check-commit-msg.sh):
+  # the subject becomes the changelog and the type decides the version bump.
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit messages
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            range="${{ github.event.before }}..${{ github.sha }}"
+          else
+            range="${{ github.sha }}~1..${{ github.sha }}"
+          fi
+          ./scripts/check-commit-msg.sh --range "$range"
+
   test:
     strategy:
       fail-fast: false
