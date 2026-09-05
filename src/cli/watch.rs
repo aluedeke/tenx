@@ -456,7 +456,7 @@ fn pane_new_agents(agents: &[Agent], windows: &[crate::tmux::Window], paned: &mu
     if agents.is_empty() {
         return;
     }
-    let Ok(bin) = std::env::current_exe() else { return };
+    let Ok(bin) = crate::tmux::self_bin() else { return };
     for a in agents {
         let key = (a.cwd.clone(), a.pid);
         if paned.contains(&key) {

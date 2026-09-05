@@ -123,7 +123,7 @@ pub fn which(bin: &str) -> Option<PathBuf> {
         .find(|p| is_executable(p))
 }
 
-fn is_executable(p: &std::path::Path) -> bool {
+pub fn is_executable(p: &std::path::Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }

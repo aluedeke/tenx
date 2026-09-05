@@ -1617,7 +1617,7 @@ pub fn run(home: bool) -> Result<()> {
         if crate::tmux::server_running() {
             crate::tmux::attach_at(t.window_id.as_deref())?;
         } else {
-            let bin = std::env::current_exe()?;
+            let bin = crate::tmux::self_bin()?;
             crate::tmux::attach_or_create(&bin.to_string_lossy())?;
         }
     }
