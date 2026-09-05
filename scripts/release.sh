@@ -13,7 +13,7 @@
 #
 # Refuses to run with uncommitted changes, off `main` (override with
 # TENX_RELEASE_BRANCH), when the tag exists, or with no commits since the last
-# release. Needs git-cliff and dist on PATH.
+# release. Needs git-cliff, dist and agg on PATH.
 # .github/workflows/bump.yml runs exactly this from the Actions tab.
 set -eu
 
@@ -32,7 +32,7 @@ done
 
 cd "$(dirname "$0")/.."
 
-for tool in git-cliff dist; do
+for tool in git-cliff dist agg; do
     command -v "$tool" >/dev/null || { echo "release: $tool not found (cargo binstall $tool)" >&2; exit 1; }
 done
 git fetch -q --tags origin 2>/dev/null || true
@@ -78,6 +78,12 @@ fi
 
 echo "release: $current -> $version ($bump${last_tag:+, $since commits since $last_tag}) on $branch"
 [ "$dry" -eq 0 ] || { echo "release: dry run, nothing changed"; exit 0; }
+
+# The README demo (animated SVG, asciinema cast, GIF) is rendered from this
+# very code, so it rides along in the release commit and never lags the
+# binary. `make demo` plays the scripted scene; `make demo-gif` needs agg.
+make demo demo-gif >/dev/null 2>&1 || { echo "release: make demo demo-gif failed (run it by hand to see why)" >&2; exit 1; }
+echo "  ✓ demo re-rendered (docs/overlay-demo.svg, .cast, .gif)"
 
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$version\"/" Cargo.toml tenx-core/Cargo.toml
 sed -i.bak -E "s/^tenx-core = \{ version = \"[^\"]+\"/tenx-core = { version = \"$version\"/" Cargo.toml

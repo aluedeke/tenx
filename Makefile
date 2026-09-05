@@ -1,4 +1,4 @@
-.PHONY: build install test clean try try-stop screenshot demo release auto patch minor major hooks
+.PHONY: build install test clean try try-stop screenshot demo demo-gif release auto patch minor major hooks
 
 build:
 	cargo build --release
@@ -59,6 +59,13 @@ release:
 # (src/tui/overlay/demo.rs). Nothing is recorded; every frame is rendered.
 demo:
 	TENX_DEMO=1 cargo test -p tenx-cli --bin tenx demo -- --nocapture
+
+# Render docs/overlay-demo.gif from the cast with agg (`brew install agg`;
+# bump.yml downloads a pinned binary). Text in JetBrains Mono, falling back
+# to whatever monospace the machine has; the theme is the palette's ground.
+# scripts/release.sh runs `demo demo-gif` so a release ships a current demo.
+demo-gif:
+	agg --text-font-family "JetBrains Mono,Menlo,DejaVu Sans Mono" --emoji-font-family "Noto Color Emoji,Apple Color Emoji" --font-size 14 --last-frame-duration 3 --theme "171820,d6dbe3,171820,e5707b,7ac27c,e4a854,6896dc,a78bfa,6896dc,d6dbe3" docs/overlay-demo.cast docs/overlay-demo.gif
 
 clean:
 	cargo clean

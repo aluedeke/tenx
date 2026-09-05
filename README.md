@@ -8,7 +8,9 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
 
 `tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and a full-screen overlay (`Ctrl+w`) lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
-![The tenx overlay in motion: filtering, the delete prompt, the command line, and an agent that stops and needs you](docs/overlay-demo.svg)
+![The tenx overlay in motion: filtering, the delete prompt, the command line, and an agent that stops and needs you](docs/overlay-demo.gif)
+
+<sub>Generated, not recorded: a scripted scene rendered through the overlay's own widgets. Crisper as an [animated SVG](docs/overlay-demo.svg); the [asciinema cast](docs/overlay-demo.cast) plays in a terminal.</sub>
 
 ## How it works
 
@@ -242,6 +244,7 @@ make try         # run this build on its own tmux socket, without installing
 make try-stop
 make screenshot  # regenerate docs/overlay.svg from the overlay's widgets and fixture data
 make demo        # regenerate the animated docs/overlay-demo.svg and .cast by playing a scripted scene
+make demo-gif    # render docs/overlay-demo.gif from the cast (needs agg: brew install agg)
 cargo run -- task list
 ```
 
@@ -262,6 +265,8 @@ make release auto                          # the same, from a checkout of main
 ```
 
 Nobody types a version or writes a changelog. Commits follow Conventional Commits with the area as scope (`feat(overlay): …`, `fix(tmux): …`, `docs: …`); [git-cliff](https://git-cliff.org) derives the bump from them (`feat` minor, `fix` patch, breaking changes minor until 1.0) and generates the `CHANGELOG.md` section, which becomes the GitHub Release notes. The bump commits `release vX.Y.Z` with both crates bumped and the changelog section added, then dispatches the release workflow, which builds static binaries for macOS and Linux, publishes them with checksums and the installer as a GitHub Release, pushes the formula to `aluedeke/homebrew-tap`, and creates the tag. It refuses to run off `main`, with uncommitted changes, or with no commits since the last release.
+
+The release commit also carries a freshly rendered README demo: `scripts/release.sh` runs `make demo demo-gif`, so the picture at the top of this page always shows the released overlay, never an older one.
 
 CI secrets are committed, encrypted: `secrets/ci.enc.env` holds the token that pushes the Homebrew formula, sealed with sops to the age recipients in `.sops.yaml`, one of which is a dedicated CI identity. The only GitHub Actions secret is that identity's private key, `SOPS_AGE_KEY`; the publish job decrypts what it needs from the repo. Rotate a value with `sops secrets/ci.enc.env` and commit. Values never appear on a terminal.
 

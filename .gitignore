@@ -4,3 +4,4 @@
 # symlinks the plaintext sibling into place, and that link must never land in git.
 secrets/*
 !secrets/*.enc.env
+.DS_Store

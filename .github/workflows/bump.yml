@@ -43,6 +43,18 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: git-cliff@2.14.1
+      # scripts/release.sh re-renders the README demo; agg turns the generated
+      # asciinema cast into docs/overlay-demo.gif, in JetBrains Mono.
+      - name: Install agg and fonts
+        env:
+          AGG_VERSION: 1.9.0
+          AGG_SHA256: f111e315cd71056b116302342553dd765b7297579ed511f111d0cedb442aeda6
+        run: |
+          curl -sSfL -o agg "https://github.com/asciinema/agg/releases/download/v${AGG_VERSION}/agg-x86_64-unknown-linux-gnu"
+          echo "${AGG_SHA256}  agg" | sha256sum -c -
+          chmod +x agg && sudo mv agg /usr/local/bin/agg
+          sudo apt-get update -q && sudo apt-get install -y -q fonts-jetbrains-mono fonts-noto-color-emoji
+          agg --version
       - name: Git identity
         run: |
           git config user.name "github-actions[bot]"

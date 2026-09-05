@@ -18,6 +18,7 @@ make install                   # cargo install --path . (nothing else to place)
 make release auto              # version + CHANGELOG from commits (git-cliff); never pick a version or write changelog text by hand. Or: gh workflow run bump.yml
 make screenshot                # re-render docs/overlay.svg from fixtures (src/tui/overlay/screenshot.rs)
 make demo                      # re-render docs/overlay-demo.svg + .cast from a scripted scene (src/tui/overlay/demo.rs)
+make demo-gif                  # docs/overlay-demo.gif from the cast via agg; scripts/release.sh runs both at release time
 tenx internal tmux-conf        # print the generated tmux config (hidden command)
 ```
 
