@@ -91,15 +91,21 @@ rm -f Cargo.toml.bak tenx-core/Cargo.toml.bak
 
 # The new section, from the commits since the last tag, inserted above the
 # previous version's heading (or appended when there is none).
-section=$(git cliff --unreleased --tag "$tag" --strip all 2>/dev/null)
-[ -n "$section" ] || { echo "release: git-cliff produced no changelog section" >&2; exit 1; }
-first=$(grep -n -m1 '^## \[' CHANGELOG.md | cut -d: -f1)
-if [ -n "$first" ]; then
-    { head -n "$((first - 1))" CHANGELOG.md; printf '%s\n\n' "$section"; tail -n "+$first" CHANGELOG.md; } > CHANGELOG.md.new
+# A section written ahead of time (the first release, whose history predates
+# Conventional Commits) is kept as it is rather than duplicated.
+if grep -q "^## \[$version\]" CHANGELOG.md; then
+    echo "  ✓ CHANGELOG.md already has a $version section, keeping it"
 else
-    { cat CHANGELOG.md; printf '\n%s\n' "$section"; } > CHANGELOG.md.new
+    section=$(git cliff --unreleased --tag "$tag" --strip all 2>/dev/null)
+    [ -n "$section" ] || { echo "release: git-cliff produced no changelog section" >&2; exit 1; }
+    first=$(grep -n -m1 '^## \[' CHANGELOG.md | cut -d: -f1)
+    if [ -n "$first" ]; then
+        { head -n "$((first - 1))" CHANGELOG.md; printf '%s\n\n' "$section"; tail -n "+$first" CHANGELOG.md; } > CHANGELOG.md.new
+    else
+        { cat CHANGELOG.md; printf '\n%s\n' "$section"; } > CHANGELOG.md.new
+    fi
+    mv CHANGELOG.md.new CHANGELOG.md
 fi
-mv CHANGELOG.md.new CHANGELOG.md
 
 cargo update -w --offline 2>/dev/null || cargo update -w
 dist plan >/dev/null

@@ -5,7 +5,7 @@
 # compiles for any target.
 [package]
 name = "tenx-core"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 rust-version = "1.87"
 description = "Pure, side-effect-free logic shared by the tenx CLI and its front ends: task status, slugs, sweep rules, TASK.md rendering"
