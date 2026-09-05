@@ -623,7 +623,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tenx"
+name = "tenx-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",

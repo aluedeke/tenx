@@ -1,23 +1,30 @@
-# Root package + workspace: `tenx` is the CLI/TUI binary (the overlay, the
-# watcher, every command); `tenx-core` is the pure logic it and any future
-# front end share. tmux is the session layer — see ARCHITECTURE.md.
+# Root package + workspace: `tenx-cli` is the package that builds the `tenx`
+# CLI/TUI binary (the overlay, the watcher, every command); `tenx-core` is the
+# pure logic it and any future front end share. tmux is the session layer —
+# see ARCHITECTURE.md. The package is `tenx-cli`, not `tenx`, because that
+# crates.io name belongs to an unrelated project; the binary is still `tenx`.
 [workspace]
 members = ["tenx-core"]
 
 [package]
-name = "tenx"
+name = "tenx-cli"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.87"
 description = "Work on many tasks in parallel, each with its own git worktrees and its own Claude Code agent, and always know which one needs you"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/aluedeke/tenx"
+homepage = "https://github.com/aluedeke/tenx"
 readme = "README.md"
 keywords = ["tmux", "git-worktree", "tui", "claude-code", "workspace"]
 categories = ["command-line-utilities", "development-tools"]
 
+[[bin]]
+name = "tenx"
+path = "src/main.rs"
+
 [dependencies]
-tenx-core = { path = "tenx-core" }
+tenx-core = { version = "0.1.0", path = "tenx-core" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
@@ -35,3 +42,8 @@ unicode-width = "=0.2.0"
 
 [dev-dependencies]
 serde_json = "1"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

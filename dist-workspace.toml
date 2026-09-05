@@ -1,0 +1,41 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "homebrew"]
+# The tap, aluedeke/homebrew-tap, is named in publish-homebrew.yml, not here:
+# dist's `tap` key only feeds its built-in publish job, which we don't use.
+# Homebrew formula name: `brew install aluedeke/tap/tenx`, not tenx-cli
+formula = "tenx"
+# Publish jobs to run in CI. Not dist's built-in "homebrew" job: that one
+# reads the tap token from a GitHub secret. Ours (publish-homebrew.yml)
+# decrypts it from secrets/ci.enc.env with sops, so the repo stays the only
+# place the token lives and the single GitHub secret is the CI age key.
+publish-jobs = ["./publish-homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl"]
+# Path that installers should place binaries in
+install-path = "~/.local/bin"
+# Whether to install an updater program
+install-updater = false
+# Which actions to run on pull requests
+pr-run-mode = "plan"
+# Releases start from the Actions tab / `gh workflow run release.yml -f tag=vX.Y.Z`
+# (see .github/workflows/bump.yml and scripts/release.sh), not from a tag push:
+# the release workflow creates the tag itself, so a version can never be
+# tagged without its binaries.
+dispatch-releases = true
+# Whether to enable GitHub Attestations
+github-attestations = true
+# Custom message to display on successful install
+install-success-msg = "tenx needs tmux 3.3+ and git on PATH. Run `tenx` to create the session."
+
+# Becomes `depends_on "tmux"` in the generated formula.
+[dist.dependencies.homebrew]
+tmux = { stage = ["run"] }

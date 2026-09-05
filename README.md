@@ -44,7 +44,6 @@ The state comes from Claude Code's own session registry plus tmux's bell flag. t
 - macOS or Linux
 - tmux 3.3 or newer
 - git
-- A Rust toolchain (1.87 or newer) to build
 
 Optional, picked up when present:
 
@@ -57,18 +56,37 @@ Optional, picked up when present:
 
 ## Install
 
-```sh
-cargo install --git https://github.com/aluedeke/tenx
-```
-
-Or from a checkout:
+Homebrew (macOS and Linux), which also installs tmux:
 
 ```sh
-git clone https://github.com/aluedeke/tenx && cd tenx
-make install
+brew install aluedeke/tap/tenx
 ```
+
+Anywhere else with curl, into `~/.local/bin`:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aluedeke/tenx/releases/latest/download/tenx-cli-installer.sh | sh
+```
+
+Prebuilt binaries for macOS and Linux, both Intel and ARM, are on the [releases page](https://github.com/aluedeke/tenx/releases). From source, with a Rust toolchain (1.87 or newer):
+
+```sh
+cargo install --locked --git https://github.com/aluedeke/tenx --tag v0.1.0
+```
+
+The package is `tenx-cli` (the crates.io name `tenx` belongs to an unrelated project); the binary is `tenx` either way. From a checkout, `make install` does the same.
 
 Nothing else to place. tenx generates its own tmux config at `~/.config/tenx/tmux.conf` and runs its own tmux server on a dedicated socket, so your `~/.tmux.conf` is untouched.
+
+### Upgrading
+
+`brew upgrade tenx`, or run the installer again. A running tenx server keeps the config it started with, so after an upgrade `tenx` tells you to restart the session:
+
+```sh
+tmux -L tenx kill-server && tenx
+```
+
+Task windows are recreated on demand and every Claude conversation resumes where it left off.
 
 ## Quickstart
 
@@ -232,6 +250,20 @@ The README's screenshot and demo are generated, not captured: `src/tui/overlay/s
 The workspace has two crates. `tenx-core` is pure logic with the unit tests: status resolution, slugs, sweep rules, `TASK.md` rendering. `tenx` is the binary that does I/O. Decision logic goes in core with a test first. See [ARCHITECTURE.md](ARCHITECTURE.md) for the map and [CLAUDE.md](CLAUDE.md) for the conventions an agent editing this repo follows.
 
 CI runs build, tests and clippy on macOS and Ubuntu, including an end-to-end test against a throwaway tmux server.
+
+### Releasing
+
+Releases are built by [cargo-dist](https://axodotdev.github.io/cargo-dist/) from `dist-workspace.toml`; `.github/workflows/release.yml` is generated from it (`dist generate` after editing). A release starts from the **bump** workflow in the Actions tab, or:
+
+```sh
+gh workflow run bump.yml                   # auto: version from the commits since the last tag
+gh workflow run bump.yml -f bump=minor     # or force patch, minor, major
+make release auto                          # the same, from a checkout of main
+```
+
+Nobody types a version or writes a changelog. Commits follow Conventional Commits with the area as scope (`feat(overlay): …`, `fix(tmux): …`, `docs: …`); [git-cliff](https://git-cliff.org) derives the bump from them (`feat` minor, `fix` patch, breaking changes minor until 1.0) and generates the `CHANGELOG.md` section, which becomes the GitHub Release notes. The bump commits `release vX.Y.Z` with both crates bumped and the changelog section added, then dispatches the release workflow, which builds static binaries for macOS and Linux, publishes them with checksums and the installer as a GitHub Release, pushes the formula to `aluedeke/homebrew-tap`, and creates the tag. It refuses to run off `main`, with uncommitted changes, or with no commits since the last release.
+
+CI secrets are committed, encrypted: `secrets/ci.enc.env` holds the token that pushes the Homebrew formula, sealed with sops to the age recipients in `.sops.yaml`, one of which is a dedicated CI identity. The only GitHub Actions secret is that identity's private key, `SOPS_AGE_KEY`; the publish job decrypts what it needs from the repo. Rotate a value with `sops secrets/ci.enc.env` and commit. Values never appear on a terminal.
 
 ## License
 

@@ -1,0 +1,54 @@
+# git-cliff config: CHANGELOG.md and the GitHub Release notes are generated
+# from commit messages by scripts/release.sh — never written by hand.
+#
+# Commit convention (CLAUDE.md): Conventional Commits with the area as scope,
+# e.g. `feat(overlay): jump to a new task`, `fix(tmux): keep the popup border`,
+# `docs: ...`, `refactor(secrets): ...`. `feat` bumps minor, `fix` patch, a
+# `!` or `BREAKING CHANGE:` footer bumps major (once past 1.0). The older
+# `area: message` style still lands under "Changed" and counts as a patch.
+
+[changelog]
+# No header: scripts/release.sh inserts each new section under CHANGELOG.md's
+# own intro, above the previous version, so older sections stay as written.
+header = ""
+body = """
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | split(pat="\n") | first | trim | upper_first }}{% if commit.breaking %} (breaking){% endif %}
+{%- endfor %}
+{% endfor %}
+{% if previous.version %}[{{ version | trim_start_matches(pat="v") }}]: https://github.com/aluedeke/tenx/compare/{{ previous.version }}...{{ version }}
+{% else %}[{{ version | trim_start_matches(pat="v") }}]: https://github.com/aluedeke/tenx/releases/tag/{{ version }}
+{% endif %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+# Keep the repo's older `area: message` commits; they are shown as written.
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+# The HTML comments order the groups; git-cliff sorts by group name.
+commit_parsers = [
+  { message = "^release v", skip = true },
+  { message = "^(chore|ci|build|test|style)(\\(|:|!)", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^fix", group = "<!-- 1 -->Fixed" },
+  { message = "^perf", group = "<!-- 2 -->Changed" },
+  { message = "^refactor", group = "<!-- 2 -->Changed" },
+  { message = "^docs", group = "<!-- 3 -->Documentation" },
+  { message = "^revert", group = "<!-- 4 -->Reverted" },
+  { message = ".*", group = "<!-- 2 -->Changed" },
+]
+
+[bump]
+features_always_bump_minor = true
+# Pre-1.0: a breaking change bumps minor, not major.
+breaking_always_bump_major = false
+initial_tag = "v0.1.0"

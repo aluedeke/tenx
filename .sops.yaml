@@ -1,0 +1,13 @@
+# sops config for the secrets committed in this repo (secrets/*.enc.env).
+# Encrypted to two age recipients: the maintainer's identity (~/.config/age/
+# keys.txt, passphrase-protected) and the CI identity, whose private key is
+# the one GitHub Actions secret, SOPS_AGE_KEY. The release workflow decrypts
+# what it needs from secrets/ci.enc.env; `tenx secrets decrypt ci.enc.env`
+# releases it into a task agent-safely. Rotate a value with:
+#   sops secrets/ci.enc.env
+# Add or remove a recipient here, then: sops updatekeys secrets/ci.enc.env
+creation_rules:
+  - path_regex: ^secrets/.*\.enc\.env$
+    age: >-
+      age1mze4cjakhehggzt3kmf5t27aulkx83erwepwc7mdzslz275ttytq0qt384,
+      age1kf7arduqtdqxc3y5vn375kcec6eyyj37p54uw8kmdj09zkucmydqdcnd9w
