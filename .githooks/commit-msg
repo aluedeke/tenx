@@ -1,0 +1,4 @@
+#!/bin/sh
+# Enabled with `make hooks` (git config core.hooksPath .githooks). CI runs the
+# same check on every pushed commit, so this is the fast local feedback.
+exec "$(git rev-parse --show-toplevel)/scripts/check-commit-msg.sh" "$1"
