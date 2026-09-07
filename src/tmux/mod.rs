@@ -631,6 +631,15 @@ pub fn window_name(window: &str) -> Result<String> {
     Ok(run(&["display-message", "-p", "-t", window, "#{window_name}"])?.trim().to_string())
 }
 
+/// The name of the session's current window (`None` for the home window
+/// or when the server is down) — the task a client is looking at, asked
+/// live rather than read from the watcher's snapshot, which can lag a
+/// switch by a couple of seconds.
+pub fn current_task() -> Option<String> {
+    let name = run(&["display-message", "-p", "-t", SESSION, "#{window_name}"]).ok()?.trim().to_string();
+    (!name.is_empty() && name != HOME_WINDOW).then_some(name)
+}
+
 /// The window a pane belongs to.
 pub fn window_of_pane(pane: &str) -> Result<String> {
     Ok(run(&["display-message", "-p", "-t", pane, "#{window_id}"])?.trim().to_string())

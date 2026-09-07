@@ -325,8 +325,11 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     let id_file = task.path.join(crate::tmux::WINDOW_ID_FILE);
     if let Some(w) = crate::tmux::find_window(slug)? {
         crate::tmux::select_window(&w.id)?;
-        // Refresh the cached id to the live one.
-        let _ = std::fs::write(&id_file, &w.id);
+        // Refresh the cached id to the live one — only when it changed, so
+        // a plain switch leaves the task directory untouched.
+        if std::fs::read_to_string(&id_file).map(|s| s.trim() != w.id).unwrap_or(true) {
+            let _ = std::fs::write(&id_file, &w.id);
+        }
         return Ok(());
     }
 

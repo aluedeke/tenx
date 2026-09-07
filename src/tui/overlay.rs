@@ -497,7 +497,7 @@ impl Overlay {
             self.snapshot_mtime = Some(mtime);
             self.snapshot_stale = false;
             self.rows = self.rows_from_snapshot(&snap);
-            self.current = snap.current;
+            self.current = if self.client { crate::tmux::current_task() } else { snap.current };
             self.sort_rows();
             self.apply_filter();
             return;
@@ -648,7 +648,14 @@ impl Overlay {
     /// mutating action (create/delete/rename).
     pub(super) fn refresh_statuses(&mut self) {
         if self.sidebar {
-            if self.refresh_from_snapshot() {
+            let done = self.refresh_from_snapshot();
+            if self.client {
+                // The snapshot's `current` is the watcher's view, up to a
+                // tick old; after a switch that lag makes "the task next to
+                // mine" the one already on screen. Ask tmux, every refresh.
+                self.current = crate::tmux::current_task();
+            }
+            if done {
                 return;
             }
             if !self.snapshot_stale {
@@ -1325,7 +1332,21 @@ impl Overlay {
                 self.current = Some(slug.clone());
                 self.client_request = Some(ClientRequest::FocusTerminal);
             }
-            if self.home || self.sidebar {
+            if self.sidebar {
+                // The column stays in view: keep the rows in the order they
+                // are on screen and the selection on the task just opened,
+                // so the next ↓ is the task below it. Only the filter goes,
+                // and the selection follows its row into the full list.
+                self.filter.clear();
+                self.apply_filter();
+                if let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].slug == slug) {
+                    self.selected = pos;
+                }
+                self.focus_search();
+                self.status_msg = None;
+                return Ok(false);
+            }
+            if self.home {
                 // Stay alive as the session's home pane — tmux already
                 // switched the current window to the task. Reset the filter
                 // and re-sort by activity so the next visit starts fresh,

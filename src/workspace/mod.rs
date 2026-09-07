@@ -394,7 +394,11 @@ fn discover_task(task_dir: &Path) -> Result<Task> {
     let name = task_dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
     let display_name = read_task_display_name(task_dir);
     let meta = fs::metadata(task_dir)?;
-    let created_at = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    // Birth time where the filesystem has one (macOS, Linux with statx). The
+    // directory's mtime is not a substitute: tenx's own cache files inside
+    // the task bump it on every open and every watcher tick, which used to
+    // reshuffle the idle tasks under the cursor.
+    let created_at = meta.created().or_else(|_| meta.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
 
     let mut repos = Vec::new();
     let mut branch = String::new();

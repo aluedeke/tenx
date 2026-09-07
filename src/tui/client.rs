@@ -85,7 +85,11 @@ impl Client {
 
     fn apply_size(&mut self, cols: u16, rows: u16) {
         self.size = (cols, rows);
-        self.narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16 || rows < crate::tmux::SMALL_CLIENT_ROWS as u16;
+        // Width alone decides: a column costs no rows, and a short wide
+        // terminal (a laptop at 28 rows) still wants the column beside
+        // the task, with tmux's status line under the task, not the whole
+        // window.
+        self.narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
         self.column_width = tenx_core::sidebar::width(cols, crate::cli::sidebar::configured_width());
         let (r, c) = self.term_size();
         self.term.resize(r, c);
@@ -236,7 +240,7 @@ pub fn run(tenx_bin: &str) -> Result<()> {
 
 fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _tenx_bin: &str) -> Result<()> {
     let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
-    let narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16 || rows < crate::tmux::SMALL_CLIENT_ROWS as u16;
+    let narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
     let column_width = tenx_core::sidebar::width(cols, crate::cli::sidebar::configured_width()).min(cols / 2);
     let term_cols = if narrow { cols } else { cols - column_width };
 
