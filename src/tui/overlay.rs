@@ -357,6 +357,11 @@ pub(super) struct Overlay {
 
     /// Window signals as of the last slow refresh (see `refresh_statuses`).
     signals: workspace::Signals,
+    /// Open task windows by slug, from the same `list-windows` as `signals`.
+    /// The per-task cache file is *not* used here: it outlives a closed
+    /// window and a restarted server, and a row that only looks open makes
+    /// the arrows stop on it for nothing.
+    window_ids: std::collections::HashMap<String, String>,
     /// Slug of the session's current window, if it's a task — gets the
     /// "current" chip.
     current: Option<String>,
@@ -469,6 +474,7 @@ impl Overlay {
             list_area: Rect::default(),
             last_swept: None,
             signals: workspace::Signals::new(),
+            window_ids: std::collections::HashMap::new(),
             current: None,
             slow_refreshed: None,
             preview: Preview::default(),
@@ -545,7 +551,7 @@ impl Overlay {
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
             for task in ws.tasks().unwrap_or_default() {
                 let state = workspace::resolve_task_state(&task.path, &sessions, signals);
-                let window_id = read_window_id(&task.path);
+                let window_id = self.window_ids.get(&task.name).cloned();
                 let secrets_pending = workspace::secrets_pending(&task.path);
                 let secrets_pending_set = workspace::secrets_pending_set(&task.path);
                 let section = if !secrets_pending.is_empty() || !secrets_pending_set.is_empty() {
@@ -712,7 +718,7 @@ impl Overlay {
             r.pane = state.pane;
             r.activity = state.changed.unwrap_or(r.activity);
             if slow {
-                r.window_id = read_window_id(&r.path);
+                r.window_id = self.window_ids.get(&r.slug).cloned();
                 r.live = crate::live::read(&r.path);
             }
         }
@@ -723,6 +729,7 @@ impl Overlay {
     fn refresh_windows(&mut self) {
         let windows = crate::tmux::list_windows().unwrap_or_default();
         self.signals = crate::tmux::signals_from(&windows);
+        self.window_ids = windows.iter().map(|w| (w.name.clone(), w.id.clone())).collect();
         self.current = windows
             .iter()
             .find(|w| w.active && w.name != crate::tmux::HOME_WINDOW)
@@ -800,9 +807,15 @@ impl Overlay {
     /// each press is a switch — while j/k walk every row. Elsewhere both
     /// walk every row.
     fn nav_down(&mut self, open_only: bool) {
+        let (was_list, before) = (self.focus == Focus::List, self.cur_sel());
         self.step_down();
-        if open_only && self.sidebar {
-            self.skip_closed(1);
+        if open_only && self.sidebar && !self.skip_closed(1) {
+            // Nothing open below: stay exactly where we were.
+            if was_list {
+                self.set_cur_sel(before);
+            } else {
+                self.focus_search();
+            }
         }
         self.follow_selection();
     }
@@ -812,38 +825,32 @@ impl Overlay {
     /// list is entered at the task you are sitting in (`own_row`), so the
     /// first Up goes to the task above it.
     fn nav_up(&mut self, open_only: bool) {
-        let from = self.cur_sel();
+        let (was_list, before) = (self.focus == Focus::List, self.cur_sel());
         self.step_up();
-        if open_only && self.sidebar && self.focus == Focus::List {
-            self.skip_closed(-1);
-            // Nothing open above: stay where we were rather than sliding
-            // to the top's search field.
-            if self.selected_row().is_some_and(|r| r.window_id.is_none()) {
-                self.set_cur_sel(from);
+        if open_only && self.sidebar && self.focus == Focus::List && !self.skip_closed(-1) {
+            // Nothing open above: stay exactly where we were.
+            if was_list {
+                self.set_cur_sel(before);
+            } else {
+                self.focus_search();
             }
         }
         self.follow_selection();
     }
 
     /// Move the selection on in `dir` until it rests on a task whose window
-    /// is open; stays put when there is none that way.
-    fn skip_closed(&mut self, dir: i32) {
+    /// is open. `false` (selection unchanged) when there is none that way.
+    fn skip_closed(&mut self, dir: i32) -> bool {
         if self.tab != Tab::Tasks || self.focus != Focus::List {
-            return;
+            return true;
         }
-        let open = |o: &Self, i: usize| o.filtered.get(i).and_then(|&r| o.rows.get(r)).is_some_and(|r| r.window_id.is_some());
-        let start = self.selected;
-        let mut i = start as i64;
-        loop {
-            if open(self, i as usize) {
-                self.selected = i as usize;
-                return;
+        let open: Vec<bool> = self.filtered.iter().map(|&r| self.rows[r].window_id.is_some()).collect();
+        match step_to_open(&open, self.selected, dir) {
+            Some(i) => {
+                self.selected = i;
+                true
             }
-            i += dir as i64;
-            if i < 0 || i as usize >= self.filtered.len() {
-                self.selected = start;
-                return;
-            }
+            None => false,
         }
     }
 
@@ -2029,16 +2036,22 @@ pub fn run(surface: Surface) -> Result<()> {
     Ok(())
 }
 
-fn epoch(secs: u64) -> SystemTime {
-    std::time::UNIX_EPOCH + Duration::from_secs(secs)
+/// From `from` (inclusive), the first index in direction `dir` whose entry
+/// is open — the rule behind the column's arrow keys.
+fn step_to_open(open: &[bool], from: usize, dir: i32) -> Option<usize> {
+    let mut i = from as i64;
+    while i >= 0 && (i as usize) < open.len() {
+        if open[i as usize] {
+            return Some(i as usize);
+        }
+        i += dir as i64;
+    }
+    None
 }
 
-/// The task's cached tmux window id, if any (`tmux::WINDOW_ID_FILE`).
-fn read_window_id(task_dir: &std::path::Path) -> Option<String> {
-    std::fs::read_to_string(task_dir.join(crate::tmux::WINDOW_ID_FILE))
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+
+fn epoch(secs: u64) -> SystemTime {
+    std::time::UNIX_EPOCH + Duration::from_secs(secs)
 }
 
 const TICK: Duration = Duration::from_millis(500);
@@ -3067,4 +3080,22 @@ fn field_line<'a>(focused: bool, label: &str, value: &str) -> Line<'a> {
         Span::styled(format!("{prefix}{label}: "), label_style),
         Span::styled(value.to_string(), value_style),
     ])
+}
+
+#[cfg(test)]
+mod nav_tests {
+    use super::step_to_open;
+
+    #[test]
+    fn arrows_land_on_open_rows_only() {
+        //            0      1      2     3      4
+        let open = [true, false, false, true, false];
+        assert_eq!(step_to_open(&open, 1, 1), Some(3));
+        assert_eq!(step_to_open(&open, 3, 1), Some(3));
+        assert_eq!(step_to_open(&open, 4, 1), None);
+        assert_eq!(step_to_open(&open, 2, -1), Some(0));
+        assert_eq!(step_to_open(&open, 4, -1), Some(3));
+        assert_eq!(step_to_open(&[false, false], 1, -1), None);
+        assert_eq!(step_to_open(&[], 0, 1), None);
+    }
 }
