@@ -194,7 +194,7 @@ enum Tab {
 
 /// Telescope-style input mode for the list view. Insert = type filters (default,
 /// fast switch); Normal = vim keys (`j/k`, `dd`, `gt`, …).
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum InputMode {
     Insert,
     Normal,
@@ -202,7 +202,7 @@ enum InputMode {
 
 /// Where the single cursor lives: the search field, or a list row. Invariant:
 /// `Search` implies Insert mode (you can only type while focused on search).
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Focus {
     Search,
     List,
@@ -419,6 +419,33 @@ impl Overlay {
         {
             self.selected = pos;
         }
+    }
+
+    /// One line of state for the client's trace log: mode, selection (with
+    /// its slug and whether its window is open), the current task, filter,
+    /// and the slugs on screen in order.
+    pub(super) fn trace_state(&self) -> String {
+        let sel = self
+            .selected_row()
+            .map(|r| format!("{}:{}{}", self.selected, r.slug, if r.window_id.is_some() { "" } else { "(closed)" }))
+            .unwrap_or_else(|| "-".into());
+        let order: Vec<String> = self
+            .filtered
+            .iter()
+            .map(|&i| {
+                let r = &self.rows[i];
+                format!("{}{}", r.slug, if r.window_id.is_some() { "" } else { "~" })
+            })
+            .collect();
+        format!(
+            "{:?}/{:?} sel={sel} current={:?} filter={:?} stale={} rows=[{}]",
+            self.focus,
+            self.input_mode,
+            self.current,
+            self.filter,
+            self.snapshot_stale,
+            order.join(" ")
+        )
     }
 
     /// The client's pending request, if the last event made one.
@@ -953,6 +980,16 @@ impl Overlay {
 
     // ── Mouse dispatch ────────────────────────────────────────────────────────
 
+    /// Scroll the list by `delta` items without touching the selection.
+    /// While a row is selected ratatui keeps it in view, so the view can't
+    /// leave the selection behind; from the search field it scrolls freely.
+    fn scroll_view(&mut self, delta: i32) {
+        let items = self.item_heights.len().max(1);
+        let cur = self.list_state.offset() as i32;
+        let next = (cur + delta).clamp(0, items as i32 - 1) as usize;
+        *self.list_state.offset_mut() = next;
+    }
+
     /// Handle a mouse event in the list view (the modal forms stay
     /// keyboard-only). Wheel scrolls the selection; clicking a tab header, the
     /// search box, or a task/repo row focuses it. Deliberately NO click-to-jump:
@@ -968,8 +1005,10 @@ impl Overlay {
             return Ok(false);
         }
         match m.kind {
-            MouseEventKind::ScrollDown => self.step_down(),
-            MouseEventKind::ScrollUp => self.step_up(),
+            // The wheel scrolls the view, never the selection: a trackpad
+            // brushing the column must not change what ↓ does next.
+            MouseEventKind::ScrollDown => self.scroll_view(1),
+            MouseEventKind::ScrollUp => self.scroll_view(-1),
             MouseEventKind::Down(MouseButton::Left) => {
                 if mouse::hit(self.tabs_area, m.column, m.row) {
                     // Two tabs split the bar width; left half = Tasks, right = Repos.

@@ -135,6 +135,7 @@ impl Client {
     fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
             self.cycle();
+            self.trace("key Ctrl+w");
             return Ok(());
         }
         match self.focus {
@@ -148,6 +149,7 @@ impl Client {
                 if let Some(req) = self.overlay.take_request() {
                     self.handle_request(req);
                 }
+                self.trace(&format!("key {:?} {:?}", key.modifiers, key.code));
             }
         }
         Ok(())
@@ -156,18 +158,24 @@ impl Client {
     fn handle_mouse(&mut self, m: MouseEvent) -> Result<()> {
         let full = Rect::new(0, 0, self.size.0, self.size.1);
         let (column, term) = self.layout(full);
+        // Only a click moves the keyboard; the pointer resting or scrolling
+        // over the column must not.
+        let click = matches!(m.kind, event::MouseEventKind::Down(_));
         if let Some(c) = column
             && super::mouse::hit(c, m.column, m.row)
         {
-            self.focus = Focus::Column;
+            if click {
+                self.focus = Focus::Column;
+            }
             self.overlay.handle_mouse(m)?;
             if let Some(req) = self.overlay.take_request() {
                 self.handle_request(req);
             }
+            self.trace(&format!("mouse {:?} in column", m.kind));
             return Ok(());
         }
         if super::mouse::hit(term, m.column, m.row) {
-            if matches!(m.kind, event::MouseEventKind::Down(_)) {
+            if click {
                 self.focus = Focus::Terminal;
             }
             if let Some(bytes) = self.term.mouse_bytes(&m, m.column - term.x, m.row - term.y) {
@@ -175,6 +183,23 @@ impl Client {
             }
         }
         Ok(())
+    }
+
+    /// Append a line to `$TENX_CLIENT_LOG` (when set): what the client did
+    /// and where the column stands afterwards. For chasing input trouble in
+    /// a real session, where a headless harness can't follow.
+    fn trace(&self, what: &str) {
+        let Some(path) = std::env::var_os("TENX_CLIENT_LOG") else { return };
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            use std::io::Write;
+            let _ = writeln!(
+                f,
+                "{} focus={} {what} | {}",
+                chrono_stamp(),
+                if self.focus == Focus::Column { "column" } else { "terminal" },
+                self.overlay.trace_state()
+            );
+        }
     }
 
     fn tick(&mut self) {
@@ -211,6 +236,13 @@ impl Client {
             f.set_cursor_position((x, y));
         }
     }
+}
+
+/// Seconds since the epoch with millis — enough to line a trace up with
+/// what you saw.
+fn chrono_stamp() -> String {
+    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    format!("{}.{:03}", d.as_secs() % 100_000, d.subsec_millis())
 }
 
 pub fn run(tenx_bin: &str) -> Result<()> {
