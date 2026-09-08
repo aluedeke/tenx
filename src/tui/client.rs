@@ -294,13 +294,20 @@ fn chrono_stamp() -> String {
 
 pub fn run(tenx_bin: &str) -> Result<()> {
     crate::tmux::ensure_session(tenx_bin)?;
-    // The column is the list; landing on the home window would show the
-    // list twice. Start on a task window when there is one.
-    if let Ok(windows) = crate::tmux::list_windows()
-        && windows.iter().any(|w| w.active && w.name == crate::tmux::HOME_WINDOW)
-        && let Some(task) = windows.iter().find(|w| w.name != crate::tmux::HOME_WINDOW)
-    {
-        let _ = crate::tmux::select_window(&task.id);
+    // The column is the list: a pane sidebar inside a window (from before
+    // this client, or the pane-sidebar layout) would be a second one with
+    // its own filter and cursor. Close them all, restoring each window's
+    // layout; and start on a task window, since home would show the list
+    // twice too.
+    if let Ok(windows) = crate::tmux::list_windows() {
+        for w in windows.iter().filter(|w| w.name != crate::tmux::HOME_WINDOW) {
+            let _ = crate::tmux::close_sidebar(&w.id);
+        }
+        if windows.iter().any(|w| w.active && w.name == crate::tmux::HOME_WINDOW)
+            && let Some(task) = windows.iter().find(|w| w.name != crate::tmux::HOME_WINDOW)
+        {
+            let _ = crate::tmux::select_window(&task.id);
+        }
     }
 
     let orig = std::panic::take_hook();
