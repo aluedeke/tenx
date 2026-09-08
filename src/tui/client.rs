@@ -97,9 +97,15 @@ impl Client {
 
     fn show_column(&mut self) {
         self.column_shown = true;
-        self.focus = Focus::Column;
+        self.focus_column();
         let (r, c) = self.term_size();
         self.term.resize(r, c);
+    }
+
+    /// Keyboard into the column, cursor on the task you are in.
+    fn focus_column(&mut self) {
+        self.focus = Focus::Column;
+        self.overlay.select_current();
     }
 
     fn hide_column(&mut self) {
@@ -114,7 +120,7 @@ impl Client {
     fn cycle(&mut self) {
         match (self.column_shown, self.focus) {
             (true, Focus::Column) => self.hide_column(),
-            (true, Focus::Terminal) => self.focus = Focus::Column,
+            (true, Focus::Terminal) => self.focus_column(),
             (false, _) => self.show_column(),
         }
     }

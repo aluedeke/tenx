@@ -847,6 +847,16 @@ impl Overlay {
         self.follow_selection();
     }
 
+    /// Put the cursor on the task you are in (Normal mode, row highlighted):
+    /// what Ctrl+w lands on, so the list reads "you are here" and the next
+    /// ↓ is the task below. `/` or `i` from there types a filter.
+    pub(super) fn select_current(&mut self) {
+        if let Some(p) = self.own_row() {
+            self.selected = p;
+            self.focus_list();
+        }
+    }
+
     /// The selected task's title when it has no open window (and the list
     /// has the cursor) — what the client shows an empty screen for.
     pub(super) fn selected_closed(&self) -> Option<String> {
@@ -2078,7 +2088,12 @@ fn run_loop(
                 // Coming back to look at the overlay (home tab refocused, or
                 // the terminal regained focus) counts as a reopen — recompute
                 // the activity ordering once, here, not on every tick.
-                Event::FocusGained if overlay.sidebar => overlay.focused = true,
+                Event::FocusGained if overlay.sidebar => {
+                    overlay.focused = true;
+                    if matches!(overlay.mode, Mode::List) {
+                        overlay.select_current();
+                    }
+                }
                 Event::FocusLost if overlay.sidebar => overlay.focused = false,
                 Event::FocusGained if matches!(overlay.mode, Mode::List) => {
                     overlay.rebuild_rows();
