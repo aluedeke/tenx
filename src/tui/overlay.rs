@@ -830,20 +830,11 @@ impl Overlay {
 
     /// Down: from Search, enter the list at the top (→ Normal); within the list,
     /// move down clamped at the bottom (no wraparound).
-    /// `open_only`: in the column, ↓ visits only tasks with an open window —
-    /// each press is a switch — while j/k walk every row. Elsewhere both
-    /// walk every row.
-    fn nav_down(&mut self, open_only: bool) {
-        let (was_list, before) = (self.focus == Focus::List, self.cur_sel());
+    /// Every row, closed tasks included: in the column, landing on an open
+    /// task switches to its window (`follow_selection`); landing on a
+    /// closed one shows the client's "⏎ to open" screen instead.
+    fn nav_down(&mut self) {
         self.step_down();
-        if open_only && self.sidebar && !self.skip_closed(1) {
-            // Nothing open below: stay exactly where we were.
-            if was_list {
-                self.set_cur_sel(before);
-            } else {
-                self.focus_search();
-            }
-        }
         self.follow_selection();
     }
 
@@ -851,34 +842,18 @@ impl Overlay {
     /// (→ Insert). In Search, stay put — except in the sidebar, where the
     /// list is entered at the task you are sitting in (`own_row`), so the
     /// first Up goes to the task above it.
-    fn nav_up(&mut self, open_only: bool) {
-        let (was_list, before) = (self.focus == Focus::List, self.cur_sel());
+    fn nav_up(&mut self) {
         self.step_up();
-        if open_only && self.sidebar && self.focus == Focus::List && !self.skip_closed(-1) {
-            // Nothing open above: stay exactly where we were.
-            if was_list {
-                self.set_cur_sel(before);
-            } else {
-                self.focus_search();
-            }
-        }
         self.follow_selection();
     }
 
-    /// Move the selection on in `dir` until it rests on a task whose window
-    /// is open. `false` (selection unchanged) when there is none that way.
-    fn skip_closed(&mut self, dir: i32) -> bool {
+    /// The selected task's title when it has no open window (and the list
+    /// has the cursor) — what the client shows an empty screen for.
+    pub(super) fn selected_closed(&self) -> Option<String> {
         if self.tab != Tab::Tasks || self.focus != Focus::List {
-            return true;
+            return None;
         }
-        let open: Vec<bool> = self.filtered.iter().map(|&r| self.rows[r].window_id.is_some()).collect();
-        match step_to_open(&open, self.selected, dir) {
-            Some(i) => {
-                self.selected = i;
-                true
-            }
-            None => false,
-        }
+        self.selected_row().filter(|r| r.window_id.is_none()).map(|r| r.title.clone())
     }
 
     /// The movement of `nav_down` without the sidebar's window switch — the
@@ -1118,10 +1093,10 @@ impl Overlay {
                     return self.jump();
                 }
             }
-            KeyCode::Down => self.nav_down(true),
-            KeyCode::Up => self.nav_up(true),
-            KeyCode::Char('j') if ctrl => self.nav_down(false),
-            KeyCode::Char('k') if ctrl => self.nav_up(false),
+            KeyCode::Down => self.nav_down(),
+            KeyCode::Up => self.nav_up(),
+            KeyCode::Char('j') if ctrl => self.nav_down(),
+            KeyCode::Char('k') if ctrl => self.nav_up(),
             // `:` reaches the pane (zellij doesn't grab it), unlike Ctrl/Alt.
             KeyCode::Char(':') if !ctrl => {
                 self.status_msg = None;
@@ -1165,10 +1140,8 @@ impl Overlay {
             KeyCode::Char('g') => self.pending = Some('g'),
             KeyCode::Char('d') => self.pending = Some('d'),
             KeyCode::Char('G') => self.move_bottom(),
-            KeyCode::Down => self.nav_down(true),
-            KeyCode::Up => self.nav_up(true),
-            KeyCode::Char('j') => self.nav_down(false),
-            KeyCode::Char('k') => self.nav_up(false),
+            KeyCode::Char('j') | KeyCode::Down => self.nav_down(),
+            KeyCode::Char('k') | KeyCode::Up => self.nav_up(),
             KeyCode::Tab | KeyCode::BackTab => self.toggle_tab(),
             // `n` for a new task (matches the `:n`/`:new` command below),
             // `a` to add a repo — distinct verbs, distinct letters.
@@ -2075,20 +2048,6 @@ pub fn run(surface: Surface) -> Result<()> {
     Ok(())
 }
 
-/// From `from` (inclusive), the first index in direction `dir` whose entry
-/// is open — the rule behind the column's arrow keys.
-fn step_to_open(open: &[bool], from: usize, dir: i32) -> Option<usize> {
-    let mut i = from as i64;
-    while i >= 0 && (i as usize) < open.len() {
-        if open[i as usize] {
-            return Some(i as usize);
-        }
-        i += dir as i64;
-    }
-    None
-}
-
-
 fn epoch(secs: u64) -> SystemTime {
     std::time::UNIX_EPOCH + Duration::from_secs(secs)
 }
@@ -2390,7 +2349,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
                 (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
                 (InputMode::Normal, Tab::Tasks) if overlay.selected_answerable() => " y/N answer · ⏎ open",
                 (InputMode::Normal, Tab::Tasks) if overlay.selected_row().is_some_and(|r| r.window_id.is_none()) => {
-                    " ⏎ open · ↓↑ open tasks · j/k all"
+                    " closed · ⏎ open · ↓↑ move"
                 }
                 (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · n new · x close",
                 (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab",
@@ -2738,7 +2697,7 @@ fn sidebar_items(
 
         let selected = pos == overlay.selected && overlay.focus == Focus::List;
         let is_current = overlay.current.as_deref() == Some(row.slug.as_str());
-        // Closed tasks (no window) read dimmer: ↓/↑ skip them, ⏎ opens.
+        // Closed tasks (no window) read dimmer; ⏎ opens them.
         let title_fg = if selected {
             palette::SEL_TEXT.color()
         } else if is_current {
@@ -3119,22 +3078,4 @@ fn field_line<'a>(focused: bool, label: &str, value: &str) -> Line<'a> {
         Span::styled(format!("{prefix}{label}: "), label_style),
         Span::styled(value.to_string(), value_style),
     ])
-}
-
-#[cfg(test)]
-mod nav_tests {
-    use super::step_to_open;
-
-    #[test]
-    fn arrows_land_on_open_rows_only() {
-        //            0      1      2     3      4
-        let open = [true, false, false, true, false];
-        assert_eq!(step_to_open(&open, 1, 1), Some(3));
-        assert_eq!(step_to_open(&open, 3, 1), Some(3));
-        assert_eq!(step_to_open(&open, 4, 1), None);
-        assert_eq!(step_to_open(&open, 2, -1), Some(0));
-        assert_eq!(step_to_open(&open, 4, -1), Some(3));
-        assert_eq!(step_to_open(&[false, false], 1, -1), None);
-        assert_eq!(step_to_open(&[], 0, 1), None);
-    }
 }

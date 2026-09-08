@@ -220,7 +220,17 @@ impl Client {
     fn draw(&mut self, f: &mut ratatui::Frame) {
         let full = f.area();
         let (column, term) = self.layout(full);
-        let cursor = self.term.render(term, f.buffer_mut());
+        // Moving onto a closed task shows an empty screen in its place; the
+        // session keeps running behind it and returns the moment focus does.
+        let closed = if self.focus == Focus::Column { self.overlay.selected_closed() } else { None };
+        let cursor = match closed {
+            Some(title) => {
+                f.render_widget(ratatui::widgets::Clear, term);
+                render_closed(f, term, &title);
+                None
+            }
+            None => self.term.render(term, f.buffer_mut()),
+        };
         if let Some(c) = column {
             // The overlay paints its ground but keeps whatever symbols are
             // there; on a narrow client it covers the terminal, so wipe first.
@@ -236,6 +246,31 @@ impl Client {
             f.set_cursor_position((x, y));
         }
     }
+}
+
+/// The task area while the column rests on a task with no window: its
+/// title, and the one thing to do.
+fn render_closed(f: &mut ratatui::Frame, area: Rect, title: &str) {
+    use ratatui::style::{Modifier, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Block, Paragraph};
+    let p = &crate::palette::GROUND;
+    f.render_widget(Block::default().style(Style::default().bg(p.color())), area);
+    if area.height < 3 {
+        return;
+    }
+    let lines = vec![
+        Line::from(Span::styled(title.to_string(), Style::default().fg(crate::palette::BRIGHT.color()).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("no window open", Style::default().fg(crate::palette::MUTED.color()))),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("⏎", Style::default().fg(crate::palette::ACCENT.color()).add_modifier(Modifier::BOLD)),
+            Span::styled(" open it here", Style::default().fg(crate::palette::TEXT.color())),
+        ]),
+    ];
+    let y = area.y + area.height / 2 - 2;
+    let block = Rect { x: area.x, y, width: area.width, height: 4.min(area.height) };
+    f.render_widget(Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center), block);
 }
 
 /// Seconds since the epoch with millis — enough to line a trace up with
