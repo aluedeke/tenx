@@ -857,6 +857,15 @@ impl Overlay {
         }
     }
 
+    /// The keyboard left the column: drop the row highlight so the list
+    /// shows no cursor while the task has it. Ctrl+w brings it back on the
+    /// current task (`select_current`).
+    pub(super) fn blur(&mut self) {
+        if matches!(self.mode, Mode::List) {
+            self.focus_search();
+        }
+    }
+
     /// The selected task's title when it has no open window (and the list
     /// has the cursor) — what the client shows an empty screen for.
     pub(super) fn selected_closed(&self) -> Option<String> {
@@ -2094,7 +2103,10 @@ fn run_loop(
                         overlay.select_current();
                     }
                 }
-                Event::FocusLost if overlay.sidebar => overlay.focused = false,
+                Event::FocusLost if overlay.sidebar => {
+                    overlay.focused = false;
+                    overlay.blur();
+                }
                 Event::FocusGained if matches!(overlay.mode, Mode::List) => {
                     overlay.rebuild_rows();
                     overlay.maybe_sweep();

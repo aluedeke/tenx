@@ -102,6 +102,12 @@ impl Client {
         self.term.resize(r, c);
     }
 
+    /// Keyboard into the task; the column shows no cursor meanwhile.
+    fn focus_terminal(&mut self) {
+        self.focus = Focus::Terminal;
+        self.overlay.blur();
+    }
+
     /// Keyboard into the column, cursor on the task you are in.
     fn focus_column(&mut self) {
         self.focus = Focus::Column;
@@ -110,7 +116,7 @@ impl Client {
 
     fn hide_column(&mut self) {
         self.column_shown = false;
-        self.focus = Focus::Terminal;
+        self.focus_terminal();
         let (r, c) = self.term_size();
         self.term.resize(r, c);
     }
@@ -128,7 +134,7 @@ impl Client {
     fn handle_request(&mut self, req: ClientRequest) {
         match req {
             ClientRequest::FocusTerminal => {
-                self.focus = Focus::Terminal;
+                self.focus_terminal();
                 if self.narrow {
                     self.hide_column();
                 }
@@ -182,7 +188,7 @@ impl Client {
         }
         if super::mouse::hit(term, m.column, m.row) {
             if click {
-                self.focus = Focus::Terminal;
+                self.focus_terminal();
             }
             if let Some(bytes) = self.term.mouse_bytes(&m, m.column - term.x, m.row - term.y) {
                 self.term.write(&bytes);
