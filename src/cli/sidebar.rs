@@ -16,10 +16,15 @@ pub fn configured_width() -> u16 {
     crate::workspace::load_global().map(|g| g.sidebar_width).unwrap_or(0)
 }
 
-/// `Some(width)` when the global config wants a sidebar in new windows.
+/// `Some(width)` when the global config wants a sidebar pane in new
+/// windows — and no `tenx client` is drawing the column already
+/// (`tmux::CLIENT_OPTION`).
 pub fn wanted() -> Option<u16> {
     let global = crate::workspace::load_global().unwrap_or_default();
-    global.sidebar.then_some(global.sidebar_width)
+    if !global.sidebar || crate::tmux::global_option(crate::tmux::CLIENT_OPTION).is_some() {
+        return None;
+    }
+    Some(global.sidebar_width)
 }
 
 /// Ctrl+w: from the task, bring up the list — focus the window's sidebar,

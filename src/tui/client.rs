@@ -315,7 +315,11 @@ pub fn run(tenx_bin: &str) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // While a client draws the column, new windows must not grow a pane
+    // sidebar too (`cli::sidebar::wanted`).
+    let _ = crate::tmux::set_global_option(crate::tmux::CLIENT_OPTION, "1");
     let result = run_client(&mut terminal, tenx_bin);
+    let _ = crate::tmux::unset_global_option(crate::tmux::CLIENT_OPTION);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste)?;

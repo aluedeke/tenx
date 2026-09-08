@@ -91,7 +91,7 @@ pub fn new_with(
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_script: if layout.is_empty() { None } else { Some(layout) },
             resume: false, // brand-new task — no conversation to continue
-            sidebar: global.sidebar.then_some(global.sidebar_width),
+            sidebar: crate::cli::sidebar::wanted(),
             tenx_bin: &tenx_bin()?,
         };
         let id = crate::tmux::open_task_window(&opts)?;

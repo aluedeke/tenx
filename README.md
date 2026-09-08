@@ -142,7 +142,7 @@ Every task window also carries the list as a column on its left, about a fifth o
 
 ### The client (experimental)
 
-`tenx client` is the same layout done the other way round: one process that owns your terminal, draws the task list as a column on the left, and shows the tmux session on the right through an embedded terminal. tmux stays underneath exactly as before, so the session, the watcher, sweep and secrets are untouched, and quitting the client leaves everything running. Because the column is one process per terminal, its selection and filter survive switching tasks: `Down` always means the next task. `Ctrl+w` shows the column with the cursor on the task you are in, or hides it from inside; `Enter` opens a task and puts the cursor in it; `/` types a filter; `:q` quits the client. On a narrow terminal the column is hidden and `Ctrl+w` shows the list over the whole screen. Set `sidebar = false` in the global config so task windows don't also carry the pane sidebar. It is a spike: terminal fidelity inside the client (colours, wide characters, mouse, paste) is what it has to prove.
+`tenx client` is the same layout done the other way round: one process that owns your terminal, draws the task list as a column on the left, and shows the tmux session on the right through an embedded terminal. tmux stays underneath exactly as before, so the session, the watcher, sweep and secrets are untouched, and quitting the client leaves everything running. Because the column is one process per terminal, its selection and filter survive switching tasks: `Down` always means the next task. `Ctrl+w` shows the column with the cursor on the task you are in, or hides it from inside; `Enter` opens a task and puts the cursor in it; `/` types a filter; `:q` quits the client. On a narrow terminal the column is hidden and `Ctrl+w` shows the list over the whole screen. Windows created while a client runs get no pane sidebar, so the column is never doubled. It is a spike: terminal fidelity inside the client (colours, wide characters, mouse, paste) is what it has to prove.
 
 ## Commands
 
@@ -224,7 +224,7 @@ Global `~/.config/tenx/config.toml`:
 
 ```toml
 bare_dir = ""        # optional override for where bare clones live
-sidebar = true       # a sidebar in every new task window; false for the popup-only layout
+sidebar = false      # true: a sidebar pane inside every new task window (the pre-client layout)
 sidebar_width = 0    # columns; 0 = a fifth of the window, between 30 and 48
 ```
 

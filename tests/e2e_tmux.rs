@@ -50,6 +50,10 @@ impl Harness {
         )
         .unwrap();
 
+        // This test exercises the sidebar pane, which is opt-in.
+        fs::create_dir_all(h.root.join("home/.config/tenx")).unwrap();
+        fs::write(h.root.join("home/.config/tenx/config.toml"), "sidebar = true\n").unwrap();
+
         // The server, from the generated config, with a placeholder home window.
         let conf = h.root.join("tmux.conf");
         let out = h.tenx().args(["internal", "tmux-conf"]).output().unwrap();

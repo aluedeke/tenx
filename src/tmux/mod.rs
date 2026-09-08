@@ -64,6 +64,11 @@ pub const SMALL_CLIENT_ROWS: u32 = 30;
 /// [`list_panes`] tells the task list from the task. A pane option, not a
 /// window one: it names *which* pane.
 pub const SIDEBAR_OPTION: &str = "@tenx_sidebar";
+/// Global option a running `tenx client` sets (and clears on exit): the
+/// column is drawn outside tmux, so windows created meanwhile must not get
+/// a sidebar pane as well.
+pub const CLIENT_OPTION: &str = "@tenx_client";
+
 /// Window options holding the window's layout string as it was with and
 /// without the sidebar, saved at each show/hide so the other transition
 /// can restore it (see [`open_sidebar`] and [`close_sidebar`]).
@@ -724,6 +729,17 @@ pub fn window_layout(window: &str) -> Result<String> {
 
 pub fn select_layout(window: &str, layout: &str) -> Result<()> {
     run(&["select-layout", "-t", window, layout]).map(drop)
+}
+
+/// A global user option's value, `None` when unset.
+pub fn global_option(option: &str) -> Option<String> {
+    let text = run(&["show-options", "-gqv", option]).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+pub fn unset_global_option(option: &str) -> Result<()> {
+    run(&["set-option", "-gu", option]).map(drop)
 }
 
 /// A window user option's value, `None` when unset.

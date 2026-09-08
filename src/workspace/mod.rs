@@ -24,28 +24,19 @@ pub enum WorkspaceError {
     RepoNotFound(String),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct GlobalConfig {
     #[serde(default)]
     pub bare_dir: String,
-    /// Give every task window a sidebar pane — the task list as a column on
-    /// the left, cmux-style (see `tmux::open_sidebar`). Off: the overlay is
-    /// only the home window and the Ctrl+w popup, as before.
-    #[serde(default = "default_true")]
+    /// Give every task window a sidebar *pane* — the task list as a column
+    /// inside the tmux window (see `tmux::open_sidebar`). Off by default:
+    /// `tenx client` draws the column outside tmux, and a pane sidebar
+    /// inside a window it shows would be a second column.
+    #[serde(default)]
     pub sidebar: bool,
     /// Sidebar width in columns; 0 = automatic (`tenx_core::sidebar::width`).
     #[serde(default)]
     pub sidebar_width: u16,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-impl Default for GlobalConfig {
-    fn default() -> Self {
-        GlobalConfig { bare_dir: String::new(), sidebar: true, sidebar_width: 0 }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
