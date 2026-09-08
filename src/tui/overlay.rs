@@ -287,6 +287,10 @@ pub(super) struct Overlay {
     /// and focus moves via `client_request`.
     client: bool,
     client_request: Option<ClientRequest>,
+    /// Whether the keyboard is in the column (the sidebar pane has focus;
+    /// the client's focus is on its column). The column only re-sorts
+    /// itself while this is false — never under a moving cursor.
+    pub(super) focused: bool,
     /// Running as a task window's sidebar pane (`Surface::Sidebar`): rows
     /// come from the watcher's snapshot while it is fresh, there is no
     /// preview panel (the task is right there), a jump focuses the task and
@@ -386,6 +390,32 @@ impl Overlay {
         o
     }
 
+    /// A row whose status moved it to another section since the rows were
+    /// last built — the list's grouping is stale.
+    pub(super) fn sections_stale(&self) -> bool {
+        self.rows.iter().any(|r| {
+            let now = if r.secrets_pending.is_empty() && r.secrets_pending_set.is_empty() {
+                r.status.group()
+            } else {
+                workspace::TaskGroup::SecretsPending
+            };
+            now != r.section
+        })
+    }
+
+    /// Rebuild (re-group and re-sort) while keeping the selection on the
+    /// same task. The column calls this while the keyboard is elsewhere,
+    /// so rows move only when nobody is moving through them.
+    pub(super) fn tidy(&mut self) {
+        let keep = self.selected_row().map(|r| r.slug.clone());
+        self.rebuild_rows();
+        if let Some(slug) = keep
+            && let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].slug == slug)
+        {
+            self.selected = pos;
+        }
+    }
+
     /// The client's pending request, if the last event made one.
     pub(super) fn take_request(&mut self) -> Option<ClientRequest> {
         self.client_request.take()
@@ -409,6 +439,7 @@ impl Overlay {
             home: surface == Surface::Home,
             client: surface == Surface::Client,
             client_request: None,
+            focused: true,
             sidebar: matches!(surface, Surface::Sidebar | Surface::Client),
             own_window: None,
             own_slug: None,
@@ -765,8 +796,14 @@ impl Overlay {
 
     /// Down: from Search, enter the list at the top (→ Normal); within the list,
     /// move down clamped at the bottom (no wraparound).
-    fn nav_down(&mut self) {
+    /// `open_only`: in the column, ↓ visits only tasks with an open window —
+    /// each press is a switch — while j/k walk every row. Elsewhere both
+    /// walk every row.
+    fn nav_down(&mut self, open_only: bool) {
         self.step_down();
+        if open_only && self.sidebar {
+            self.skip_closed(1);
+        }
         self.follow_selection();
     }
 
@@ -774,9 +811,40 @@ impl Overlay {
     /// (→ Insert). In Search, stay put — except in the sidebar, where the
     /// list is entered at the task you are sitting in (`own_row`), so the
     /// first Up goes to the task above it.
-    fn nav_up(&mut self) {
+    fn nav_up(&mut self, open_only: bool) {
+        let from = self.cur_sel();
         self.step_up();
+        if open_only && self.sidebar && self.focus == Focus::List {
+            self.skip_closed(-1);
+            // Nothing open above: stay where we were rather than sliding
+            // to the top's search field.
+            if self.selected_row().is_some_and(|r| r.window_id.is_none()) {
+                self.set_cur_sel(from);
+            }
+        }
         self.follow_selection();
+    }
+
+    /// Move the selection on in `dir` until it rests on a task whose window
+    /// is open; stays put when there is none that way.
+    fn skip_closed(&mut self, dir: i32) {
+        if self.tab != Tab::Tasks || self.focus != Focus::List {
+            return;
+        }
+        let open = |o: &Self, i: usize| o.filtered.get(i).and_then(|&r| o.rows.get(r)).is_some_and(|r| r.window_id.is_some());
+        let start = self.selected;
+        let mut i = start as i64;
+        loop {
+            if open(self, i as usize) {
+                self.selected = i as usize;
+                return;
+            }
+            i += dir as i64;
+            if i < 0 || i as usize >= self.filtered.len() {
+                self.selected = start;
+                return;
+            }
+        }
     }
 
     /// The movement of `nav_down` without the sidebar's window switch — the
@@ -1004,10 +1072,10 @@ impl Overlay {
                     return self.jump();
                 }
             }
-            KeyCode::Down => self.nav_down(),
-            KeyCode::Up => self.nav_up(),
-            KeyCode::Char('j') if ctrl => self.nav_down(),
-            KeyCode::Char('k') if ctrl => self.nav_up(),
+            KeyCode::Down => self.nav_down(true),
+            KeyCode::Up => self.nav_up(true),
+            KeyCode::Char('j') if ctrl => self.nav_down(false),
+            KeyCode::Char('k') if ctrl => self.nav_up(false),
             // `:` reaches the pane (zellij doesn't grab it), unlike Ctrl/Alt.
             KeyCode::Char(':') if !ctrl => {
                 self.status_msg = None;
@@ -1051,8 +1119,10 @@ impl Overlay {
             KeyCode::Char('g') => self.pending = Some('g'),
             KeyCode::Char('d') => self.pending = Some('d'),
             KeyCode::Char('G') => self.move_bottom(),
-            KeyCode::Char('j') | KeyCode::Down => self.nav_down(),
-            KeyCode::Char('k') | KeyCode::Up => self.nav_up(),
+            KeyCode::Down => self.nav_down(true),
+            KeyCode::Up => self.nav_up(true),
+            KeyCode::Char('j') => self.nav_down(false),
+            KeyCode::Char('k') => self.nav_up(false),
             KeyCode::Tab | KeyCode::BackTab => self.toggle_tab(),
             // `n` for a new task (matches the `:n`/`:new` command below),
             // `a` to add a repo — distinct verbs, distinct letters.
@@ -1997,6 +2067,8 @@ fn run_loop(
                 // Coming back to look at the overlay (home tab refocused, or
                 // the terminal regained focus) counts as a reopen — recompute
                 // the activity ordering once, here, not on every tick.
+                Event::FocusGained if overlay.sidebar => overlay.focused = true,
+                Event::FocusLost if overlay.sidebar => overlay.focused = false,
                 Event::FocusGained if matches!(overlay.mode, Mode::List) => {
                     overlay.rebuild_rows();
                     overlay.maybe_sweep();
@@ -2006,9 +2078,13 @@ fn run_loop(
         } else if matches!(overlay.mode, Mode::List) {
             // Idle tick — update status glyphs/ages in place; the row order
             // stays frozen (see `refresh_statuses`). The preview follows the
-            // pane live at the same cadence.
+            // pane live at the same cadence. The column re-groups itself
+            // only while the keyboard is elsewhere.
             overlay.refresh_statuses();
             overlay.refresh_preview(true);
+            if overlay.sidebar && !overlay.focused && overlay.sections_stale() {
+                overlay.tidy();
+            }
         }
 
         if let Some((ws_idx, slug)) = overlay.pending_unlock.take() {
@@ -2259,9 +2335,12 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
             // that matter here; the full hint set lives on the wide surfaces.
             let (tag, tag_style) = mode_tag(overlay.input_mode);
             let hint = match (overlay.input_mode, overlay.tab) {
-                (InputMode::Insert, _) => " filter · ⏎ open · esc",
+                (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
                 (InputMode::Normal, Tab::Tasks) if overlay.selected_answerable() => " y/N answer · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) => " ⏎ open · n new · x close",
+                (InputMode::Normal, Tab::Tasks) if overlay.selected_row().is_some_and(|r| r.window_id.is_none()) => {
+                    " ⏎ open · ↓↑ open tasks · j/k all"
+                }
+                (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · n new · x close",
                 (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab",
             };
             Line::from(vec![Span::styled(tag, tag_style), Span::styled(hint, Style::default().fg(palette::MUTED.color()))])
@@ -2607,10 +2686,13 @@ fn sidebar_items(
 
         let selected = pos == overlay.selected && overlay.focus == Focus::List;
         let is_current = overlay.current.as_deref() == Some(row.slug.as_str());
+        // Closed tasks (no window) read dimmer: ↓/↑ skip them, ⏎ opens.
         let title_fg = if selected {
             palette::SEL_TEXT.color()
         } else if is_current {
             palette::CURRENT.color()
+        } else if row.window_id.is_none() {
+            palette::MUTED.color()
         } else {
             palette::TEXT.color()
         };

@@ -182,6 +182,12 @@ impl Client {
             self.last_refresh = Instant::now();
             if self.overlay.in_list_mode() {
                 self.overlay.refresh_statuses();
+                // Re-group while the keyboard is in the task, never while
+                // it is moving through the column.
+                self.overlay.focused = self.focus == Focus::Column;
+                if self.focus == Focus::Terminal && self.overlay.sections_stale() {
+                    self.overlay.tidy();
+                }
             }
         }
     }
@@ -277,12 +283,9 @@ fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _tenx_bin: 
                     }
                 }
                 Event::Resize(c, r) => client.apply_size(c, r),
-                Event::FocusGained => {
-                    if client.overlay.in_list_mode() {
-                        client.overlay.rebuild_rows();
-                    }
-                }
-                _ => {}
+                // No rebuild on focus: the column tidies itself on its own
+                // clock (`tick`), so a click elsewhere changes nothing.
+                Event::FocusGained | Event::FocusLost => {}
             }
         }
         client.tick();
