@@ -413,6 +413,13 @@ fn client_column_beside_the_embedded_session() {
     assert_eq!(current(), "two");
     h.keys_to("p", &["Enter"]);
     h.wait_screen_of("p", "the list to hide after the jump", 3, |s| !s.contains("Tasks"));
+    // Crossing the width threshold re-lays the client out: wide brings the
+    // column beside the task, narrow again takes it away (the task keeps
+    // the keyboard, so the list must not sit on top of it).
+    h.outer_out(&["resize-window", "-t", "p", "-x", "160", "-y", "40"]);
+    h.wait_screen_of("p", "the column beside the task", 3, |s| s.contains("Tasks") && s.contains(" INSERT "));
+    h.outer_out(&["resize-window", "-t", "p", "-x", "70", "-y", "30"]);
+    h.wait_screen_of("p", "the column to fold away", 3, |s| !s.contains("Tasks"));
     // Closing the phone's terminal takes its session with it, not the windows.
     h.outer_out(&["kill-session", "-t", "p"]);
     std::thread::sleep(std::time::Duration::from_millis(500));

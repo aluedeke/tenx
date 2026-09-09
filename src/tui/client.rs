@@ -19,7 +19,9 @@
 //! everything else goes to whichever side has focus. On a narrow terminal
 //! (a phone) the column is either the whole screen or not there at all:
 //! hidden by default, Ctrl+w shows the list over the whole screen, and a
-//! jump or `:hide` puts it away again.
+//! jump or `:hide` puts it away again. A terminal that changes width across
+//! the threshold (a phone rotating, or reporting its real size a moment
+//! after connecting) is re-laid out the same way.
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -116,8 +118,19 @@ impl Client {
         // terminal (a laptop at 28 rows) still wants the column beside
         // the task, with tmux's status line under the task, not the whole
         // window.
+        let was_narrow = self.narrow;
         self.narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
         self.column_width = tenx_core::column::width(cols, configured_width());
+        // Crossing the threshold changes what "shown" means. Narrowing with
+        // the keyboard in the task must not leave the list painted over a
+        // task that is still taking the keys: the task keeps the screen and
+        // the column goes, as it would have started. Widening brings the
+        // column back beside the task, focus untouched.
+        match (was_narrow, self.narrow) {
+            (false, true) if self.column_shown && self.focus == Focus::Terminal => self.column_shown = false,
+            (true, false) => self.column_shown = true,
+            _ => {}
+        }
         let (r, c) = self.term_size();
         self.term.resize(r, c);
     }
