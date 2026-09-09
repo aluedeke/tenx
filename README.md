@@ -47,7 +47,7 @@ The state comes from tenx's own session registry plus tmux's bell flag. Every su
 
 Optional, picked up when present:
 
-- A coding agent: `claude` (Claude Code, the default), `codex` (Codex CLI), or `pi`. The default window layout starts the task's agent; set the workspace default with `agent = "codex"` in `config.toml`, or a task's with `tenx task agent <slug> <agent>` / `tenx task new --agent <agent>`.
+- A coding agent: `claude` (Claude Code, the default), `codex` (Codex CLI), or `pi`. The default window layout starts the task's agent — see [Choosing the agent](#choosing-the-agent) for how to set it globally, per workspace, or per task.
 - `nvim`. The default layout opens `TASK.md` in it.
 - `gh`. Shows the task branch's pull request as a chip in the column and status bar.
 - `lsof`. Shows ports the task's processes are listening on.
@@ -128,7 +128,7 @@ The column lists every task from every registered workspace, sectioned by attent
 | `u` | Unlock pending secrets |
 | `y`, `N` | Approve or deny the task's permission prompt without visiting it |
 | `dd` | Delete the task |
-| `:` | Command line (`:hide` hides the column, `:q` quits the client) |
+| `:` | Command line (`:agent <kind>` sets the task's agent, `:hide` hides the column, `:q` quits the client) |
 
 
 `tenx` in a terminal is one process that owns it: the task list as a column on the left, about a fifth of the width, and the tmux session on the right through an embedded terminal, the layout cmux made familiar. tmux stays underneath exactly as before, so the session, the watcher, sweep and secrets are untouched, quitting the client leaves everything running, and a second terminal, or a phone over SSH, gets a column of its own.
@@ -207,12 +207,17 @@ Workspace `config.toml`:
 schema_version = 1
 name = "work"
 layout = ""                  # optional path to a layout script, see below
+agent = "codex"              # optional default agent for this workspace's tasks
 
 [[repos]]
 name = "api"
 url = "git@github.com:org/api.git"
 
 # age_identity = "~/.config/age/work.txt"   # optional, for tenx secrets
+
+# [agents.codex]                            # optional per-agent launch override
+# command = "codex"                         #   a wrapper binary instead of the default
+# args = ["--model", "o3"]                  #   extra args, around tenx's own session flags
 ```
 
 Global `~/.config/tenx/config.toml`:
@@ -220,9 +225,23 @@ Global `~/.config/tenx/config.toml`:
 ```toml
 bare_dir = ""        # optional override for where bare clones live
 column_width = 0     # the task column, in cells; 0 = a fifth of the terminal, between 30 and 48
+agent = "codex"      # optional default agent for every workspace
+# [agents.pi]        # optional global per-agent launch override (a workspace's wins)
+# args = ["--provider", "openai"]
 ```
 
-A layout script replaces the default three-pane window. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_CLAUDE_CMD` and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
+## Choosing the agent
+
+Every task runs one of `claude`, `codex`, or `pi`. tenx resolves which, most specific first:
+
+1. **Per task** — the task's own `.tenx-agent` file. Set it with `tenx task new --agent codex`, `tenx task agent <slug> codex` (or `default` to clear it), or `:agent codex` on the selected row in the column.
+2. **Per workspace** — `agent = "codex"` in the workspace `config.toml`.
+3. **Globally** — `agent = "codex"` in `~/.config/tenx/config.toml`.
+4. Otherwise `claude`.
+
+`tenx task agent <slug>` (no agent) shows a task's effective agent; `tenx doctor` shows which agents are installed. A change takes effect the next time the task's window opens. Point an agent at a wrapper or pin a model with an `[agents.<kind>]` block (workspace overrides global).
+
+A layout script replaces the default three-pane window. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_AGENT`, `TENX_AGENT_CMD` (the resolved agent and its launch command) and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
 
 `TENX_TMUX_SOCKET` overrides the tmux socket name, which is how `make try` runs a second, isolated instance next to an installed one.
 

@@ -450,14 +450,12 @@ pub fn agent(ws_dir: Option<&str>, task: &str, kind: Option<&str>) -> Result<()>
     match kind {
         None => {
             let effective = crate::agent::agent_for(&ws, &task.path);
-            let overridden = task.path.join(crate::agent::TENX_AGENT_FILE).exists();
-            let source = if overridden { "task override" } else { "workspace default" };
-            println!("{} — {} ({source})", task.display_name, effective.as_str());
+            println!("{} — {} ({})", task.display_name, effective.as_str(), agent_source(&ws, &task.path));
         }
         Some("default") => {
             crate::agent::set_task_agent(&task.path, None)?;
             let effective = crate::agent::agent_for(&ws, &task.path);
-            println!("cleared override for '{}' — now {} (workspace default)", task.display_name, effective.as_str());
+            println!("cleared override for '{}' — now {} ({})", task.display_name, effective.as_str(), agent_source(&ws, &task.path));
         }
         Some(token) => {
             let picked = crate::agent::AgentKind::from_token(token);
@@ -466,6 +464,20 @@ pub fn agent(ws_dir: Option<&str>, task: &str, kind: Option<&str>) -> Result<()>
         }
     }
     Ok(())
+}
+
+/// Where a task's effective agent comes from — matches `agent::agent_for`'s
+/// precedence, for the `task agent` readout.
+fn agent_source(ws: &crate::workspace::Workspace, task_dir: &Path) -> &'static str {
+    if task_dir.join(crate::agent::TENX_AGENT_FILE).exists() {
+        "task override"
+    } else if !ws.config.agent.trim().is_empty() {
+        "workspace default"
+    } else if crate::workspace::load_global().is_ok_and(|g| !g.agent.trim().is_empty()) {
+        "global default"
+    } else {
+        "built-in default"
+    }
 }
 
 /// Parse a plain "<N><unit>" duration — "30m", "4h", "2d". The parser lives in

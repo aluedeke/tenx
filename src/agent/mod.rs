@@ -227,8 +227,9 @@ pub fn launch(ws: &crate::workspace::Workspace, kind: AgentKind, slug: &str, tas
     kind.launch_command_with(bin, slug, task_dir, args)
 }
 
-/// The agent a task runs: its own `.tenx-agent` override, else the workspace
-/// default (`config.toml`'s `agent`), else the built-in default (`claude`).
+/// The agent a task runs, most specific first: its own `.tenx-agent` override,
+/// else the workspace default (`config.toml`'s `agent`), else the global default
+/// (`~/.config/tenx/config.toml`'s `agent`), else the built-in default (`claude`).
 pub fn agent_for(ws: &crate::workspace::Workspace, task_dir: &Path) -> AgentKind {
     if let Ok(token) = std::fs::read_to_string(task_dir.join(TENX_AGENT_FILE)) {
         let token = token.trim();
@@ -236,7 +237,15 @@ pub fn agent_for(ws: &crate::workspace::Workspace, task_dir: &Path) -> AgentKind
             return AgentKind::from_token(token);
         }
     }
-    AgentKind::from_token(&ws.config.agent)
+    if !ws.config.agent.trim().is_empty() {
+        return AgentKind::from_token(&ws.config.agent);
+    }
+    if let Ok(global) = crate::workspace::load_global() {
+        if !global.agent.trim().is_empty() {
+            return AgentKind::from_token(&global.agent);
+        }
+    }
+    AgentKind::Claude
 }
 
 /// Per-task agent override: one word (`codex`), same style as `.tenx-pinned`.

@@ -1066,6 +1066,11 @@ impl Column {
             self.status_msg = Some("switch to Tasks (:tasks) for that".into());
             return Ok(false);
         }
+        // `:agent [<kind>|default]` — show or set the selected task's agent.
+        if cmd == "agent" || cmd.starts_with("agent ") {
+            self.set_selected_agent(cmd["agent".len()..].trim());
+            return Ok(false);
+        }
         match cmd {
             "d" | "del" | "delete" | "rm" => self.start_delete(),
             "r" | "rename" => self.start_rename(),
@@ -1081,6 +1086,37 @@ impl Column {
             other => self.status_msg = Some(format!("unknown command: :{other}")),
         }
         Ok(false)
+    }
+
+    /// `:agent` shows the selected task's agent; `:agent <claude|codex|pi>` sets
+    /// it (writes `.tenx-agent`), `:agent default` clears the override. Takes
+    /// effect the next time the task's window opens.
+    fn set_selected_agent(&mut self, token: &str) {
+        let Some(row) = self.selected_row() else {
+            return;
+        };
+        let (title, path, current) = (row.title.clone(), row.path.clone(), row.agent);
+        if token.is_empty() {
+            self.status_msg =
+                Some(format!("'{title}' uses {} — :agent <claude|codex|pi|default> to change", current.as_str()));
+            return;
+        }
+        let kind = (token != "default").then(|| crate::agent::AgentKind::from_token(token));
+        if self.offline {
+            // The demo never touches disk; reflect the choice in the row only.
+            let i = self.filtered[self.selected];
+            self.rows[i].agent = kind.unwrap_or(crate::agent::AgentKind::Claude);
+            self.status_msg = Some(format!("'{title}' → {}", self.rows[i].agent.as_str()));
+            return;
+        }
+        match crate::agent::set_task_agent(&path, kind) {
+            Ok(()) => {
+                self.rebuild_rows();
+                let now = self.rows.iter().find(|r| r.path == path).map(|r| r.agent.as_str()).unwrap_or("claude");
+                self.status_msg = Some(format!("'{title}' → {now} — reopen the task to apply"));
+            }
+            Err(e) => self.status_msg = Some(format!("couldn't set agent for '{title}': {e}")),
+        }
     }
 
     // ── Answering a permission prompt ─────────────────────────────────────────

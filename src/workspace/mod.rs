@@ -28,6 +28,11 @@ pub enum WorkspaceError {
 pub struct GlobalConfig {
     #[serde(default)]
     pub bare_dir: String,
+    /// Default coding agent across all workspaces (`claude`, `codex`, `pi`);
+    /// empty = `claude`. A workspace's `agent` and a task's `.tenx-agent`
+    /// override it (`agent::agent_for`).
+    #[serde(default)]
+    pub agent: String,
     /// Width of the task column beside the session, in cells; 0 =
     /// automatic (`tenx_core::column::width`).
     #[serde(default, alias = "sidebar_width")]
