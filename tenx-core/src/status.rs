@@ -74,6 +74,48 @@ pub fn is_parked_worker(s: &Session, sessions: &[&Session]) -> bool {
     }
 }
 
+/// Collapse every parked turn into one session. While a turn is parked the
+/// interactive entry is a viewer: its status field is not rewritten again
+/// (observed: `busy` with the park-time timestamp, unchanged through the
+/// worker's busy → waiting → busy → idle), so it must not be read. The worker
+/// is the truth for status, reason and age; the interactive session is the
+/// truth for the pane (that is where the worker's dialog is drawn) and for
+/// identity. So the interactive session takes the worker's status fields
+/// and the worker is dropped — the pair is one session, not an agent plus
+/// its parent. A parked session whose worker is missing (not alive, or not
+/// ours) reads as `Idle`: the one thing certain about its own status is that
+/// it is stale.
+pub fn fold_parked(sessions: Vec<Session>) -> Vec<Session> {
+    let workers: Vec<Session> = sessions.iter().filter(|s| s.job_id.is_some()).cloned().collect();
+    let claimed: Vec<u32> = sessions
+        .iter()
+        .filter_map(|s| s.parked_job_id.as_deref())
+        .filter_map(|job| workers.iter().find(|w| w.job_id.as_deref() == Some(job)))
+        .map(|w| w.pid)
+        .collect();
+    sessions
+        .into_iter()
+        .filter(|s| !claimed.contains(&s.pid))
+        .map(|mut s| {
+            let Some(job) = s.parked_job_id.as_deref() else {
+                return s;
+            };
+            match workers.iter().find(|w| w.job_id.as_deref() == Some(job)) {
+                Some(w) => {
+                    s.status = w.status;
+                    s.waiting_for = w.waiting_for.clone();
+                    s.status_updated_at = w.status_updated_at;
+                }
+                None => {
+                    s.status = SessionStatus::Idle;
+                    s.waiting_for = None;
+                }
+            }
+            s
+        })
+        .collect()
+}
+
 /// Sessions running in `task_dir` or anywhere beneath it. Background agents get
 /// their own subdirectory (`tasks/<slug>/ios-agent`), so this is a prefix
 /// match on path components, not on the string — `tasks/foo` never claims
@@ -102,7 +144,8 @@ pub fn sessions_for<'a>(sessions: &'a [Session], task_dir: &Path) -> Vec<&'a Ses
 /// is the entry that says `waiting` while the permission dialog it draws in
 /// the interactive pane is open. It is kept when the interactive session that
 /// parked the job is itself in our panes; without that, the task reads
-/// `Working` while a prompt sits on screen.
+/// `Working` while a prompt sits on screen. [`fold_parked`] then merges the
+/// pair; callers run both, in that order.
 ///
 /// With no panes (server down) every session is dropped: the rule is "in our
 /// server", and nothing is.
@@ -296,8 +339,7 @@ pub struct TaskState {
 pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal) -> TaskState {
     let live = sessions_for(sessions, task_dir);
     let count = live.len();
-    // A parked turn's worker is the interactive session's own turn, not an agent.
-    let agents = live.iter().filter(|s| s.kind != "interactive" && !is_parked_worker(s, &live)).count();
+    let agents = live.iter().filter(|s| s.kind != "interactive").count();
     let pane = live
         .iter()
         .find(|s| s.kind == "interactive")
@@ -450,11 +492,43 @@ mod tests {
         let pids: Vec<u32> = kept.iter().map(|s| s.pid).collect();
         assert_eq!(pids, vec![200, 900]);
 
-        let st = resolve_task_state(Path::new(TASK), &kept, QUIET);
+        let folded = fold_parked(kept);
+        assert_eq!(folded.len(), 1);
+        let st = resolve_task_state(Path::new(TASK), &folded, QUIET);
         assert_eq!(st.status, TaskStatus::Blocked);
         assert_eq!(st.waiting_for.as_deref(), Some("permission prompt"));
+        assert_eq!(st.changed, Some(at(20)));
         assert_eq!(st.pane.as_deref(), Some("%57"));
-        assert_eq!((st.sessions, st.agents), (2, 0));
+        assert_eq!((st.sessions, st.agents), (1, 0));
+    }
+
+    /// The interactive entry is frozen at `busy` from the moment it parked;
+    /// the worker finishing is what makes the task Done, with the worker's
+    /// timestamp as the age. A parked session with no worker reads idle.
+    #[test]
+    fn a_parked_sessions_own_status_is_never_read() {
+        let mut parent = session(TASK, SessionStatus::Busy, "interactive", 10);
+        parent.pid = 200;
+        parent.pane = Some("%57".into());
+        parent.parked_job_id = Some("2f32".into());
+        let mut worker = session(TASK, SessionStatus::Idle, "bg", 40);
+        worker.pid = 900;
+        worker.job_id = Some("2f32".into());
+        let st = resolve_task_state(Path::new(TASK), &fold_parked(vec![parent.clone(), worker]), QUIET);
+        assert_eq!(st.status, TaskStatus::Done);
+        assert_eq!(st.changed, Some(at(40)));
+        assert_eq!(st.pane.as_deref(), Some("%57"));
+
+        let alone = fold_parked(vec![parent]);
+        assert_eq!(alone[0].status, SessionStatus::Idle);
+        assert_eq!(resolve_task_state(Path::new(TASK), &alone, QUIET).status, TaskStatus::Done);
+
+        // An unrelated bg agent with a job id nobody parked is untouched.
+        let mut agent = session("/ws/tasks/foo/agent", SessionStatus::Busy, "bg", 5);
+        agent.job_id = Some("zzzz".into());
+        let plain = session(TASK, SessionStatus::Idle, "interactive", 1);
+        let st = resolve_task_state(Path::new(TASK), &fold_parked(vec![plain, agent]), QUIET);
+        assert_eq!((st.status, st.sessions, st.agents), (TaskStatus::Working, 2, 1));
     }
 
     #[test]

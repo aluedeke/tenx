@@ -34,13 +34,16 @@
 //! one exception, a *parked turn*: newer Claude Code hands a running turn to
 //! a worker under its daemon (`claude bg-spare`, off `init`), and it is the
 //! worker's entry — not the interactive one, which reads `busy` — that says
-//! `waiting` while the permission dialog is on screen. `in_panes` keeps such
-//! a worker when the session that parked it is in our panes.
+//! `waiting` while the permission dialog is on screen — and the interactive
+//! entry's own status is frozen from the moment it parked, so it must not be
+//! read at all. `in_panes` keeps such a worker when the session that parked
+//! it is in our panes, and `fold_parked` merges the pair into the interactive
+//! session with the worker's status.
 //!
 //! This module is the impure half (filesystem + pid checks); the types and the
 //! meaning of a session list live in `tenx_core::status`.
 
-pub use tenx_core::status::{Session, SessionStatus, in_panes};
+pub use tenx_core::status::{Session, SessionStatus, fold_parked, in_panes};
 
 use serde::Deserialize;
 use std::fs;
@@ -125,7 +128,7 @@ pub fn sessions() -> Vec<Session> {
         return out;
     }
     let scope = pane_scope();
-    in_panes(out, &scope.pane_pids, &scope.tree)
+    fold_parked(in_panes(out, &scope.pane_pids, &scope.tree))
 }
 
 /// Snapshot of what `in_panes` needs: the server's pane pids and the process
