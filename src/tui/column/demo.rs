@@ -94,6 +94,8 @@ impl Scene {
                     .map(|n| crate::workspace::RepoConfig { name: n.to_string(), url: format!("git@github.com:acme/{n}.git") })
                     .collect(),
                 age_identity: None,
+                agent: String::new(),
+                agents: std::collections::HashMap::new(),
             },
         }];
         column.current = Some("onboarding-emails".into());

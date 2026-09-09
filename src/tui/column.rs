@@ -1299,6 +1299,7 @@ impl Column {
                 pane: None,
                 live: crate::live::Live::default(),
                 repos,
+                agent: crate::agent::agent_for(ws, &ws.dir.join("tasks").join(&slug)),
                 secrets_pending: vec![],
                 secrets_pending_set: vec![],
                 section: TaskStatus::Working.group(),

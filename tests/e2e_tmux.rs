@@ -357,14 +357,15 @@ fn client_column_beside_the_embedded_session() {
     assert!(err.trim().is_empty(), "client stderr: {err}");
     let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_name}"]);
     assert!(windows.lines().any(|l| l == "two"), "session survives the client: {windows}");
+}
 
 #[test]
 fn codex_task_launches_and_reports_state_through_the_registry() {
-    let Some(h) = Harness::new() else {
+    let Some(h) = Harness::named("-codex") else {
         eprintln!("tmux not installed — skipping e2e");
         return;
     };
-    // Register the workspace so `overlay --json` enumerates it.
+    // Register the workspace so `task list --json` enumerates it.
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
 
@@ -401,7 +402,7 @@ fn codex_task_launches_and_reports_state_through_the_registry() {
 
     let mut status = String::new();
     for _ in 0..20 {
-        let out = h.tenx().args(["overlay", "--json"]).output().unwrap();
+        let out = h.tenx().args(["task", "list", "--json"]).output().unwrap();
         let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         if let Some(task) = json["tasks"].as_array().unwrap().iter().find(|t| t["slug"] == "cx-task") {
             status = task["status"].as_str().unwrap_or_default().to_string();
