@@ -252,3 +252,79 @@ mod tests {
         assert!(pid_alive(std::process::id()));
     }
 }
+
+/// Claude Code's global config, `~/.claude.json` — where a directory's trust
+/// grant lives (`projects[<dir>].hasTrustDialogAccepted`).
+pub fn global_config_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join(".claude.json"))
+}
+
+/// Pre-approve Claude Code's trust dialog for a task directory, so a launch
+/// there doesn't stop at "This folder pre-approves N tool permissions … Yes,
+/// I trust this folder" (see `tenx_core::trust` for why inherited trust from
+/// the workspace root isn't enough). Returns whether the file was rewritten.
+///
+/// Best-effort by design — the file is Claude Code's, not tenx's:
+///
+/// - no `~/.claude.json` yet (Claude Code never ran for this user) → nothing
+///   to seed; its onboarding will handle trust itself.
+/// - unparseable → left untouched. Claude Code would rewrite it on its own
+///   terms; tenx must not turn a corrupt file into an empty one.
+/// - written atomically (temp file + rename, mode preserved) right before the
+///   window opens, so the Claude Code that starts in the pane reads it.
+///
+/// Both the path as given (what the shell's cwd will be, which is how Claude
+/// Code keys it) and its real path (if a symlink is involved) are seeded.
+pub fn trust_dir(dir: &std::path::Path) -> anyhow::Result<bool> {
+    use anyhow::Context;
+    let Some(path) = global_config_path() else {
+        return Ok(false);
+    };
+    let text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
+    };
+    let mut config: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+
+    let given = dir.to_string_lossy().into_owned();
+    let mut keys = vec![given.clone()];
+    if let Ok(real) = fs::canonicalize(dir) {
+        let real = real.to_string_lossy().into_owned();
+        if real != given {
+            keys.push(real);
+        }
+    }
+    if !tenx_core::trust::grant_trust(&mut config, &keys) {
+        return Ok(false);
+    }
+
+    let tmp = path.with_extension("json.tenx-tmp");
+    let out = serde_json::to_string_pretty(&config)?;
+    fs::write(&tmp, &out).with_context(|| format!("write {}", tmp.display()))?;
+    if let Ok(meta) = fs::metadata(&path) {
+        let _ = fs::set_permissions(&tmp, meta.permissions());
+    }
+    fs::rename(&tmp, &path).with_context(|| format!("rename to {}", path.display()))?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod trust_tests {
+    /// Round-trips a copy of the real global config through `trust_dir`.
+    /// Manual: copy `~/.claude.json` into a scratch dir, then run the test
+    /// binary with `HOME=<scratch dir> TENX_TRUST_PROBE_DIR=<a task dir>`
+    /// and diff — the only change must be the new project entry. Skipped
+    /// (passes vacuously) without the variable.
+    #[test]
+    fn probe_trust_dir_against_copy() {
+        let Ok(dir) = std::env::var("TENX_TRUST_PROBE_DIR") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let first = super::trust_dir(&dir).unwrap();
+        let second = super::trust_dir(&dir).unwrap();
+        println!("first rewrite: {first}, second rewrite: {second}");
+        assert!(first && !second);
+    }
+}

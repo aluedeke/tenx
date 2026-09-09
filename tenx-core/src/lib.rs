@@ -15,3 +15,4 @@ pub mod status;
 pub mod sweep;
 pub mod taskmd;
 pub mod time;
+pub mod trust;

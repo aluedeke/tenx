@@ -21,4 +21,7 @@ dist = false
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order + float_roundtrip: `trust` rewrites Claude Code's own
+# ~/.claude.json, and the rewrite must be a one-entry diff — same key order,
+# every float parsed exactly so it prints back as it was.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }

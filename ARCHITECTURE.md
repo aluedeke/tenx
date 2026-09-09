@@ -78,7 +78,7 @@ A blocked task's permission prompt can be answered from the column with `y` or `
 
 ## Task lifecycle
 
-**Create** slugifies the title, writes `TASK.md`, symlinks `.claude` to the workspace's shared one, then for each repo fetches the bare clone and adds a worktree on a fresh branch off the default branch. Then, if the server is running, it opens the window.
+**Create** slugifies the title, writes `TASK.md`, symlinks `.claude` to the workspace's shared one, pre-approves Claude Code's trust dialog for the task directory in `~/.claude.json` (trust inherits from the workspace root, but the shared settings' permission rules need the exact directory trusted — otherwise each new task starts on that dialog), then for each repo fetches the bare clone and adds a worktree on a fresh branch off the default branch. Then, if the server is running, it opens the window.
 
 **Open** looks the window up by slug and selects it, or creates it. `--continue` is passed to Claude only when a transcript for that exact directory exists, because Claude exits when asked to continue a conversation that does not exist.
 

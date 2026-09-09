@@ -69,6 +69,7 @@ pub fn new_with(
     std::fs::create_dir_all(&task_dir)?;
     write_task_md(&task_dir, &display_name, md)?;
     write_claude_hooks(&task_dir)?;
+    trust_task_dir(&task_dir);
 
     for repo_name in &repo_names {
         ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, slug)?;
@@ -326,7 +327,9 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Not open — create it (named by slug) and record the new id.
+    // Not open — create it (named by slug) and record the new id. Tasks that
+    // predate trust seeding get it here, the first time they're reopened.
+    trust_task_dir(&task.path);
     let layout = ws.config.layout.as_str();
     let opts = crate::tmux::TaskWindow {
         slug,
@@ -341,6 +344,15 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     let id = crate::tmux::open_task_window(&opts)?;
     std::fs::write(&id_file, &id)?;
     Ok(())
+}
+
+/// Seed Claude Code's trust grant for a task directory so its first launch
+/// there skips the trust dialog (`workspace::claude::trust_dir`). Never fatal:
+/// the dialog is an annoyance, a task that can't be created is not.
+fn trust_task_dir(task_dir: &Path) {
+    if let Err(e) = crate::workspace::claude::trust_dir(task_dir) {
+        eprintln!("! couldn't pre-approve Claude Code's trust dialog for {}: {e:#}", task_dir.display());
+    }
 }
 
 /// Whether claude has stored a conversation for `cwd` (so `--continue` will
