@@ -1275,15 +1275,40 @@ impl Column {
         }
         let ws_idx = form.ws_idx;
         let slug = crate::workspace::slugify(&name);
-        // no_open=true: the window is opened by the `jump` the caller runs
-        // right after this, which also knows which surface it's on (home
-        // pane, popup, plain terminal) and switches/attaches accordingly.
-        {
+        if self.offline {
+            // The demo: the task appears as a row, its agent already at work.
+            let ws = &self.workspaces[ws_idx];
+            let now = SystemTime::now();
+            self.rows.push(Row {
+                ws_idx,
+                ws_name: ws.config.name.clone(),
+                path: ws.dir.join("tasks").join(&slug),
+                slug: slug.clone(),
+                title: name.clone(),
+                status: TaskStatus::Working,
+                group: TaskStatus::Working,
+                changed: Some(now),
+                waiting_for: None,
+                activity: now,
+                window_id: Some("@new".into()),
+                pane: None,
+                live: crate::live::Live::default(),
+                repos,
+                secrets_pending: vec![],
+                secrets_pending_set: vec![],
+                section: TaskStatus::Working.group(),
+            });
+            self.filter.clear();
+            self.sort_rows();
+            self.apply_filter();
+        } else {
+            // no_open=true: the window is opened by the `jump` the caller
+            // runs right after this.
             let ws = &self.workspaces[ws_idx];
             crate::cli::task::new_in(ws, &name, Some(&repos), true).map_err(|e| e.to_string())?;
+            self.filter.clear();
+            self.rebuild_rows();
         }
-        self.filter.clear();
-        self.rebuild_rows();
         let selected = match self
             .filtered
             .iter()

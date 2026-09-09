@@ -10,12 +10,6 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
 
 ![A tenx session in motion: the task column beside an agent, switching tasks, filtering, and an agent that stops and needs you](docs/demo.gif)
 
-<sub>Generated, not recorded: a scripted session rendered through the client's own widgets. Crisper as an [animated SVG](docs/demo.svg); the [asciinema cast](docs/demo.cast) plays in a terminal.</sub>
-
-That list sits as a column on the left of your terminal, beside the task, so switching is always one glance and one keystroke away:
-
-![The column: the task list beside the task](docs/column.svg)
-
 ## How it works
 
 ```

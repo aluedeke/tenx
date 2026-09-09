@@ -81,6 +81,21 @@ impl Scene {
     fn new() -> Self {
         let mut column = fixture_column();
         column.offline = true;
+        // A workspace for the create form: its name and repos are what the
+        // form shows; nothing on disk is touched offline.
+        column.workspaces = vec![crate::workspace::Workspace {
+            dir: std::path::PathBuf::from("/home/you/ledger"),
+            config: crate::workspace::WorkspaceConfig {
+                schema_version: crate::workspace::CURRENT_SCHEMA,
+                name: "ledger".into(),
+                layout: String::new(),
+                repos: ["api", "web", "infra"]
+                    .iter()
+                    .map(|n| crate::workspace::RepoConfig { name: n.to_string(), url: format!("git@github.com:acme/{n}.git") })
+                    .collect(),
+                age_identity: None,
+            },
+        }];
         column.current = Some("onboarding-emails".into());
         column.focus_search();
         column.selected = 0;
@@ -132,8 +147,8 @@ impl Scene {
             return;
         }
         let (rows, cols) = self.screen.borrow().screen().size();
-        // A pty would translate `\n` to `\r\n` on the way out; do it here.
-        let text = pane_text(&slug, row.status, self.answered).replace('\n', "\r\n");
+        // One row less than the terminal: tmux's status line takes the last.
+        let text = pane_text(&slug, row.status, self.answered, rows - 1, cols);
         let mut out = format!("\x1b[2J\x1b[H{text}");
         // tmux's status line, as the generated config draws it: glyph in
         // its status colour, the title bold, the workspace muted.
@@ -191,68 +206,223 @@ impl Scene {
     }
 }
 
-/// A plausible screen for the task's Claude pane, by task and status
-/// (`answered`: its permission prompt was approved from the column).
-fn pane_text(slug: &str, status: TaskStatus, answered: bool) -> String {
-    let prompt = "\n\x1b[38;2;120;127;140m╭────────────────────────────────────────────────────────────────────────╮\x1b[0m\n\x1b[38;2;120;127;140m│\x1b[0m > \x1b[38;2;120;127;140m│\x1b[0m\n\x1b[38;2;120;127;140m╰────────────────────────────────────────────────────────────────────────╯\x1b[0m\x1b[2A\x1b[4C";
-    match (slug, status) {
-        ("onboarding-emails", _) if answered => format!(
-            "\x1b[1m⏺\x1b[0m \x1b[2mBash\x1b[0m(pnpm run email:send --template welcome --to sandbox)\n  ⎿  Sent 3 emails to sandbox@acme.test\n\n\
-             \x1b[1m⏺\x1b[0m Checking the rendered HTML against the design once more…\n{prompt}"
-        ),
-        ("onboarding-emails", TaskStatus::Working) => format!(
-            "\x1b[1m⏺\x1b[0m Wiring the welcome sequence into the signup flow.\n\n\
-             \x1b[1m⏺\x1b[0m \x1b[2mUpdate\x1b[0m(src/email/welcome.ts)\n  ⎿  Updated src/email/welcome.ts with 14 additions\n\n\
-             \x1b[1m⏺\x1b[0m \x1b[2mBash\x1b[0m(pnpm test -- email)\n  ⎿  Running…\n{prompt}"
-        ),
-        ("onboarding-emails", TaskStatus::Blocked) => "\
-\x1b[1m⏺\x1b[0m The welcome sequence is wired up and the unit tests pass. I'll send
-  the three test emails through the sandbox now.
+/// What a Claude Code session looks like on screen: the header (mark,
+/// version and model, working directory), the transcript, the input box
+/// near the bottom, and Claude's own status line under it. tmux's status
+/// line goes on the last row (`sync_screen`).
+struct ClaudeScreen<'a> {
+    cwd: &'a str,
+    body: Vec<String>,
+    /// The line under the input box.
+    status: &'a str,
+    /// Text already typed into the input box.
+    typed: &'a str,
+}
 
-\x1b[1m Bash command\x1b[0m
+fn sgr(c: &palette::Rgb) -> String {
+    format!("\x1b[38;2;{};{};{}m", c.0, c.1, c.2)
+}
 
-   pnpm run email:send --template welcome --to sandbox
-   Send the welcome sequence to the sandbox inbox
+const DIM: &str = "\x1b[38;2;120;127;140m";
+const BOLD: &str = "\x1b[1m";
+const RESET: &str = "\x1b[0m";
+/// Claude Code's mark, in its salmon.
+const MARK: &str = "\x1b[38;2;217;119;87m";
 
- Do you want to proceed?
- \x1b[36m❯ 1. Yes\x1b[0m
-   2. No
- \x1b[2mEsc to cancel · Tab to amend\x1b[0m
-"
-        .to_string(),
-        ("add-release-workflow", _) => "\
-\x1b[1m⏺\x1b[0m I'll add the release workflow next to the CI one and wire the
-  tag push to it.
-
-\x1b[1m Bash command\x1b[0m
-
-   gh workflow run release.yml --ref v0.2.0
-   Kick off the release workflow for the tag
-
- Do you want to proceed?
- \x1b[36m❯ 1. Yes\x1b[0m
-   2. No
- \x1b[2mEsc to cancel · Tab to amend\x1b[0m
-"
-        .to_string(),
-        ("rotate-signing-keys", _) => "\
-\x1b[1m⏺\x1b[0m Rotated the signing keys. The old key stays valid for
-  24 hours so in-flight builds still verify.
-
-\x1b[2m$\x1b[0m make verify
-  ✓ 12 artifacts verified against the new key
-\x1b[2m$\x1b[0m \x1b[2m# bell: verify finished\x1b[0m
-\x1b[2m$\x1b[0m "
-        .to_string(),
-        (_, TaskStatus::Done) => format!(
-            "\x1b[1m⏺\x1b[0m Done. The change is in one commit on this branch; the tests pass\n  and I left the PR description in TASK.md.\n{prompt}"
-        ),
-        (_, TaskStatus::Working) => format!(
-            "\x1b[1m⏺\x1b[0m Rendering the fixture through the real widgets and diffing the\n  SVG against the checked-in one.\n\n\
-             \x1b[1m⏺\x1b[0m \x1b[2mBash\x1b[0m(make screenshot)\n  ⎿  Running…\n{prompt}"
-        ),
-        _ => format!("\x1b[1m⏺\x1b[0m Waiting for a task.\n{prompt}"),
+impl ClaudeScreen<'_> {
+    fn render(&self, rows: u16, cols: u16) -> String {
+        let cols = cols as usize;
+        let mut out = String::new();
+        let mut lines: Vec<String> = vec![
+            format!(" {MARK}▐▛███▜▌{RESET}   {BOLD}Claude Code{RESET} {DIM}v2.1.263{RESET}"),
+            format!("{MARK}▝▜█████▛▘{RESET}  Fable 5.1 {DIM}·{RESET} Claude Max"),
+            format!("  {MARK}▘▘ ▝▝{RESET}    {DIM}{}{RESET}", self.cwd),
+            String::new(),
+        ];
+        lines.extend(self.body.iter().cloned());
+        // Header and transcript from the top; the input box and status
+        // pinned to the bottom, above tmux's line.
+        for (i, l) in lines.iter().enumerate() {
+            let _ = write!(out, "\x1b[{};1H{l}", i + 1);
+        }
+        let inner = cols.saturating_sub(2);
+        let top = rows.saturating_sub(4);
+        let _ = write!(out, "\x1b[{top};1H{DIM}╭{}╮{RESET}", "─".repeat(inner));
+        let _ = write!(out, "\x1b[{};1H{DIM}│{RESET} {}> {}{}{DIM}│{RESET}", top + 1, sgr(&palette::TEXT), self.typed, " ".repeat(inner.saturating_sub(3 + self.typed.chars().count())));
+        let _ = write!(out, "\x1b[{};1H{DIM}╰{}╯{RESET}", top + 2, "─".repeat(inner));
+        let _ = write!(out, "\x1b[{};1H  {DIM}{}{RESET}", top + 3, self.status);
+        // The cursor in the input box, after what was typed.
+        let _ = write!(out, "\x1b[{};{}H", top + 1, 5 + self.typed.chars().count());
+        out
     }
+}
+
+fn tool(name: &str, arg: &str) -> String {
+    format!("{BOLD}⏺{RESET} {BOLD}{name}{RESET}{DIM}({arg}){RESET}")
+}
+
+fn result(text: &str) -> String {
+    format!("  {DIM}⎿{RESET}  {text}")
+}
+
+fn say(text: &str) -> String {
+    format!("{BOLD}⏺{RESET} {text}")
+}
+
+fn spinner(verb: &str, secs: &str, tokens: &str) -> String {
+    format!("{}✻{RESET} {DIM}{verb}… ({secs} · ↑ {tokens} tokens · esc to interrupt){RESET}", sgr(&palette::ACCENT))
+}
+
+const STATUS_ACCEPT: &str = "⏵⏵ accept edits on (shift+tab to cycle) · ? for shortcuts";
+const STATUS_PLAN: &str = "⏸ plan mode on (shift+tab to cycle) · ? for shortcuts";
+
+/// The screen for a task's Claude session, by task and status (`answered`:
+/// its permission prompt was approved from the column). Every session
+/// looks like its own: different work, different point in the turn.
+fn pane_text(slug: &str, status: TaskStatus, answered: bool, rows: u16, cols: u16) -> String {
+    let permission = |summary: &str, cmd: &str, what: &str| -> Vec<String> {
+        vec![
+            say(summary),
+            String::new(),
+            format!("{BOLD} Bash command{RESET}"),
+            String::new(),
+            format!("   {cmd}"),
+            format!("   {DIM}{what}{RESET}"),
+            String::new(),
+            " Do you want to proceed?".into(),
+            format!(" {}❯ 1. Yes{RESET}", sgr(&palette::INFO)),
+            "   2. No".into(),
+            format!(" {DIM}Esc to cancel · Tab to amend{RESET}"),
+        ]
+    };
+    let (cwd, body, st, typed): (&str, Vec<String>, &str, &str) = match (slug, status) {
+        ("onboarding-emails", _) if answered => (
+            "~/ledger/tasks/onboarding-emails",
+            vec![
+                say("The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now."),
+                String::new(),
+                tool("Bash", "pnpm run email:send --template welcome --to sandbox"),
+                result("Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)"),
+                String::new(),
+                tool("Read", "src/email/templates/welcome.html"),
+                result("Read 86 lines"),
+                String::new(),
+                spinner("Checking the rendered HTML against the design", "4s", "1.2k"),
+            ],
+            STATUS_ACCEPT,
+            "",
+        ),
+        ("onboarding-emails", TaskStatus::Working) => (
+            "~/ledger/tasks/onboarding-emails",
+            vec![
+                say("I'll wire the welcome sequence into the signup flow and cover it with a test."),
+                String::new(),
+                tool("Read", "src/signup/complete.ts"),
+                result("Read 142 lines"),
+                String::new(),
+                tool("Update", "src/email/welcome.ts"),
+                result("Updated src/email/welcome.ts with 14 additions and 2 removals"),
+                String::new(),
+                tool("Bash", "pnpm test -- email"),
+                result("Running…"),
+                String::new(),
+                spinner("Wiring", "38s", "6.4k"),
+            ],
+            STATUS_ACCEPT,
+            "",
+        ),
+        ("onboarding-emails", TaskStatus::Blocked) => (
+            "~/ledger/tasks/onboarding-emails",
+            permission(
+                "The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.",
+                "pnpm run email:send --template welcome --to sandbox",
+                "Send the welcome sequence to the sandbox inbox",
+            ),
+            STATUS_ACCEPT,
+            "",
+        ),
+        ("add-release-workflow", _) => (
+            "~/tenx-workspace/tasks/add-release-workflow",
+            permission(
+                "I'll add the release workflow next to the CI one and wire the tag push to it.",
+                "gh workflow run release.yml --ref v0.2.0",
+                "Kick off the release workflow for the tag",
+            ),
+            STATUS_ACCEPT,
+            "",
+        ),
+        ("rotate-signing-keys", _) => (
+            "~/infra/tasks/rotate-signing-keys",
+            vec![
+                say("Rotated the signing keys. The old key stays valid for 24 hours so in-flight builds still verify."),
+                String::new(),
+                tool("Bash", "make verify"),
+                result("✓ 12 artifacts verified against the new key"),
+                String::new(),
+                tool("Bash", "printf '\\a'"),
+                result(&format!("{DIM}(bell){RESET}")),
+                String::new(),
+                say("Done — the rotation is complete and verified. Say the word and I'll revoke the old key early."),
+            ],
+            STATUS_ACCEPT,
+            "",
+        ),
+        ("csv-export", _) => (
+            "~/ledger/tasks/csv-export",
+            vec![
+                say("Done. The export streams rows instead of buffering the whole table, so the 2M-row ledger no longer times out."),
+                String::new(),
+                format!("  {DIM}Summary of the change:{RESET}"),
+                "  1. `exportCsv` writes through a `Transform` stream with a 4 KB buffer.".into(),
+                "  2. The integration test covers 250k rows and finishes in 1.8s.".into(),
+                "  3. PR #31 is open with the description from TASK.md.".into(),
+                String::new(),
+                format!("{}✻{RESET} {DIM}Churned for 2m 14s · done{RESET}", sgr(&palette::ACCENT)),
+            ],
+            STATUS_ACCEPT,
+            "",
+        ),
+        ("column-screenshot", _) => (
+            "~/tenx-workspace/tasks/column-screenshot",
+            vec![
+                say("Rendering the fixture through the real widgets and diffing the SVG against the checked-in one."),
+                String::new(),
+                tool("Edit", "src/tui/column/screenshot.rs"),
+                result("Updated src/tui/column/screenshot.rs with 6 additions and 3 removals"),
+                String::new(),
+                tool("Bash", "make screenshot"),
+                result("Running…"),
+                String::new(),
+                spinner("Rendering", "12s", "2.9k"),
+            ],
+            STATUS_PLAN,
+            "",
+        ),
+        ("rate-limit-alerts", _) => (
+            "~/ledger/tasks/rate-limit-alerts",
+            vec![
+                format!("{DIM}╭─────────────────────────────────────────────────────────╮{RESET}"),
+                format!("{DIM}│{RESET} {}✻{RESET} Welcome to {BOLD}Claude Code{RESET}!                                    {DIM}│{RESET}", sgr(&palette::ACCENT)),
+                format!("{DIM}│{RESET}                                                         {DIM}│{RESET}"),
+                format!("{DIM}│{RESET}   /help for help, /status for your current setup        {DIM}│{RESET}"),
+                format!("{DIM}│{RESET}                                                         {DIM}│{RESET}"),
+                format!("{DIM}│{RESET}   cwd: ~/ledger/tasks/rate-limit-alerts                 {DIM}│{RESET}"),
+                format!("{DIM}╰─────────────────────────────────────────────────────────╯{RESET}"),
+                String::new(),
+                format!(" {DIM}Tip: use /tenx to see the task's notes and links{RESET}"),
+            ],
+            STATUS_ACCEPT,
+            "",
+        ),
+        (_, TaskStatus::Done) => (
+            "~/tasks/task",
+            vec![say("Done. The change is in one commit on this branch; the tests pass and I left the PR description in TASK.md.")],
+            STATUS_ACCEPT,
+            "",
+        ),
+        _ => ("~/tasks/task", vec![say("Waiting for a task.")], STATUS_ACCEPT, ""),
+    };
+    ClaudeScreen { cwd, body, status: st, typed }.render(rows, cols)
 }
 
 /// The script. Holds are milliseconds; the whole loop is about 24 seconds.
@@ -265,7 +435,7 @@ fn scene() -> Scene {
     s.ctrl_w(900);
     s.key(KeyCode::Up, 1100);
     s.key(KeyCode::Up, 1100);
-    assert!(s.last_text().contains("Done. The change is in one commit"), "csv export's screen\n{}", s.last_text());
+    assert!(s.last_text().contains("Churned for 2m 14s"), "csv export's screen\n{}", s.last_text());
     // A filter, and ⏎ opens the match: the keyboard is in the task now.
     s.key(KeyCode::Char('/'), 400);
     s.type_str("rota", 140);
@@ -288,7 +458,24 @@ fn scene() -> Scene {
     Scene::regroup(&mut s.client.column);
     s.shot(2400);
     // Back to the task.
-    s.key(KeyCode::Esc, 3000);
+    s.key(KeyCode::Esc, 2200);
+    // A new task: `n` opens the form in the column — name, repos to check
+    // out — and ⏎ creates it: a branch and worktree in each repo, a
+    // TASK.md, and a window with Claude Code already started.
+    s.ctrl_w(700);
+    s.key(KeyCode::Char('n'), 1200);
+    assert!(s.last_text().contains(" new task "), "the create form\n{}", s.last_text());
+    s.type_str("rate limit alerts", 90);
+    s.shot(700);
+    s.key(KeyCode::Tab, 500);
+    s.key(KeyCode::Tab, 500);
+    s.key(KeyCode::Tab, 400);
+    s.key(KeyCode::Char(' '), 900); // not infra, this time
+    s.key(KeyCode::Enter, 1600);
+    assert_eq!(s.client.focus, Focus::Terminal, "the new task takes the keyboard");
+    assert!(s.last_text().contains("Welcome to Claude Code"), "a fresh session\n{}", s.last_text());
+    s.type_str("alert when a customer hits 80% of their rate limit", 55);
+    s.shot(3200);
     s
 }
 
@@ -396,13 +583,14 @@ fn cast(frames: &[Frame]) -> String {
 #[test]
 fn scripted_session_switches_filters_and_answers_from_the_column() {
     let s = scene();
-    assert!(s.frames.len() > 25, "{} frames", s.frames.len());
+    assert!(s.frames.len() > 60, "{} frames", s.frames.len());
     let first = plain_text(&s.frames[0].buf);
-    assert!(first.contains("Wiring the welcome sequence"), "the task beside the column:\n{first}");
+    assert!(first.contains("Claude Code") && first.contains("welcome sequence"), "a Claude session beside the column:\n{first}");
     assert!(first.contains("onboarding emails") && first.contains("WORKING"), "{first}");
+    let approved = s.frames.iter().any(|f| plain_text(&f.buf).contains("approved 'onboarding emails'"));
+    assert!(approved, "the prompt is answered from the column");
     let last = s.last_text();
-    assert!(last.contains("approved 'onboarding emails'"), "{last}");
-    assert!(last.contains("Sent 3 emails"), "the task carried on:\n{last}");
+    assert!(last.contains("rate limit alerts") && last.contains("80% of their rate limit"), "the new task, with a prompt typed:\n{last}");
 
     if std::env::var_os("TENX_DEMO").is_some() {
         let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs");
@@ -414,8 +602,8 @@ fn scripted_session_switches_filters_and_answers_from_the_column() {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for (i, f) in s.frames.iter().enumerate() {
-            std::fs::write(dir.join(format!("f{i:02}.svg")), animated_svg(std::slice::from_ref(f))).unwrap();
-            std::fs::write(dir.join(format!("f{i:02}.txt")), plain_text(&f.buf)).unwrap();
+            std::fs::write(dir.join(format!("f{i:03}.svg")), animated_svg(std::slice::from_ref(f))).unwrap();
+            std::fs::write(dir.join(format!("f{i:03}.txt")), plain_text(&f.buf)).unwrap();
         }
         eprintln!("frames in {}", dir.display());
     }
