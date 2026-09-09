@@ -6,7 +6,7 @@
 
 Coding agents make it cheap to have several pieces of work in flight at once. The expensive part is everything around them: each task needs its own branch and checkout in every repo it touches, its own agent session, an editor and a shell, and you need to know at a glance which agent is stuck waiting on you and which is still working. Switching between five terminal tabs to find out does not scale.
 
-`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running a coding agent (Claude Code, Codex, or pi), an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
+`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running a coding agent (Claude Code, Codex, or pi), an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch — each terminal on a task of its own, the tasks themselves shared. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
 ![A tenx session in motion: the task column beside an agent, switching tasks, filtering, and an agent that stops and needs you](docs/demo.gif)
 
@@ -101,7 +101,7 @@ Inside the session:
 
 - `Ctrl+w` puts the cursor in the column, on the task you are in; pressed again from the column, it hides it. On a phone the column is hidden and `Ctrl+w` shows the list full screen.
 - `tenx` from a task's shell does the same.
-- `tenx` from any other terminal attaches to the same session.
+- `tenx` from any other terminal attaches to the same session, with a current task of its own: switching tasks on the phone leaves the desktop where it was.
 
 When you are done with a task:
 
@@ -178,11 +178,11 @@ Everything runs in one tmux session on one machine, so any terminal that can SSH
 ssh devbox -t tenx
 ```
 
-On a terminal under 100 columns there is no room for a column beside the task, so the task takes the whole screen and `Ctrl+w` shows the list over it. The rows are the same two lines per task, so titles and status glyphs stay readable on a 40-column phone screen, and a permission prompt can be answered with `y` from the list. Opening a task gives you the agent's whole screen, where you can answer anything else and detach again. The desktop notification goes to the machine running the session, not to the phone.
+On a terminal under 100 columns there is no room for a column beside the task, so the task takes the whole screen and `Ctrl+w` shows the list over it. The rows are the same two lines per task, so titles and status glyphs stay readable on a 40-column phone screen, and a permission prompt can be answered with `y` from the list. Opening a task gives you the agent's whole screen, where you can answer anything else and detach again. The phone has a current task of its own: what you open there does not move the desktop, and what the desktop opens does not move the phone, while the tasks themselves — their agents, their panes — are the same on both. A task's window takes the size of the smallest terminal looking at it: open one on the phone and it fits the phone, even while the desktop is in it; leave it, or open the list over it, and it goes back to the desktop's size, so the agent's output keeps wrapping where you will read it. The desktop notification goes to the machine running the session, not to the phone.
 
 ## Sweep and pin
 
-Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks immediately, finished tasks after `--after` (default 8h). It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
+Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks immediately, finished tasks after `--after` (default 8h). It never touches a window some client is looking at, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
 
 ## Agent integration
 

@@ -262,6 +262,18 @@ pub(super) enum ClientRequest {
 
 pub(super) struct Column {
     client_request: Option<ClientRequest>,
+    /// Whether moving the selection switches windows (`follow_selection`).
+    /// Off on a narrow client, where the list covers the task: browsing
+    /// there must not drag the client's session — and the window's size —
+    /// through every task it passes; only ⏎ switches.
+    pub(super) follow: bool,
+    /// The window id this column just switched its client's session to,
+    /// for the client to size (`take_switched`).
+    switched: Option<String>,
+    /// The task a narrow client parked away from while its list covers the
+    /// screen: its session sits on the home window meanwhile, so the column
+    /// keeps "you are here" from this instead of the live current window.
+    pub(super) parked: Option<String>,
     /// No tmux, no registry: a switch or an answer only updates this
     /// struct. The README demo's mode; never set by the client.
     pub(super) offline: bool,
@@ -318,7 +330,7 @@ pub(super) struct Column {
     /// window and a restarted server, and a row that only looks open makes
     /// the arrows stop on it for nothing.
     window_ids: std::collections::HashMap<String, String>,
-    /// Slug of the session's current window, if it's a task — gets the
+    /// Slug of this client's current window, if it's a task — gets the
     /// "current" chip.
     current: Option<String>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
@@ -402,6 +414,27 @@ impl Column {
         self.client_request.take()
     }
 
+    /// The window this column just switched to, once.
+    pub(super) fn take_switched(&mut self) -> Option<String> {
+        self.switched.take()
+    }
+
+    /// The window id of the task this client is on, from the last window
+    /// list; `None` on the home window or a task with no window.
+    pub(super) fn current_window_id(&self) -> Option<String> {
+        self.current.as_ref().and_then(|slug| self.window_ids.get(slug).cloned())
+    }
+
+    /// The slug of the task this client is on, if any.
+    pub(super) fn current_slug(&self) -> Option<String> {
+        self.current.clone()
+    }
+
+    /// The task this client is looking at — or parked away from.
+    fn live_current(&self) -> Option<String> {
+        crate::tmux::current_task().or_else(|| self.parked.clone())
+    }
+
     /// Whether the list (not a form or the command line) is showing — when
     /// the idle tick may refresh rows.
     pub(super) fn in_list_mode(&self) -> bool {
@@ -418,6 +451,9 @@ impl Column {
     fn empty() -> Self {
         Column {
             client_request: None,
+            follow: true,
+            switched: None,
+            parked: None,
             offline: false,
             workspaces: vec![],
             tab: Tab::Tasks,
@@ -539,7 +575,7 @@ impl Column {
         self.rows = rows;
         self.sort_rows();
         self.apply_filter();
-        self.current = crate::tmux::current_task();
+        self.current = self.live_current();
     }
 
     fn sort_rows(&mut self) {
@@ -589,18 +625,18 @@ impl Column {
         self.rows = rows;
         // Fresher than the slow refresh's window list: the task beside the
         // column is what ↓/↑ start from.
-        self.current = crate::tmux::current_task();
+        self.current = self.live_current();
     }
 
-    /// One `list-windows` for both the bell signals and the current window.
+    /// One `list-windows` for both the bell signals and the open-window set,
+    /// then this client's own current window (`current_task`: every client
+    /// has one of its own, so a window's `active` flag can't say which is
+    /// ours).
     fn refresh_windows(&mut self) {
         let windows = crate::tmux::list_windows().unwrap_or_default();
         self.signals = crate::tmux::signals_from(&windows);
         self.window_ids = windows.iter().map(|w| (w.name.clone(), w.id.clone())).collect();
-        self.current = windows
-            .iter()
-            .find(|w| w.active && w.name != crate::tmux::HOME_WINDOW)
-            .map(|w| w.name.clone());
+        self.current = self.live_current();
         self.slow_refreshed = Some(Instant::now());
     }
 
@@ -788,6 +824,9 @@ impl Column {
         if row.window_id.is_none() || Some(row.slug.as_str()) == self.current.as_deref() {
             return;
         }
+        if !self.follow {
+            return;
+        }
         let slug = row.slug.clone();
         if self.offline {
             self.current = Some(slug);
@@ -796,6 +835,7 @@ impl Column {
         let Some(w) = crate::tmux::find_window(&slug).ok().flatten() else { return };
         if crate::tmux::select_window(&w.id).is_ok() {
             self.current = Some(slug);
+            self.switched = Some(w.id);
         }
     }
 
@@ -1221,8 +1261,11 @@ impl Column {
                 self.status_msg = Some(e.to_string());
                 return Ok(false);
             }
+            // `open_in` selected (or created) the window; the client sizes it.
+            self.switched = crate::tmux::find_window(&slug).ok().flatten().map(|w| w.id);
         }
         self.current = Some(slug.clone());
+        self.parked = None;
         self.client_request = Some(ClientRequest::FocusTerminal);
         self.filter.clear();
         self.apply_filter();

@@ -315,8 +315,8 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
 /// explicit workspace and slug. Used by `open` and the column, neither of
 /// which can rely on cwd matching the task. Works from any client of the tenx
 /// server, and from outside it as long as the server is up — `select-window`
-/// changes the *session's* current window, which is what an attaching client
-/// lands on.
+/// changes the current window of the `tmux::view_session`: the client it was
+/// asked from, or the most recently active one, never every client.
 pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     let task = ws.find_task(slug)?;
 
