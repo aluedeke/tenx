@@ -29,6 +29,16 @@ impl SessionStatus {
             _ => SessionStatus::Idle,
         }
     }
+
+    /// The wire token written into a session record's `status` field. Inverse
+    /// of [`from_token`](Self::from_token).
+    pub fn token(self) -> &'static str {
+        match self {
+            SessionStatus::Busy => "busy",
+            SessionStatus::Waiting => "waiting",
+            SessionStatus::Idle => "idle",
+        }
+    }
 }
 
 /// One live Claude Code session.
@@ -63,6 +73,10 @@ pub struct Session {
     pub parked_job_id: Option<String>,
     /// The worker side of a parked turn (`jobId`).
     pub job_id: Option<String>,
+    /// Which harness this session runs — `claude`, `codex`, `pi`. Set from the
+    /// record's `agent` field; drives the overlay's per-agent chip. Empty for
+    /// a record that predates the field (read as the default agent).
+    pub agent: String,
 }
 
 /// True if `s` is the worker half of a parked turn whose interactive session
@@ -404,6 +418,7 @@ mod tests {
             pane: None,
             parked_job_id: None,
             job_id: None,
+            agent: "claude".to_string(),
         }
     }
 
