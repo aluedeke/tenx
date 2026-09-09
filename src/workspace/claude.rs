@@ -30,7 +30,12 @@
 //! server: a Claude left running in an abandoned multiplexer, or started in a
 //! plain terminal in the same task directory, would otherwise report for a
 //! pane nobody can see. That is exactly how a task once sat on "permission
-//! prompt" for a day while its visible session was idle.
+//! prompt" for a day while its visible session was idle. The scope check has
+//! one exception, a *parked turn*: newer Claude Code hands a running turn to
+//! a worker under its daemon (`claude bg-spare`, off `init`), and it is the
+//! worker's entry — not the interactive one, which reads `busy` — that says
+//! `waiting` while the permission dialog is on screen. `in_panes` keeps such
+//! a worker when the session that parked it is in our panes.
 //!
 //! This module is the impure half (filesystem + pid checks); the types and the
 //! meaning of a session list live in `tenx_core::status`.
@@ -60,6 +65,12 @@ struct RawSession {
     /// `"tenx:@14.%40"` — the pane the session runs in, as Claude Code itself
     /// reports it. Only the pane id is kept (`tenx_core::dialog::pane_id`).
     tmux: Option<String>,
+    /// A parked turn: the interactive session's `parkedJobId` names the
+    /// daemon-hosted worker's `jobId` (`tenx_core::status::Session`).
+    #[serde(rename = "parkedJobId")]
+    parked_job_id: Option<String>,
+    #[serde(rename = "jobId")]
+    job_id: Option<String>,
 }
 
 /// Every live Claude Code session *in tenx's tmux server*. Dead entries are
@@ -106,6 +117,8 @@ pub fn sessions() -> Vec<Session> {
             status_updated_at: raw.status_updated_at.map(|ms| UNIX_EPOCH + Duration::from_millis(ms)),
             kind: raw.kind.unwrap_or_default(),
             pane: raw.tmux.as_deref().and_then(tenx_core::dialog::pane_id),
+            parked_job_id: raw.parked_job_id,
+            job_id: raw.job_id,
         });
     }
     if out.is_empty() {

@@ -54,6 +54,24 @@ pub struct Session {
     /// The tmux pane the session runs in (`%40`), from the registry's own
     /// `tmux` field. What the column previews and sends keys to.
     pub pane: Option<String>,
+    /// A parked turn: the interactive session hands its running turn to a
+    /// worker hosted by Claude Code's daemon (`claude bg-spare`) and records
+    /// the worker's job here (`parkedJobId`). The worker keeps its own
+    /// registry entry — `kind` "bg", `job_id` set, no `tmux` field, status
+    /// `waiting` while the dialog it draws in the *interactive* pane is
+    /// open — and the interactive entry reads `busy` throughout.
+    pub parked_job_id: Option<String>,
+    /// The worker side of a parked turn (`jobId`).
+    pub job_id: Option<String>,
+}
+
+/// True if `s` is the worker half of a parked turn whose interactive session
+/// is in `sessions`: its `job_id` is some session's `parked_job_id`.
+pub fn is_parked_worker(s: &Session, sessions: &[&Session]) -> bool {
+    match &s.job_id {
+        Some(job) => sessions.iter().any(|o| o.pid != s.pid && o.parked_job_id.as_deref() == Some(job)),
+        None => false,
+    }
 }
 
 /// Sessions running in `task_dir` or anywhere beneath it. Background agents get
@@ -79,6 +97,13 @@ pub fn sessions_for<'a>(sessions: &'a [Session], task_dir: &Path) -> Vec<&'a Ses
 /// forever, and its `waiting` pins the task to `Blocked` no matter what the
 /// visible pane does.
 ///
+/// The one exception is a parked turn's worker (see [`Session::parked_job_id`]):
+/// it runs under Claude Code's daemon, off `init`, never under a pane — yet it
+/// is the entry that says `waiting` while the permission dialog it draws in
+/// the interactive pane is open. It is kept when the interactive session that
+/// parked the job is itself in our panes; without that, the task reads
+/// `Working` while a prompt sits on screen.
+///
 /// With no panes (server down) every session is dropped: the rule is "in our
 /// server", and nothing is.
 pub fn in_panes(sessions: Vec<Session>, pane_pids: &[u32], tree: &[(u32, u32)]) -> Vec<Session> {
@@ -86,7 +111,9 @@ pub fn in_panes(sessions: Vec<Session>, pane_pids: &[u32], tree: &[(u32, u32)]) 
         return vec![];
     }
     let mine = crate::live::descendants(pane_pids, tree);
-    sessions.into_iter().filter(|s| mine.contains(&s.pid)).collect()
+    let in_tree: Vec<&Session> = sessions.iter().filter(|s| mine.contains(&s.pid)).collect();
+    let workers: Vec<u32> = sessions.iter().filter(|s| is_parked_worker(s, &in_tree)).map(|s| s.pid).collect();
+    sessions.into_iter().filter(|s| mine.contains(&s.pid) || workers.contains(&s.pid)).collect()
 }
 
 /// What the multiplexer knows about a task's window that Claude Code doesn't:
@@ -269,7 +296,8 @@ pub struct TaskState {
 pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal) -> TaskState {
     let live = sessions_for(sessions, task_dir);
     let count = live.len();
-    let agents = live.iter().filter(|s| s.kind != "interactive").count();
+    // A parked turn's worker is the interactive session's own turn, not an agent.
+    let agents = live.iter().filter(|s| s.kind != "interactive" && !is_parked_worker(s, &live)).count();
     let pane = live
         .iter()
         .find(|s| s.kind == "interactive")
@@ -332,6 +360,8 @@ mod tests {
             status_updated_at: Some(at(updated)),
             kind: kind.to_string(),
             pane: None,
+            parked_job_id: None,
+            job_id: None,
         }
     }
 
@@ -396,6 +426,35 @@ mod tests {
         assert_eq!(kept, vec![300, 200]);
         // Server down: nothing is "ours", even a session that would otherwise match.
         assert!(in_panes(vec![a, b, c], &[], &tree).is_empty());
+    }
+
+    /// A parked turn: the interactive session (in a pane, `busy`) hands the
+    /// turn to a daemon-hosted worker (off `init`, `waiting`, no pane). The
+    /// worker is kept because its parent parked it, and the task is Blocked
+    /// on the interactive session's pane; it is not an agent.
+    #[test]
+    fn a_parked_turns_worker_is_kept_and_blocks_on_the_interactive_pane() {
+        let mut parent = session(TASK, SessionStatus::Busy, "interactive", 10);
+        parent.pid = 200;
+        parent.pane = Some("%57".into());
+        parent.parked_job_id = Some("2f32".into());
+        let mut worker = session(TASK, SessionStatus::Waiting, "bg", 20);
+        worker.pid = 900;
+        worker.job_id = Some("2f32".into());
+        worker.waiting_for = Some("permission prompt".into());
+        let mut stray = session(TASK, SessionStatus::Waiting, "bg", 30);
+        stray.pid = 901; // a worker whose parent is not in our panes
+        stray.job_id = Some("other".into());
+        let tree = vec![(200, 1), (900, 1), (901, 1)];
+        let kept = in_panes(vec![parent, worker, stray], &[200], &tree);
+        let pids: Vec<u32> = kept.iter().map(|s| s.pid).collect();
+        assert_eq!(pids, vec![200, 900]);
+
+        let st = resolve_task_state(Path::new(TASK), &kept, QUIET);
+        assert_eq!(st.status, TaskStatus::Blocked);
+        assert_eq!(st.waiting_for.as_deref(), Some("permission prompt"));
+        assert_eq!(st.pane.as_deref(), Some("%57"));
+        assert_eq!((st.sessions, st.agents), (2, 0));
     }
 
     #[test]

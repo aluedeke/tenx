@@ -48,7 +48,7 @@ tmux reads its config once at server start. After changing the generated config,
 
 ## Task state
 
-Status resolution is in `tenx_core::status`. Its inputs are Claude Code's session registry (`~/.claude/sessions/<pid>.json`, checked against live pids and scoped to sessions whose pid descends from a pane of the tenx server) and the bell flag of the task's window. The rules, in order:
+Status resolution is in `tenx_core::status`. Its inputs are Claude Code's session registry (`~/.claude/sessions/<pid>.json`, checked against live pids and scoped to sessions whose pid descends from a pane of the tenx server, plus the daemon-hosted worker of a *parked turn* whose interactive session is in a pane — that worker, not the interactive entry, is what says `waiting` on a permission prompt) and the bell flag of the task's window. The rules, in order:
 
 1. Any session `waiting` on a prompt or permission: **Blocked**, with Claude's reason.
 2. The window's bell flag is set: **Signaled**. Any process can raise it with `printf '\a'`; tmux clears it when the window is visited.
