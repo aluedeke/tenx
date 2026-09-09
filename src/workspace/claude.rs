@@ -172,8 +172,83 @@ pub fn project_dir(cwd: &std::path::Path) -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".claude/projects").join(encoded))
 }
 
-/// True if the process exists. `kill(pid, 0)` performs the permission and
-/// existence checks without sending anything. POSIX, so identical on Linux.
+/// True if the process exists and is not a zombie. `kill(pid, 0)` performs
+/// the permission and existence checks without sending anything (POSIX, so
+/// identical on Linux) — but it also says yes to a zombie: a process that has
+/// exited and only waits for its parent to `wait()` on it. A zombie can hold
+/// nothing — no dialog, no turn, no pidfile worth honouring — so it counts as
+/// dead here, or a killed watcher whose parent never reaps it blocks the next
+/// one from starting ("already running") for as long as the parent lives.
 pub fn pid_alive(pid: u32) -> bool {
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    let exists = unsafe { libc::kill(pid as libc::pid_t, 0) == 0 };
+    exists && !zombie(pid)
+}
+
+/// Whether `pid` has exited but not been reaped. macOS: `sysctl
+/// KERN_PROC_PID` — what `ps` reads; its `p_stat` is `SZOMB` for a zombie.
+/// (`proc_pidinfo` cannot serve here: it answers ESRCH for a zombie.) Linux:
+/// `/proc/<pid>/stat`'s state field, after the parenthesised command name.
+/// Elsewhere, or when the query itself fails, the answer is "not a zombie",
+/// so the plain existence check above stays the verdict.
+#[cfg(target_os = "macos")]
+fn zombie(pid: u32) -> bool {
+    // `struct kinfo_proc` (sys/sysctl.h), which libc doesn't declare for
+    // macOS. Its layout is a public, frozen ABI on 64-bit Darwin:
+    // 648 bytes, `kp_proc.p_stat` (u8) at 36, `kp_proc.p_pid` (i32) at 40.
+    // The pid read back is checked against the one asked for, so a layout
+    // that ever differs fails closed (reads as "not a zombie"), never wrong.
+    const SIZE: usize = 648;
+    const P_STAT: usize = 36;
+    const P_PID: usize = 40;
+    let mut buf = [0u8; SIZE];
+    let mut len = SIZE;
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid as libc::c_int];
+    let rc = unsafe {
+        libc::sysctl(mib.as_mut_ptr(), mib.len() as libc::c_uint, buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0)
+    };
+    if rc != 0 || len != SIZE {
+        return false;
+    }
+    let read_pid = i32::from_ne_bytes(buf[P_PID..P_PID + 4].try_into().unwrap());
+    read_pid == pid as i32 && u32::from(buf[P_STAT]) == libc::SZOMB
+}
+
+#[cfg(target_os = "linux")]
+fn zombie(pid: u32) -> bool {
+    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    // `pid (comm) state ...` — comm may contain spaces and parentheses, so
+    // the state is the first field after the last `)`.
+    stat.rsplit(')').next().and_then(|rest| rest.split_whitespace().next()) == Some("Z")
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn zombie(_pid: u32) -> bool {
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
+    /// A child that has exited but not been waited on is a zombie: it still
+    /// passes `kill(pid, 0)`, and must not count as alive.
+    #[test]
+    fn a_zombie_is_not_alive() {
+        let mut child = Command::new("true").spawn().expect("spawn true");
+        let pid = child.id();
+        // `true` exits at once; give the kernel a moment to mark it.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while pid_alive(pid) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(unsafe { libc::kill(pid as libc::pid_t, 0) } == 0, "zombie should still exist for kill(0)");
+        assert!(!pid_alive(pid), "an unreaped exited child must read as dead");
+        child.wait().unwrap();
+        assert!(!pid_alive(pid));
+        assert!(pid_alive(std::process::id()));
+    }
 }

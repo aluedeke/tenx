@@ -656,17 +656,31 @@ pub fn ensure_running(bin: &Path) {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    // Own session + process group, so closing the terminal that happened to
-    // start it doesn't take the watcher down with a SIGHUP.
+    // Double-fork: the child we spawn forks once more and exits at once, so
+    // the watcher proper is the grandchild — reparented to init (launchd),
+    // which reaps it when it dies. Without this its parent is whatever
+    // `tenx` process happened to start it (typically the client that then
+    // runs for the whole session), and a killed or crashed watcher stays a
+    // zombie until that process exits — a pid `kill(0)` still finds, which
+    // once kept "already running" true and no watcher running for an hour.
+    // The intermediate is waited on right here, so it leaves no zombie of
+    // its own. Own session + process group, so closing the terminal that
+    // started it doesn't take the watcher down with a SIGHUP.
     #[cfg(unix)]
     unsafe {
         use std::os::unix::process::CommandExt;
         cmd.pre_exec(|| {
+            // Only async-signal-safe calls between fork and exec.
+            if libc::fork() > 0 {
+                libc::_exit(0);
+            }
             libc::setsid();
             Ok(())
         });
     }
-    let _ = cmd.spawn();
+    if let Ok(mut child) = cmd.spawn() {
+        let _ = child.wait();
+    }
 }
 
 #[cfg(test)]
