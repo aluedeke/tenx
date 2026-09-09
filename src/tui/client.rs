@@ -2,19 +2,24 @@
 //! tmux session, in one process that owns the terminal — the layout cmux
 //! made familiar, done as a TUI outside tmux.
 //!
-//! The right-hand side is `tmux attach` running in a pty
+//! The right-hand side is a tmux client running in a pty
 //! (`term::EmbeddedTerminal`), so tmux stays the session layer untouched:
 //! windows are tasks, the watcher, sweep and secrets all work as before,
 //! and the session survives this client. The left-hand side is the column
 //! on its `Surface::Client`: the same list, keys and commands, but the
 //! window switch *is* the jump — the terminal shows it — and the selection
 //! survives switching because nothing restarts. One client per terminal
-//! (desktop, phone over SSH), each with its own list state.
+//! (desktop, phone over SSH), each with its own list state *and its own
+//! current task*: the pty attaches through a grouped tmux session of this
+//! client's own (`tmux::client_session`), which shares the windows with
+//! every other client but not the choice of which one is on screen. The
+//! phone can sit on one task while the desktop works in another.
 //!
 //! Keys: Ctrl+w shows the column and focuses it, or hides it from inside;
 //! everything else goes to whichever side has focus. On a narrow terminal
-//! (a phone) the column is hidden by default and Ctrl+w shows the list over
-//! the whole screen instead.
+//! (a phone) the column is either the whole screen or not there at all:
+//! hidden by default, Ctrl+w shows the list over the whole screen, and a
+//! jump or `:hide` puts it away again.
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -349,14 +354,18 @@ fn chrono_stamp() -> String {
 
 pub fn run() -> Result<()> {
     crate::tmux::ensure_session()?;
-    // The column is the list; landing on the home window would show the
-    // list twice. Start on a task window when there is one.
-    if let Ok(windows) = crate::tmux::list_windows()
-        && windows.iter().any(|w| w.active && w.name == crate::tmux::HOME_WINDOW)
-        && let Some(task) = windows.iter().find(|w| w.name != crate::tmux::HOME_WINDOW)
-    {
-        let _ = crate::tmux::select_window(&task.id);
-    }
+    // This client's own session (see the module doc): every "current
+    // window" question and switch from here on is about it, and the pty
+    // creates it on attach.
+    let session = crate::tmux::client_session(std::process::id());
+    crate::tmux::set_view_session(&session);
+    // A fresh grouped session starts on the group's first window, the home
+    // shell — but the column is the list; landing there would show the list
+    // twice. Start on a task window when there is one.
+    let start_on = crate::tmux::list_windows()
+        .ok()
+        .and_then(|ws| ws.into_iter().find(|w| w.name != crate::tmux::HOME_WINDOW))
+        .map(|w| w.id);
 
     let orig = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -370,7 +379,7 @@ pub fn run() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_client(&mut terminal);
+    let result = run_client(&mut terminal, &session, start_on.as_deref());
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste)?;
@@ -378,12 +387,12 @@ pub fn run() -> Result<()> {
     result
 }
 
-fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, session: &str, start_on: Option<&str>) -> Result<()> {
     let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
 
     // The inner tmux must not think it is nested: `$TMUX` is this client's
     // secret, not its child's. `TERM` passes through so colours match.
-    let (tmux, args) = crate::tmux::attach_command();
+    let (tmux, args) = crate::tmux::attach_command(session, start_on);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let term = EmbeddedTerminal::spawn(&tmux.to_string_lossy(), &args, &[], &["TMUX", "TMUX_PANE"], rows.max(1), cols.max(1))?;
     let mut client = Client::new(Column::new(), Box::new(term), cols, rows, configured_width());

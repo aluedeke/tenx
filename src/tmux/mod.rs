@@ -3,10 +3,22 @@
 //! tenx runs its own tmux **server** on a dedicated socket (`tmux -L tenx`),
 //! started against a generated config, so tenx's theme, status line and hooks
 //! never touch the user's own `~/.tmux.conf`. The
-//! server holds one session (`tenx`); **windows are tasks** (named by slug,
-//! tracked by their stable `@id`), panes are whatever the layout spawned. Any
-//! client — a local terminal, or an SSH login from a phone — attaches to the
-//! same server with `tenx`, so every surface is the one true session.
+//! server holds one *base* session (`tenx`) that owns the windows; **windows
+//! are tasks** (named by slug, tracked by their stable `@id`), panes are
+//! whatever the layout spawned. Any client — a local terminal, or an SSH
+//! login from a phone — attaches to the same server with `tenx`, so every
+//! surface sees the one set of tasks.
+//!
+//! Each client attaches through a **grouped session of its own**
+//! (`new-session -t tenx`, named [`client_session`]): tmux session groups
+//! share their windows but keep a current window per session, which is what
+//! lets a phone sit on one task while the desktop works in another — the
+//! task's state (its panes, its agent) is shared; *which* task you are
+//! looking at is not. The grouped session dies with its client
+//! (`destroy-unattached`); the base session never has a client and keeps the
+//! windows alive. Nobody selects windows in the base session: everything that
+//! means "the window you are looking at" — [`current_task`],
+//! [`select_window`], [`open_task_window`] — targets the [`view_session`].
 //!
 //! Tabless on purpose: the generated config blanks tmux's own window list. The
 //! task list is the only switcher: the column of `tenx`'s client
@@ -48,8 +60,76 @@ fn tenx_cmd(tenx_bin: &str) -> String {
         format!("env TENX_TMUX_SOCKET={} {}", shell_quote(&sock), shell_quote(tenx_bin))
     }
 }
-/// The one session on that server.
+/// The base session on that server — the one that owns the windows and the
+/// name of the session group every client's own session joins.
 pub const SESSION: &str = "tenx";
+/// A client's own grouped session (see the module doc), named by the client
+/// process so two clients never collide and a leftover can be traced.
+pub fn client_session(pid: u32) -> String {
+    format!("{SESSION}-c{pid}")
+}
+
+/// The session set by [`set_view_session`] — the client's own, for its
+/// lifetime.
+static VIEW_SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Pin the session that "current window" means for this process — the client
+/// calls it once with [`client_session`] before it does anything else, so
+/// every switch and every `current_task` poll is its own.
+pub fn set_view_session(name: &str) {
+    let _ = VIEW_SESSION.set(name.to_string());
+}
+
+/// The session whose current window is "the task you are looking at": the
+/// one pinned by [`set_view_session`] (inside the client); else, inside a
+/// pane of the tenx server (a shell or an agent in a task), the session of
+/// the client that most recently used that pane's window — tmux resolves
+/// `#{session_name}` through `$TMUX_PANE`; else, from a plain terminal, the
+/// session of the most recently active client (a `tenx task open` from
+/// another terminal lands in the client you last touched); else the base
+/// session, where a selection is invisible but harmless.
+pub fn view_session() -> String {
+    if let Some(s) = VIEW_SESSION.get() {
+        return s.clone();
+    }
+    if inside_tenx_session()
+        && let Ok(name) = run(&["display-message", "-p", "#{session_name}"])
+        && !name.trim().is_empty()
+    {
+        return name.trim().to_string();
+    }
+    latest_client_session().unwrap_or_else(|| SESSION.to_string())
+}
+
+/// The session of the client that most recently did something, if any is
+/// attached.
+fn latest_client_session() -> Option<String> {
+    let out = run(&["list-clients", "-F", "#{client_activity}\t#{client_session}"]).ok()?;
+    out.lines()
+        .filter_map(|l| {
+            let (t, s) = l.split_once('\t')?;
+            Some((t.trim().parse::<u64>().ok()?, s.trim().to_string()))
+        })
+        .filter(|(_, s)| !s.is_empty())
+        .max_by_key(|(t, _)| *t)
+        .map(|(_, s)| s)
+}
+
+/// Every attached client as (its session, the task it is looking at — `None`
+/// on the home window). What the watcher's per-client status corner and the
+/// e2e tests read.
+pub fn clients() -> Vec<(String, Option<String>)> {
+    let Ok(out) = run(&["list-clients", "-F", "#{client_session}\t#{window_name}"]) else {
+        return vec![];
+    };
+    out.lines()
+        .filter_map(|l| {
+            let (s, w) = l.split_once('\t')?;
+            let w = w.trim();
+            Some((s.trim().to_string(), (!w.is_empty() && w != HOME_WINDOW).then(|| w.to_string())))
+        })
+        .collect()
+}
 /// The column's window, created with the session and never closed.
 pub const HOME_WINDOW: &str = "home";
 /// Minimum tmux: 3.3 — what the generated config and the format strings the
@@ -71,7 +151,10 @@ pub struct Window {
     /// used to kill anything (see `WINDOW_ID_FILE`).
     pub id: String,
     pub name: String,
-    /// The session's current window (what an attaching client lands on).
+    /// Some client is looking at it (`window_active_clients`): every client
+    /// has a current window of its own (see the module doc), so this is
+    /// "on screen somewhere", not "the current window" — sweep never closes
+    /// such a window, and `task list` marks it.
     pub active: bool,
     /// A process in the window rang the bell / produced output since the
     /// window was last visited — the generic attention signal (see
@@ -393,17 +476,31 @@ pub fn ensure_session() -> Result<()> {
     Ok(())
 }
 
-/// The `tmux -L <socket> attach-session -t tenx` a client runs in its pty.
-pub fn attach_command() -> (PathBuf, Vec<String>) {
-    (find_bin(), vec!["-L".into(), socket(), "attach-session".into(), "-t".into(), SESSION.into()])
+/// The command a client runs in its pty: create its own grouped session
+/// `name` in the `tenx` group and attach to it, in one client so nothing can
+/// slip between the two; then mark it `destroy-unattached`, so it goes when
+/// the client does — set only *after* attaching, because tmux destroys a
+/// detached session the moment that option turns on; then land on
+/// `start_on` (a window id) when given, since a grouped session starts on
+/// the group's first window, which is `home`.
+pub fn attach_command(name: &str, start_on: Option<&str>) -> (PathBuf, Vec<String>) {
+    let mut args: Vec<String> =
+        ["-L", &socket(), "new-session", "-t", SESSION, "-s", name, ";", "set-option", "destroy-unattached", "on"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+    if let Some(id) = start_on {
+        args.extend([";".into(), "select-window".into(), "-t".into(), format!("{name}:{id}")]);
+    }
+    (find_bin(), args)
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
 
 const WINDOW_FORMAT: &str =
-    "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active}\t#{window_bell_flag}\t#{window_activity_flag}";
+    "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active_clients}\t#{window_bell_flag}\t#{window_activity_flag}";
 
-/// Every window of the session. Empty (not an error) when the server is down
+/// Every window of the base session — the group's, so every client's. Empty (not an error) when the server is down
 /// — one subprocess either way: a failed `list-windows` *is* the liveness
 /// check, so there's no separate `has-session` round trip on a poll path.
 pub fn list_windows() -> Result<Vec<Window>> {
@@ -451,8 +548,10 @@ pub fn is_reserved_slug(slug: &str) -> bool {
     slug == HOME_WINDOW
 }
 
+/// Make window `id` the current one of the [`view_session`] — this client's,
+/// never another's.
 pub fn select_window(id: &str) -> Result<()> {
-    run(&["select-window", "-t", id]).map(drop)
+    run(&["select-window", "-t", &format!("{}:{id}", view_session())]).map(drop)
 }
 
 /// The visible contents of a pane, with its colours (`-e` keeps the SGR
@@ -497,6 +596,13 @@ pub fn show_global_option(option: &str) -> Option<String> {
     None
 }
 
+/// Set a per-session user option — a format looks a `@name` up on the window,
+/// then the session, then globally, so a client's session can carry a status
+/// corner of its own (`@tenx_right`) over the global one.
+pub fn set_session_option(session: &str, option: &str, value: &str) -> Result<()> {
+    run(&["set-option", "-t", session, option, value]).map(drop)
+}
+
 /// Open a small pane at the bottom of `window_id` following a background
 /// agent's transcript (`tenx internal agent-log`). `-d` keeps focus where it
 /// is: the agent appearing is news, not an interruption. Sized in lines, not
@@ -510,12 +616,12 @@ pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, ses
 
 // ── Current window ────────────────────────────────────────────────────────────
 
-/// The name of the session's current window (`None` for the home window
-/// or when the server is down) — the task a client is looking at, asked
-/// live rather than read from the watcher's snapshot, which can lag a
-/// switch by a couple of seconds.
+/// The name of the [`view_session`]'s current window (`None` for the home
+/// window or when the server is down) — the task *this* client is looking
+/// at, asked live rather than read from the watcher's snapshot, which can
+/// lag a switch by a couple of seconds.
 pub fn current_task() -> Option<String> {
-    let name = run(&["display-message", "-p", "-t", SESSION, "#{window_name}"]).ok()?.trim().to_string();
+    let name = run(&["display-message", "-p", "-t", &view_session(), "#{window_name}"]).ok()?.trim().to_string();
     (!name.is_empty() && name != HOME_WINDOW).then_some(name)
 }
 
@@ -539,16 +645,17 @@ pub struct TaskWindow<'a> {
 }
 
 /// Create a task's window and its panes, returning the window's stable id.
-/// The window becomes the session's current one, so a client that's attached
-/// (or about to attach) lands on it.
+/// The window joins every session of the group and becomes the current one
+/// of the [`view_session`] only: the client that asked for it shows it, the
+/// others stay on their own tasks.
 ///
 /// Built-in layout — claude on the left, nvim on `TASK.md` top-right, a shell
 /// bottom-right — mirrors the zellij default. A pane whose command exits
 /// closes (tmux's default), which is what `close_on_exit` did.
 pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
-    // `tenx:` (trailing colon) targets the session so the new window is
+    // `<session>:` (trailing colon) targets the session so the new window is
     // appended to it rather than treated as a window name to match.
-    let session = format!("{SESSION}:");
+    let session = format!("{}:", view_session());
     let first_cmd = if opts.layout_script.is_some() { None } else { Some(opts.agent_cmd) };
     let mut args = vec!["new-window", "-t", &session, "-n", opts.slug, "-c", opts.task_dir, "-P", "-F", "#{window_id}"];
     if let Some(c) = first_cmd {
@@ -594,7 +701,7 @@ fn parse_window(line: &str) -> Option<Window> {
         id: f.next()?.to_string(),
         name: f.nth(1)?.to_string(), // skip the index column
 
-        active: f.next()? == "1",
+        active: f.next()? != "0",
         bell: f.next()? == "1",
         activity: f.next()? == "1",
     })
@@ -619,10 +726,24 @@ mod tests {
 
     #[test]
     fn parses_window_lines() {
-        let w = parse_window("@3\t2\tadd-repos\t1\t0\t1").unwrap();
+        // The fourth column counts the clients looking at the window.
+        let w = parse_window("@3\t2\tadd-repos\t2\t0\t1").unwrap();
         assert_eq!((w.id.as_str(), w.name.as_str()), ("@3", "add-repos"));
         assert!(w.active && !w.bell && w.activity);
+        assert!(!parse_window("@3\t2\tadd-repos\t0\t0\t1").unwrap().active);
         assert!(parse_window("@3\tx").is_none());
+    }
+
+    #[test]
+    fn attach_creates_a_grouped_session_that_dies_with_its_client() {
+        let (_, args) = attach_command("tenx-c42", Some("@7"));
+        let line = args.join(" ");
+        assert!(line.contains("new-session -t tenx -s tenx-c42 ;"), "{line}");
+        assert!(line.contains("; set-option destroy-unattached on ;"), "{line}");
+        assert!(line.ends_with("select-window -t tenx-c42:@7"), "{line}");
+        let (_, args) = attach_command("tenx-c42", None);
+        assert!(!args.iter().any(|a| a == "select-window"));
+        assert_eq!(client_session(42), "tenx-c42");
     }
 
     #[test]

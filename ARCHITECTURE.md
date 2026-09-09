@@ -68,7 +68,7 @@ The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on
 
 ## The client and the column
 
-`tui/client.rs` is what `tenx` opens in a terminal: one process that owns the terminal, the task column on the left (`tui/column.rs`) and `tmux attach` running in a pty on the right (`tui/term.rs`: a `vt100` parser painted by `tui-term`'s widget, keys and mouse encoded back into bytes, bells and OSC 52 clipboard writes forwarded to the real terminal). One client per terminal, each with its own column state; a phone over SSH gets one too, with the column folded away below 100 columns.
+`tui/client.rs` is what `tenx` opens in a terminal: one process that owns the terminal, the task column on the left (`tui/column.rs`) and `tmux attach` running in a pty on the right (`tui/term.rs`: a `vt100` parser painted by `tui-term`'s widget, keys and mouse encoded back into bytes, bells and OSC 52 clipboard writes forwarded to the real terminal). One client per terminal, each with its own column state and its own current task: the pty attaches through a grouped tmux session of the client's own (`tmux::client_session`), which shares the windows with every other client but not the choice of which is on screen, and dies with the client. A phone over SSH gets one too, sitting on its own task while the desktop works in another; below 100 columns the column is either the whole screen or hidden, never beside the task.
 
 The column lists every task from every registered workspace, sectioned by attention group, fuzzy-filtered, with a search field in insert mode and a list in normal mode. Actions call straight into the `cli::task` and `cli::repo` functions rather than duplicating their logic. Moving the selection switches the window under the terminal; a closed task shows an empty screen until Enter opens it; `Ctrl+w` moves the keyboard between the column and the task and hides the column from inside. A status change moves its task to the right section at once, the selection following its task by name rather than by position. Idle windows are swept, rate-limited, when the terminal regains focus.
 
@@ -81,7 +81,7 @@ A blocked task's permission prompt can be answered from the column with `y` or `
 
 **Repo changes** share one function with creation. Detaching removes the worktree and its branch and does not force unless asked, so git's refusal to drop a dirty worktree is the safety net.
 
-**Sweep** closes windows nobody is waiting on. The rule is a pure function in `tenx_core::sweep`: never the current window, a pinned task, or a Blocked or Working task; Idle immediately; Done after the configured age.
+**Sweep** closes windows nobody is waiting on. The rule is a pure function in `tenx_core::sweep`: never a window some client is looking at, a pinned task, or a Blocked or Working task; Idle immediately; Done after the configured age.
 
 **Remove** asks for confirmation, then deletes each worktree and its branch and the task directory.
 

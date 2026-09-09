@@ -318,7 +318,7 @@ pub(super) struct Column {
     /// window and a restarted server, and a row that only looks open makes
     /// the arrows stop on it for nothing.
     window_ids: std::collections::HashMap<String, String>,
-    /// Slug of the session's current window, if it's a task — gets the
+    /// Slug of this client's current window, if it's a task — gets the
     /// "current" chip.
     current: Option<String>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
@@ -592,15 +592,15 @@ impl Column {
         self.current = crate::tmux::current_task();
     }
 
-    /// One `list-windows` for both the bell signals and the current window.
+    /// One `list-windows` for both the bell signals and the open-window set,
+    /// then this client's own current window (`current_task`: every client
+    /// has one of its own, so a window's `active` flag can't say which is
+    /// ours).
     fn refresh_windows(&mut self) {
         let windows = crate::tmux::list_windows().unwrap_or_default();
         self.signals = crate::tmux::signals_from(&windows);
         self.window_ids = windows.iter().map(|w| (w.name.clone(), w.id.clone())).collect();
-        self.current = windows
-            .iter()
-            .find(|w| w.active && w.name != crate::tmux::HOME_WINDOW)
-            .map(|w| w.name.clone());
+        self.current = crate::tmux::current_task();
         self.slow_refreshed = Some(Instant::now());
     }
 
