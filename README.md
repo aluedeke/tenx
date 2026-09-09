@@ -8,9 +8,9 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
 
 `tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
-![The tenx overlay in motion: filtering, the delete prompt, the command line, and an agent that stops and needs you](docs/overlay-demo.gif)
+![A tenx session in motion: the task column beside an agent, switching tasks, filtering, and an agent that stops and needs you](docs/demo.gif)
 
-<sub>Generated, not recorded: a scripted scene rendered through the overlay's own widgets. Crisper as an [animated SVG](docs/overlay-demo.svg); the [asciinema cast](docs/overlay-demo.cast) plays in a terminal.</sub>
+<sub>Generated, not recorded: a scripted session rendered through the client's own widgets. Crisper as an [animated SVG](docs/demo.svg); the [asciinema cast](docs/demo.cast) plays in a terminal.</sub>
 
 That list sits as a column on the left of your terminal, beside the task, so switching is always one glance and one keystroke away:
 
@@ -55,7 +55,7 @@ Optional, picked up when present:
 
 - `claude` (Claude Code CLI). The default window layout starts it.
 - `nvim`. The default layout opens `TASK.md` in it.
-- `gh`. Shows the task branch's pull request as a chip in the overlay and status bar.
+- `gh`. Shows the task branch's pull request as a chip in the column and status bar.
 - `lsof`. Shows ports the task's processes are listening on.
 - `age` and `sops`. Required only for `tenx secrets`.
 - `terminal-notifier` on macOS, `notify-send` on Linux, for desktop notifications. macOS falls back to `osascript`.
@@ -115,15 +115,17 @@ When you are done with a task:
 tenx task rm fix-login-timeout     # removes worktrees, branches and the window
 ```
 
-## The overlay
+## The column
 
-The overlay lists every task from every registered workspace, sectioned by attention: secrets pending, waiting for input, working, inactive. It is Telescope-style: typing filters, and the list has its own keys. Beside the list (below it on a narrow terminal) a preview panel shows the selected task's Claude pane, live, so you can read a permission prompt without leaving the overlay and answer it with `y` or `N`. The answer is typed into the task's pane by tmux, and only after tenx has checked that the session is still waiting on a permission dialog and that the dialog is still on screen; anything else (a question from Claude, a prompt already answered) is refused with a message, so `Enter` never lands somewhere unintended.
+The column lists every task from every registered workspace, sectioned by attention: secrets pending, waiting for input, working, inactive. It is Telescope-style: typing filters, and the list has its own keys. A task waiting on a permission prompt can be answered from the column with `y` or `N`: the answer is typed into the task's pane by tmux, and only after tenx has checked that the session is still waiting on a permission dialog and that the dialog is still on screen; anything else (a question from Claude, a prompt already answered) is refused with a message, so `Enter` never lands somewhere unintended.
 
 | Key | Action |
 |---|---|
-| `Enter`, `o`, `l` | Jump to the task's window, creating it if needed |
-| `/`, `i` | Back to the search field |
-| `j`, `k`, `gg`, `G` | Move |
+| `Ctrl+w` | Into the column, on the task you are in; from the column, hide it |
+| `↓`, `↑`, `j`, `k`, `gg`, `G` | Move; an open task shows as you land on it |
+| `Enter`, `o`, `l` | Open the task, creating its window if needed, and put the cursor in it |
+| `Esc`, `q` | Back to the task, leaving the column showing |
+| `/`, `i` | To the search field |
 | `n` | New task |
 | `a` | Add a repo to the workspace |
 | `e` | Edit which repos the task has worktrees for |
@@ -132,22 +134,19 @@ The overlay lists every task from every registered workspace, sectioned by atten
 | `u` | Unlock pending secrets |
 | `y`, `N` | Approve or deny the task's permission prompt without visiting it |
 | `dd` | Delete the task |
-| `:` | Command line |
+| `:` | Command line (`:hide` hides the column, `:q` quits the client) |
 
-Window 0 of the session is a permanent home instance of the overlay.
-
-### The column
 
 `tenx` in a terminal is one process that owns it: the task list as a column on the left, about a fifth of the width, and the tmux session on the right through an embedded terminal, the layout cmux made familiar. tmux stays underneath exactly as before, so the session, the watcher, sweep and secrets are untouched, quitting the client leaves everything running, and a second terminal, or a phone over SSH, gets a column of its own.
 
-Each task takes two lines: the title, then a muted line with what it is waiting on, its workspace, how long it has been resting, and its PR and port chips, as far as they fit. Closed tasks are drawn dimmer. The column has the overlay's keys, minus the preview panel, since the task itself is right there.
+Each task takes two lines: the title, then a muted line with what it is waiting on, its workspace, how long it has been resting, and its PR and port chips, as far as they fit. Closed tasks are drawn dimmer. The column has the column's keys, minus the preview panel, since the task itself is right there.
 
 `Ctrl+w` puts the cursor in the column on the task you are in; `Ctrl+w` from inside hides the column and gives the width back. The arrow keys and `j`/`k` step through every task: landing on an open one switches to it, landing on a closed one shows an empty screen in its place until `Enter` opens it. `Enter` opens a task and puts the cursor in it; `Esc` or `q` puts the cursor back without switching; `/` types a filter; `:hide` hides the column; `:q` quits the client. Because the column is one process, its selection and filter survive switching tasks, and it re-groups itself as statuses change only while the keyboard is in the task, never while you are moving through the list. On a terminal under 100 columns the column is hidden and `Ctrl+w` shows the list over the whole screen.
 
 ## Commands
 
 ```
-tenx                     the column beside the session (creating it if needed); the overlay when already inside
+tenx                     the column beside the session, creating the session if needed
 tenx init [NAME]         create a workspace here (or in NAME/)
 tenx repo add <URL>      add a repo to the workspace (bare clone)
 tenx repo list|fetch
@@ -159,13 +158,12 @@ tenx task add-repo|rm-repo|set-repos <SLUG> <REPOS..>
 tenx task rm <NAME>
 tenx task pin|unpin <NAME>
 tenx task sweep          close windows nobody is waiting on [--after 8h] [--dry-run]
-tenx overlay [--json]    run the overlay, or dump all tasks as JSON
 tenx watch               the attention watcher (started automatically)
 tenx standup             summarize recent activity across tasks
 tenx secrets ...         per-task encrypted secrets, see below
 ```
 
-Every mutating command accepts `--ws-dir` so scripts and other front ends can run it from anywhere. `tenx overlay --json` is the same data the overlay renders.
+Every mutating command accepts `--ws-dir` so scripts and other front ends can run it from anywhere. `tenx task list --json` is the same data the column renders.
 
 ## From a phone or tablet
 
@@ -175,11 +173,11 @@ Everything runs in one tmux session on one machine, so any terminal that can SSH
 ssh devbox -t tenx
 ```
 
-The overlay adapts to narrow terminals. As the width shrinks it drops the age column first, then the open column, and the workspace column never takes more than a third of the width, so task titles and their status glyphs stay readable on a 40-column phone screen. When the selected task is waiting on a prompt, the preview panel appears under the list, so a permission prompt can be read and answered with `y` right there; otherwise the list keeps the whole screen. Jumping into a task gives you the agent's whole pane, where you can answer anything else and detach again. The desktop notification goes to the machine running the session, not to the phone.
+On a terminal under 100 columns there is no room for a column beside the task, so the task takes the whole screen and `Ctrl+w` shows the list over it. The rows are the same two lines per task, so titles and status glyphs stay readable on a 40-column phone screen, and a permission prompt can be answered with `y` from the list. Opening a task gives you the agent's whole screen, where you can answer anything else and detach again. The desktop notification goes to the machine running the session, not to the phone.
 
 ## Sweep and pin
 
-Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks immediately, finished tasks after `--after` (default 8h). It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home overlay runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
+Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks immediately, finished tasks after `--after` (default 8h). It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
 
 ## Claude Code integration
 
@@ -202,7 +200,7 @@ tenx secrets cancel <NAME> | --all # withdraw a pending request
 tenx secrets status
 ```
 
-`decrypt` and `set` decide what to do by whether a real terminal is reachable. From your shell they prompt for the passphrase and act. From an agent's shell tool, which has no controlling terminal, they enqueue a request and then block until you act on it, so the agent picks up the moment the secret lands. The overlay shows the task under "secrets pending" and `u` unlocks it in a pane where you type the passphrase; `:cancel` withdraws the request instead, and the waiting agent is told. The wait is bounded (`--timeout`, default 100 s, under a shell tool's usual kill limit) and the request survives a timeout, so re-running resumes waiting; `--no-wait` enqueues and returns. Repos that already use sops with their own `.sops.yaml` are adopted as-is. Decrypted values are written to files, never to stdout.
+`decrypt` and `set` decide what to do by whether a real terminal is reachable. From your shell they prompt for the passphrase and act. From an agent's shell tool, which has no controlling terminal, they enqueue a request and then block until you act on it, so the agent picks up the moment the secret lands. The column shows the task under "secrets pending" and `u` unlocks it in a pane where you type the passphrase; `:cancel` withdraws the request instead, and the waiting agent is told. The wait is bounded (`--timeout`, default 100 s, under a shell tool's usual kill limit) and the request survives a timeout, so re-running resumes waiting; `--no-wait` enqueues and returns. Repos that already use sops with their own `.sops.yaml` are adopted as-is. Decrypted values are written to files, never to stdout.
 
 ## Configuration
 
@@ -244,7 +242,7 @@ Two other projects target the same pain of running many coding agents at once. T
 | Agents | Claude Code for state; anything runs in a pane | Any terminal agent | 14+ agents out of the box |
 | Detach and reattach over SSH | Yes, it is a tmux session | Attaches to remote tmux sessions (beta) | Yes |
 | Platforms | macOS, Linux | macOS | macOS, Linux, Windows beta |
-| From a phone or tablet | Any SSH client; the overlay adapts to narrow terminals | iOS app in beta | Any SSH client |
+| From a phone or tablet | Any SSH client; the column folds away on a narrow terminal | iOS app in beta | Any SSH client |
 | License | MIT or Apache-2.0 | GPL-3.0-or-later | Apache-2.0 |
 
 cmux and herdr replace your terminal or your multiplexer and give every pane an attention state, whichever agent runs in it. tenx keeps your terminal and your tmux and instead owns what happens before the agent starts: the branch, the worktrees across every repo, the notes file, the window, and the secrets. Its state model is narrower on purpose. It reads Claude Code's own session registry rather than guessing from screen output, so a Blocked task is one where Claude is actually waiting on you.
@@ -259,13 +257,13 @@ Feature claims for the other two are from their READMEs as of September 2026.
 make test        # cargo test + clippy -D warnings for both crates
 make try         # run this build on its own tmux socket, without installing
 make try-stop
-make screenshot  # regenerate docs/overlay.svg and docs/column.svg from the overlay's widgets and fixture data
-make demo        # regenerate the animated docs/overlay-demo.svg and .cast by playing a scripted scene
-make demo-gif    # render docs/overlay-demo.gif from the cast (needs agg: brew install agg)
+make screenshot  # regenerate docs/column.svg from the column's widgets and fixture data
+make demo        # regenerate the animated docs/demo.svg and .cast by playing a scripted session
+make demo-gif    # render docs/demo.gif from the cast (needs agg: brew install agg)
 cargo run -- task list
 ```
 
-The README's screenshot and demo are generated, not captured: `src/tui/overlay/screenshot.rs` and `demo.rs` render fixture data through the real widgets, so neither can show a real task or drift from the UI.
+The README's screenshot and demo are generated, not captured: `src/tui/column/screenshot.rs` and `demo.rs` render fixture data through the real widgets, so neither can show a real task or drift from the UI.
 
 The workspace has two crates. `tenx-core` is pure logic with the unit tests: status resolution, slugs, sweep rules, `TASK.md` rendering. `tenx` is the binary that does I/O. Decision logic goes in core with a test first. See [ARCHITECTURE.md](ARCHITECTURE.md) for the map and [CLAUDE.md](CLAUDE.md) for the conventions an agent editing this repo follows.
 
@@ -281,9 +279,9 @@ gh workflow run bump.yml -f bump=minor     # or force patch, minor, major
 make release auto                          # the same, from a checkout of main
 ```
 
-Nobody types a version or writes a changelog. Commits follow Conventional Commits with the area as scope (`feat(overlay): …`, `fix(tmux): …`, `docs: …`); [git-cliff](https://git-cliff.org) derives the bump from them (`feat` minor, `fix` patch, breaking changes minor until 1.0) and generates the `CHANGELOG.md` section, which becomes the GitHub Release notes. The bump commits `release vX.Y.Z` with both crates bumped and the changelog section added, then dispatches the release workflow, which builds static binaries for macOS and Linux, publishes them with checksums and the installer as a GitHub Release, pushes the formula to `aluedeke/homebrew-tap`, and creates the tag. It refuses to run off `main`, with uncommitted changes, or with no commits since the last release.
+Nobody types a version or writes a changelog. Commits follow Conventional Commits with the area as scope (`feat(column): …`, `fix(tmux): …`, `docs: …`); [git-cliff](https://git-cliff.org) derives the bump from them (`feat` minor, `fix` patch, breaking changes minor until 1.0) and generates the `CHANGELOG.md` section, which becomes the GitHub Release notes. The bump commits `release vX.Y.Z` with both crates bumped and the changelog section added, then dispatches the release workflow, which builds static binaries for macOS and Linux, publishes them with checksums and the installer as a GitHub Release, pushes the formula to `aluedeke/homebrew-tap`, and creates the tag. It refuses to run off `main`, with uncommitted changes, or with no commits since the last release.
 
-The release commit also carries a freshly rendered README demo: `scripts/release.sh` runs `make demo demo-gif`, so the picture at the top of this page always shows the released overlay, never an older one.
+The release commit also carries a freshly rendered README demo: `scripts/release.sh` runs `make demo demo-gif`, so the picture at the top of this page always shows the released column, never an older one.
 
 CI secrets are committed, encrypted: `secrets/ci.enc.env` holds the token that pushes the Homebrew formula, sealed with sops to the age recipients in `.sops.yaml`, one of which is a dedicated CI identity. The only GitHub Actions secret is that identity's private key, `SOPS_AGE_KEY`; the publish job decrypts what it needs from the repo. Rotate a value with `sops secrets/ci.enc.env` and commit. Values never appear on a terminal.
 

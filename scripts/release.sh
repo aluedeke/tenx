@@ -83,7 +83,7 @@ echo "release: $current -> $version ($bump${last_tag:+, $since commits since $la
 # very code, so it rides along in the release commit and never lags the
 # binary. `make demo` plays the scripted scene; `make demo-gif` needs agg.
 make demo demo-gif >/dev/null 2>&1 || { echo "release: make demo demo-gif failed (run it by hand to see why)" >&2; exit 1; }
-echo "  ✓ demo re-rendered (docs/overlay-demo.svg, .cast, .gif)"
+echo "  ✓ demo re-rendered (docs/demo.svg, .cast, .gif)"
 
 sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$version\"/" Cargo.toml tenx-core/Cargo.toml
 sed -i.bak -E "s/^tenx-core = \{ version = \"[^\"]+\"/tenx-core = { version = \"$version\"/" Cargo.toml

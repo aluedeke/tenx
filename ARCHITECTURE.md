@@ -7,13 +7,13 @@ A map of the code for someone getting oriented. `CLAUDE.md` covers the same grou
 Two crates in one Cargo workspace:
 
 - **`tenx-core/`** holds pure logic: no `std::process::Command`, no filesystem access beyond data a caller hands in. Everything tenx *decides* lives here, as functions over plain values, with unit tests. Modules: `status` (what a task's state is), `dialog` (recognising and answering a permission prompt), `slug`, `time`, `sweep`, `taskmd` (`TASK.md` rendering and parsing), `live` (parsing the per-task cache of ports and PRs).
-- **`tenx`** (the root package) is the binary. It does I/O: shells out to `git`, `tmux`, `gh`, `age` and `sops`, reads Claude Code's session registry, and renders the overlay.
+- **`tenx`** (the root package) is the binary. It does I/O: shells out to `git`, `tmux`, `gh`, `age` and `sops`, reads Claude Code's session registry, and renders the column.
 
 Inside the binary the layers are independent and wired together by the CLI dispatch in `main.rs`. Each layer only knows about the layers below it.
 
 ```
 cli/         argument parsing and one file per subcommand group
-tui/         the ratatui overlay
+tui/         the client: the column beside an embedded terminal
 tmux/        the session layer: server, config, windows, bell flags
 workspace/   the on-disk model: workspaces, tasks, registry, Claude's session registry
 git/         worktree and bare-repo operations
@@ -36,13 +36,13 @@ The only per-task files tenx owns:
 | `.tenx-live.json` | Cache of ports and PR facts, written only by the watcher. |
 | `.secrets-pending`, `.secrets-pending-set` | Queues of secret requests waiting for a human. |
 
-User-level state lives under `~/.config/tenx/`: a global `config.toml`, the generated `tmux.conf`, the watcher's pid file, and `workspaces.d/`, a registry with one file per workspace so the overlay can find them all. Registration is one atomic file write.
+User-level state lives under `~/.config/tenx/`: a global `config.toml`, the generated `tmux.conf`, the watcher's pid file, and `workspaces.d/`, a registry with one file per workspace so the column can find them all. Registration is one atomic file write.
 
 ## The session layer
 
-tenx runs its own tmux server on a dedicated socket (`tmux -L tenx`) against a config it generates. Your `~/.tmux.conf` is never read. The config carries the theme, hides the window list in favour of per-window `@tenx_status` options, turns on `monitor-bell`, and binds `Ctrl+w` to a `display-popup` running `tenx overlay` for a client attached to the session directly; inside `tenx`'s own client the key never reaches tmux.
+tenx runs its own tmux server on a dedicated socket (`tmux -L tenx`) against a config it generates. Your `~/.tmux.conf` is never read. The config carries the theme, hides the window list in favour of per-window `@tenx_status` options and turns on `monitor-bell`. It binds no keys: the task list is the client's column, outside tmux.
 
-Windows are tasks. `open_task_window` builds the default layout with `new-window` and `split-window`, or runs the workspace's layout script with the task's paths in the environment. `ensure_session` starts the server detached with window 0 running `tenx overlay --home` in a restart loop; `attach_or_create` does the same and attaches, for a plain `tmux` client.
+Windows are tasks. `open_task_window` builds the default layout with `new-window` and `split-window`, or runs the workspace's layout script with the task's paths in the environment. `ensure_session` starts the server detached with window 0, `home`, as a plain shell — never a task window, so the session always has one.
 
 tmux reads its config once at server start. After changing the generated config, kill the server and run `tenx` again.
 
@@ -68,15 +68,13 @@ Blocked and Signaled are the "needs you" states. The watcher notifies on the edg
 
 The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on a helper thread with a time-to-live that lengthens for parked tasks. It exits when the tmux server is gone.
 
-## The overlay
+## The client and the column
 
-`tui/overlay.rs` is the single overlay implementation. It lists every task from every registered workspace, sectioned by attention group, fuzzy-filtered, with a search field in insert mode and a list in normal mode. Actions call straight into the `cli::task` and `cli::repo` functions rather than duplicating their logic.
+`tui/client.rs` is what `tenx` opens in a terminal: one process that owns the terminal, the task column on the left (`tui/column.rs`) and `tmux attach` running in a pty on the right (`tui/term.rs`: a `vt100` parser painted by `tui-term`'s widget, keys and mouse encoded back into bytes, bells and OSC 52 clipboard writes forwarded to the real terminal). One client per terminal, each with its own column state; a phone over SSH gets one too, with the column folded away below 100 columns.
 
-It runs on three surfaces. The *client* is what `tenx` opens in a terminal (`tui/client.rs`): one process that owns the terminal, the overlay as a column on the left and `tmux attach` running in a pty on the right (`tui/term.rs`: a `vt100` parser painted by `tui-term`'s widget, keys and mouse encoded back into bytes, bells and OSC 52 clipboard writes forwarded to the real terminal). One client per terminal, each with its own list state. Moving the selection switches the window under the terminal; a closed task shows an empty screen until Enter opens it; `Ctrl+w` moves the keyboard between the column and the task and hides the column from inside; the column re-groups itself only while the keyboard is in the task. *Home* is window 0 of the session: a jump selects the task's window and the overlay stays; quit keys are swallowed. *Popup* is the `Ctrl+w` instance of a client attached to the session directly: a jump exits, and tmux closes the popup. Run from a plain terminal outside tmux, a jump records the target and the process attaches after teardown.
+The column lists every task from every registered workspace, sectioned by attention group, fuzzy-filtered, with a search field in insert mode and a list in normal mode. Actions call straight into the `cli::task` and `cli::repo` functions rather than duplicating their logic. Moving the selection switches the window under the terminal; a closed task shows an empty screen until Enter opens it; `Ctrl+w` moves the keyboard between the column and the task and hides the column from inside. A status change moves its task to the right section at once, the selection following its task by name rather than by position. Idle windows are swept, rate-limited, when the terminal regains focus.
 
-Next to the list, a preview panel shows the selected task's Claude pane: `tmux capture-pane -e` on the pane the session registry names, refreshed on every tick. It is read-only and per client, which is why the overlay previews instead of switching the real window under itself: the current window is per session, so switching it would move every attached client, and merely visiting a window clears its bell flag.
-
-A blocked task's permission prompt can be answered from the list with `y` or `N`. Claude Code has no API for this, so the answer is a keystroke sent into the pane, guarded twice right before sending: the registry must still say the session waits on a permission prompt (not a question, which `Enter` would answer wrongly), and the captured pane must still show the dialog. The check is `tenx_core::dialog`.
+A blocked task's permission prompt can be answered from the column with `y` or `N`. Claude Code has no API for this, so the answer is a keystroke sent into the pane, guarded twice right before sending: the registry must still say the session waits on a permission prompt (not a question, which `Enter` would answer wrongly), and the captured pane must still show the dialog. The check is `tenx_core::dialog`.
 
 ## Task lifecycle
 

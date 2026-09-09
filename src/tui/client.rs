@@ -5,7 +5,7 @@
 //! The right-hand side is `tmux attach` running in a pty
 //! (`term::EmbeddedTerminal`), so tmux stays the session layer untouched:
 //! windows are tasks, the watcher, sweep and secrets all work as before,
-//! and the session survives this client. The left-hand side is the overlay
+//! and the session survives this client. The left-hand side is the column
 //! on its `Surface::Client`: the same list, keys and commands, but the
 //! window switch *is* the jump — the terminal shows it — and the selection
 //! survives switching because nothing restarts. One client per terminal
@@ -30,9 +30,8 @@ use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 use std::io;
 use std::time::{Duration, Instant};
 
-use super::overlay::{self, ClientRequest, Overlay};
+use super::column::{self, ClientRequest, Column};
 use super::term::EmbeddedTerminal;
-use super::Surface;
 
 /// How often the column's rows refresh.
 const REFRESH: Duration = Duration::from_millis(500);
@@ -47,7 +46,7 @@ enum Focus {
 }
 
 struct Client {
-    overlay: Overlay,
+    column: Column,
     term: EmbeddedTerminal,
     focus: Focus,
     column_shown: bool,
@@ -105,13 +104,13 @@ impl Client {
     /// Keyboard into the task; the column shows no cursor meanwhile.
     fn focus_terminal(&mut self) {
         self.focus = Focus::Terminal;
-        self.overlay.blur();
+        self.column.blur();
     }
 
     /// Keyboard into the column, cursor on the task you are in.
     fn focus_column(&mut self) {
         self.focus = Focus::Column;
-        self.overlay.select_current();
+        self.column.select_current();
     }
 
     fn hide_column(&mut self) {
@@ -157,8 +156,8 @@ impl Client {
                 }
             }
             Focus::Column => {
-                self.overlay.handle_key(key)?;
-                if let Some(req) = self.overlay.take_request() {
+                self.column.handle_key(key)?;
+                if let Some(req) = self.column.take_request() {
                     self.handle_request(req);
                 }
                 self.trace(&format!("key {:?} {:?}", key.modifiers, key.code));
@@ -179,8 +178,8 @@ impl Client {
             if click {
                 self.focus = Focus::Column;
             }
-            self.overlay.handle_mouse(m)?;
-            if let Some(req) = self.overlay.take_request() {
+            self.column.handle_mouse(m)?;
+            if let Some(req) = self.column.take_request() {
                 self.handle_request(req);
             }
             self.trace(&format!("mouse {:?} in column", m.kind));
@@ -209,7 +208,7 @@ impl Client {
                 "{} focus={} {what} | {}",
                 chrono_stamp(),
                 if self.focus == Focus::Column { "column" } else { "terminal" },
-                self.overlay.trace_state()
+                self.column.trace_state()
             );
         }
     }
@@ -217,13 +216,13 @@ impl Client {
     fn tick(&mut self) {
         if self.last_refresh.elapsed() >= REFRESH {
             self.last_refresh = Instant::now();
-            if self.overlay.in_list_mode() {
-                self.overlay.refresh_statuses();
-                // Re-group while the keyboard is in the task, never while
-                // it is moving through the column.
-                self.overlay.focused = self.focus == Focus::Column;
-                if self.focus == Focus::Terminal && self.overlay.sections_stale() {
-                    self.overlay.tidy();
+            if self.column.in_list_mode() {
+                self.column.refresh_statuses();
+                // A status change moves its task to the right section at
+                // once; the selection follows its task, so this is safe
+                // under a moving cursor too.
+                if self.column.sections_stale() {
+                    self.column.tidy();
                 }
             }
         }
@@ -234,7 +233,7 @@ impl Client {
         let (column, term) = self.layout(full);
         // Moving onto a closed task shows an empty screen in its place; the
         // session keeps running behind it and returns the moment focus does.
-        let closed = if self.focus == Focus::Column { self.overlay.selected_closed() } else { None };
+        let closed = if self.focus == Focus::Column { self.column.selected_closed() } else { None };
         let cursor = match closed {
             Some(title) => {
                 f.render_widget(ratatui::widgets::Clear, term);
@@ -244,12 +243,12 @@ impl Client {
             None => self.term.render(term, f.buffer_mut()),
         };
         if let Some(c) = column {
-            // The overlay paints its ground but keeps whatever symbols are
+            // The column paints its ground but keeps whatever symbols are
             // there; on a narrow client it covers the terminal, so wipe first.
             f.render_widget(ratatui::widgets::Clear, c);
-            overlay::render_in(f, &mut self.overlay, c);
+            column::render_in(f, &mut self.column, c);
         }
-        // The overlay sets the cursor for its search field when it draws;
+        // The column sets the cursor for its search field when it draws;
         // the terminal's wins only while it has focus.
         if self.focus == Focus::Terminal
             && let Some((x, y)) = cursor
@@ -297,8 +296,8 @@ fn chrono_stamp() -> String {
     format!("{}.{:03}", d.as_secs() % 100_000, d.subsec_millis())
 }
 
-pub fn run(tenx_bin: &str) -> Result<()> {
-    crate::tmux::ensure_session(tenx_bin)?;
+pub fn run() -> Result<()> {
+    crate::tmux::ensure_session()?;
     // The column is the list; landing on the home window would show the
     // list twice. Start on a task window when there is one.
     if let Ok(windows) = crate::tmux::list_windows()
@@ -320,7 +319,7 @@ pub fn run(tenx_bin: &str) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_client(&mut terminal, tenx_bin);
+    let result = run_client(&mut terminal);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste)?;
@@ -328,7 +327,7 @@ pub fn run(tenx_bin: &str) -> Result<()> {
     result
 }
 
-fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _tenx_bin: &str) -> Result<()> {
+fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
     let narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
     let column_width = tenx_core::column::width(cols, configured_width()).min(cols / 2);
@@ -341,7 +340,7 @@ fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _tenx_bin: 
     let term = EmbeddedTerminal::spawn(&tmux.to_string_lossy(), &args, &[], &["TMUX", "TMUX_PANE"], rows.max(1), term_cols.max(1))?;
 
     let mut client = Client {
-        overlay: Overlay::new(Surface::Client),
+        column: Column::new(),
         term,
         focus: Focus::Terminal,
         column_shown: !narrow,
@@ -368,8 +367,10 @@ fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _tenx_bin: 
                 }
                 Event::Resize(c, r) => client.apply_size(c, r),
                 // No rebuild on focus: the column tidies itself on its own
-                // clock (`tick`), so a click elsewhere changes nothing.
-                Event::FocusGained | Event::FocusLost => {}
+                // clock (`tick`), so a click elsewhere changes nothing. Coming
+                // back is when idle windows get swept, rate-limited.
+                Event::FocusGained => client.column.maybe_sweep(),
+                Event::FocusLost => {}
             }
         }
         client.tick();
@@ -379,8 +380,8 @@ fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _tenx_bin: 
         for payload in client.term.take_clipboard() {
             let _ = execute!(io::stdout(), Print(format!("\x1b]52;{payload}\x07")));
         }
-        if let Some((ws_idx, slug)) = client.overlay.take_unlock() {
-            overlay::run_unlock(terminal, &mut client.overlay, ws_idx, &slug)?;
+        if let Some((ws_idx, slug)) = client.column.take_unlock() {
+            column::run_unlock(terminal, &mut client.column, ws_idx, &slug)?;
         }
         if client.quit {
             client.term.kill();

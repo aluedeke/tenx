@@ -10,7 +10,7 @@ fn infer_name(url: &str) -> String {
         .to_string()
 }
 
-/// `ws_dir` selects the workspace directly (the zellij overlay plugin shells
+/// `ws_dir` selects the workspace directly (a front end shells
 /// out from an arbitrary cwd and has no other way to name a workspace);
 /// without it, the workspace is found by walking up from cwd, same as every
 /// other bare `tenx` invocation.
@@ -23,7 +23,7 @@ pub fn add(url: &str, name: Option<&str>, ws_dir: Option<&str>) -> Result<()> {
 }
 
 /// Add a repo to an explicit workspace (bare clone + config). Used by `add` and
-/// the overlay's Repos tab, which targets the selected repo's workspace.
+/// the column's Repos tab, which targets the selected repo's workspace.
 pub fn add_in(ws: &mut crate::workspace::Workspace, url: &str, name: Option<&str>) -> Result<()> {
     let global = crate::workspace::load_global()?;
 

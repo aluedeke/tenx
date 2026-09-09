@@ -21,7 +21,7 @@
 //! startup and can't serve a 1 s poll. So this is deliberately best-effort:
 //! every field is optional and a parse failure drops that one file. If the
 //! format ever changes wholesale, the visible result is every task reading as
-//! `Inactive`, not a broken overlay.
+//! `Inactive`, not a broken column.
 //!
 //! Two liveness filters apply to every read. A pid check drops crashed
 //! sessions (their file stays behind). A *scope* check drops live sessions that
@@ -116,7 +116,7 @@ pub fn sessions() -> Vec<Session> {
 }
 
 /// Snapshot of what `in_panes` needs: the server's pane pids and the process
-/// tree. Cached for [`SCOPE_TTL`] because the overlay calls `sessions()` on
+/// tree. Cached for [`SCOPE_TTL`] because the column calls `sessions()` on
 /// every 500 ms tick and this costs two `tmux` calls and a `ps` — the same
 /// cadence `tmux::signals` already refreshes at. A session that opens in a new
 /// pane can therefore lag by up to that long; nothing else does, since the pid

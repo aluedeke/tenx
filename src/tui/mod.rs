@@ -1,31 +1,11 @@
-mod ansi;
 pub mod client;
+mod column;
 mod mouse;
-mod overlay;
 mod term;
 
-/// Where an overlay instance runs — see `overlay.rs`'s module doc.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Surface {
-    /// `tenx overlay` under Ctrl+w's `display-popup` (or a plain terminal):
-    /// exits after a jump.
-    Popup,
-    /// `--home`: the session's permanent window 0; never quits.
-    Home,
-    /// The column of the client (`client.rs`, what `tenx` runs): the same
-    /// list, narrow and two lines per task, beside an embedded terminal in
-    /// the same process; jumps and quit keys hand focus to it via
-    /// `ClientRequest`.
-    Client,
-}
-
-pub fn run_overlay(surface: Surface) -> anyhow::Result<()> {
-    overlay::run(surface)
-}
-
-/// `tenx overlay --json`: dump every task across all registered workspaces as
-/// JSON, sorted by last agent activity (newest first) — same ordering as the
-/// TUI. For scripts and other front ends (the future native client reads the
+/// `tenx task list --json`: dump every task across all registered workspaces
+/// as JSON, sorted by last agent activity (newest first) — the column's
+/// ordering. For scripts and other front ends (the future native client reads the
 /// same shape).
 ///
 /// Two collections: `tasks` (what to list) and `workspaces` (which repos

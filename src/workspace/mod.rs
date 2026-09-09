@@ -102,7 +102,7 @@ pub fn load_global() -> Result<GlobalConfig> {
 // ── Workspace registry ────────────────────────────────────────────────────────
 //
 // A global list of all workspace directories, so tools that span workspaces
-// (the overlay) can enumerate them without walking the filesystem. Written on
+// (the column) can enumerate them without walking the filesystem. Written on
 // `tenx init` and self-healed whenever a workspace is opened. Dead paths are
 // pruned lazily on read.
 
@@ -223,7 +223,7 @@ pub fn find(dir: &Path) -> Result<Workspace> {
 
 /// Like `find`, but distinguishes "no enclosing workspace" (`Ok(None)`) from a
 /// real error (unreadable/malformed `config.toml`). Used by the no-arg launch
-/// path, which falls back to the global overlay when cwd isn't in a workspace.
+/// path, which falls back to the global column when cwd isn't in a workspace.
 pub fn find_opt(dir: &Path) -> Result<Option<Workspace>> {
     match find(dir) {
         Ok(ws) => Ok(Some(ws)),
@@ -453,11 +453,11 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[claude::Session], signals
 }
 
 /// One task as the JSON shape every out-of-process consumer reads: the `tasks`
-/// entries of `tenx overlay --json` (the overlay plugin) and the payload of the
+/// entries of `tenx task list --json` (scripts and front ends) and the payload of the
 /// `tenx::status` pipe (the status bar).
 ///
 /// Shared rather than written out at each call site on purpose — two hand-kept
-/// copies of a wire format is exactly how the overlay and its plugin drift, and
+/// copies of a wire format is exactly how the column and its plugin drift, and
 /// here the consumers are in another process and another language runtime, where
 /// a silent mismatch surfaces as a missing field at runtime, not a compile error.
 pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::Value {
@@ -486,7 +486,7 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
 /// Filename of a task's pending-secrets-*release* marker (see
 /// `cli::secrets::enqueue_pending`, `decrypt`'s non-interactive fallback).
 /// Defined here, not only in `cli::secrets`, because `task_json` — the wire
-/// shape shared by the overlay and the status bar pipe — needs to read it
+/// shape shared by the column and the status bar pipe — needs to read it
 /// too, and `workspace` is the lower layer both depend on. Distinct from
 /// `SECRETS_PENDING_SET_FILE` below: this one means "release something
 /// already sealed"; that one means "someone needs to type in a value for

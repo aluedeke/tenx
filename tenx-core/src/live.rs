@@ -38,7 +38,7 @@ pub struct PrInfo {
 }
 
 impl PrInfo {
-    /// The compact form the overlay shows: `#12 ✓`, `#12 ✗`, `#12 …`,
+    /// The compact form the column shows: `#12 ✓`, `#12 ✗`, `#12 …`,
     /// `#12 draft`, `#12 merged`, `#12 closed`.
     pub fn chip(&self) -> String {
         let tail = match self.state.as_str() {

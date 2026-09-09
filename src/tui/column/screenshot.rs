@@ -1,10 +1,10 @@
-//! The README screenshot, generated from the real widgets: the overlay is
+//! The README screenshot, generated from the real widgets: the column is
 //! rendered with fixture rows into ratatui's `TestBackend` and the buffer is
 //! written out cell by cell as an SVG. Nothing here touches disk, tmux or
 //! Claude Code's session registry, so the picture never leaks a real task,
-//! and it can't drift from what the overlay actually draws. The plain test
+//! and it can't drift from what the column actually draws. The plain test
 //! only checks the render; `make screenshot` sets `TENX_SCREENSHOT` to write
-//! `docs/overlay.svg`.
+//! `docs/column.svg`. The fixtures and SVG helpers also serve `demo.rs`.
 
 use super::*;
 use ratatui::backend::TestBackend;
@@ -13,8 +13,9 @@ use ratatui::style::Color;
 use std::fmt::Write as _;
 use tenx_core::live::{Live, PrInfo};
 
-pub(super) const COLS: u16 = 150;
-pub(super) const ROWS: u16 = 36;
+/// The column's width and height in the screenshot and the demo.
+pub(super) const COLS: u16 = 36;
+pub(super) const ROWS: u16 = 48;
 
 /// One fixture task. `age` is seconds since its last status change.
 struct Fx {
@@ -92,7 +93,7 @@ fn row(f: Fx) -> Row {
 /// Every section and every kind of chip, on invented tasks. Rows are listed
 /// in display order (section, then status rank, then recency), as
 /// `rebuild_rows` would sort them.
-pub(super) fn fixture_overlay() -> Overlay {
+pub(super) fn fixture_column() -> Column {
     use TaskStatus::*;
     let m = 60;
     let h = 3600;
@@ -132,7 +133,7 @@ pub(super) fn fixture_overlay() -> Overlay {
         },
         Fx {
             open: true,
-            ..fx("overlay screenshot", "tenx-workspace", Working)
+            ..fx("column screenshot", "tenx-workspace", Working)
         },
         Fx {
             open: true,
@@ -168,37 +169,15 @@ pub(super) fn fixture_overlay() -> Overlay {
         fx("nightly load test", "infra", Idle),
         fx("reverse proxy", "homelab", Idle),
     ];
-    let mut o = Overlay::empty(Surface::Popup);
+    let mut o = Column::empty();
     o.rows = rows.into_iter().map(row).collect();
     o.apply_filter();
-    o.current = Some("overlay-screenshot".into());
+    o.current = Some("column-screenshot".into());
     o.input_mode = InputMode::Normal;
     o.focus = Focus::List;
-    o.selected = 1; // "add release workflow" — the blocked one, so the preview shows its dialog
-    o.preview = Preview {
-        pane: Some("%1".into()),
-        lines: PREVIEW_FIXTURE.lines().map(super::super::ansi::line).collect(),
-        gone: false,
-    };
+    o.selected = 1; // "add release workflow" — the blocked one
     o
 }
-
-/// What a Claude Code pane looks like on a permission prompt, as
-/// `capture-pane -e` would hand it over (a few SGR sequences included).
-pub(super) const PREVIEW_FIXTURE: &str = "\
-\x1b[1m⏺\x1b[0m I'll add the release workflow next to the CI one and wire the
-  tag push to it.
-
-\x1b[1m Bash command\x1b[0m
-
-   gh workflow run release.yml --ref v0.2.0
-   Kick off the release workflow for the tag
-
- Do you want to proceed?
- \x1b[36m❯ 1. Yes\x1b[0m
-   2. No
- \x1b[2mEsc to cancel · Tab to amend\x1b[0m
-";
 
 pub(super) fn hex(c: Color, fallback: &palette::Rgb) -> String {
     match c {
@@ -288,7 +267,7 @@ fn svg(buf: &Buffer) -> String {
         out,
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}" font-family="JetBrains Mono, SF Mono, Menlo, Consolas, DejaVu Sans Mono, monospace" font-size="14">"#
     );
-    let _ = writeln!(out, r#"<title>The tenx overlay</title>"#);
+    let _ = writeln!(out, r#"<title>The tenx column</title>"#);
     let _ = writeln!(
         out,
         r#"<rect width="{width:.0}" height="{height:.0}" rx="6" fill="{}"/>"#,
@@ -310,51 +289,14 @@ pub(super) fn plain_text(buf: &Buffer) -> String {
     s
 }
 
-#[test]
-fn renders_every_section_and_chip_from_fixtures() {
-    let mut overlay = fixture_overlay();
-    let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
-    term.draw(|f| render(f, &mut overlay)).unwrap();
-    let buf = term.backend().buffer();
-    let text = plain_text(buf);
-    for needle in [
-        "SECRETS PENDING",
-        "WAITING FOR INPUT",
-        "WORKING",
-        "INACTIVE",
-        "wants STRIPE_WEBHOOK_SECRET",
-        "permission prompt",
-        "flaky checkout e2e",
-        "Do you want to proceed?",
-        "1. Yes",
-        "y approve",
-        " current ",
-        "#781 merged",
-        "#14 …",
-        "#112 ✗",
-        "#113 draft",
-        ":8080",
-        " NORMAL ",
-    ] {
-        assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
-    }
-    if std::env::var_os("TENX_SCREENSHOT").is_some() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/overlay.svg");
-        std::fs::write(&path, svg(buf)).unwrap();
-        eprintln!("wrote {}", path.display());
-    }
-}
-
 /// The client's column: the same rows in a 36-column strip, two lines per
 /// task. No preview, the current task's title in the "current" colour
 /// instead of a chip, chips on the second line, and a footer that fits.
 #[test]
 fn column_renders_narrow() {
-    let mut overlay = fixture_overlay();
-    overlay.client = true;
-    overlay.preview = Preview::default();
-    let mut term = Terminal::new(TestBackend::new(36, 48)).unwrap();
-    term.draw(|f| render(f, &mut overlay)).unwrap();
+    let mut column = fixture_column();
+    let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
+    term.draw(|f| render_in(f, &mut column, f.area())).unwrap();
     let buf = term.backend().buffer();
     let text = plain_text(buf);
     for needle in [
@@ -362,7 +304,7 @@ fn column_renders_narrow() {
         "WAITING FOR INPUT",
         "WORKING",
         "INACTIVE",
-        "overlay screenshot",
+        "column screenshot",
         "     tenx-workspace",              // second line, indented under the title
         "      permission prompt  · 4m",    // the reason first, then what else fits
         "     acme-api · 54m · :8080",
@@ -373,24 +315,23 @@ fn column_renders_narrow() {
     ] {
         assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
     }
-    assert!(!text.contains("Do you want to proceed?"), "no preview in the column:\n{text}");
     // A click on either line of a task selects that task: both screen lines
     // of the second task (filtered position 1, past a spacer and a header)
     // map back to it, and a header line maps to nothing.
-    let heights: Vec<u16> = overlay.item_heights.clone();
+    let heights: Vec<u16> = column.item_heights.clone();
     assert!(heights.contains(&2), "task rows are two lines: {heights:?}");
-    let list = overlay.list_area;
-    let item = overlay.line_to_pos.iter().position(|p| *p == Some(1)).unwrap();
+    let list = column.list_area;
+    let item = column.line_to_pos.iter().position(|p| *p == Some(1)).unwrap();
     let y = list.y + 1 + heights[..item].iter().sum::<u16>();
     for line in [y, y + 1] {
         let hit = mouse::item_at_heights(list, 1, 0, &heights, list.x + 2, line).unwrap();
-        assert_eq!(overlay.line_to_pos[hit], Some(1), "line {line}");
+        assert_eq!(column.line_to_pos[hit], Some(1), "line {line}");
     }
     let hit = mouse::item_at_heights(list, 1, 0, &heights, list.x + 2, list.y + 1).unwrap();
-    assert_eq!(overlay.line_to_pos[hit], None, "the header line is not a task");
+    assert_eq!(column.line_to_pos[hit], None, "the header line is not a task");
     // The current task's title is drawn in the "current" colour.
-    let y = text.lines().position(|l| l.contains("overlay screenshot")).unwrap() as u16;
-    let x = text.lines().nth(y as usize).unwrap().find("overlay").unwrap() as u16;
+    let y = text.lines().position(|l| l.contains("column screenshot")).unwrap() as u16;
+    let x = text.lines().nth(y as usize).unwrap().find("column").unwrap() as u16;
     assert_eq!(buf.cell((x, y)).unwrap().fg, palette::CURRENT.color());
     if std::env::var_os("TENX_SCREENSHOT").is_some() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/column.svg");
@@ -400,11 +341,11 @@ fn column_renders_narrow() {
 }
 
 #[test]
-fn empty_overlay_shows_the_mark() {
-    let mut overlay = Overlay::empty(Surface::Popup);
-    overlay.apply_filter();
+fn empty_column_shows_the_mark() {
+    let mut column = Column::empty();
+    column.apply_filter();
     let mut term = Terminal::new(TestBackend::new(60, 14)).unwrap();
-    term.draw(|f| render(f, &mut overlay)).unwrap();
+    term.draw(|f| render_in(f, &mut column, f.area())).unwrap();
     let text = plain_text(term.backend().buffer());
     for needle in [
         "━━━━━━━",
@@ -415,7 +356,7 @@ fn empty_overlay_shows_the_mark() {
         assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
     }
     if std::env::var_os("TENX_SCREENSHOT").is_some() {
-        let path = std::env::temp_dir().join("tenx-overlay-empty.svg");
+        let path = std::env::temp_dir().join("tenx-column-empty.svg");
         std::fs::write(&path, svg(term.backend().buffer())).unwrap();
         eprintln!("wrote {}", path.display());
     }

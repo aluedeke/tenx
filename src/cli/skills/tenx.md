@@ -74,7 +74,7 @@ If a task needs a credential (API key, token, DB password) and it isn't already 
 
     tenx secrets decrypt <NAME> --timeout 9m
 
-It's always safe to run, even if this workspace hasn't set up secrets at all: from your Bash tool (no real terminal attached) it can't touch the credential itself — it enqueues a durable, visible request (the tenx status bar and overlay show it, and the user gets a desktop notification) and then **blocks until a human releases it**. Releasing it for real requires that human typing the decryption passphrase themselves, from a normal shell or the tenx overlay — that's the whole point, so **never** run `tenx secrets init` or `encrypt` yourself.
+It's always safe to run, even if this workspace hasn't set up secrets at all: from your Bash tool (no real terminal attached) it can't touch the credential itself — it enqueues a durable, visible request (the tenx status bar and column show it, and the user gets a desktop notification) and then **blocks until a human releases it**. Releasing it for real requires that human typing the decryption passphrase themselves, from a normal shell or the tenx column — that's the whole point, so **never** run `tenx secrets init` or `encrypt` yourself.
 
 How to wait: run it with your Bash tool's timeout set to its maximum (600000 ms) and `--timeout 9m`, so the command outlives a slow human. Exit code 0 means it's released — carry on. Exit code 1 with "still pending" means nobody has answered yet: the request is still queued, so if you genuinely can't proceed without it, just run the same command again (an already-pending name is a no-op, not a repeat notification) — or do other useful work first and come back. Exit code 1 with "withdrawn" means a human cancelled the request; don't re-ask for the same thing without saying why you need it. If you'd rather not block at all (the secret is nice-to-have, or you have plenty of other work), pass `--no-wait` to enqueue and return immediately.
 
@@ -92,7 +92,7 @@ If instead **you need a secret that doesn't exist yet** — nothing to release, 
 
     tenx secrets set <NAME> --timeout 9m
 
-Same rules as `decrypt`: your Bash tool has no real terminal, so this can never actually set anything — it enqueues a durable "someone needs to supply a value for `<NAME>`" request and waits for a human to fulfil it (same timeout/re-run/`--no-wait`/`cancel` handling as above). You never type or pipe a value here at all; a human supplies it later, prompted for it directly when they run `set` themselves (from a real shell or the overlay) — you never see or relay the value in either direction, so nothing about it ever touches your own output or the conversation transcript. Once it reports the value was set, run `tenx secrets decrypt <NAME>` to have it released to you.
+Same rules as `decrypt`: your Bash tool has no real terminal, so this can never actually set anything — it enqueues a durable "someone needs to supply a value for `<NAME>`" request and waits for a human to fulfil it (same timeout/re-run/`--no-wait`/`cancel` handling as above). You never type or pipe a value here at all; a human supplies it later, prompted for it directly when they run `set` themselves (from a real shell or the column) — you never see or relay the value in either direction, so nothing about it ever touches your own output or the conversation transcript. Once it reports the value was set, run `tenx secrets decrypt <NAME>` to have it released to you.
 
 ## Common commands
 

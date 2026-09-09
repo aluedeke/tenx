@@ -52,7 +52,7 @@ pub struct Session {
     /// pane you opened.
     pub kind: String,
     /// The tmux pane the session runs in (`%40`), from the registry's own
-    /// `tmux` field. What the overlay previews and sends keys to.
+    /// `tmux` field. What the column previews and sends keys to.
     pub pane: Option<String>,
 }
 
@@ -163,7 +163,7 @@ impl TaskGroup {
 
 impl TaskStatus {
     /// The wire token for this status, as consumed by anything reading
-    /// `tenx overlay --json` or the status pushes.
+    /// `tenx task list --json` or the status pushes.
     pub fn token(self) -> &'static str {
         match self {
             TaskStatus::Working => "working",
@@ -186,7 +186,7 @@ impl TaskStatus {
         }
     }
 
-    /// The one glyph table — the overlay and the status line both draw from
+    /// The one glyph table — the column and the status line both draw from
     /// it, so a new status can't render on one surface and not the other.
     /// Plain one-column text glyphs, coloured by the caller: they render in
     /// the terminal's own font at its own weight, where emoji are bitmaps

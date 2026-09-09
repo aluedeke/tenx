@@ -11,8 +11,8 @@ hooks:
 	@echo "  ✓ hooks enabled (core.hooksPath = .githooks)"
 
 # Try this build without installing it: its own tmux server (`-L try`), its
-# own generated config and watcher, the same workspaces and tasks. Ctrl+w and
-# the home overlay run this build too. An installed tenx is unaffected.
+# own generated config and watcher, the same workspaces and tasks. An
+# installed tenx is unaffected.
 try: build
 	TENX_TMUX_SOCKET=try ./target/release/tenx
 
@@ -34,9 +34,8 @@ test:
 	cargo test -p tenx-cli -p tenx-core
 	cargo clippy -p tenx-cli -p tenx-core --all-targets -- -D warnings
 
-# Regenerate docs/overlay.svg and docs/column.svg from the overlay's own
-# widgets and fixture data (src/tui/overlay/screenshot.rs) — no real
-# workspace involved.
+# Regenerate docs/column.svg from the column's own widgets and fixture data
+# (src/tui/column/screenshot.rs) — no real workspace involved.
 screenshot:
 	TENX_SCREENSHOT=1 cargo test -p tenx-cli --bin tenx screenshot -- --nocapture
 
@@ -55,18 +54,18 @@ release:
 	@test -n "$(BUMP)" || { echo "usage: make release auto|patch|minor|major [DRY=1]"; exit 1; }
 	./scripts/release.sh $(BUMP) $(if $(DRY),--dry-run,--push)
 
-# Regenerate docs/overlay-demo.svg (animated) and docs/overlay-demo.cast
-# (asciinema) by playing a scripted scene against the fixture overlay
-# (src/tui/overlay/demo.rs). Nothing is recorded; every frame is rendered.
+# Regenerate docs/demo.svg (animated) and docs/demo.cast (asciinema) by
+# playing a scripted client session — the column beside a fixture task —
+# (src/tui/column/demo.rs). Nothing is recorded; every frame is rendered.
 demo:
 	TENX_DEMO=1 cargo test -p tenx-cli --bin tenx demo -- --nocapture
 
-# Render docs/overlay-demo.gif from the cast with agg (`brew install agg`;
+# Render docs/demo.gif from the cast with agg (`brew install agg`;
 # bump.yml downloads a pinned binary). Text in JetBrains Mono, falling back
 # to whatever monospace the machine has; the theme is the palette's ground.
 # scripts/release.sh runs `demo demo-gif` so a release ships a current demo.
 demo-gif:
-	agg --text-font-family "JetBrains Mono,Menlo,DejaVu Sans Mono" --emoji-font-family "Noto Color Emoji,Apple Color Emoji" --font-size 14 --last-frame-duration 3 --theme "171820,d6dbe3,171820,e5707b,7ac27c,e4a854,6896dc,a78bfa,6896dc,d6dbe3" docs/overlay-demo.cast docs/overlay-demo.gif
+	agg --text-font-family "JetBrains Mono,Menlo,DejaVu Sans Mono" --emoji-font-family "Noto Color Emoji,Apple Color Emoji" --font-size 14 --last-frame-duration 3 --theme "171820,d6dbe3,171820,e5707b,7ac27c,e4a854,6896dc,a78bfa,6896dc,d6dbe3" docs/demo.cast docs/demo.gif
 
 clean:
 	cargo clean

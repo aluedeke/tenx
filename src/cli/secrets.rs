@@ -41,7 +41,7 @@
 //! the identity or an encrypted bundle, then **block** until a human acts on
 //! it (see *Waiting* below). Idempotent — re-requesting an already-pending
 //! name is a no-op, so a chatty agent can't spam repeat notifications. When
-//! `/dev/tty` *is* reachable (a human's real shell, or the overlay's spawned
+//! `/dev/tty` *is* reachable (a human's real shell, or the column's spawned
 //! pane), `decrypt` proceeds straight to the real decrypt, same passphrase
 //! prompt as always. Which behavior a caller gets is decided entirely by
 //! whether a real terminal is actually there, not by which subcommand name
@@ -177,7 +177,7 @@ pub fn set(name: &str, wait: Option<Duration>) -> Result<()> {
 }
 
 /// Same as [`set`], for an explicit workspace/task rather than cwd — used by
-/// the overlays, same reasoning as [`decrypt_in`]: they pick a task from a
+/// the front ends, same reasoning as [`decrypt_in`]: they pick a task from a
 /// list spanning every workspace rather than being invoked from inside one.
 pub fn set_in(ws: &Workspace, task: &Task, name: &str, wait: Option<Duration>) -> Result<()> {
     if name.is_empty() || name.contains(['/', '\\', '"']) || name == "." || name == ".." {
@@ -262,9 +262,9 @@ fn enqueue_pending_set(task: &Task, name: &str) -> Result<()> {
 /// passphrase entry). Exists specifically for spawn-a-real-pane callers
 /// (`tenx-zellij`, which can only shell out to a subprocess, not link
 /// against `decrypt_in`/`set_in` directly) so they don't have to reimplement
-/// this sequencing themselves — the native overlay's `run_unlock` uses
+/// this sequencing themselves — the native column's `run_unlock` uses
 /// [`fulfill_in`] for the same reason, even though it *could* call
-/// `decrypt_in`/`set_in` directly, just to keep the two overlays from
+/// `decrypt_in`/`set_in` directly, just to keep the two callers from
 /// drifting on what "handle everything pending for this task" means.
 /// Errors from one step are printed but don't stop the rest; returns `Err`
 /// at the end if anything failed, so a non-interactive caller's exit code
@@ -409,7 +409,7 @@ fn wait_for_human(task: &Task, queue: Queue, name: &str, requested_at: SystemTim
 }
 
 /// "100s" / "9m" — exact, unlike `tenx_core::time::format_duration`, which
-/// buckets to the nearest unit for the overlay's age column and would call
+/// buckets to the nearest unit for the column's age column and would call
 /// the default wait "1m".
 fn fmt_wait(d: Duration) -> String {
     let secs = d.as_secs();
@@ -429,7 +429,7 @@ pub fn cancel(name: Option<&str>) -> Result<()> {
     cancel_in(&task, name)
 }
 
-/// Same as [`cancel`], for an explicit task — used by the overlay's `:cancel`,
+/// Same as [`cancel`], for an explicit task — used by the column's `:cancel`,
 /// same reasoning as [`decrypt_in`].
 pub fn cancel_in(task: &Task, name: Option<&str>) -> Result<()> {
     let release = read_pending(task);
@@ -464,7 +464,7 @@ pub fn cancel_in(task: &Task, name: Option<&str>) -> Result<()> {
 /// thing `age`'s own passphrase prompt checks (it reads `/dev/tty` directly,
 /// not stdin, specifically so it still works when stdin/stdout are
 /// redirected). An agent's Bash tool child process normally has none; a
-/// human's real shell, or a pane the overlay just spawned, always does.
+/// human's real shell, or a pane the column just spawned, always does.
 fn tty_available() -> bool {
     std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").is_ok()
 }
@@ -481,10 +481,10 @@ pub fn decrypt(name: Option<&str>, wait: Option<Duration>) -> Result<()> {
 }
 
 /// Same as [`decrypt`], for an explicit workspace/task rather than cwd — used
-/// by the overlays (native `tui::overlay` and the `tenx-zellij` wasm plugin,
+/// by the front ends (native `tui::column` and the `tenx-zellij` wasm plugin,
 /// via a spawned pane whose cwd is set to the task directory rather than a
 /// direct call), which pick a task from a list spanning every workspace
-/// rather than being invoked from inside one. Both overlays only ever call
+/// rather than being invoked from inside one. Both front ends only ever call
 /// this from a real interactive pane, so `name` is always `None` there — the
 /// tty-detection fallback below exists for the CLI/agent path.
 pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>, wait: Option<Duration>) -> Result<()> {
@@ -1148,7 +1148,7 @@ fn pending_path(task: &Task) -> PathBuf {
 }
 
 /// `workspace::secrets_pending` is the shared reader (also used by
-/// `task_json`, so the overlay/status bar see the same data this module
+/// `task_json`, so the column/status bar see the same data this module
 /// writes) — this is just the `Task`-typed convenience wrapper for it.
 fn read_pending(task: &Task) -> Vec<String> {
     workspace::secrets_pending(&task.path)

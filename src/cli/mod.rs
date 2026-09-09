@@ -34,17 +34,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: TaskCommands,
     },
-    /// Run the global task overlay (all tasks across all workspaces)
-    Overlay {
-        /// Run as the tenx session's long-lived home pane (jump switches tabs
-        /// without exiting; quit keys are disabled)
-        #[arg(long)]
-        home: bool,
-        /// Print all tasks and workspaces as JSON (activity-sorted) instead of
-        /// running the TUI — for scripts and other front ends.
-        #[arg(long)]
-        json: bool,
-    },
     /// Watch tasks and notify when one starts waiting on you
     ///
     /// Started automatically when tenx opens the session and runs until the
@@ -149,7 +138,7 @@ pub enum SecretsCommands {
     /// a passphrase or just enqueues a durable request depends entirely on
     /// whether a real terminal is reachable (checked via /dev/tty, the same
     /// thing age's own prompt reads from), never on how it's invoked: from a
-    /// human's real shell or the overlay's spawned pane it decrypts straight
+    /// human's real shell or the column's spawned pane it decrypts straight
     /// away; from an agent's Bash tool (no controlling terminal) it falls
     /// back to enqueueing the request and waiting for a human to release it
     /// — never touches the identity or the encrypted bundle in that case.
@@ -186,7 +175,7 @@ pub enum SecretsCommands {
     /// Decrypts if anything is pending release, then runs `set` once per
     /// pending value-request. Human-only in
     /// practice (each step still needs a real terminal); exists mainly for
-    /// the overlay's spawned pane, so it doesn't need to know which of the
+    /// the column's spawned pane, so it doesn't need to know which of the
     /// two pending kinds a task has before deciding what to run.
     Fulfill,
     /// Withdraw a pending request for the current task (task resolved from cwd)
@@ -282,8 +271,14 @@ pub enum TaskCommands {
         #[arg(long)]
         ws_dir: Option<String>,
     },
-    /// List all tasks
-    List,
+    /// List the workspace's tasks
+    List {
+        /// Every task across every registered workspace, with the workspaces
+        /// and their repos, as JSON sorted by activity — for scripts and
+        /// other front ends.
+        #[arg(long)]
+        json: bool,
+    },
     /// Add repos (worktrees on the task's branch) to an existing task
     AddRepo {
         /// Exact task slug
@@ -310,7 +305,7 @@ pub enum TaskCommands {
         ws_dir: Option<String>,
     },
     /// Reconcile a task's repos to exactly this set (adds and detaches).
-    /// The overlay's repo checklist applies its changes through this.
+    /// The column's repo checklist applies its changes through this.
     SetRepos {
         /// Exact task slug
         name: String,
@@ -351,7 +346,7 @@ pub enum TaskCommands {
     ///
     /// Never touches a task waiting on a
     /// prompt or mid-turn, the current window, or a pinned task, and never
-    /// deletes anything: `task open` (or the overlay) picks a swept task's
+    /// deletes anything: `task open` (or the column) picks a swept task's
     /// conversation back up exactly where it left off.
     Sweep {
         /// How long a finished ("done, waiting on you") task sits unanswered

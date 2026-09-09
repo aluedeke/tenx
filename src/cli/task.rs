@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// What to pre-fill in a new task's `TASK.md` beyond its title — a ticket
-/// import passes the ticket's body and URL(s); the overlay passes nothing.
+/// import passes the ticket's body and URL(s); the column passes nothing.
 #[derive(Default)]
 pub struct TaskMd<'a> {
     pub description: &'a str,
@@ -20,7 +20,7 @@ pub fn new(name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd) -> 
 }
 
 /// Create a task in an explicit workspace (no cwd dependency), with an empty
-/// `TASK.md` body. Used by the overlay's create flow.
+/// `TASK.md` body. Used by the column's create flow.
 pub fn new_in(ws: &crate::workspace::Workspace, name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
     new_with(ws, name, repos, no_open, &TaskMd::default())
 }
@@ -168,7 +168,7 @@ pub fn rm_repo(ws_dir: Option<&str>, task: &str, repos: &[String], force: bool) 
 /// off the default branch, which is what `add_worktree -B` would force anyway).
 ///
 /// Without `force`, git refuses to remove a worktree with uncommitted changes;
-/// that refusal is the safety net, so the overlay never passes force.
+/// that refusal is the safety net, so the column never passes force.
 /// Idempotent: repos the task doesn't have are skipped.
 pub fn rm_repo_in(
     ws: &crate::workspace::Workspace,
@@ -197,7 +197,7 @@ pub fn rm_repo_in(
 }
 
 /// Reconcile a task's worktrees to exactly `repos`: add what's missing, detach
-/// what's extra. One command for a whole desired state, so the overlay can
+/// what's extra. One command for a whole desired state, so the column can
 /// apply a checklist without sequencing two async invocations.
 ///
 /// Additions run first: if one fails (a clone can), the repos the task already
@@ -265,7 +265,7 @@ pub fn open(name: &str) -> Result<()> {
 }
 
 /// Open a task given an explicit workspace directory and exact slug. Used by
-/// the overlay plugin (cross-workspace, no meaningful cwd, slug already known).
+/// the column (cross-workspace, no meaningful cwd, slug already known).
 pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
     let ws = crate::workspace::load(Path::new(ws_dir))?;
     open_in(&ws, slug)
@@ -279,7 +279,7 @@ pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, no_open: b
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).
-/// Used by the overlay plugin, which does its own confirmation.
+/// Used by the column, which does its own confirmation.
 pub fn rm_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
     let ws = crate::workspace::load(Path::new(ws_dir))?;
     rm_in(&ws, slug, true)
@@ -288,7 +288,7 @@ pub fn rm_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
 /// Rename a task's display title. Only rewrites TASK.md — the zellij tab is
 /// named by the immutable slug (not the title), so there's nothing to keep in
 /// sync. `ws_dir` selects the workspace (cwd if None). The header pane and the
-/// overlay both read the title from TASK.md, so the new title shows up at once.
+/// column both read the title from TASK.md, so the new title shows up at once.
 pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
     let ws = match ws_dir {
         Some(dir) => crate::workspace::load(Path::new(dir))?,
@@ -300,7 +300,7 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
 }
 
 /// Focus a task's window in the tenx session (creating it if needed), given an
-/// explicit workspace and slug. Used by `open` and the overlay, neither of
+/// explicit workspace and slug. Used by `open` and the column, neither of
 /// which can rely on cwd matching the task. Works from any client of the tenx
 /// server, and from outside it as long as the server is up — `select-window`
 /// changes the *session's* current window, which is what an attaching client
@@ -391,7 +391,7 @@ pub fn list() -> Result<()> {
 // touched over months accumulates a window per task ever opened, most of them
 // long since abandoned. `sweep` reclaims that: close what's safe to close,
 // leave everything else exactly as it was. Reopening (`task open`, or the
-// overlay) is unaffected — `open_in`'s `find_window` just finds none and
+// column) is unaffected — `open_in`'s `find_window` just finds none and
 // creates a fresh one, and `has_claude_conversation` still finds the prior
 // transcript, so `--continue` picks the conversation back up.
 //
@@ -436,10 +436,10 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
 
 pub use tenx_core::sweep::DEFAULT_SWEEP_AFTER;
 
-/// A task tab `sweep` (or the overlay's background sweep) has decided is safe
+/// A task tab `sweep` (or the column's background sweep) has decided is safe
 /// to close, and why — computed once, then either printed+closed (`sweep`) or
 /// just closed (`sweep_quiet`, which can't print without corrupting the
-/// overlay's alternate screen).
+/// column's alternate screen).
 pub struct SweepAction {
     pub ws_name: String,
     pub title: String,
@@ -520,7 +520,7 @@ pub fn sweep(after: Option<Duration>, dry_run: bool) -> Result<()> {
 }
 
 /// Close every current sweep candidate without printing anything — for the
-/// overlay's background sweep on focus-gained, which runs inside the
+/// column's background sweep on focus-gained, which runs inside the
 /// alternate screen and would corrupt it by writing to stdout. Returns how
 /// many windows it actually closed.
 pub fn sweep_quiet(after: Duration) -> usize {
@@ -542,7 +542,7 @@ pub fn rm(name: &str, force: bool) -> Result<()> {
 }
 
 /// Delete a task (worktrees, branches, directory) in an explicit workspace.
-/// The overlay calls this with `force = true` and does its own confirmation.
+/// The column calls this with `force = true` and does its own confirmation.
 pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Result<()> {
     let global = crate::workspace::load_global()?;
     let task = ws.find_task(name)?;

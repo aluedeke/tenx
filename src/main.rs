@@ -25,14 +25,6 @@ fn run() -> Result<()> {
     match cli.command {
         None => open()?,
 
-        Some(Commands::Overlay { home, json }) => {
-            if json {
-                tui::dump_json()?;
-            } else {
-                tui::run_overlay(if home { tui::Surface::Home } else { tui::Surface::Popup })?;
-            }
-        }
-
         Some(Commands::Init { name }) => {
             cli::init::run(name.as_deref())?;
         }
@@ -62,10 +54,7 @@ fn run() -> Result<()> {
         Some(Commands::Watch) => cli::watch::run()?,
 
         Some(Commands::Internal { command }) => match command {
-            InternalCommands::TmuxConf => {
-                let bin = tmux::self_bin()?;
-                print!("{}", tmux::render_config(&bin.to_string_lossy()));
-            }
+            InternalCommands::TmuxConf => print!("{}", tmux::render_config()),
             InternalCommands::Ports => {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
@@ -115,8 +104,12 @@ fn run() -> Result<()> {
             TaskCommands::Rename { name, title, ws_dir } => {
                 cli::task::rename(ws_dir.as_deref(), &name, &title)?;
             }
-            TaskCommands::List => {
-                cli::task::list()?;
+            TaskCommands::List { json } => {
+                if json {
+                    tui::dump_json()?;
+                } else {
+                    cli::task::list()?;
+                }
             }
             TaskCommands::Rm { name, force, ws_dir } => match ws_dir {
                 Some(dir) => cli::task::rm_by_dir(&dir, &name)?,
@@ -139,9 +132,9 @@ fn run() -> Result<()> {
 }
 
 /// Connect to the single global tenx session, regardless of cwd: attach (or
-/// create) it from a plain terminal, or run the overlay directly when already
+/// create) it from a plain terminal, or run the column directly when already
 /// inside it. If cwd is inside a workspace, self-heal the registry first so it
-/// shows up in the overlay.
+/// shows up in the column.
 /// `--no-wait`/`--timeout` → how long `secrets decrypt`/`set` block for a
 /// human on the no-terminal path (`None`: enqueue and return).
 fn secrets_wait(no_wait: bool, timeout: Option<&str>) -> Result<Option<std::time::Duration>> {
@@ -161,13 +154,12 @@ fn open() -> Result<()> {
     }
 
     let bin = tmux::self_bin()?;
-    let bin_str = bin.to_string_lossy().into_owned();
 
     tmux::check_version()?;
 
     // After an upgrade the server still runs the old binary's config (tmux
     // reads it once, at start), so say so — here, before tmux takes the
-    // terminal, and again after an in-session overlay run below.
+    // terminal, and again after an in-session column run below.
     let stale = tmux::server_version().and_then(|v| tmux::stale_server_hint(&v));
 
     // Every route into the session lands here, so this is the one place that
@@ -175,9 +167,10 @@ fn open() -> Result<()> {
     cli::watch::ensure_running(&bin);
 
     if tmux::inside_tenx_session() {
-        // Already inside the tenx session (the client's embedded terminal,
-        // or a plain attach) → run the overlay in this pane.
-        tui::run_overlay(tui::Surface::Popup)?;
+        // Already inside the session (the client's embedded terminal, or a
+        // plain attach): the column is on the left — Ctrl+w — or, for a
+        // plain attach, `tenx` in another terminal.
+        eprintln!("already inside the tenx session — Ctrl+w for the task column, or run tenx from another terminal");
         if let Some(hint) = &stale {
             eprintln!("{hint}");
         }
@@ -193,7 +186,7 @@ fn open() -> Result<()> {
             eprintln!("{hint}");
             std::thread::sleep(std::time::Duration::from_millis(2500));
         }
-        tui::client::run(&bin_str)?;
+        tui::client::run()?;
     }
 
     Ok(())

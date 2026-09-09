@@ -1,27 +1,21 @@
-//! Global task overlay: lists every task across every registered workspace in
-//! one flat list ordered by last agent activity (workspace shown per row),
-//! with each task's Claude-activity status. It's both a
-//! switcher and a task manager — fuzzy-filter + Enter to jump, plus
+//! The column: every task across every registered workspace in one list,
+//! sectioned by attention (secrets pending → waiting for input → working →
+//! inactive), fuzzy-filtered, with each task's Claude-activity status. It is
+//! both a switcher and a task manager — type to filter + Enter to open, plus
 //! Telescope-style create/delete/rename/close bindings on a selected row
 //! (see `Focus`/`InputMode`: the search field is Insert, plain typing
 //! filters; a list row is Normal, plain letters act — `n` new, `d`d delete).
 //!
-//! Single-session model: all tasks live as (invisible) windows in the one
-//! global `tenx` tmux session. The overlay runs on three surfaces
-//! (`tui::Surface`): the *client*'s column (`Surface::Client`, what `tenx`
-//! opens: the list beside an embedded terminal in the same process, so a
-//! jump is the window switch and quit keys hand focus to the task through
-//! `ClientRequest`); the session's *home* window (`--home`, long-lived, jump
-//! switches windows without exiting); and the Ctrl+w popup for a client
-//! attached to the session directly (`tmux display-popup -E`: exits after a
-//! jump, and tmux closes the popup with it). Same binary, same code — there
-//! is exactly one overlay implementation.
+//! It is drawn by the client (`tui::client`) beside the embedded tmux
+//! session, in the same process: a jump is the window switch (the terminal
+//! shows it), quit keys hand focus to the task through `ClientRequest`, and
+//! the selection survives switching because nothing restarts.
 
 use anyhow::{Context, Result};
 use crossterm::{
     event::{
-        self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
-        Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, KeyCode, KeyEvent, KeyModifiers,
+        MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -39,10 +33,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 use unicode_width::UnicodeWidthStr;
 
-use super::{Surface, mouse};
+use super::mouse;
 
-#[cfg(test)]
-mod demo;
 #[cfg(test)]
 mod screenshot;
 use crate::palette;
@@ -71,7 +63,7 @@ struct Row {
     /// per-task cache, refreshed on the tick.
     window_id: Option<String>,
     /// The pane its Claude session runs in (`%40`), from the session registry
-    /// — what the preview panel shows and `y`/`N` answer. Refreshed on the
+    /// — what `y`/`N` answer. Refreshed on the
     /// tick with the status.
     pane: Option<String>,
     /// PR chips and listening ports from `.tenx-live.json` (written by
@@ -231,42 +223,8 @@ enum Mode {
     Rename(RenameForm),
 }
 
-/// The preview panel's contents: the visible screen of the selected task's
-/// Claude pane, captured with `tmux capture-pane -e` and kept as styled
-/// lines. Per-client and read-only — the way to see what a blocked task is
-/// asking without switching the session's window under every other client
-/// (and without clearing the window's bell flag by visiting it).
-#[derive(Default)]
-struct Preview {
-    /// The pane the lines came from; `None` when the selected task has no
-    /// live session (or nothing is selected).
-    pane: Option<String>,
-    lines: Vec<Line<'static>>,
-    /// The capture failed (pane gone) — distinct from an empty pane.
-    gone: bool,
-}
-
-/// Capture at most this many lines; the panel shows the tail that fits.
-const PREVIEW_LINES: usize = 80;
-/// Side-by-side list and preview from this width; below it, stacked under
-/// the list and only for a blocked task; none when the pane is too small.
-const PREVIEW_SIDE_MIN_COLS: u16 = 96;
-/// Side by side, the list is as wide as its widest row but never more than
-/// this share of the body, nor narrower than this many columns.
-const PREVIEW_LIST_MAX_PERCENT: u16 = 60;
-const PREVIEW_LIST_MIN_COLS: u16 = 40;
-const PREVIEW_STACK_MIN_ROWS: u16 = 26;
-
-/// A task to land on after the overlay tears down its TUI. Recorded when the
-/// user jumps while *outside* tmux (a plain terminal): there's no client to
-/// switch in place, so we exit the overlay cleanly and then attach to the tenx
-/// session with that window selected.
-struct AttachTarget {
-    window_id: Option<String>,
-}
-
-/// What the client's column asks the client to do, since it cannot move
-/// focus or hide itself: the terminal is in the same process.
+/// What the column asks the client to do, since it cannot move focus or
+/// hide itself: the terminal is in the same process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClientRequest {
     /// Put the keyboard in the embedded terminal (a jump landed, or a quit
@@ -278,18 +236,8 @@ pub(super) enum ClientRequest {
     Quit,
 }
 
-pub(super) struct Overlay {
-    /// Running as the session's home base pane (long-lived, never quits) rather
-    /// than the Ctrl+w floating pane (exits after a jump).
-    home: bool,
-    /// `Surface::Client`: the column — narrow two-line rows, no preview
-    /// panel (the task is beside it), the window switch is the whole of a
-    /// jump and focus moves via `client_request`.
-    client: bool,
+pub(super) struct Column {
     client_request: Option<ClientRequest>,
-    /// Whether the keyboard is in the column. The column only re-sorts
-    /// itself while this is false — never under a moving cursor.
-    pub(super) focused: bool,
     workspaces: Vec<Workspace>,
     tab: Tab,
     input_mode: InputMode,
@@ -307,14 +255,12 @@ pub(super) struct Overlay {
     repo_selected: usize,
     status_msg: Option<String>,
     mode: Mode,
-    /// Set when a jump from outside tmux should attach after teardown.
-    attach: Option<AttachTarget>,
     /// Set by `start_unlock` (the `u` key / `:unlock`) to (workspace index,
     /// slug). `run_loop` checks this after every event and, when set,
     /// suspends the TUI (leaves raw mode/alt screen) to run the real
     /// interactive `cli::secrets::decrypt_in` — the identity's passphrase
     /// prompt needs a real controlling terminal, which the alternate screen
-    /// isn't. Not handled inside `Overlay` itself because only `run_loop` has
+    /// isn't. Not handled inside `Column` itself because only `run_loop` has
     /// the `Terminal` handle needed to leave and re-enter raw mode.
     pending_unlock: Option<(usize, String)>,
 
@@ -350,8 +296,6 @@ pub(super) struct Overlay {
     current: Option<String>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
-    /// What the preview panel shows for the selected task (see `Preview`).
-    preview: Preview,
 }
 
 /// How often the idle tick re-reads the *slow* inputs — `tmux list-windows`
@@ -361,14 +305,14 @@ pub(super) struct Overlay {
 const SLOW_REFRESH: Duration = Duration::from_secs(2);
 
 /// Minimum spacing between the home pane's automatic idle-tab sweeps — see
-/// `Overlay::maybe_sweep`. `FocusGained` already only triggers a rescan, which
+/// `Column::maybe_sweep`. `FocusGained` already only triggers a rescan, which
 /// is cheap; this just keeps the sweep itself (a `zellij` subprocess call per
 /// candidate) from re-running on every glance back at the terminal.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(300);
 
-impl Overlay {
-    pub(super) fn new(surface: Surface) -> Self {
-        let mut o = Self::empty(surface);
+impl Column {
+    pub(super) fn new() -> Self {
+        let mut o = Self::empty();
         o.workspaces = workspace::registered_workspaces();
         o.rebuild_rows();
         o
@@ -441,15 +385,12 @@ impl Overlay {
         self.pending_unlock.take()
     }
 
-    /// An overlay with no workspaces and no rows, touching nothing outside the
+    /// A column with no workspaces and no rows, touching nothing outside the
     /// process — `new` fills it from the registry; the screenshot test fills
     /// it with fixtures.
-    fn empty(surface: Surface) -> Self {
-        Overlay {
-            home: surface == Surface::Home,
-            client: surface == Surface::Client,
+    fn empty() -> Self {
+        Column {
             client_request: None,
-            focused: true,
             workspaces: vec![],
             tab: Tab::Tasks,
             input_mode: InputMode::Insert,
@@ -464,7 +405,6 @@ impl Overlay {
             repo_selected: 0,
             status_msg: None,
             mode: Mode::List,
-            attach: None,
             pending_unlock: None,
             list_state: ListState::default(),
             line_to_pos: Vec::new(),
@@ -477,7 +417,6 @@ impl Overlay {
             window_ids: std::collections::HashMap::new(),
             current: None,
             slow_refreshed: None,
-            preview: Preview::default(),
         }
     }
 
@@ -501,7 +440,7 @@ impl Overlay {
     }
 
     /// Scan every workspace's repos for clone status + last commit. Synchronous
-    /// (local git only); cached until the overlay is reopened.
+    /// (local git only); cached until the column is reopened.
     fn rebuild_repo_rows(&mut self) {
         let global = crate::workspace::load_global().unwrap_or_default();
         let mut rows = Vec::new();
@@ -571,9 +510,7 @@ impl Overlay {
         self.rows = rows;
         self.sort_rows();
         self.apply_filter();
-        if self.client {
-            self.current = crate::tmux::current_task();
-        }
+        self.current = crate::tmux::current_task();
     }
 
     fn sort_rows(&mut self) {
@@ -588,8 +525,8 @@ impl Overlay {
 
     /// Idle-tick refresh: re-read each row's status/age/tab-id in place,
     /// WITHOUT re-sorting or re-discovering tasks. The list order is frozen
-    /// while the overlay is showing (no rows shuffling under the cursor) and
-    /// only recomputed when the list is (re)opened: floating overlay spawn,
+    /// while the column is showing (no rows shuffling under the cursor) and
+    /// only recomputed when the list is (re)opened: floating column spawn,
     /// home-pane startup, regaining focus, returning after a jump, or a
     /// mutating action (create/delete/rename).
     pub(super) fn refresh_statuses(&mut self) {
@@ -621,11 +558,9 @@ impl Overlay {
             }
         }
         self.rows = rows;
-        if self.client {
-            // Fresher than the slow refresh's window list: the task beside
-            // the column is what ↓/↑ start from.
-            self.current = crate::tmux::current_task();
-        }
+        // Fresher than the slow refresh's window list: the task beside the
+        // column is what ↓/↑ start from.
+        self.current = crate::tmux::current_task();
     }
 
     /// One `list-windows` for both the bell signals and the current window.
@@ -804,7 +739,7 @@ impl Overlay {
     /// Position (in `filtered`) of the task the column sits beside; `None`
     /// on the other surfaces, or when the filter hides it.
     fn own_row(&self) -> Option<usize> {
-        if !self.client || self.tab != Tab::Tasks {
+        if self.tab != Tab::Tasks {
             return None;
         }
         self.filtered.iter().position(|&i| Some(self.rows[i].slug.as_str()) == self.current.as_deref())
@@ -817,7 +752,7 @@ impl Overlay {
     /// client shows an empty screen for it; ⏎ opens it). Never fires from
     /// the search field or off the Tasks tab.
     fn follow_selection(&mut self) {
-        if !self.client || self.tab != Tab::Tasks || self.focus != Focus::List {
+        if self.tab != Tab::Tasks || self.focus != Focus::List {
             return;
         }
         let Some(row) = self.selected_row() else { return };
@@ -855,7 +790,7 @@ impl Overlay {
     /// tap-triggered jump from a phone (with a desktop client also attached)
     /// would switch the desktop's tab instead of the phone's. Requiring ⏎ to
     /// jump guarantees the jumping client just sent a keystroke and is
-    /// therefore the one zellij switches. Returns `Ok(true)` when the overlay
+    /// therefore the one zellij switches. Returns `Ok(true)` when the column
     /// should close (a jump completed).
     pub(super) fn handle_mouse(&mut self, m: MouseEvent) -> Result<bool> {
         if !matches!(self.mode, Mode::List) {
@@ -899,7 +834,7 @@ impl Overlay {
 
     // ── Key dispatch ──────────────────────────────────────────────────────────
 
-    /// Returns `Ok(true)` when the overlay should close.
+    /// Returns `Ok(true)` when the column should close.
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<bool> {
         enum Kind {
             List,
@@ -931,19 +866,11 @@ impl Overlay {
             }
             Kind::Rename => self.handle_rename_key(key),
         }?;
-        // Home mode is the session's anchor pane — quitting would leave a dead
-        // pane/tab behind. Jumps already stay open in home mode (see `jump`),
-        // so any close reaching here is a quit key: swallow it with a hint.
-        if close && self.home {
-            self.status_msg = Some("home overlay — jump to a task instead".into());
-            return Ok(false);
-        }
         // The column stays; a quit key means "back to the task".
-        if close && self.client {
+        if close {
             self.client_request = Some(ClientRequest::FocusTerminal);
-            return Ok(false);
         }
-        Ok(close)
+        Ok(false)
     }
 
     fn handle_list_key(&mut self, key: KeyEvent) -> Result<bool> {
@@ -1095,7 +1022,7 @@ impl Overlay {
     }
 
     /// Run a `:` command against the selected task. Returns `Ok(true)` to close
-    /// the overlay. Commands that open a sub-view set `self.mode` themselves.
+    /// the column. Commands that open a sub-view set `self.mode` themselves.
     fn run_command(&mut self, cmd: &str) -> Result<bool> {
         // Tab switches and quit work from either tab.
         match cmd {
@@ -1108,11 +1035,8 @@ impl Overlay {
                 return Ok(false);
             }
             "q" | "quit" => {
-                if self.client {
-                    self.client_request = Some(ClientRequest::Quit);
-                    return Ok(false);
-                }
-                return Ok(true);
+                self.client_request = Some(ClientRequest::Quit);
+                return Ok(false);
             }
             // `:n` works from either tab — it uses the selected item's workspace.
             "n" | "new" => {
@@ -1137,41 +1061,11 @@ impl Overlay {
             "y" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
             "deny" => self.answer(tenx_core::dialog::Answer::No),
             "cancel" => self.cancel_secrets(),
-            "hide" if self.client => self.client_request = Some(ClientRequest::Hide),
+            "hide" => self.client_request = Some(ClientRequest::Hide),
             "o" | "open" => return self.jump(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
         }
         Ok(false)
-    }
-
-    // ── Preview ───────────────────────────────────────────────────────────────
-
-    /// Re-capture the selected task's pane for the preview panel. Cheap to
-    /// call after every event: without `force` it only spawns `tmux` when
-    /// the selection moved to a different pane; the idle tick passes `force`
-    /// so a blocked pane's dialog (and a working one's output) stay live.
-    fn refresh_preview(&mut self, force: bool) {
-        if self.client {
-            return; // the task itself is beside the column
-        }
-        let pane = match (self.tab, &self.mode) {
-            (Tab::Tasks, Mode::List | Mode::Command(_)) => self.selected_row().and_then(|r| r.pane.clone()),
-            _ => None,
-        };
-        if pane == self.preview.pane && !force {
-            return;
-        }
-        let Some(target) = pane.clone() else {
-            self.preview = Preview::default();
-            return;
-        };
-        match crate::tmux::capture_pane(&target) {
-            Ok(text) => {
-                let lines = tenx_core::dialog::preview_tail(&text, PREVIEW_LINES).into_iter().map(super::ansi::line).collect();
-                self.preview = Preview { pane: Some(target), lines, gone: false };
-            }
-            Err(_) => self.preview = Preview { pane: Some(target), lines: vec![], gone: true },
-        }
     }
 
     // ── Answering a permission prompt ─────────────────────────────────────────
@@ -1219,15 +1113,9 @@ impl Overlay {
             Err(e) => self.status_msg = Some(e.to_string()),
         }
         self.refresh_statuses();
-        self.refresh_preview(true);
     }
 
-    /// The selected row is waiting on some prompt (permission or otherwise).
-    fn selected_blocked(&self) -> bool {
-        self.tab == Tab::Tasks && self.selected_row().is_some_and(|r| r.status == TaskStatus::Blocked)
-    }
-
-    /// The selected row has a permission dialog the overlay can answer.
+    /// The selected row has a permission dialog the column can answer.
     fn selected_answerable(&self) -> bool {
         self.selected_row().is_some_and(|r| {
             r.status == TaskStatus::Blocked && r.waiting_for.as_deref() == Some(tenx_core::dialog::PERMISSION_PROMPT)
@@ -1236,76 +1124,33 @@ impl Overlay {
 
     // ── Jump ──────────────────────────────────────────────────────────────────
 
+    /// Open the selected task — `open_in` selects (or creates) its window,
+    /// which the embedded terminal shows — and hand the keyboard to it. The
+    /// column stays in view: the rows keep the order they are on screen and
+    /// the selection stays on the task just opened, so the next ↓ is the
+    /// task below it. Only the filter goes, and the selection follows its
+    /// row into the full list.
     fn jump(&mut self) -> Result<bool> {
         let Some(row) = self.selected_row() else {
             return Ok(false);
         };
         let ws_idx = row.ws_idx;
         let slug = row.slug.clone();
-
-        // The client's terminal is a tmux client of the session whatever
-        // `$TMUX` says about the process itself (it may well run inside
-        // some other tmux); `open_in` selects the window and the embedded
-        // terminal shows it.
-        if self.client || crate::tmux::inside_tenx_session() {
-            // `open_in` selects the window for the session, which is what this
-            // client (the home pane or the popup) is looking at.
-            let ws = &self.workspaces[ws_idx];
-            if let Err(e) = crate::cli::task::open_in(ws, &slug) {
-                self.status_msg = Some(e.to_string());
-                return Ok(false);
-            }
-            if self.client {
-                self.current = Some(slug.clone());
-                self.client_request = Some(ClientRequest::FocusTerminal);
-                // The column stays in view: keep the rows in the order they
-                // are on screen and the selection on the task just opened,
-                // so the next ↓ is the task below it. Only the filter goes,
-                // and the selection follows its row into the full list.
-                self.filter.clear();
-                self.apply_filter();
-                if let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].slug == slug) {
-                    self.selected = pos;
-                }
-                self.focus_search();
-                self.status_msg = None;
-                return Ok(false);
-            }
-            if self.home {
-                // Stay alive as the session's home pane — tmux already
-                // switched the current window to the task. Reset the filter
-                // and re-sort by activity so the next visit starts fresh,
-                // with the most recently active task selected on top.
-                self.filter.clear();
-                self.rebuild_rows();
-                self.selected = 0;
-                self.focus_search();
-                self.status_msg = None;
-                return Ok(false);
-            }
-            return Ok(true);
-        }
-
-        if crate::tmux::inside_any_tmux() {
-            // A client of some other tmux server: nothing can switch it here.
-            self.status_msg = Some(crate::tmux::foreign_client_hint());
+        let ws = &self.workspaces[ws_idx];
+        if let Err(e) = crate::cli::task::open_in(ws, &slug) {
+            self.status_msg = Some(e.to_string());
             return Ok(false);
         }
-
-        // Outside tmux entirely (a plain terminal) → can't switch in place.
-        // Open/select the window now (the server may be up without a client
-        // attached), record it, and close; `run()` attaches after the TUI
-        // tears down so tmux gets a clean terminal.
-        if crate::tmux::server_running() {
-            let ws = &self.workspaces[ws_idx];
-            if let Err(e) = crate::cli::task::open_in(ws, &slug) {
-                self.status_msg = Some(e.to_string());
-                return Ok(false);
-            }
+        self.current = Some(slug.clone());
+        self.client_request = Some(ClientRequest::FocusTerminal);
+        self.filter.clear();
+        self.apply_filter();
+        if let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].slug == slug) {
+            self.selected = pos;
         }
-        let window_id = crate::tmux::find_window(&slug).ok().flatten().map(|w| w.id);
-        self.attach = Some(AttachTarget { window_id });
-        Ok(true)
+        self.focus_search();
+        self.status_msg = None;
+        Ok(false)
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -1699,17 +1544,11 @@ impl Overlay {
         }
     }
 
-    /// Background idle-tab sweep (`cli::task::sweep_quiet`), run on the home
-    /// pane's regular focus-gained rescan — see `run_loop`. Only the home
-    /// pane does this: the Ctrl+w floating overlay exits right after a jump,
-    /// so it would just repeat the same sweep on every glance rather than
-    /// amortize it. Silent on stdout by design (this runs inside the
-    /// alternate screen); a nonzero result gets a status line instead, same
-    /// as any other background-ish action here.
-    fn maybe_sweep(&mut self) {
-        if !self.home {
-            return;
-        }
+    /// Background idle-window sweep (`cli::task::sweep_quiet`), run when the
+    /// client's terminal regains focus, at most once per `SWEEP_INTERVAL`.
+    /// Silent on stdout by design (this runs inside the alternate screen); a
+    /// nonzero result gets a status line instead.
+    pub(super) fn maybe_sweep(&mut self) {
         if self.last_swept.is_some_and(|t| t.elapsed() < SWEEP_INTERVAL) {
             return;
         }
@@ -1845,116 +1684,30 @@ fn subseq_match(needle: &str, haystack: &str) -> bool {
     true
 }
 
-// Note: the Ctrl+w popup's lifecycle is tmux's (`display-popup -E` closes it
-// when this process exits), so there is no toggle state to keep here.
-
-pub fn run(surface: Surface) -> Result<()> {
-    let orig = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange);
-        orig(info);
-    }));
-
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableFocusChange)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let mut overlay = Overlay::new(surface);
-    let result = run_loop(&mut terminal, &mut overlay);
-
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange)?;
-    terminal.show_cursor()?;
-    result?;
-
-    // The TUI is fully torn down now. If a jump from outside tmux was queued,
-    // attach to (or create) the tenx session; both exec() and replace this
-    // process.
-    if let Some(t) = overlay.attach.take() {
-        if crate::tmux::server_running() {
-            crate::tmux::attach_at(t.window_id.as_deref())?;
-        } else {
-            let bin = crate::tmux::self_bin()?;
-            crate::tmux::attach_or_create(&bin.to_string_lossy())?;
-        }
-    }
-    Ok(())
-}
-
-const TICK: Duration = Duration::from_millis(500);
-
-fn run_loop(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    overlay: &mut Overlay,
-) -> Result<()> {
-    loop {
-        terminal.draw(|f| render(f, overlay))?;
-
-        if event::poll(TICK)? {
-            match event::read()? {
-                Event::Key(key) => {
-                    if overlay.handle_key(key)? {
-                        break;
-                    }
-                    overlay.refresh_preview(false);
-                }
-                Event::Mouse(m) => {
-                    if overlay.handle_mouse(m)? {
-                        break;
-                    }
-                    overlay.refresh_preview(false);
-                }
-                // Coming back to look at the overlay (home tab refocused, or
-                // the terminal regained focus) counts as a reopen — recompute
-                // the activity ordering once, here, not on every tick.
-                Event::FocusGained if matches!(overlay.mode, Mode::List) => {
-                    overlay.rebuild_rows();
-                    overlay.maybe_sweep();
-                }
-                _ => {}
-            }
-        } else if matches!(overlay.mode, Mode::List) {
-            // Idle tick — update status glyphs/ages in place; the row order
-            // stays frozen (see `refresh_statuses`). The preview follows the
-            // pane live at the same cadence.
-            overlay.refresh_statuses();
-            overlay.refresh_preview(true);
-        }
-
-        if let Some((ws_idx, slug)) = overlay.pending_unlock.take() {
-            run_unlock(terminal, overlay, ws_idx, &slug)?;
-        }
-    }
-    Ok(())
-}
-
 /// Suspend the TUI to run the real, interactive secrets fulfillment —
 /// leaves raw mode and the alternate screen so `age`'s passphrase prompt (and
 /// `set`'s own value prompt) reach this pane's *real* controlling terminal
 /// (which is unaffected by raw-mode/alt-screen state either way, but the
 /// TUI's own rendering would otherwise stomp all over the prompt while it's
-/// waiting on input). This works whether the overlay is running in a plain
+/// waiting on input). This works whether the column is running in a plain
 /// terminal or inside a zellij pane — either way it's a real interactive
 /// terminal, which is all `age`/`set`'s own prompt need; nothing
 /// zellij-specific about this path.
 ///
 /// The plugin's only job here is spawning the real commands and getting out
 /// of its way — same principle as the design's other unlock path (a spawned
-/// pane in the `tenx-zellij` overlay, running the real CLI directly): this
+/// pane in the `tenx-zellij` column, running the real CLI directly): this
 /// function never touches the identity, the encrypted bundle, or a secret
 /// value itself, it just hands the real terminal to the real `age`/`sops`
 /// process. Delegates the actual sequencing (decrypt if release-pending,
 /// then set once per pending value-name) to `cli::secrets::fulfill_in` —
 /// shared with `tenx-zellij`'s spawned pane, which calls the same logic via
 /// `tenx secrets fulfill` since it can only shell out, not link against
-/// these functions directly. Keeping both overlays on one implementation is
+/// these functions directly. Keeping both callers on one implementation is
 /// deliberate — see `fulfill_in`'s own doc comment.
 pub(super) fn run_unlock(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    overlay: &mut Overlay,
+    column: &mut Column,
     ws_idx: usize,
     slug: &str,
 ) -> Result<()> {
@@ -1964,7 +1717,7 @@ pub(super) fn run_unlock(
 
     println!("secrets for '{slug}'...\n");
     let result = (|| -> Result<()> {
-        let ws = overlay.workspaces.get(ws_idx).context("workspace no longer registered")?;
+        let ws = column.workspaces.get(ws_idx).context("workspace no longer registered")?;
         let task = ws.find_task(slug)?;
         crate::cli::secrets::fulfill_in(ws, &task)
     })();
@@ -1981,43 +1734,32 @@ pub(super) fn run_unlock(
     // Pending state changed (cleared on success) — rebuild so the row moves
     // out of SECRETS PENDING rather than showing a stale glyph until the next
     // reopen.
-    overlay.rebuild_rows();
+    column.rebuild_rows();
     Ok(())
 }
 
-// Responsive sizing note: the overlay pane's geometry is decided *before* this
-// process exists — the tenx-zellij plugin computes breakpoints from the screen
-// size and opens this TUI in a floating pane already at the right size. The TUI
-// therefore always renders full-pane (`f.area()`).
-
-fn render(f: &mut ratatui::Frame, overlay: &mut Overlay) {
-    render_in(f, overlay, f.area());
-}
-
-/// Draw the overlay into `area` — the whole frame on its own surfaces, the
-/// column beside the embedded terminal in the client.
-pub(super) fn render_in(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
-    // Paint the ground first: cells left on the terminal's default background
-    // render black inside a tmux popup (the popup frame, styled by tmux, is
-    // charcoal), so without this the overlay looks like a hole in the popup.
+/// Draw the column into `area` (the client's left-hand strip).
+pub(super) fn render_in(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
+    // Paint the ground first, so cells the widgets leave alone don't keep the
+    // terminal's default background.
     f.render_widget(
         Block::default().style(Style::default().bg(palette::GROUND.color()).fg(palette::TEXT.color())),
         area,
     );
-    // Dispatch on a discriminant (not `match &overlay.mode`) so the list path can
-    // take `&mut overlay` without a live immutable borrow of `overlay.mode`.
-    if matches!(overlay.mode, Mode::Create(_)) {
-        render_create(f, overlay, area);
-    } else if matches!(overlay.mode, Mode::AddRepo(_)) {
-        render_addrepo(f, overlay, area);
-    } else if matches!(overlay.mode, Mode::EditRepos(_)) {
-        render_editrepos(f, overlay, area);
+    // Dispatch on a discriminant (not `match &column.mode`) so the list path can
+    // take `&mut column` without a live immutable borrow of `column.mode`.
+    if matches!(column.mode, Mode::Create(_)) {
+        render_create(f, column, area);
+    } else if matches!(column.mode, Mode::AddRepo(_)) {
+        render_addrepo(f, column, area);
+    } else if matches!(column.mode, Mode::EditRepos(_)) {
+        render_editrepos(f, column, area);
     } else {
-        render_list(f, overlay, area);
+        render_list(f, column, area);
     }
 }
 
-fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
+fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -2028,69 +1770,33 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
         ])
         .split(area);
 
-    // The body is the list plus, when there's room, the preview panel:
-    // beside it on a wide terminal, under it on a tall narrow one (a phone),
-    // absent on a small one.
-    let (list_area, preview_area) = if overlay.client {
-        (chunks[2], None)
-    } else if chunks[2].width >= PREVIEW_SIDE_MIN_COLS {
-        // The list takes only what its widest row needs (laid out as if it
-        // had the whole width, so no column is dropped), capped so the
-        // preview keeps a readable share; the preview gets the rest.
-        let full = chunks[2].width.saturating_sub(2) as usize;
-        let natural = match overlay.tab {
-            Tab::Tasks => task_items(overlay, full).0,
-            Tab::Repos => repo_items(overlay, full).0,
-        }
-        .iter()
-        .map(|i| i.width())
-        .max()
-        .unwrap_or(0) as u16;
-        let cap = chunks[2].width * PREVIEW_LIST_MAX_PERCENT / 100;
-        let list_w = (natural + 2).clamp(PREVIEW_LIST_MIN_COLS.min(cap), cap);
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(list_w), Constraint::Min(20)])
-            .split(chunks[2]);
-        (split[0], Some(split[1]))
-    } else if chunks[2].height >= PREVIEW_STACK_MIN_ROWS && overlay.selected_blocked() {
-        // Narrow (a phone): the list keeps the whole screen, and the
-        // preview only appears under it when the selected task has a
-        // prompt to read — the one time the space is worth giving up.
-        let split = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(8), Constraint::Percentage(40)])
-            .split(chunks[2]);
-        (split[0], Some(split[1]))
-    } else {
-        (chunks[2], None)
-    };
+    let list_area = chunks[2];
 
     // Record clickable chrome/list areas for the mouse handler.
-    overlay.tabs_area = chunks[0];
-    overlay.search_area = chunks[1];
-    overlay.list_area = list_area;
+    column.tabs_area = chunks[0];
+    column.search_area = chunks[1];
+    column.list_area = list_area;
 
     // ── Tab bar (its own row, not on a border) ────────────────────────────────
     let tabs = Tabs::new(vec![" Tasks ", " Repos "])
-        .select(if overlay.tab == Tab::Tasks { 0 } else { 1 })
+        .select(if column.tab == Tab::Tasks { 0 } else { 1 })
         .style(Style::default().fg(palette::MUTED.color()))
         .highlight_style(Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD))
         .divider(Span::styled("│", Style::default().fg(palette::MUTED.color())));
     f.render_widget(tabs, chunks[0]);
 
     // ── Search box (or the rename input) ──────────────────────────────────────
-    let title = if matches!(overlay.mode, Mode::Rename(_)) {
+    let title = if matches!(column.mode, Mode::Rename(_)) {
         " rename task "
     } else {
         ""
     };
-    let (prefix, prefix_style, value) = match &overlay.mode {
+    let (prefix, prefix_style, value) = match &column.mode {
         Mode::Rename(form) => ("✎ ", Style::default().fg(palette::ACCENT.color()), form.buffer.clone()),
         // `/` — the vim search prompt, a sibling of the `:` command line
         // below. A text glyph takes the accent colour and renders one column
         // wide everywhere; the emoji it replaced did neither.
-        _ => ("/ ", Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD), overlay.filter.clone()),
+        _ => ("/ ", Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD), column.filter.clone()),
     };
     // Real terminal cursor only when the cursor lives in the search field (or
     // renaming) — same condition the old `▏` fill-in bar used, but this is
@@ -2099,7 +1805,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
     // Cargo.toml) so it agrees with what `Paragraph` actually renders — the
     // rename prefix is a dingbat, so a plain `.chars().count()` could
     // misplace it by a column on some terminals.
-    let show_cursor = matches!(overlay.mode, Mode::Rename(_)) || overlay.focus == Focus::Search;
+    let show_cursor = matches!(column.mode, Mode::Rename(_)) || column.focus == Focus::Search;
     let top_spans = vec![Span::styled(prefix, prefix_style), Span::raw(value.clone())];
     let top = Paragraph::new(Line::from(top_spans))
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(title));
@@ -2111,32 +1817,27 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
 
     // ── Body list (tasks or repos) ────────────────────────────────────────────
     let list_width = list_area.width.saturating_sub(2) as usize;
-    let (items, line_of_selected, line_to_pos) = match overlay.tab {
-        Tab::Tasks if overlay.client => column_items(overlay, list_width),
-        Tab::Tasks => task_items(overlay, list_width),
-        Tab::Repos => repo_items(overlay, list_width),
+    let (items, line_of_selected, line_to_pos) = match column.tab {
+        Tab::Tasks => column_items(column, list_width),
+        Tab::Repos => repo_items(column, list_width),
     };
-    overlay.line_to_pos = line_to_pos;
-    overlay.item_heights = items.iter().map(|i| i.height() as u16).collect();
+    column.line_to_pos = line_to_pos;
+    column.item_heights = items.iter().map(|i| i.height() as u16).collect();
 
     // Highlight a row only when the cursor is in the list (not the search field).
-    overlay
+    column
         .list_state
-        .select(if overlay.focus == Focus::List { line_of_selected } else { None });
+        .select(if column.focus == Focus::List { line_of_selected } else { None });
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())))
         // A background bar: the row keeps its own status colours and chips
         // while selected, instead of collapsing into one accent colour.
         .highlight_style(Style::default().bg(palette::SEL_BG.color()))
         .highlight_spacing(HighlightSpacing::Never);
-    f.render_stateful_widget(list, list_area, &mut overlay.list_state);
-
-    if let Some(area) = preview_area {
-        render_preview(f, overlay, area);
-    }
+    f.render_stateful_widget(list, list_area, &mut column.list_state);
 
     // ── Footer / hints ────────────────────────────────────────────────────────
-    let footer = match (&overlay.mode, &overlay.status_msg) {
+    let footer = match (&column.mode, &column.status_msg) {
         (Mode::Command(buf), _) => {
             let mut spans = vec![
                 Span::styled(":", Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)),
@@ -2163,39 +1864,20 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
             format!(" {msg}"),
             Style::default().fg(palette::SUCCESS.color()),
         )),
-        _ if overlay.client => {
+        _ => {
             // A column of ~36 cells: the mode tag and the two or three keys
             // that matter here; the full hint set lives on the wide surfaces.
-            let (tag, tag_style) = mode_tag(overlay.input_mode);
-            let hint = match (overlay.input_mode, overlay.tab) {
+            let (tag, tag_style) = mode_tag(column.input_mode);
+            let hint = match (column.input_mode, column.tab) {
                 (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) if overlay.selected_answerable() => " y/N answer · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) if overlay.selected_row().is_some_and(|r| r.window_id.is_none()) => {
+                (InputMode::Normal, Tab::Tasks) if column.selected_answerable() => " y/N answer · ⏎ open",
+                (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.window_id.is_none()) => {
                     " closed · ⏎ open · ↓↑ move"
                 }
                 (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · n new · x close",
                 (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab",
             };
             Line::from(vec![Span::styled(tag, tag_style), Span::styled(hint, Style::default().fg(palette::MUTED.color()))])
-        }
-        _ => {
-            let (tag, tag_style) = mode_tag(overlay.input_mode);
-            let hint = match (overlay.input_mode, overlay.tab) {
-                (InputMode::Insert, _) => "  type to filter · ↓ list · ⏎ open · ⇥ tab",
-                (InputMode::Normal, Tab::Tasks) if overlay.selected_answerable() => {
-                    "  y approve · N deny · ⏎ open · j/k move · n new · dd del · r rename · x close · q quit"
-                }
-                (InputMode::Normal, Tab::Tasks) => {
-                    "  j/k move · n new · e repos · u unlock · dd del · r rename · x close · gt tab · q quit"
-                }
-                (InputMode::Normal, Tab::Repos) => {
-                    "  j/k move · ↑ search · a add-repo · gt tab · q quit"
-                }
-            };
-            Line::from(vec![
-                Span::styled(tag, tag_style),
-                Span::styled(hint, Style::default().fg(palette::MUTED.color())),
-            ])
         }
     };
     f.render_widget(Paragraph::new(footer), chunks[3]);
@@ -2212,43 +1894,6 @@ fn mode_tag(mode: InputMode) -> (&'static str, Style) {
             " NORMAL ",
             Style::default().fg(palette::GROUND.color()).bg(palette::INFO.color()).add_modifier(Modifier::BOLD),
         ),
-    }
-}
-
-/// The preview panel: the tail of the selected task's Claude pane, or why
-/// there is none. Lines are the pane's own, so a narrow panel truncates them
-/// on the right — the dialog's question and options are left-aligned, which
-/// is what matters.
-fn render_preview(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
-    let row = match overlay.tab {
-        Tab::Tasks => overlay.selected_row(),
-        Tab::Repos => None,
-    };
-    let title = match row {
-        Some(r) => format!(" {} ", truncate(&r.title, area.width.saturating_sub(4) as usize)),
-        None => " preview ".to_string(),
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette::BORDER.color()))
-        .title(Span::styled(title, Style::default().fg(palette::MUTED.color())));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    if inner.height == 0 || inner.width == 0 {
-        return;
-    }
-    let muted = Style::default().fg(palette::MUTED.color());
-    let placeholder = |msg: &str| Paragraph::new(Line::from(Span::styled(msg.to_string(), muted)));
-    match (&overlay.preview.pane, row) {
-        (None, Some(_)) => f.render_widget(placeholder("no live session"), inner),
-        (None, None) => f.render_widget(placeholder("select a task"), inner),
-        (Some(_), _) if overlay.preview.gone => f.render_widget(placeholder("pane closed"), inner),
-        (Some(_), _) => {
-            let lines = &overlay.preview.lines;
-            let skip = lines.len().saturating_sub(inner.height as usize);
-            let tail: Vec<Line<'static>> = lines[skip..].to_vec();
-            f.render_widget(Paragraph::new(tail), inner);
-        }
     }
 }
 
@@ -2278,175 +1923,6 @@ fn group_color(group: workspace::TaskGroup) -> ratatui::style::Color {
     }
 }
 
-/// Build the task list grouped by status (needs-input first, idle last; see
-/// `TaskStatus::rank`), rendered as fixed-width columns — glyph · title ·
-/// workspace · open · age — so every column starts at the same x. Group headers
-/// are interleaved as non-selectable lines. Returns items, the selected line
-/// index, and a per-line map back to the filtered position (None for headers,
-/// spacers and the empty-state line).
-fn task_items(
-    overlay: &Overlay,
-    list_width: usize,
-) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {
-    let mut items = Vec::new();
-    let mut line_to_pos: Vec<Option<usize>> = Vec::new();
-    let mut selected_line = None;
-
-    // Column widths from the visible rows, degrading for narrow panes (phone
-    // terminals can be ~40 cols): the workspace column fits its widest name
-    // but never more than a third of the pane; the age and `open` columns are
-    // dropped (age first) when they'd squeeze the title below a readable
-    // minimum. Fixed parts: 2 indent + 3 glyph + 2-wide gaps between columns.
-    const TITLE_MIN: usize = 12;
-    let ws_max = overlay.filtered.iter().map(|&i| overlay.rows[i].ws_name.chars().count()).max().unwrap_or(0);
-    let title_max = overlay
-        .filtered
-        .iter()
-        .map(|&i| overlay.rows[i].title.chars().count())
-        .max()
-        .unwrap_or(0);
-    let ws_w = ws_max.min(list_width / 3);
-    let base = 2 + 3 + 2 + ws_w; // indent + glyph + gap + workspace
-    let show_open = list_width.saturating_sub(base + 2 + 4) >= TITLE_MIN;
-    let age_col = list_width.saturating_sub(base + 2 + 4 + 2 + 4) >= TITLE_MIN;
-    let extras = if show_open { 2 + 4 } else { 0 } + if age_col { 2 + 4 } else { 0 };
-    let title_w = title_max.min(list_width.saturating_sub(base + extras).max(8));
-
-    // Rows arrive sorted by status rank, so each status is one contiguous run —
-    // a header goes in wherever the status changes. Counts come from the
-    // filtered set, so they describe what's actually on screen.
-    let mut group_counts: [usize; 4] = [0; 4];
-    for &i in &overlay.filtered {
-        group_counts[overlay.rows[i].section.rank() as usize] += 1;
-    }
-    let mut last_group: Option<workspace::TaskGroup> = None;
-
-    for (pos, &row_idx) in overlay.filtered.iter().enumerate() {
-        let row = &overlay.rows[row_idx];
-        let group = row.section;
-        if last_group != Some(group) {
-            if last_group.is_some() {
-                items.push(ListItem::new(Line::from("")));
-                line_to_pos.push(None);
-            }
-            let count = group_counts[group.rank() as usize];
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(
-                    group.label().to_string(),
-                    Style::default()
-                        .fg(group_color(group))
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    format!("  {count}"),
-                    Style::default().fg(palette::MUTED.color()),
-                ),
-            ])));
-            line_to_pos.push(None);
-            last_group = Some(group);
-        }
-        if pos == overlay.selected {
-            selected_line = Some(items.len());
-        }
-
-        // A pending secrets request takes glyph priority over the ordinary
-        // Claude-session status — same reasoning as `tenx-statusbar`: it needs
-        // a different action from you (unlocking) than approving a prompt
-        // does, regardless of whether the task also happens to be idle.
-        // Three columns: a one-column glyph (`TaskStatus::glyph`, shared with
-        // the status line) in its status colour, plus a gap. The secrets
-        // lock is the one emoji: it needs to look different from any status.
-        let (glyph, glyph_style) = row_glyph(row);
-        // Names are always bold — that's what made the old overlay read as
-        // crisp; the status colour lives in the glyph and chip, not the name.
-        let selected = pos == overlay.selected && overlay.focus == Focus::List;
-        let is_current = overlay.current.as_deref() == Some(row.slug.as_str());
-        // Too narrow for the "current" chip (the column): the title itself
-        // takes the chip's colour, so the window you're in still stands out.
-        let title_fg = if selected {
-            palette::SEL_TEXT.color()
-        } else if is_current && !show_open {
-            palette::CURRENT.color()
-        } else {
-            palette::TEXT.color()
-        };
-        let title_style = Style::default().fg(title_fg).add_modifier(Modifier::BOLD);
-        // Age is only meaningful for resting states (how long it's waited/sat).
-        let show_age = matches!(
-            row.status,
-            TaskStatus::Blocked | TaskStatus::Signaled | TaskStatus::Done
-        );
-        let age = row
-            .changed
-            .filter(|_| show_age)
-            .map(workspace::format_age)
-            .unwrap_or_default();
-        let open_cell = if row.window_id.is_some() { "open" } else { "    " };
-
-        let dim = Style::default().fg(palette::MUTED.color());
-        let mut spans = vec![
-            Span::raw("  "),
-            Span::styled(glyph, glyph_style),
-            Span::styled(pad_cell(&row.title, title_w), title_style),
-            Span::raw("  "),
-            Span::styled(pad_cell(&row.ws_name, ws_w), dim),
-        ];
-        if show_open {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled(open_cell, dim));
-        }
-        if show_age && age_col {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled(age, dim));
-        }
-        // Live chips — PR state and listening ports — only when there's room
-        // for the other extras too; a phone-width pane keeps the title.
-        if show_open {
-            for pr in &row.live.prs {
-                let color = match pr.checks.as_str() {
-                    "failure" => palette::DANGER.color(),
-                    "success" => palette::SUCCESS.color(),
-                    _ => palette::INFO.color(),
-                };
-                spans.push(Span::styled(format!("  {}", pr.chip()), Style::default().fg(color)));
-            }
-            if !row.live.ports.is_empty() {
-                let ports: Vec<String> = row.live.ports.iter().map(|p| format!(":{p}")).collect();
-                spans.push(Span::styled(format!("  {}", ports.join(" ")), dim));
-            }
-        }
-        // Which secret(s) it wants takes priority over Claude Code's own
-        // waiting-for reason — same priority as the glyph above, and for the
-        // same reason: it's a different, more specific thing to act on.
-        // One chip per row, on a tinted pill: what it wants unlocked, else
-        // Claude Code's own words for what it's waiting on ("input needed",
-        // the open dialog's label — you can tell a permission prompt from a
-        // question without switching), else "current" for the window you're
-        // sitting in.
-        let chip = row_reason(row).or_else(|| {
-            is_current.then(|| ("current".to_string(), &palette::CURRENT, &palette::CHIP_CURRENT_BG))
-        });
-        if let Some((label, fg, bg)) = chip.filter(|_| show_open) {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled(
-                format!(" {label} "),
-                Style::default().fg(fg.color()).bg(bg.color()).add_modifier(Modifier::BOLD),
-            ));
-        }
-        items.push(ListItem::new(Line::from(spans)));
-        line_to_pos.push(Some(pos));
-    }
-
-    if items.is_empty() {
-        for line in empty_state_lines() {
-            items.push(ListItem::new(line));
-            line_to_pos.push(None);
-        }
-    }
-    (items, selected_line, line_to_pos)
-}
-
-/// A row's glyph column: the secrets lock, or the status glyph in its
 /// status colour, plus a gap. Shared by both list shapes.
 fn row_glyph(row: &Row) -> (String, Style) {
     if !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty() {
@@ -2473,7 +1949,7 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
     }
 }
 
-/// The column's list: the same groups and rows as `task_items`, shaped for
+/// The column's list: the groups and rows of the task list, shaped for
 /// a column of 30–48 cells. Each task is two lines — the glyph and the
 /// bold title on the first, taking the whole width; on the second, muted
 /// and indented under the title, the workspace, the age of a resting task,
@@ -2482,7 +1958,7 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
 /// chip. No spacer between tasks: the headers already separate the groups,
 /// and a column has less height to spare than width.
 fn column_items(
-    overlay: &Overlay,
+    column: &Column,
     list_width: usize,
 ) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {
     const INDENT: usize = 2 + 3; // indent + glyph column
@@ -2491,14 +1967,14 @@ fn column_items(
     let mut selected_line = None;
 
     let mut group_counts: [usize; 4] = [0; 4];
-    for &i in &overlay.filtered {
-        group_counts[overlay.rows[i].section.rank() as usize] += 1;
+    for &i in &column.filtered {
+        group_counts[column.rows[i].section.rank() as usize] += 1;
     }
     let mut last_group: Option<workspace::TaskGroup> = None;
     let dim = Style::default().fg(palette::MUTED.color());
 
-    for (pos, &row_idx) in overlay.filtered.iter().enumerate() {
-        let row = &overlay.rows[row_idx];
+    for (pos, &row_idx) in column.filtered.iter().enumerate() {
+        let row = &column.rows[row_idx];
         let group = row.section;
         if last_group != Some(group) {
             if last_group.is_some() {
@@ -2513,12 +1989,12 @@ fn column_items(
             line_to_pos.push(None);
             last_group = Some(group);
         }
-        if pos == overlay.selected {
+        if pos == column.selected {
             selected_line = Some(items.len());
         }
 
-        let selected = pos == overlay.selected && overlay.focus == Focus::List;
-        let is_current = overlay.current.as_deref() == Some(row.slug.as_str());
+        let selected = pos == column.selected && column.focus == Focus::List;
+        let is_current = column.current.as_deref() == Some(row.slug.as_str());
         // Closed tasks (no window) read dimmer; ⏎ opens them.
         let title_fg = if selected {
             palette::SEL_TEXT.color()
@@ -2635,7 +2111,7 @@ fn empty_state_lines() -> Vec<Line<'static>> {
 
 /// Build the grouped repo list (lean: clone dot + last commit).
 fn repo_items(
-    overlay: &Overlay,
+    column: &Column,
     list_width: usize,
 ) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {
     let mut items = Vec::new();
@@ -2643,8 +2119,8 @@ fn repo_items(
     let mut selected_line = None;
     let mut last_ws: Option<usize> = None;
 
-    for (pos, &idx) in overlay.repo_filtered.iter().enumerate() {
-        let r = &overlay.repo_rows[idx];
+    for (pos, &idx) in column.repo_filtered.iter().enumerate() {
+        let r = &column.repo_rows[idx];
         if last_ws != Some(r.ws_idx) {
             if last_ws.is_some() {
                 items.push(ListItem::new(Line::from("")));
@@ -2657,7 +2133,7 @@ fn repo_items(
             line_to_pos.push(None);
             last_ws = Some(r.ws_idx);
         }
-        if pos == overlay.repo_selected {
+        if pos == column.repo_selected {
             selected_line = Some(items.len());
         }
 
@@ -2710,14 +2186,14 @@ fn truncate(s: &str, max: usize) -> String {
     format!("{cut}…")
 }
 
-fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
-    let Mode::AddRepo(form) = &overlay.mode else { return };
+fn render_addrepo(f: &mut ratatui::Frame, column: &Column, area: Rect) {
+    let Mode::AddRepo(form) = &column.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(area);
 
-    let ws_name = overlay
+    let ws_name = column
         .workspaces
         .get(form.ws_idx)
         .map(|w| w.config.name.clone())
@@ -2742,7 +2218,7 @@ fn render_addrepo(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" add repo "));
     f.render_widget(body, chunks[0]);
 
-    let footer = if let Some(msg) = &overlay.status_msg {
+    let footer = if let Some(msg) = &column.status_msg {
         Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
     } else {
         Line::from(Span::styled(
@@ -2764,8 +2240,8 @@ fn cursor(on: bool) -> &'static str {
 /// Repo checklist for an existing task: ticked rows the task already has read
 /// as "worktree", the pending diff is called out per row, and detaching is
 /// spelled out in the footer before it's confirmed.
-fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
-    let Mode::EditRepos(form) = &overlay.mode else { return };
+fn render_editrepos(f: &mut ratatui::Frame, column: &Column, area: Rect) {
+    let Mode::EditRepos(form) = &column.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -2817,7 +2293,7 @@ fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
             ),
             Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
         ))
-    } else if let Some(msg) = &overlay.status_msg {
+    } else if let Some(msg) = &column.status_msg {
         Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
     } else {
         Line::from(Span::styled(
@@ -2828,14 +2304,14 @@ fn render_editrepos(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
     f.render_widget(Paragraph::new(footer), chunks[1]);
 }
 
-fn render_create(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
-    let Mode::Create(form) = &overlay.mode else { return };
+fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
+    let Mode::Create(form) = &column.mode else { return };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(area);
 
-    let ws_name = overlay
+    let ws_name = column
         .workspaces
         .get(form.ws_idx)
         .map(|w| w.config.name.clone())
@@ -2870,7 +2346,7 @@ fn render_create(f: &mut ratatui::Frame, overlay: &Overlay, area: Rect) {
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" new task "));
     f.render_widget(body, chunks[0]);
 
-    let footer = if let Some(msg) = &overlay.status_msg {
+    let footer = if let Some(msg) = &column.status_msg {
         Line::from(Span::styled(
             format!(" {msg}"),
             Style::default().fg(palette::DANGER.color()),

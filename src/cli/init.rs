@@ -37,7 +37,7 @@ pub fn run(name: Option<&str>) -> Result<()> {
     }
     ws.save_config()?;
 
-    // Register in the global workspace list so the overlay can find it.
+    // Register in the global workspace list so the column can find it.
     crate::workspace::register_workspace(&ws.dir)?;
 
     // Clone all repos immediately

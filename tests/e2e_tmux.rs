@@ -224,7 +224,7 @@ fn task_new_open_and_list_against_real_tmux() {
     let mut status = String::new();
     for _ in 0..20 {
         std::thread::sleep(std::time::Duration::from_millis(100));
-        let out = h.tenx().args(["overlay", "--json"]).output().unwrap();
+        let out = h.tenx().args(["task", "list", "--json"]).output().unwrap();
         let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         let task = json["tasks"].as_array().unwrap().iter().find(|t| t["slug"] == "smoke-test").unwrap().clone();
         status = task["status"].as_str().unwrap_or_default().to_string();

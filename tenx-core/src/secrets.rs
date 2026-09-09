@@ -3,7 +3,7 @@
 //!
 //! An agent's `decrypt`/`set` call has no terminal, so all it can do is
 //! enqueue a request and then wait for a human to act on it from a real
-//! shell or the overlay. Two different things make its name leave the queue:
+//! shell or the column. Two different things make its name leave the queue:
 //! the human fulfilled it (the plaintext was written, then the name was
 //! cleared), or someone withdrew it (`tenx secrets cancel`). Nothing is
 //! recorded to tell those apart — no tombstone, no receipt — because the

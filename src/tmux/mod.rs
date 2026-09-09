@@ -1,8 +1,8 @@
 //! The tmux session layer.
 //!
 //! tenx runs its own tmux **server** on a dedicated socket (`tmux -L tenx`),
-//! started against a generated config, so tenx's theme, status line, hooks and
-//! the Ctrl+w popup keybind never touch the user's own `~/.tmux.conf`. The
+//! started against a generated config, so tenx's theme, status line and hooks
+//! never touch the user's own `~/.tmux.conf`. The
 //! server holds one session (`tenx`); **windows are tasks** (named by slug,
 //! tracked by their stable `@id`), panes are whatever the layout spawned. Any
 //! client — a local terminal, or an SSH login from a phone — attaches to the
@@ -10,9 +10,8 @@
 //!
 //! Tabless on purpose: the generated config blanks tmux's own window list. The
 //! task list is the only switcher: the column of `tenx`'s client
-//! (`tui::client`, the session embedded beside it), and inside the session
-//! the home window's permanent overlay and the Ctrl+w `display-popup` — one
-//! binary, one overlay implementation.
+//! (`tui::client`), which embeds the session beside it. tmux itself has no
+//! list; a plain `tmux -L tenx attach` is for debugging.
 //!
 //! Every function here is a `tmux -L tenx …` subprocess. `find_bin` doesn't
 //! trust `$PATH` because hooks and spawned panes run with whatever environment
@@ -38,7 +37,7 @@ pub fn socket() -> String {
 
 /// `env TENX_TMUX_SOCKET=<socket> <bin>` when running on a non-default
 /// socket, else just `<bin>` — so every tenx the server spawns (the home
-/// overlay, the popup, the watcher's children) stays on the same server. Lets
+/// watcher's children) stays on the same server. Lets
 /// a build be tried side by side with an installed one: same workspaces,
 /// separate server, config and watcher.
 fn tenx_cmd(tenx_bin: &str) -> String {
@@ -51,15 +50,14 @@ fn tenx_cmd(tenx_bin: &str) -> String {
 }
 /// The one session on that server.
 pub const SESSION: &str = "tenx";
-/// The overlay's window, created with the session and never closed.
+/// The column's window, created with the session and never closed.
 pub const HOME_WINDOW: &str = "home";
-/// Minimum tmux: `display-popup -T` and `popup-border-style` are 3.3 (the
-/// popup itself is 3.2, but the generated config uses both).
+/// Minimum tmux: 3.3 — what the generated config and the format strings the
+/// binary relies on were written against.
 pub const MIN_VERSION: (u32, u32) = (3, 3);
-/// A client narrower or shorter than this gets the overlay full screen
-/// instead of as a bordered 85% popup (see `render_config`).
+/// A terminal narrower than this gets no column beside the task; the list
+/// shows over the whole screen on Ctrl+w instead (`tui::client`).
 pub const SMALL_CLIENT_COLS: u32 = 100;
-pub const SMALL_CLIENT_ROWS: u32 = 30;
 /// Per-task cache of the window id (`@12`) last opened for it. A fast path
 /// only — `find_window` by slug is the source of truth, and a stale id (server
 /// restarted) is simply treated as "not open".
@@ -133,11 +131,6 @@ fn run(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Inside *any* tmux client (ours or the user's own server).
-pub fn inside_any_tmux() -> bool {
-    env::var_os("TMUX").is_some()
-}
-
 /// Inside a client of *our* server. `$TMUX` is `<socket path>,<pid>,<index>`,
 /// and `-L tenx` names the socket file `tenx`, so the basename is the test —
 /// no subprocess needed, which matters because this runs on every keystroke
@@ -171,7 +164,7 @@ pub fn check_version() -> Result<(u32, u32)> {
     let version = parse_version(&text).with_context(|| format!("unrecognised tmux version: {}", text.trim()))?;
     if version < MIN_VERSION {
         bail!(
-            "tmux {}.{} is too old — tenx needs {}.{}+ (display-popup with a title, popup styling)",
+            "tmux {}.{} is too old — tenx needs {}.{}+",
             version.0,
             version.1,
             MIN_VERSION.0,
@@ -200,8 +193,8 @@ fn parse_version(text: &str) -> Option<(u32, u32)> {
 ///
 /// `current_exe()` is the wrong answer for that on Linux: it reads
 /// `/proc/self/exe`, which resolves symlinks, so a Homebrew install yields the
-/// versioned Cellar path that the next `brew upgrade` deletes — and the popup
-/// binding dies with it. The path we were *invoked* by (`argv[0]`, made
+/// versioned Cellar path that the next `brew upgrade` deletes — and the panes
+/// the config spawns die with it. The path we were *invoked* by (`argv[0]`, made
 /// absolute but with symlinks kept) is the stable `bin/tenx` link for any
 /// package-managed install. macOS `current_exe()` already behaves that way;
 /// this makes both platforms agree. Falls back to `current_exe()` when
@@ -249,7 +242,7 @@ pub fn server_version() -> Option<String> {
 }
 
 /// Text for the user when the running server was started by another tenx
-/// than this one: tmux read its config (and the popup's binary path) once, at
+/// than this one: tmux read its config (and this binary's path) once, at
 /// server start, so an upgrade only lands after a restart.
 pub fn stale_server_hint(running: &str) -> Option<String> {
     let mine = env!("CARGO_PKG_VERSION");
@@ -265,7 +258,7 @@ pub fn stale_server_hint(running: &str) -> Option<String> {
 // ── Config ────────────────────────────────────────────────────────────────────
 
 /// `~/.config/tenx/tmux.conf`, regenerated on every session creation so it can
-/// never drift from the installed binary (the popup keybind embeds its path).
+/// never drift from the installed binary (the config embeds its path).
 pub fn config_path() -> Result<PathBuf> {
     let home = env::var("HOME").context("HOME not set")?;
     let sock = socket();
@@ -276,23 +269,22 @@ pub fn config_path() -> Result<PathBuf> {
 /// Write the generated config and return its path. Only read by tmux when the
 /// *server* starts, so a running session keeps its config until restarted —
 /// same as the zellij version, and fine: nothing in here changes per task.
-pub fn write_config(tenx_bin: &str) -> Result<PathBuf> {
+pub fn write_config() -> Result<PathBuf> {
     let path = config_path()?;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
     }
-    fs::write(&path, render_config(tenx_bin)).with_context(|| format!("write {}", path.display()))?;
+    fs::write(&path, render_config()).with_context(|| format!("write {}", path.display()))?;
     Ok(path)
 }
 
 /// The whole server config. Theme colours come from [`crate::palette`] — the
-/// same constants the overlay draws with, so chrome and overlay read as one
-/// design. The window list is blanked (tabless: the overlay is the switcher);
+/// same constants the column draws with, so chrome and column read as one
+/// design. The window list is blanked (tabless: the column is the switcher);
 /// `status-left` shows this window's task and status from the `@tenx_status`
 /// user option `tenx watch` maintains, falling back to the window name (the
 /// slug) until the first push.
-pub fn render_config(tenx_bin: &str) -> String {
-    let q = tenx_cmd(tenx_bin);
+pub fn render_config() -> String {
     format!(
         r##"# Generated by tenx — do not edit; regenerated whenever the tenx session is created.
 # This server (`tmux -L {socket}`) is tenx's own; your ~/.tmux.conf is untouched.
@@ -317,7 +309,7 @@ set -g set-titles-string "tenx: #W"
 
 # Attention: a bell from *any* process in a task's pane flags its window
 # (`window_bell_flag`), which `tenx watch` reads alongside Claude Code's own
-# session state. Silent here — the overlay and the status line are the display.
+# session state. Silent here — the column and the status line are the display.
 set -g monitor-bell on
 set -g bell-action any
 set -g visual-bell off
@@ -334,21 +326,14 @@ set -g mode-style "bg={accent},fg={ground}"
 set -g pane-border-style "fg={border}"
 set -g pane-active-border-style "fg={border_active}"
 set -g pane-border-lines single
-# The border cells need the ground too: without a bg they take the terminal's
-# own default (black), which reads as a thick dark frame around the popup.
-# Accent for the line itself: the popup sits on the same surface as the panes
-# beneath it, so a muted frame would leave it with no edge at all.
-set -g popup-border-style "fg={accent},bg={ground}"
-set -g popup-border-lines rounded
-set -g popup-style "bg={ground},fg={text}"
 
 # Every pane sits on the same ground as the chrome, with the palette's text
 # colour as the default foreground — not the terminal's own white-on-black,
-# which reads harsher and makes the popup look like a different app.
+# which reads harsher next to the column.
 set -g window-style "fg={text},bg={ground}"
 set -g window-active-style "fg={text},bg={ground}"
 
-# Tabless: the overlay is the only task list. Hide tmux's window list entirely.
+# Tabless: the column is the only task list. Hide tmux's window list entirely.
 set -g window-status-format ""
 set -g window-status-current-format ""
 set -g window-status-separator ""
@@ -360,23 +345,9 @@ set -g status-left " #{{?#{{@tenx_status}},#{{E:@tenx_status}},#[fg={accent}]#W}
 set -g status-right-length 100
 set -g status-right "#{{E:@tenx_right}} "
 
-# Ctrl+w: the overlay as a per-client popup, for a client attached to the
-# session directly (inside `tenx`'s client the key never reaches tmux: the
-# column is outside). `-E` closes it when the overlay exits, which it does
-# right after a jump. On a small client (a phone) the popup fills the screen
-# with no border — an 85% window on 40 columns wastes a fifth of them;
-# `if-shell -F` evaluates the format against the client that pressed the key.
-bind -n C-w if-shell -F "#{{||:#{{<:#{{client_width}},{small_cols}}},#{{<:#{{client_height}},{small_rows}}}}}" {{
-    display-popup -E -B -w 100% -h 100% {tenx} overlay
-}} {{
-    display-popup -E -w 85% -h 85% -T " tenx " {tenx} overlay
-}}
 "##,
-        small_cols = SMALL_CLIENT_COLS,
-        small_rows = SMALL_CLIENT_ROWS,
         socket = socket(),
         version = env!("CARGO_PKG_VERSION"),
-        tenx = q,
         ground = palette::GROUND.hex(),
         text = palette::TEXT.hex(),
         bright = palette::BRIGHT.hex(),
@@ -388,44 +359,25 @@ bind -n C-w if-shell -F "#{{||:#{{<:#{{client_width}},{small_cols}}},#{{<:#{{cli
 
 // ── Session lifecycle ─────────────────────────────────────────────────────────
 
-/// Attach to the tenx session, creating the server (from the generated config)
-/// and the session if needed. Replaces the current process: tmux takes over the
-/// terminal. `new-session -A` is attach-or-create in one call, and `-f` is only
-/// consulted when the server actually starts, so passing it always is safe.
+/// Start the server (from the generated config) and the session detached if
+/// they aren't running, for the client to attach to in a pty of its own
+/// (`tui::client`). `-f` is only consulted when the server actually starts.
 ///
-/// The home window runs the overlay in a restart loop: in home mode the overlay
-/// never quits on purpose, but if it ever dies the window would go with it —
-/// and with it, when it's the last window, the whole session.
-pub fn attach_or_create(tenx_bin: &str) -> Result<()> {
-    use std::os::unix::process::CommandExt;
-    let conf = write_config(tenx_bin)?;
-    let home = env::var("HOME").context("HOME not set")?;
-    let home_cmd = format!("while :; do {} overlay --home; sleep 1; done", tenx_cmd(tenx_bin));
-    // Start the server from $HOME, not from wherever tenx was run: a server
-    // outlives the directory it was started in, and tenx is habitually run
-    // from inside a task that later gets deleted.
-    let err = cmd()
-        .current_dir(&home)
-        .args(["-f", &conf.to_string_lossy()])
-        .args(["new-session", "-A", "-s", SESSION, "-n", HOME_WINDOW, "-c", &home, &home_cmd])
-        .exec();
-    Err(err).context("exec tmux new-session")
-}
-
-/// Start the server and session detached if they aren't running — the
-/// non-exec half of [`attach_or_create`], for a client that attaches in a
-/// pty of its own (`tui::client`).
-pub fn ensure_session(tenx_bin: &str) -> Result<()> {
+/// Window 0 is `home`: a plain shell in `$HOME`, never a task window, so the
+/// session always has a window and a fresh install has somewhere to land.
+pub fn ensure_session() -> Result<()> {
     if server_running() {
         return Ok(());
     }
-    let conf = write_config(tenx_bin)?;
+    let conf = write_config()?;
     let home = env::var("HOME").context("HOME not set")?;
-    let home_cmd = format!("while :; do {} overlay --home; sleep 1; done", tenx_cmd(tenx_bin));
+    // Start the server from $HOME, not from wherever tenx was run: a server
+    // outlives the directory it was started in, and tenx is habitually run
+    // from inside a task that later gets deleted.
     let status = cmd()
         .current_dir(&home)
         .args(["-f", &conf.to_string_lossy()])
-        .args(["new-session", "-d", "-s", SESSION, "-n", HOME_WINDOW, "-c", &home, &home_cmd])
+        .args(["new-session", "-d", "-s", SESSION, "-n", HOME_WINDOW, "-c", &home])
         .status()
         .context("run tmux new-session")?;
     if !status.success() {
@@ -437,29 +389,6 @@ pub fn ensure_session(tenx_bin: &str) -> Result<()> {
 /// The `tmux -L <socket> attach-session -t tenx` a client runs in its pty.
 pub fn attach_command() -> (PathBuf, Vec<String>) {
     (find_bin(), vec!["-L".into(), socket(), "attach-session".into(), "-t".into(), SESSION.into()])
-}
-
-/// Focus `window_id` for the session, then attach. Used when the overlay was
-/// run from a plain terminal and the user jumped: the overlay tears down, and
-/// this lands the new client on the chosen task.
-pub fn attach_at(window_id: Option<&str>) -> Result<()> {
-    use std::os::unix::process::CommandExt;
-    if let Some(id) = window_id {
-        let _ = select_window(id);
-    }
-    let err = cmd().args(["attach-session", "-t", SESSION]).exec();
-    Err(err).context("exec tmux attach-session")
-}
-
-/// A message for the one situation tmux can't do in place: `tenx` run from a
-/// client of a *different* tmux server. `switch-client` only works within one
-/// server, and nesting a tmux inside a tmux is a trap, so say what to do.
-pub fn foreign_client_hint() -> String {
-    format!(
-        "you're inside another tmux session — detach from it (prefix d) and run `tenx` again, \
-         or attach from a second terminal with: tmux -L {} attach",
-        socket()
-    )
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
@@ -501,7 +430,7 @@ pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
 
 /// The task window named exactly `name` (windows are named by task slug).
 /// The home window is never a task window, whatever a task is called — a
-/// task slugged `home` must not be able to select, kill or sweep the overlay.
+/// task slugged `home` must not be able to select, kill or sweep the column.
 pub fn find_window(name: &str) -> Result<Option<Window>> {
     if name == HOME_WINDOW {
         return Ok(None);
@@ -520,12 +449,12 @@ pub fn select_window(id: &str) -> Result<()> {
 }
 
 /// The visible contents of a pane, with its colours (`-e` keeps the SGR
-/// sequences) — what the overlay's preview panel shows for the selected task.
+/// sequences) — what `y`/`N` check before answering a permission prompt.
 pub fn capture_pane(target: &str) -> Result<String> {
     run(&["capture-pane", "-p", "-e", "-t", target])
 }
 
-/// Type one tmux key name (`Enter`, `Escape`) into a pane — how the overlay
+/// Type one tmux key name (`Enter`, `Escape`) into a pane — how the column
 /// answers a permission dialog without visiting the window. Callers check the
 /// dialog is actually on screen first (`tenx_core::dialog`).
 pub fn send_keys(target: &str, key: &str) -> Result<()> {
@@ -718,7 +647,7 @@ mod tests {
 
     #[test]
     fn config_stamps_this_version() {
-        let conf = render_config("/usr/local/bin/tenx");
+        let conf = render_config();
         assert!(conf.contains(&format!("set -g @tenx_version \"{}\"", env!("CARGO_PKG_VERSION"))));
     }
 
@@ -729,14 +658,9 @@ mod tests {
     }
 
     #[test]
-    fn config_embeds_binary_and_palette() {
-        let c = render_config("/usr/local/bin/tenx");
-        assert!(c.contains("display-popup -E -w 85% -h 85% -T \" tenx \" "));
-        assert!(c.contains("display-popup -E -B -w 100% -h 100% "));
-        assert!(c.contains("#{||:#{<:#{client_width},100},#{<:#{client_height},30}}"));
-        // The popup border must sit on the ground, not the terminal's default bg.
-        assert!(c.contains(&format!("popup-border-style \"fg={},bg={}\"", palette::ACCENT.hex(), palette::GROUND.hex())));
-        assert!(c.contains("'/usr/local/bin/tenx' overlay"));
+    fn config_embeds_palette() {
+        let c = render_config();
+        assert!(!c.contains("display-popup"), "no popup: the column is outside tmux");
         assert!(c.contains(&palette::ACCENT.hex()));
         assert!(c.contains("set -g monitor-bell on"));
         assert!(c.contains("#{?#{@tenx_status},#{E:@tenx_status},"));

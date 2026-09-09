@@ -13,12 +13,12 @@
 //!  Esc to cancel · Tab to amend
 //! ```
 //!
-//! So the overlay answers it the way a finger would: `tmux send-keys` into
+//! So the column answers it the way a finger would: `tmux send-keys` into
 //! that pane. `Enter` takes the highlighted option (always "Yes" — the dialog
 //! opens on it), `Escape` cancels. Never a digit for "No": in three-option
 //! dialogs `2` is "Yes, and don't ask again".
 //!
-//! The risk is the race between the overlay's last look and the keystroke —
+//! The risk is the race between the column's last look and the keystroke —
 //! the prompt may have been answered from the pane, or the session may have
 //! moved on to something else that also takes `Enter` (an `AskUserQuestion`
 //! picks its first option). [`permission_dialog_visible`] is the guard: the
@@ -56,7 +56,7 @@ pub const PERMISSION_PROMPT: &str = "permission prompt";
 
 /// True if a pane capture ends in Claude Code's permission dialog: the
 /// question and its first option, both within the last few non-blank lines.
-/// Deliberately literal — a future wording change fails closed (the overlay
+/// Deliberately literal — a future wording change fails closed (the column
 /// refuses to send) rather than open.
 pub fn permission_dialog_visible(capture: &str) -> bool {
     let plain = strip_ansi(capture);

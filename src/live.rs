@@ -3,9 +3,9 @@
 //!
 //! Only `tenx watch` writes the cache (on its 2 s cadence: ports every tick,
 //! PRs on a staggered schedule, since each `gh pr view` is a network call);
-//! the overlay and `task_json` just read it. So a task's chips can be at
+//! the column and `task_json` just read it. So a task's chips can be at
 //! most a couple of seconds (ports) or a few minutes (PR) behind, and the
-//! overlay never blocks on `lsof` or the network.
+//! column never blocks on `lsof` or the network.
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;

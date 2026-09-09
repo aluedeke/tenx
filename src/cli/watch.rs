@@ -338,7 +338,7 @@ fn resolve_all() -> Snapshot {
             }
         }
     }
-    // Newest activity first, matching what `tenx overlay --json` promises for
+    // Newest activity first, matching what `tenx task list --json` promises for
     // the same shape. Same bytes in a different order is still a different wire
     // format to anyone who reads position; cheap to guarantee here, awkward to
     // rediscover in a consumer that assumed it.
@@ -538,7 +538,7 @@ fn has_secrets_pending(t: &serde_json::Value) -> bool {
 }
 
 /// One window's `status-left` text from its snapshot row: glyph, title,
-/// workspace (muted, like the overlay's row), Claude's waiting reason, then
+/// workspace (muted, like the column's row), Claude's waiting reason, then
 /// the PR and port chips the row carries.
 fn status_line(t: &serde_json::Value, slug: &str) -> String {
     let status = TaskStatus::from_token(t["status"].as_str().unwrap_or(""));
@@ -551,7 +551,7 @@ fn status_line(t: &serde_json::Value, slug: &str) -> String {
     };
     // tmux style directives (`#[fg=…]`): the option is expanded with `E:` in
     // the generated config, so the glyph gets its status colour and the
-    // title its own, same table as the overlay (`palette::status_color`).
+    // title its own, same table as the column (`palette::status_color`).
     let text_fg = crate::palette::TEXT.hex();
     let mut text = if has_secrets_pending(t) {
         format!("#[fg={}]🔒#[fg={text_fg},bold] {title}{ws}", crate::palette::ACCENT.hex())
