@@ -63,11 +63,32 @@ pub fn run(name: Option<&str>) -> Result<()> {
         }
     }
 
-    // Offer to install the /tenx skill into .claude/skills/
-    if prompt_yes_no("Install /tenx skill for Claude Code sessions?")? {
+    // Offer to install the /tenx and /standup skills. Claude Code reads
+    // `.claude/skills`; Codex and pi read `.agents/skills` and `AGENTS.md`, so
+    // install a portable copy of each and generate an AGENTS.md too.
+    if prompt_yes_no("Install /tenx and /standup skills (Claude, Codex, pi) and AGENTS.md?")? {
         install_tenx_skill(&ws_dir)?;
         install_standup_skill(&ws_dir)?;
-        eprintln!("  ✓ skills installed — type /tenx or /standup in any task session");
+        install_agents_skill(&ws_dir, "tenx", TENX_SKILL_MD)?;
+        install_agents_skill(&ws_dir, "standup", STANDUP_SKILL_MD)?;
+        install_agents_md(&ws_dir)?;
+        eprintln!("  ✓ skills installed (.claude/skills + .agents/skills) and AGENTS.md written");
+    }
+
+    // Offer to wire up session-state reporting for the agents on PATH, so tasks
+    // show live status. This is the user-level, once-per-machine setup (the same
+    // `tenx agent setup` does); tenx also self-heals it on launch.
+    let found: Vec<crate::agent::AgentKind> = crate::agent::AgentKind::all()
+        .into_iter()
+        .filter(|k| crate::cli::session_event::agent_on_path(*k))
+        .collect();
+    if !found.is_empty() {
+        let names: Vec<&str> = found.iter().map(|k| k.as_str()).collect();
+        if prompt_yes_no(&format!("Set up tenx status reporting for {}?", names.join(", ")))? {
+            for kind in found {
+                let _ = crate::cli::session_event::setup(kind.as_str(), false);
+            }
+        }
     }
 
     eprintln!();
@@ -95,6 +116,107 @@ fn install_tenx_skill(ws_dir: &std::path::Path) -> Result<()> {
 }
 
 const TENX_SKILL_MD: &str = include_str!("skills/tenx.md");
+
+/// Install a portable copy of a skill into `.agents/skills/<name>/SKILL.md` —
+/// the location Codex and pi read (Claude uses `.claude/skills`). Portable
+/// means an Agent-Skills `name:` header and no Claude-only dynamic command
+/// injection; see [`portable_skill`].
+fn install_agents_skill(ws_dir: &std::path::Path, name: &str, src: &str) -> Result<()> {
+    let skill_dir = ws_dir.join(".agents").join("skills").join(name);
+    std::fs::create_dir_all(&skill_dir)?;
+    let skill_path = skill_dir.join("SKILL.md");
+    if skill_path.exists() {
+        return Ok(());
+    }
+    std::fs::write(&skill_path, portable_skill(name, src))?;
+    Ok(())
+}
+
+/// Rewrite a Claude skill into the portable Agent-Skills shape: a `name:` +
+/// `description:` header (dropping `allowed-tools`, which not every agent
+/// honours) and no `` !`command` `` dynamic injection (a Claude-only feature —
+/// replaced with a plain instruction to run the command).
+fn portable_skill(name: &str, src: &str) -> String {
+    let (description, body) = split_frontmatter(src);
+    let mut out = format!("---\nname: {name}\ndescription: {description}\n---\n");
+    for line in body.lines() {
+        if let Some(rest) = line.strip_prefix("!`") {
+            // The injected form is a shell one-liner (`… 2>/dev/null || echo …`);
+            // keep just the command a person would run.
+            let full = rest.split('`').next().unwrap_or(rest);
+            let cmd = full.split(" 2>").next().unwrap_or(full).split(" ||").next().unwrap_or(full).trim();
+            out.push_str(&format!("Run `{cmd}` to see the current list.\n"));
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// Split a skill's YAML frontmatter from its body, returning `(description,
+/// body)`. Tolerant: a file without frontmatter yields an empty description and
+/// the whole text as body.
+fn split_frontmatter(src: &str) -> (String, &str) {
+    let rest = match src.strip_prefix("---\n") {
+        Some(r) => r,
+        None => return (String::new(), src),
+    };
+    let Some(end) = rest.find("\n---") else {
+        return (String::new(), src);
+    };
+    let front = &rest[..end];
+    let body = rest[end..].trim_start_matches('\n').trim_start_matches("---").trim_start_matches('\n');
+    let description = front
+        .lines()
+        .find_map(|l| l.strip_prefix("description:").map(|d| d.trim().to_string()))
+        .unwrap_or_default();
+    (description, body)
+}
+
+/// Write the workspace `AGENTS.md` — the cross-agent context file Codex reads
+/// from a task's cwd and pi walks up to find (Claude reads it too). Points at
+/// the tenx skill and states the task-boundary rule up front.
+fn install_agents_md(ws_dir: &std::path::Path) -> Result<()> {
+    let path = ws_dir.join("AGENTS.md");
+    if path.exists() {
+        return Ok(());
+    }
+    std::fs::write(&path, AGENTS_MD)?;
+    Ok(())
+}
+
+const AGENTS_MD: &str = r#"# Working in this tenx workspace
+
+This directory is a **tenx** workspace: one or more bare git repos, and a
+`tasks/` directory where each subdirectory is a task with its own git worktrees,
+a `TASK.md`, and a coding-agent window.
+
+## Boundaries
+
+Your working area is the current task directory (`tasks/<name>/`). Only modify
+files inside it — the code in its `<repo>/` worktrees and its `TASK.md` —
+without explicit user approval. Do **not** touch `config.toml`, `.bare/`, the
+shared agent config directories, or any other task's directory. If a task needs
+something outside these boundaries (adding a repo, deleting a task, changing
+shared config), stop and ask the user.
+
+## Keep TASK.md current
+
+Check off `## Todo` items as you finish them; add the PR URL under `## Links`
+after `gh pr create`; record decisions and gotchas under `## Notes`.
+
+## Commands
+
+    tenx task list             list all tasks and open windows
+    tenx task new "<title>"    create a task (worktrees + TASK.md)
+    tenx task open <name>      switch to a task's window
+    tenx secrets decrypt <n>   ask for a credential (safe to run; enqueues a request)
+    tenx secrets status        show sealed/unlocked/pending state
+
+The `/tenx` skill (in `.agents/skills/tenx`) has the full detail on tasks,
+tickets, and secrets.
+"#;
 
 fn install_standup_skill(ws_dir: &std::path::Path) -> Result<()> {
     let skill_dir = ws_dir.join(".claude").join("skills").join("standup");
