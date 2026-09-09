@@ -88,6 +88,10 @@ struct Row {
     /// release yet, someone has to type a value in first. Same
     /// frozen-at-`rebuild_rows` treatment.
     secrets_pending_set: Vec<String>,
+    /// The task's coding agent (`.tenx-agent` override, else workspace default,
+    /// else claude). Shown as a tag when it isn't the default; set at
+    /// `rebuild_rows` time (an agent change is rare and needs a reopen anyway).
+    agent: crate::agent::AgentKind,
     /// The section this row is grouped under — normally `status.group()`, but
     /// a pending secrets request (either kind) forces `TaskGroup::SecretsPending`
     /// regardless of Claude session state, since it needs a specific action
@@ -477,7 +481,7 @@ impl Column {
         // (`TaskStatus::rank` — needs-input first, idle last) and, within a
         // group, by last status change newest first. Tasks with no agent
         // activity yet fall back to creation time.
-        let sessions = workspace::claude::sessions();
+        let sessions = workspace::sessions::sessions();
         self.refresh_windows();
         let signals = &self.signals;
         let mut rows: Vec<Row> = Vec::new();
@@ -507,6 +511,7 @@ impl Column {
                     pane: state.pane,
                     live: crate::live::read(&task.path),
                     repos: task.repos.clone(),
+                    agent: crate::agent::agent_for(ws, &task.path),
                     secrets_pending,
                     secrets_pending_set,
                     section,
@@ -536,7 +541,7 @@ impl Column {
     /// home-pane startup, regaining focus, returning after a jump, or a
     /// mutating action (create/delete/rename).
     pub(super) fn refresh_statuses(&mut self) {
-        let sessions = workspace::claude::sessions();
+        let sessions = workspace::sessions::sessions();
         let slow = self.slow_refreshed.is_none_or(|t| t.elapsed() >= SLOW_REFRESH);
         if slow {
             self.refresh_windows();
@@ -1102,7 +1107,7 @@ impl Column {
             return;
         }
         let (title, path) = (row.title.clone(), row.path.clone());
-        let sessions = workspace::claude::sessions();
+        let sessions = workspace::sessions::sessions();
         let state = workspace::resolve_task_state(&path, &sessions, &self.signals);
         if state.status != TaskStatus::Blocked {
             self.status_msg = Some(format!("'{title}' is not waiting on a prompt"));
@@ -2074,6 +2079,11 @@ fn column_items(
             ));
         }
         pieces.push(Span::styled(row.ws_name.clone(), dim));
+        // Name the agent when it isn't the default — a Codex or pi task reads as
+        // such; Claude rows stay unadorned.
+        if row.agent != crate::agent::AgentKind::Claude {
+            pieces.push(Span::styled(format!(" {}", row.agent.as_str()), Style::default().fg(palette::INFO.color())));
+        }
         if matches!(row.status, TaskStatus::Blocked | TaskStatus::Signaled | TaskStatus::Done)
             && let Some(changed) = row.changed
         {

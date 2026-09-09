@@ -1,3 +1,4 @@
+mod agent;
 mod cli;
 mod git;
 mod live;
@@ -9,7 +10,7 @@ mod workspace;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{Cli, Commands, HooksCommands, InternalCommands, RepoCommands, SecretsCommands, TaskCommands};
+use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, RepoCommands, SecretsCommands, TaskCommands};
 use std::env;
 
 fn main() {
@@ -53,12 +54,21 @@ fn run() -> Result<()> {
 
         Some(Commands::Watch) => cli::watch::run()?,
 
+        Some(Commands::Agent { command }) => match command {
+            AgentCommands::Setup { kind, check } => {
+                cli::session_event::setup(&kind, check)?;
+            }
+        },
+
+        Some(Commands::Doctor) => cli::doctor::run()?,
+
         Some(Commands::Internal { command }) => match command {
             InternalCommands::TmuxConf => print!("{}", tmux::render_config()),
             InternalCommands::Ports => {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
-            InternalCommands::AgentLog { cwd, pid, session } => cli::agentlog::run(&cwd, pid, session.as_deref())?,
+            InternalCommands::SessionEvent { agent, pid } => cli::session_event::run(&agent, pid),
+            InternalCommands::AgentLog { cwd, pid, session, agent } => cli::agentlog::run(&cwd, pid, session.as_deref(), &agent)?,
         },
 
         Some(Commands::Secrets { command }) => match command {
@@ -77,15 +87,16 @@ fn run() -> Result<()> {
 
 
         Some(Commands::Task { command }) => match command {
-            TaskCommands::New { name, repos, description, links, no_open, ws_dir } => {
+            TaskCommands::New { name, repos, description, links, no_open, agent, ws_dir } => {
                 let links = links
                     .iter()
                     .map(|l| tenx_core::taskmd::parse_link(l).ok_or_else(|| anyhow::anyhow!("--link wants \"Label: value\", got {l:?}")))
                     .collect::<Result<Vec<_>>>()?;
                 let md = cli::task::TaskMd { description: description.as_deref().unwrap_or(""), links: &links };
+                let agent = agent.as_deref().map(agent::AgentKind::from_token);
                 match ws_dir {
-                    Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref(), no_open, &md)?,
-                    None => cli::task::new(&name, repos.as_deref(), no_open, &md)?,
+                    Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref(), no_open, &md, agent)?,
+                    None => cli::task::new(&name, repos.as_deref(), no_open, &md, agent)?,
                 }
             }
             TaskCommands::AddRepo { name, repos, ws_dir } => {
@@ -115,6 +126,9 @@ fn run() -> Result<()> {
                 Some(dir) => cli::task::rm_by_dir(&dir, &name)?,
                 None => cli::task::rm(&name, force)?,
             },
+            TaskCommands::Agent { name, kind, ws_dir } => {
+                cli::task::agent(ws_dir.as_deref(), &name, kind.as_deref())?;
+            }
             TaskCommands::Pin { name, ws_dir } => {
                 cli::task::pin(ws_dir.as_deref(), &name)?;
             }
@@ -165,6 +179,12 @@ fn open() -> Result<()> {
     // Every route into the session lands here, so this is the one place that
     // guarantees a watcher exists. No-op when one is already running.
     cli::watch::ensure_running(&bin);
+
+    // One-time, best-effort: wire up the session integrations for whichever
+    // agents are installed, so state reporting works without a manual setup
+    // step. Sentinel-guarded (see `auto_setup`), so it runs once and never
+    // fights a user who later removes an integration.
+    cli::session_event::auto_setup();
 
     if tmux::inside_tenx_session() {
         // Already inside the session (the client's embedded terminal, or a

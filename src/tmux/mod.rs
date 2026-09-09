@@ -301,6 +301,13 @@ set -ga terminal-overrides ",*:Tc"
 set -ga terminal-overrides ",*:dim@"
 set -g escape-time 10
 set -g focus-events on
+# Extended keys: agents (Codex, Claude, pi) read Shift+Enter for a newline, and
+# pi warns at startup without this. Passthrough lets an agent's OSC escapes
+# (Codex desktop notifications, pi progress) reach the outer terminal instead of
+# being swallowed here.
+set -s extended-keys on
+set -as terminal-features "xterm*:extkeys"
+set -g allow-passthrough on
 set -g mouse on
 set -g history-limit 50000
 set -g renumber-windows on
@@ -475,13 +482,29 @@ pub fn set_global_option(option: &str, value: &str) -> Result<()> {
     run(&["set-option", "-g", option, value]).map(drop)
 }
 
+/// Read an option's value from the running server, trying global then server
+/// scope (`allow-passthrough` is `-g`, `extended-keys` is `-s`). `None` if
+/// unset or unreadable. For `tenx doctor`.
+pub fn show_global_option(option: &str) -> Option<String> {
+    for scope in ["-gv", "-sv"] {
+        if let Ok(v) = run(&["show-options", scope, option]) {
+            let v = v.trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Open a small pane at the bottom of `window_id` following a background
 /// agent's transcript (`tenx internal agent-log`). `-d` keeps focus where it
 /// is: the agent appearing is news, not an interruption. Sized in lines, not
 /// a share, so it costs the same on a tall window as a short one.
-pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, session_id: Option<&str>) -> Result<()> {
+pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, session_id: Option<&str>, agent: &str) -> Result<()> {
     let session = session_id.map(|s| format!(" --session {}", shell_quote(s))).unwrap_or_default();
-    let command = format!("{} internal agent-log {} {pid}{session}", tenx_cmd(tenx_bin), shell_quote(cwd));
+    let agent_flag = format!(" --agent {}", shell_quote(agent));
+    let command = format!("{} internal agent-log {} {pid}{session}{agent_flag}", tenx_cmd(tenx_bin), shell_quote(cwd));
     run(&["split-window", "-d", "-v", "-l", "12", "-t", window_id, "-c", cwd, &command]).map(drop)
 }
 
@@ -506,10 +529,13 @@ pub struct TaskWindow<'a> {
     /// Executable to run instead of the built-in layout (`config.toml`'s
     /// `layout`). Gets the window with a plain shell in its first pane.
     pub layout_script: Option<&'a str>,
-    /// Resume the task's most recent claude conversation (`--continue`). Only
-    /// safe when one exists: without it, `claude --continue` exits 1 and the
-    /// pane closes at once.
-    pub resume: bool,
+    /// The agent token (`claude`, `codex`, `pi`) — exported as `TENX_AGENT` for
+    /// layout scripts.
+    pub agent: &'a str,
+    /// The fully-built command to run in the task's first pane (e.g.
+    /// `claude --name 'slug' --continue`). Built by `agent::AgentKind`, which
+    /// already decided any resume flag, so tmux just runs it.
+    pub agent_cmd: &'a str,
 }
 
 /// Create a task's window and its panes, returning the window's stable id.
@@ -523,12 +549,7 @@ pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
     // `tenx:` (trailing colon) targets the session so the new window is
     // appended to it rather than treated as a window name to match.
     let session = format!("{SESSION}:");
-    let claude = format!(
-        "claude --name {}{}",
-        shell_quote(opts.slug),
-        if opts.resume { " --continue" } else { "" }
-    );
-    let first_cmd = if opts.layout_script.is_some() { None } else { Some(claude.as_str()) };
+    let first_cmd = if opts.layout_script.is_some() { None } else { Some(opts.agent_cmd) };
     let mut args = vec!["new-window", "-t", &session, "-n", opts.slug, "-c", opts.task_dir, "-P", "-F", "#{window_id}"];
     if let Some(c) = first_cmd {
         args.push(c);
@@ -545,7 +566,11 @@ pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
             .env("TENX_TITLE", opts.title)
             .env("TENX_TASK_DIR", opts.task_dir)
             .env("TENX_WS_DIR", opts.workspace_dir)
-            .env("TENX_CLAUDE_CMD", &claude)
+            .env("TENX_AGENT", opts.agent)
+            .env("TENX_AGENT_CMD", opts.agent_cmd)
+            // Back-compat: layout scripts written for the Claude-only tenx read
+            // TENX_CLAUDE_CMD. Kept one release; prefer TENX_AGENT_CMD.
+            .env("TENX_CLAUDE_CMD", opts.agent_cmd)
             .env("TENX_TMUX", format!("{} -L {}", find_bin().display(), socket()))
             .status()
             .with_context(|| format!("run layout script {script}"))?;
@@ -663,6 +688,10 @@ mod tests {
         assert!(!c.contains("display-popup"), "no popup: the column is outside tmux");
         assert!(c.contains(&palette::ACCENT.hex()));
         assert!(c.contains("set -g monitor-bell on"));
+        // The non-Claude TUIs need these: extended keys for Shift+Enter (pi
+        // warns without it) and passthrough so agent OSC escapes reach outside.
+        assert!(c.contains("set -s extended-keys on"));
+        assert!(c.contains("set -g allow-passthrough on"));
         assert!(c.contains("#{?#{@tenx_status},#{E:@tenx_status},"));
         assert!(c.contains(",*:dim@"));
         assert!(c.contains("set -g window-style \"fg="));

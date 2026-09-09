@@ -103,6 +103,11 @@ pub fn run() -> Result<()> {
         std::thread::sleep(POLL);
         tick = tick.wrapping_add(1);
 
+        // Registry housekeeping: tenx owns the session records now, so a crashed
+        // agent's file is ours to reap. The reader pid-checks too, so this only
+        // stops dead files from piling up — it is not what keeps state honest.
+        workspace::sessions::prune_dead();
+
         let snapshot = resolve_all();
         let blocked = snapshot.blocked;
         let keys: HashSet<String> = blocked.iter().map(|(k, _)| k.clone()).collect();
@@ -261,10 +266,11 @@ struct Agent {
     cwd: PathBuf,
     pid: u32,
     session_id: Option<String>,
+    agent: String,
 }
 
 fn resolve_all() -> Snapshot {
-    let sessions = workspace::claude::sessions();
+    let sessions = workspace::sessions::sessions();
     let windows = crate::tmux::list_windows().unwrap_or_default();
     let signals = crate::tmux::signals_from(&windows);
     let mut blocked = Vec::new();
@@ -290,6 +296,7 @@ fn resolve_all() -> Snapshot {
                         cwd: s.cwd.clone(),
                         pid: s.pid,
                         session_id: s.session_id.clone(),
+                        agent: s.agent.clone(),
                     });
                 }
             }
@@ -469,6 +476,7 @@ fn pane_new_agents(agents: &[Agent], windows: &[crate::tmux::Window], paned: &mu
             &a.cwd.to_string_lossy(),
             a.pid,
             a.session_id.as_deref(),
+            &a.agent,
         );
         if opened.is_ok() {
             paned.insert(key);
@@ -548,6 +556,12 @@ fn status_line(t: &serde_json::Value, slug: &str) -> String {
     let ws = match t["ws"].as_str().filter(|w| !w.is_empty()) {
         Some(w) => format!("#[fg={},nobold] {w}", crate::palette::MUTED.hex()),
         None => String::new(),
+    };
+    // Which agent, when it isn't the default — so a Codex or pi task reads as
+    // such at a glance. Claude tasks stay unadorned.
+    let ws = match t["agent"].as_str().filter(|a| !a.is_empty() && *a != "claude") {
+        Some(a) => format!("{ws}#[fg={},nobold] {a}", crate::palette::INFO.hex()),
+        None => ws,
     };
     // tmux style directives (`#[fg=…]`): the option is expanded with `E:` in
     // the generated config, so the glyph gets its status colour and the
@@ -641,7 +655,7 @@ fn running() -> bool {
     let Ok(pid) = text.trim().parse::<u32>() else {
         return false;
     };
-    pid != std::process::id() && workspace::claude::pid_alive(pid)
+    pid != std::process::id() && workspace::sessions::pid_alive(pid)
 }
 
 /// Start a watcher unless one is already running. Called from `main::open()`,

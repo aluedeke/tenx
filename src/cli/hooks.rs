@@ -4,7 +4,7 @@ use std::env;
 /// `tenx hooks install` — retained under its original name because that's what
 /// an upgrading user knows to run, but it now *removes* tenx's Claude Code
 /// hooks. tenx installs none: every task state it shows is read live from
-/// Claude Code's own session registry (`workspace::claude`), which reports what
+/// tenx's session registry (`workspace::sessions`), which reports what
 /// the hooks could only approximate. See `cli::task::remove_tenx_hooks`.
 pub fn install() -> Result<()> {
     let cwd = env::current_dir()?;

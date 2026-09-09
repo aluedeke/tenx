@@ -15,7 +15,7 @@ pub fn dump_json() -> anyhow::Result<()> {
     let global = crate::workspace::load_global().unwrap_or_default();
     // One registry read for the whole dump — every task's live state is resolved
     // against this same snapshot.
-    let sessions = crate::workspace::claude::sessions();
+    let sessions = crate::workspace::sessions::sessions();
     let signals = crate::tmux::signals();
     let mut entries = Vec::new();
     let mut workspaces = Vec::new();

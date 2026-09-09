@@ -1,8 +1,8 @@
-pub mod claude;
+pub mod sessions;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -32,7 +32,23 @@ pub struct GlobalConfig {
     /// automatic (`tenx_core::column::width`).
     #[serde(default, alias = "sidebar_width")]
     pub column_width: u16,
+    /// Per-agent launch overrides, keyed by agent token (`claude`/`codex`/`pi`).
+    /// A workspace's `[agents.<kind>]` overrides the same key here.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub agents: HashMap<String, AgentConfig>,
 }
+
+/// How to launch one agent: an alternate binary and/or extra arguments. Lets a
+/// user point at a wrapper or pin a model without tenx growing a flag per agent.
+/// tenx still adds the per-agent session/resume args around this.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct AgentConfig {
+    /// Executable to run instead of the agent's default (`claude`/`codex`/`pi`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Extra arguments appended to the launch command.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RepoConfig {
@@ -55,6 +71,15 @@ pub struct WorkspaceConfig {
     /// empty = the built-in claude/nvim/shell layout.
     #[serde(default)]
     pub layout: String,
+    /// Default coding agent for this workspace's tasks (`claude`, `codex`,
+    /// `pi`). Empty = `claude`. A task overrides it with a `.tenx-agent` file
+    /// (`agent::agent_for`).
+    #[serde(default)]
+    pub agent: String,
+    /// Per-agent launch overrides (`[agents.codex] command = …, args = […]`),
+    /// keyed by agent token; overrides the global config's same key.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub agents: HashMap<String, AgentConfig>,
     #[serde(default)]
     pub repos: Vec<RepoConfig>,
     /// Override the age identity used by `tenx secrets` for this workspace.
@@ -446,7 +471,7 @@ pub type Signals = std::collections::HashMap<String, Signal>;
 /// A task's state: Claude Code's sessions plus its window's bell, resolved by
 /// `tenx_core::status::resolve_task_state`. Pass `sessions` and `signals`
 /// gathered once per refresh, not per task.
-pub fn resolve_task_state(task_dir: &Path, sessions: &[claude::Session], signals: &Signals) -> TaskState {
+pub fn resolve_task_state(task_dir: &Path, sessions: &[sessions::Session], signals: &Signals) -> TaskState {
     let slug = task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let signal = signals.get(&slug).copied().unwrap_or_default();
     tenx_core::status::resolve_task_state(task_dir, sessions, signal)
@@ -472,6 +497,7 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "ws_dir": ws.dir,
         "slug": task.name,
         "title": task.display_name,
+        "agent": crate::agent::agent_for(ws, &task.path).as_str(),
         "status": state.status.token(),
         "waiting_for": state.waiting_for,
         "sessions": state.sessions,

@@ -13,25 +13,28 @@ pub struct TaskMd<'a> {
     pub links: &'a [(String, String)],
 }
 
-pub fn new(name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd) -> Result<()> {
+pub fn new(name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd, agent: Option<crate::agent::AgentKind>) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
-    new_with(&ws, name, repos, no_open, md)
+    new_with(&ws, name, repos, no_open, md, agent)
 }
 
 /// Create a task in an explicit workspace (no cwd dependency), with an empty
 /// `TASK.md` body. Used by the column's create flow.
 pub fn new_in(ws: &crate::workspace::Workspace, name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
-    new_with(ws, name, repos, no_open, &TaskMd::default())
+    new_with(ws, name, repos, no_open, &TaskMd::default(), None)
 }
 
-/// Create a task in an explicit workspace with a pre-filled `TASK.md`.
+/// Create a task in an explicit workspace with a pre-filled `TASK.md`. `agent`
+/// pins the task's coding agent via a `.tenx-agent` override; `None` inherits
+/// the workspace default.
 pub fn new_with(
     ws: &crate::workspace::Workspace,
     name: &str,
     repos: Option<&[String]>,
     no_open: bool,
     md: &TaskMd,
+    agent: Option<crate::agent::AgentKind>,
 ) -> Result<()> {
     let display_name = name.to_string();
     let slug = crate::workspace::slugify(name);
@@ -70,6 +73,10 @@ pub fn new_with(
     write_task_md(&task_dir, &display_name, md)?;
     write_claude_hooks(&task_dir)?;
     trust_task_dir(&task_dir);
+    // Pin the agent before the window opens, so `agent_for` picks it up.
+    if let Some(a) = agent {
+        crate::agent::set_task_agent(&task_dir, Some(a))?;
+    }
 
     for repo_name in &repo_names {
         ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, slug)?;
@@ -82,6 +89,9 @@ pub fn new_with(
             return Ok(());
         }
         let layout = ws.config.layout.as_str();
+        let agent = crate::agent::agent_for(ws, &task_dir);
+        agent.prepare(&task_dir);
+        let agent_cmd = crate::agent::launch(ws, agent, slug, &task_dir);
         let opts = crate::tmux::TaskWindow {
             // Name the window by the immutable slug, not the editable title.
             // Window names are never shown (tabless) and only correlate
@@ -91,7 +101,8 @@ pub fn new_with(
             task_dir: &task_dir.to_string_lossy(),
             workspace_dir: &ws.dir.to_string_lossy(),
             layout_script: if layout.is_empty() { None } else { Some(layout) },
-            resume: false, // brand-new task — no conversation to continue
+            agent: agent.as_str(),
+            agent_cmd: &agent_cmd,
         };
         let id = crate::tmux::open_task_window(&opts)?;
         std::fs::write(task_dir.join(crate::tmux::WINDOW_ID_FILE), &id)?;
@@ -274,9 +285,9 @@ pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
 
 /// Create a task in an explicit workspace directory (for scripts and front
 /// ends). `repos` is the picked subset (None = all).
-pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd) -> Result<()> {
+pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd, agent: Option<crate::agent::AgentKind>) -> Result<()> {
     let ws = crate::workspace::load(Path::new(ws_dir))?;
-    new_with(&ws, name, repos, no_open, md)
+    new_with(&ws, name, repos, no_open, md, agent)
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).
@@ -328,18 +339,21 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     }
 
     // Not open — create it (named by slug) and record the new id. Tasks that
-    // predate trust seeding get it here, the first time they're reopened.
+    // predate trust seeding get it here on reopen; the agent (workspace default
+    // or the task's `.tenx-agent`) decides the launch command.
     trust_task_dir(&task.path);
     let layout = ws.config.layout.as_str();
+    let agent = crate::agent::agent_for(ws, &task.path);
+    agent.prepare(&task.path);
+    let agent_cmd = crate::agent::launch(ws, agent, slug, &task.path);
     let opts = crate::tmux::TaskWindow {
         slug,
         title: &task.display_name,
         task_dir: &task.path.to_string_lossy(),
         workspace_dir: &ws.dir.to_string_lossy(),
         layout_script: if layout.is_empty() { None } else { Some(layout) },
-        // Only `--continue` if claude actually has a conversation for this cwd;
-        // otherwise it exits 1 and the pane vanishes.
-        resume: has_claude_conversation(&task.path),
+        agent: agent.as_str(),
+        agent_cmd: &agent_cmd,
     };
     let id = crate::tmux::open_task_window(&opts)?;
     std::fs::write(&id_file, &id)?;
@@ -347,28 +361,14 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
 }
 
 /// Seed Claude Code's trust grant for a task directory so its first launch
-/// there skips the trust dialog (`workspace::claude::trust_dir`). Never fatal:
+/// there skips the trust dialog (`workspace::sessions::trust_dir`). Never fatal:
 /// the dialog is an annoyance, a task that can't be created is not.
 fn trust_task_dir(task_dir: &Path) {
-    if let Err(e) = crate::workspace::claude::trust_dir(task_dir) {
+    if let Err(e) = crate::workspace::sessions::trust_dir(task_dir) {
         eprintln!("! couldn't pre-approve Claude Code's trust dialog for {}: {e:#}", task_dir.display());
     }
 }
 
-/// Whether claude has stored a conversation for `cwd` (so `--continue` will
-/// resume instead of exiting 1). Claude encodes each project dir as its path
-/// with `/` → `-` under `~/.claude/projects/`.
-fn has_claude_conversation(cwd: &Path) -> bool {
-    let Some(project_dir) = crate::workspace::claude::project_dir(cwd) else {
-        return false;
-    };
-    match std::fs::read_dir(&project_dir) {
-        Ok(entries) => entries
-            .flatten()
-            .any(|e| e.path().extension().is_some_and(|ext| ext == "jsonl")),
-        Err(_) => false,
-    }
-}
 
 pub fn list() -> Result<()> {
     let cwd = env::current_dir()?;
@@ -440,6 +440,34 @@ pub fn unpin(ws_dir: Option<&str>, task: &str) -> Result<()> {
     Ok(())
 }
 
+/// Show or set a task's coding agent. With no `kind`, prints the effective
+/// agent and where it comes from. With a `kind`, writes the task's `.tenx-agent`
+/// override (or clears it for `default`). Takes effect the next time the task's
+/// window is opened.
+pub fn agent(ws_dir: Option<&str>, task: &str, kind: Option<&str>) -> Result<()> {
+    let (ws, slug) = resolve_task(ws_dir, task)?;
+    let task = ws.find_task(&slug)?;
+    match kind {
+        None => {
+            let effective = crate::agent::agent_for(&ws, &task.path);
+            let overridden = task.path.join(crate::agent::TENX_AGENT_FILE).exists();
+            let source = if overridden { "task override" } else { "workspace default" };
+            println!("{} — {} ({source})", task.display_name, effective.as_str());
+        }
+        Some("default") => {
+            crate::agent::set_task_agent(&task.path, None)?;
+            let effective = crate::agent::agent_for(&ws, &task.path);
+            println!("cleared override for '{}' — now {} (workspace default)", task.display_name, effective.as_str());
+        }
+        Some(token) => {
+            let picked = crate::agent::AgentKind::from_token(token);
+            crate::agent::set_task_agent(&task.path, Some(picked))?;
+            println!("'{}' will use {} — reopen the task to apply", task.display_name, picked.as_str());
+        }
+    }
+    Ok(())
+}
+
 /// Parse a plain "<N><unit>" duration — "30m", "4h", "2d". The parser lives in
 /// `tenx_core::time` (unit-tested); this only maps its error into anyhow.
 pub fn parse_duration(s: &str) -> Result<Duration> {
@@ -471,7 +499,7 @@ pub fn sweep_candidates(after: Duration) -> Vec<SweepAction> {
     if live.is_empty() {
         return out; // session isn't running — nothing open to sweep
     }
-    let sessions = crate::workspace::claude::sessions();
+    let sessions = crate::workspace::sessions::sessions();
     let signals = crate::tmux::signals_from(&live);
     for ws in crate::workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
@@ -617,6 +645,15 @@ fn write_claude_hooks(task_dir: &Path) -> Result<()> {
         std::os::unix::fs::symlink("../../.claude", &link)
             .with_context(|| format!("symlink .claude in {}", task_dir.display()))?;
     }
+
+    // Same for AGENTS.md, so Codex (which reads it from cwd) and pi find the
+    // workspace's cross-agent context in the task directory. Only when the
+    // workspace actually has one (written by `tenx init`).
+    let agents_link = task_dir.join("AGENTS.md");
+    if workspace_dir.join("AGENTS.md").is_file() && !agents_link.exists() && !agents_link.is_symlink() {
+        std::os::unix::fs::symlink("../../AGENTS.md", &agents_link)
+            .with_context(|| format!("symlink AGENTS.md in {}", task_dir.display()))?;
+    }
     Ok(())
 }
 
@@ -627,7 +664,7 @@ fn ensure_workspace_claude_settings(workspace_dir: &Path) -> Result<()> {
 /// Strip tenx's Claude Code hooks from a workspace.
 ///
 /// tenx installs **no hooks at all** any more. Every task state it shows is read
-/// live from Claude Code's own session registry (`workspace::claude`), so the
+/// live from tenx's session registry (`workspace::sessions`), so the
 /// `.claude/hooks/event.sh` → `tenx tab event` → `.tenx-status` pipeline has no
 /// remaining job. This function is what retires it, and it runs from both
 /// `task new` and `tenx hooks install` so a workspace converges whichever it

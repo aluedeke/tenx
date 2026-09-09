@@ -1,9 +1,11 @@
 pub mod agentlog;
+pub mod doctor;
 pub mod hooks;
 pub mod init;
 pub mod notify;
 pub mod repo;
 pub mod secrets;
+pub mod session_event;
 pub mod standup;
 pub mod watch;
 pub mod task;
@@ -51,6 +53,13 @@ pub enum Commands {
         #[command(subcommand)]
         command: HooksCommands,
     },
+    /// Set up and inspect coding-agent integrations (Claude Code, Codex, pi)
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommands,
+    },
+    /// Report agent integration health: binaries, versions, hooks, tmux options
+    Doctor,
     /// Manage per-task encrypted secrets (age + sops)
     ///
     /// Commands are named and behave like their `sops` equivalents:
@@ -80,6 +89,18 @@ pub enum InternalCommands {
     /// Print listening ports per open task window as JSON — what `tenx watch`
     /// caches into each task's `.tenx-live.json`.
     Ports,
+    /// Apply a coding agent's hook/extension event to tenx's session registry.
+    /// Reads the hook JSON payload on stdin; prints nothing; always exits 0.
+    /// Invoked by the agents' own hooks, not by users.
+    SessionEvent {
+        /// Which agent's payload this is (`claude`, `codex`, `pi`).
+        #[arg(long)]
+        agent: String,
+        /// The agent's pid, when the caller knows it (the pi extension does).
+        /// Omitted by hooks, which climb from their parent instead.
+        #[arg(long)]
+        pid: Option<u32>,
+    },
     /// Follow a background agent's transcript in a pane; exits when the agent
     /// does. Opened by `tenx watch` when a `--bg` session appears under a task.
     AgentLog {
@@ -87,10 +108,13 @@ pub enum InternalCommands {
         cwd: String,
         /// The agent's pid — the pane closes when it's gone.
         pid: u32,
-        /// Claude Code's session id: follow exactly `<session>.jsonl` rather
-        /// than whichever transcript in the directory was written last.
+        /// The agent's session id: follow exactly that session's transcript
+        /// rather than whichever in the directory was written last.
         #[arg(long)]
         session: Option<String>,
+        /// Which agent's transcript format to follow (`claude`, `codex`, `pi`).
+        #[arg(long, default_value = "claude")]
+        agent: String,
     },
 }
 
@@ -205,6 +229,20 @@ pub enum HooksCommands {
 }
 
 #[derive(Subcommand)]
+pub enum AgentCommands {
+    /// Install (or, with --check, report) the integration that feeds tenx's
+    /// session registry for an agent. Claude Code: merges hooks into
+    /// `~/.claude/settings.json` (no trust step). Codex/pi: coming in later phases.
+    Setup {
+        /// Agent to set up: `claude`, `codex`, or `pi`.
+        kind: String,
+        /// Only report whether the integration is installed; change nothing.
+        #[arg(long)]
+        check: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum RepoCommands {
     /// Add a repo to the workspace (bare clone)
     Add {
@@ -249,6 +287,10 @@ pub enum TaskCommands {
         /// Create worktrees but don't open a window in the tenx session
         #[arg(long)]
         no_open: bool,
+        /// Coding agent for this task (`claude`, `codex`, `pi`); default is the
+        /// workspace's `agent`. Writes the task's `.tenx-agent`.
+        #[arg(long)]
+        agent: Option<String>,
         /// Create the task in this workspace directory instead of cwd.
         #[arg(long)]
         ws_dir: Option<String>,
@@ -327,6 +369,17 @@ pub enum TaskCommands {
         force: bool,
         /// Resolve the task in this workspace directory instead of cwd. `name`
         /// is treated as an exact slug.
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Show or set a task's coding agent (writes/clears its `.tenx-agent`).
+    Agent {
+        /// Exact task slug
+        name: String,
+        /// New agent (`claude`, `codex`, `pi`); omit to show the current one,
+        /// or pass `default` to clear the override and use the workspace default.
+        kind: Option<String>,
+        /// Resolve the task in this workspace directory instead of cwd.
         #[arg(long)]
         ws_dir: Option<String>,
     },
