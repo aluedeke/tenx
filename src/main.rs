@@ -68,7 +68,7 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Client) => {
-            let bin = env::current_exe()?;
+            let bin = tmux::self_bin()?;
             tmux::check_version()?;
             cli::watch::ensure_running(&bin);
             tui::client::run(&bin.to_string_lossy())?;

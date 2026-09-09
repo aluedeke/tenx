@@ -303,7 +303,7 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
 
 /// This binary's path, for panes tmux spawns on our behalf (the sidebar).
 fn tenx_bin() -> Result<String> {
-    Ok(env::current_exe()?.to_string_lossy().into_owned())
+    Ok(crate::tmux::self_bin()?.to_string_lossy().into_owned())
 }
 
 /// Focus a task's window in the tenx session (creating it if needed), given an

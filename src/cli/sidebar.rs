@@ -67,7 +67,7 @@ pub fn toggle(window: &str) -> Result<()> {
 }
 
 fn open(window: &str) -> Result<String> {
-    let bin = std::env::current_exe()?;
+    let bin = crate::tmux::self_bin()?;
     let cwd = crate::tmux::pane_path(window).unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default());
     crate::tmux::open_sidebar(window, &bin.to_string_lossy(), &cwd, configured_width())
 }
