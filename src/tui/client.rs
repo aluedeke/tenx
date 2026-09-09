@@ -31,7 +31,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use super::column::{self, ClientRequest, Column};
-use super::term::EmbeddedTerminal;
+use super::term::{EmbeddedTerminal, TaskScreen};
 
 /// How often the column's rows refresh.
 const REFRESH: Duration = Duration::from_millis(500);
@@ -39,16 +39,16 @@ const REFRESH: Duration = Duration::from_millis(500);
 /// even without input.
 const FRAME: Duration = Duration::from_millis(33);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Focus {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Focus {
     Terminal,
     Column,
 }
 
-struct Client {
-    column: Column,
-    term: EmbeddedTerminal,
-    focus: Focus,
+pub(super) struct Client {
+    pub(super) column: Column,
+    term: Box<dyn TaskScreen>,
+    pub(super) focus: Focus,
     column_shown: bool,
     column_width: u16,
     /// A terminal too narrow for a column: the list takes the whole screen
@@ -60,6 +60,29 @@ struct Client {
 }
 
 impl Client {
+    /// A client over `term` for a `cols`×`rows` terminal: the column shown
+    /// (unless the terminal is too narrow for one) with the keyboard in the
+    /// task. `run` spawns the pty for `term`; the demo hands in a script.
+    pub(super) fn new(column: Column, mut term: Box<dyn TaskScreen>, cols: u16, rows: u16, configured_width: u16) -> Client {
+        let narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
+        let column_width = tenx_core::column::width(cols, configured_width).min(cols / 2);
+        let mut c = Client {
+            column,
+            term: Box::new(Idle),
+            focus: Focus::Terminal,
+            column_shown: !narrow,
+            column_width,
+            narrow,
+            size: (cols, rows),
+            last_refresh: Instant::now(),
+            quit: false,
+        };
+        let (r, w) = c.term_size();
+        term.resize(r, w);
+        c.term = term;
+        c
+    }
+
     /// The column's and the terminal's areas for the current state.
     fn layout(&self, full: Rect) -> (Option<Rect>, Rect) {
         if !self.column_shown {
@@ -143,7 +166,7 @@ impl Client {
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
             self.cycle();
             self.trace("key Ctrl+w");
@@ -228,7 +251,7 @@ impl Client {
         }
     }
 
-    fn draw(&mut self, f: &mut ratatui::Frame) {
+    pub(super) fn draw(&mut self, f: &mut ratatui::Frame) {
         let full = f.area();
         let (column, term) = self.layout(full);
         // Moving onto a closed task shows an empty screen in its place; the
@@ -257,6 +280,34 @@ impl Client {
             f.set_cursor_position((x, y));
         }
     }
+}
+
+/// A placeholder task side while `Client::new` sizes the real one.
+struct Idle;
+
+impl TaskScreen for Idle {
+    fn render(&self, _: Rect, _: &mut ratatui::buffer::Buffer) -> Option<(u16, u16)> {
+        None
+    }
+    fn resize(&mut self, _: u16, _: u16) {}
+    fn write(&mut self, _: &[u8]) {}
+    fn key_bytes(&self, _: &KeyEvent) -> Option<Vec<u8>> {
+        None
+    }
+    fn mouse_bytes(&self, _: &MouseEvent, _: u16, _: u16) -> Option<Vec<u8>> {
+        None
+    }
+    fn paste(&mut self, _: &str) {}
+    fn alive(&self) -> bool {
+        false
+    }
+    fn take_bell(&self) -> bool {
+        false
+    }
+    fn take_clipboard(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn kill(&mut self) {}
 }
 
 /// The task area while the column rests on a task with no window: its
@@ -329,27 +380,13 @@ pub fn run() -> Result<()> {
 
 fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
-    let narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
-    let column_width = tenx_core::column::width(cols, configured_width()).min(cols / 2);
-    let term_cols = if narrow { cols } else { cols - column_width };
 
     // The inner tmux must not think it is nested: `$TMUX` is this client's
     // secret, not its child's. `TERM` passes through so colours match.
     let (tmux, args) = crate::tmux::attach_command();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let term = EmbeddedTerminal::spawn(&tmux.to_string_lossy(), &args, &[], &["TMUX", "TMUX_PANE"], rows.max(1), term_cols.max(1))?;
-
-    let mut client = Client {
-        column: Column::new(),
-        term,
-        focus: Focus::Terminal,
-        column_shown: !narrow,
-        column_width,
-        narrow,
-        size: (cols, rows),
-        last_refresh: Instant::now(),
-        quit: false,
-    };
+    let term = EmbeddedTerminal::spawn(&tmux.to_string_lossy(), &args, &[], &["TMUX", "TMUX_PANE"], rows.max(1), cols.max(1))?;
+    let mut client = Client::new(Column::new(), Box::new(term), cols, rows, configured_width());
 
     loop {
         terminal.draw(|f| client.draw(f))?;

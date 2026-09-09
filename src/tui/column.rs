@@ -36,6 +36,8 @@ use unicode_width::UnicodeWidthStr;
 use super::mouse;
 
 #[cfg(test)]
+mod demo;
+#[cfg(test)]
 mod screenshot;
 use crate::palette;
 use crate::workspace::{self, TaskStatus, Workspace};
@@ -238,6 +240,9 @@ pub(super) enum ClientRequest {
 
 pub(super) struct Column {
     client_request: Option<ClientRequest>,
+    /// No tmux, no registry: a switch or an answer only updates this
+    /// struct. The README demo's mode; never set by the client.
+    pub(super) offline: bool,
     workspaces: Vec<Workspace>,
     tab: Tab,
     input_mode: InputMode,
@@ -391,6 +396,7 @@ impl Column {
     fn empty() -> Self {
         Column {
             client_request: None,
+            offline: false,
             workspaces: vec![],
             tab: Tab::Tasks,
             input_mode: InputMode::Insert,
@@ -760,6 +766,10 @@ impl Column {
             return;
         }
         let slug = row.slug.clone();
+        if self.offline {
+            self.current = Some(slug);
+            return;
+        }
         let Some(w) = crate::tmux::find_window(&slug).ok().flatten() else { return };
         if crate::tmux::select_window(&w.id).is_ok() {
             self.current = Some(slug);
@@ -1081,6 +1091,16 @@ impl Column {
         let Some(row) = self.selected_row() else {
             return;
         };
+        if self.offline {
+            // The demo: the dialog is answered by fiat, and the task is
+            // working again.
+            let title = row.title.clone();
+            let i = self.filtered[self.selected];
+            self.rows[i].status = TaskStatus::Working;
+            self.rows[i].waiting_for = None;
+            self.status_msg = Some(format!("{} '{title}'", answer.verb()));
+            return;
+        }
         let (title, path) = (row.title.clone(), row.path.clone());
         let sessions = workspace::claude::sessions();
         let state = workspace::resolve_task_state(&path, &sessions, &self.signals);
@@ -1136,10 +1156,12 @@ impl Column {
         };
         let ws_idx = row.ws_idx;
         let slug = row.slug.clone();
-        let ws = &self.workspaces[ws_idx];
-        if let Err(e) = crate::cli::task::open_in(ws, &slug) {
-            self.status_msg = Some(e.to_string());
-            return Ok(false);
+        if !self.offline {
+            let ws = &self.workspaces[ws_idx];
+            if let Err(e) = crate::cli::task::open_in(ws, &slug) {
+                self.status_msg = Some(e.to_string());
+                return Ok(false);
+            }
         }
         self.current = Some(slug.clone());
         self.client_request = Some(ClientRequest::FocusTerminal);

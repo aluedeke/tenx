@@ -7,6 +7,10 @@
 //! that could be swapped: every other piece — the pty, the reader thread,
 //! key and mouse encoding, the scanner that forwards bells and OSC 52
 //! clipboard writes to the real terminal — is emulator-agnostic.
+//!
+//! The client talks to the task side through [`TaskScreen`], which the pty
+//! implements; the README demo implements it with a scripted screen, so the
+//! same client draws a session that never existed.
 
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -16,6 +20,37 @@ use ratatui::layout::Rect;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+
+/// What the client needs from the task side: something that paints a
+/// screen, takes the keyboard and the mouse, and says when it is gone.
+pub trait TaskScreen {
+    /// Paint the screen into `area`; where the real terminal's cursor
+    /// belongs (absolute cell), if the program shows one.
+    fn render(&self, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)>;
+    fn resize(&mut self, rows: u16, cols: u16);
+    fn write(&mut self, bytes: &[u8]);
+    fn key_bytes(&self, key: &KeyEvent) -> Option<Vec<u8>>;
+    fn mouse_bytes(&self, m: &MouseEvent, col: u16, row: u16) -> Option<Vec<u8>>;
+    fn paste(&mut self, text: &str);
+    fn alive(&self) -> bool;
+    /// Whether the program rang the bell since the last call.
+    fn take_bell(&self) -> bool;
+    fn take_clipboard(&self) -> Vec<String>;
+    fn kill(&mut self);
+}
+
+/// Paint a `vt100` screen into `area` with `tui-term`'s widget, cursor
+/// left to the caller: where it belongs (absolute cell) if shown.
+pub fn render_screen(screen: &vt100::Screen, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
+    let mut cursor = tui_term::widget::Cursor::default();
+    cursor.hide();
+    ratatui::widgets::Widget::render(tui_term::widget::PseudoTerminal::new(screen).cursor(cursor), area, buf);
+    if screen.hide_cursor() {
+        return None;
+    }
+    let (row, col) = screen.cursor_position();
+    (row < area.height && col < area.width).then_some((area.x + col, area.y + row))
+}
 
 pub struct EmbeddedTerminal {
     parser: Arc<Mutex<vt100::Parser>>,
@@ -65,47 +100,39 @@ impl EmbeddedTerminal {
         Ok(EmbeddedTerminal { parser, writer, master: pair.master, child, alive, bell, clipboard })
     }
 
-    pub fn alive(&self) -> bool {
+}
+
+impl TaskScreen for EmbeddedTerminal {
+    fn alive(&self) -> bool {
         self.alive.load(Ordering::SeqCst)
     }
 
-    pub fn write(&mut self, bytes: &[u8]) {
+    fn write(&mut self, bytes: &[u8]) {
         let _ = self.writer.write_all(bytes);
         let _ = self.writer.flush();
     }
 
-    pub fn resize(&mut self, rows: u16, cols: u16) {
+    fn resize(&mut self, rows: u16, cols: u16) {
         let _ = self.master.resize(size(rows, cols));
         if let Ok(mut p) = self.parser.lock() {
             p.set_size(rows, cols);
         }
     }
 
-    /// Paint the screen into `area`. Returns where the real terminal's
-    /// cursor belongs (absolute cell), if the program shows one.
-    pub fn render(&self, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
+    fn render(&self, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
         let parser = self.parser.lock().ok()?;
-        let screen = parser.screen();
-        let mut cursor = tui_term::widget::Cursor::default();
-        cursor.hide();
-        ratatui::widgets::Widget::render(tui_term::widget::PseudoTerminal::new(screen).cursor(cursor), area, buf);
-        if screen.hide_cursor() {
-            return None;
-        }
-        let (row, col) = screen.cursor_position();
-        (row < area.height && col < area.width).then_some((area.x + col, area.y + row))
+        render_screen(parser.screen(), area, buf)
     }
 
-    /// Encode a key for the program, honouring its cursor-key mode.
-    pub fn key_bytes(&self, key: &KeyEvent) -> Option<Vec<u8>> {
+    /// Honours the program's cursor-key mode.
+    fn key_bytes(&self, key: &KeyEvent) -> Option<Vec<u8>> {
         let app_cursor = self.parser.lock().map(|p| p.screen().application_cursor()).unwrap_or(false);
         encode_key(key, app_cursor)
     }
 
-    /// Encode a mouse event at `(col, row)` relative to the terminal's area
-    /// as SGR (1006) — what tmux asks for — or `None` if the program has not
+    /// SGR (1006) — what tmux asks for — or `None` if the program has not
     /// asked for mouse reports.
-    pub fn mouse_bytes(&self, m: &MouseEvent, col: u16, row: u16) -> Option<Vec<u8>> {
+    fn mouse_bytes(&self, m: &MouseEvent, col: u16, row: u16) -> Option<Vec<u8>> {
         let mode = self.parser.lock().map(|p| p.screen().mouse_protocol_mode()).ok()?;
         if mode == vt100::MouseProtocolMode::None {
             return None;
@@ -113,7 +140,7 @@ impl EmbeddedTerminal {
         encode_mouse(m, col, row)
     }
 
-    pub fn paste(&mut self, text: &str) {
+    fn paste(&mut self, text: &str) {
         let bracketed = self.parser.lock().map(|p| p.screen().bracketed_paste()).unwrap_or(false);
         if bracketed {
             self.write(b"\x1b[200~");
@@ -124,16 +151,15 @@ impl EmbeddedTerminal {
         }
     }
 
-    /// Whether the program rang the bell since the last call.
-    pub fn take_bell(&self) -> bool {
+    fn take_bell(&self) -> bool {
         self.bell.swap(false, Ordering::SeqCst)
     }
 
-    pub fn take_clipboard(&self) -> Vec<String> {
+    fn take_clipboard(&self) -> Vec<String> {
         self.clipboard.lock().map(|mut c| std::mem::take(&mut *c)).unwrap_or_default()
     }
 
-    pub fn kill(&mut self) {
+    fn kill(&mut self) {
         let _ = self.child.kill();
     }
 }
