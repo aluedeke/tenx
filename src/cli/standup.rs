@@ -103,117 +103,185 @@ fn print_task_files(ws: &crate::workspace::Workspace) -> Result<()> {
 }
 
 // ── Activity log ──────────────────────────────────────────────────────────────
+//
+// One section per agent. Each reads a transcript through the shared parser
+// (`tenx_core::transcript`) and reports the user prompts and git commands since
+// `from_ts` — so a standup covers Codex and pi work, not only Claude Code.
 
 fn print_activity(ws_dir: &Path, from_ts: &str) -> Result<()> {
     println!("\n=== ACTIVITY LOG (since {from_ts}) ===");
+    claude_activity(ws_dir, from_ts)?;
+    codex_activity(ws_dir, from_ts);
+    pi_activity(ws_dir, from_ts);
+    Ok(())
+}
 
+fn claude_activity(ws_dir: &Path, from_ts: &str) -> Result<()> {
     let projects_dir = claude_projects_dir()?;
     let slug_prefix = path_to_slug(ws_dir);
-
-    let mut project_dirs: Vec<_> = fs::read_dir(&projects_dir)
-        .context("read ~/.claude/projects")?
-        .flatten()
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            name.contains(&slug_prefix) && e.file_type().map(|t| t.is_dir()).unwrap_or(false)
-        })
-        .collect();
+    let mut project_dirs: Vec<_> = match fs::read_dir(&projects_dir) {
+        Ok(rd) => rd
+            .flatten()
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.contains(&slug_prefix) && e.file_type().map(|t| t.is_dir()).unwrap_or(false)
+            })
+            .collect(),
+        Err(_) => return Ok(()), // no ~/.claude/projects — nothing to report
+    };
     project_dirs.sort_by_key(|e| e.file_name());
-
     for project_dir in project_dirs {
-        let mut jsonl_files: Vec<PathBuf> = fs::read_dir(project_dir.path())
+        let label = project_dir
+            .file_name()
+            .to_string_lossy()
+            .replace(&slug_prefix, "")
+            .replace('-', "/")
+            .trim_matches('/')
+            .to_string();
+        let label = if label.is_empty() { "root".to_string() } else { label };
+        let mut jsonl: Vec<PathBuf> = fs::read_dir(project_dir.path())
             .into_iter()
             .flatten()
             .flatten()
-            .filter(|e| e.path().extension().map(|x| x == "jsonl").unwrap_or(false))
             .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
             .collect();
-        jsonl_files.sort();
-
-        for jsonl_path in jsonl_files {
-            emit_session_activity(
-                &jsonl_path,
-                from_ts,
-                &project_dir.file_name().to_string_lossy(),
-                &slug_prefix,
-            )?;
+        jsonl.sort();
+        for path in jsonl {
+            emit_entries(&path, "claude", from_ts, &label);
         }
     }
     Ok(())
 }
 
-fn emit_session_activity(path: &Path, from_ts: &str, slug: &str, slug_prefix: &str) -> Result<()> {
-    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+fn codex_activity(ws_dir: &Path, from_ts: &str) {
+    let Some(root) = home_dir().map(|h| h.join(".codex/sessions")) else { return };
+    let mut files: Vec<PathBuf> = jsonl_files_recursive(&root)
+        .into_iter()
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("rollout-")))
+        .collect();
+    files.sort();
+    for path in files {
+        let Some(cwd) = first_line(&path).and_then(|l| tenx_core::codex::session_meta_cwd(&l)) else { continue };
+        if let Some(label) = rel_label(&cwd, ws_dir) {
+            emit_entries(&path, "codex", from_ts, &label);
+        }
+    }
+}
+
+fn pi_activity(ws_dir: &Path, from_ts: &str) {
+    let Some(root) = home_dir().map(|h| h.join(".pi/agent/sessions")) else { return };
+    let Ok(dirs) = fs::read_dir(&root) else { return };
+    let mut files: Vec<PathBuf> = Vec::new();
+    for d in dirs.flatten().filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)) {
+        for e in fs::read_dir(d.path()).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.extension().is_some_and(|x| x == "jsonl") {
+                files.push(p);
+            }
+        }
+    }
+    files.sort();
+    for path in files {
+        let Some(cwd) = first_line(&path).and_then(|l| pi_header_cwd(&l)) else { continue };
+        if let Some(label) = rel_label(&cwd, ws_dir) {
+            emit_entries(&path, "pi", from_ts, &label);
+        }
+    }
+}
+
+/// Parse one transcript file for one session's activity and print it, if any.
+fn emit_entries(path: &Path, agent: &str, from_ts: &str, label: &str) {
+    let Ok(file) = fs::File::open(path) else { return };
     let reader = BufReader::new(file);
-
-    let mut session_title: Option<String> = None;
+    let mut title: Option<String> = None;
     let mut events: Vec<String> = Vec::new();
-
-    for line in reader.lines() {
-        let line = line?;
+    for line in reader.lines().map_while(|l| l.ok()) {
         if line.is_empty() {
             continue;
         }
-        let Ok(obj) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-
-        let ts = obj["timestamp"].as_str().unwrap_or("");
-        if ts < from_ts {
+        let Some(e) = tenx_core::transcript::parse_line(agent, &line) else { continue };
+        if let Some(t) = e.title {
+            title = Some(t);
             continue;
         }
-        let time = ts.get(11..16).unwrap_or("");
-
-        match obj["type"].as_str() {
-            Some("ai-title") => {
-                session_title = obj["aiTitle"].as_str().map(str::to_string);
+        if e.iso.as_deref().is_some_and(|iso| iso < from_ts) {
+            continue;
+        }
+        let time = &e.hm;
+        match e.role {
+            tenx_core::transcript::Role::User if e.text.len() > 10 => {
+                events.push(format!("[{time}] USER: {}", truncate(&e.text, 200)));
             }
-            Some("user") => {
-                if let Some(content) = obj["message"]["content"].as_str() {
-                    let trimmed = content.trim();
-                    if trimmed.len() > 10 {
-                        events.push(format!("[{time}] USER: {}", truncate(trimmed, 200)));
-                    }
-                }
-            }
-            Some("assistant") => {
-                if let Some(blocks) = obj["message"]["content"].as_array() {
-                    for block in blocks {
-                        if block["type"] == "tool_use" && block["name"] == "Bash" {
-                            let cmd = block["input"]["command"].as_str().unwrap_or("");
-                            if cmd.contains("git commit") || cmd.contains("git push") {
-                                events.push(format!("[{time}] GIT: {}", truncate(cmd, 200)));
-                            }
-                        }
+            tenx_core::transcript::Role::Assistant => {
+                for cmd in e.commands() {
+                    if cmd.contains("git commit") || cmd.contains("git push") {
+                        events.push(format!("[{time}] GIT: {}", truncate(cmd, 200)));
                     }
                 }
             }
             _ => {}
         }
     }
-
     if events.is_empty() {
-        return Ok(());
+        return;
     }
-
-    let label = slug
-        .replace(slug_prefix, "")
-        .replace('-', "/")
-        .trim_matches('/')
-        .to_string();
-    let label = if label.is_empty() { "root".to_string() } else { label };
-
-    match &session_title {
-        Some(t) => println!("\n--- {label} | {t} ---"),
-        None => println!("\n--- {label} ---"),
+    let tag = if agent == "claude" { String::new() } else { format!(" [{agent}]") };
+    match &title {
+        Some(t) => println!("\n--- {label}{tag} | {t} ---"),
+        None => println!("\n--- {label}{tag} ---"),
     }
     for e in events {
         println!("{e}");
     }
-    Ok(())
+}
+
+/// A session's cwd made relative to the workspace, for a section label; `None`
+/// when the cwd isn't inside this workspace (so other workspaces are skipped).
+fn rel_label(cwd: &str, ws_dir: &Path) -> Option<String> {
+    let rel = Path::new(cwd).strip_prefix(ws_dir).ok()?;
+    let s = rel.to_string_lossy();
+    Some(if s.is_empty() { "root".to_string() } else { s.into_owned() })
+}
+
+fn first_line(path: &Path) -> Option<String> {
+    let f = fs::File::open(path).ok()?;
+    let mut line = String::new();
+    BufReader::new(f).read_line(&mut line).ok()?;
+    (!line.is_empty()).then_some(line)
+}
+
+/// The `cwd` in a pi session file's header (`{"type":"session","cwd":…}`).
+fn pi_header_cwd(line: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(line.trim()).ok()?;
+    if v["type"].as_str() != Some("session") {
+        return None;
+    }
+    v["cwd"].as_str().map(str::to_string)
+}
+
+fn jsonl_files_recursive(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "jsonl") {
+                out.push(p);
+            }
+        }
+    }
+    out
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME").map(PathBuf::from)
+}
 
 fn claude_projects_dir() -> Result<PathBuf> {
     let home = env::var("HOME").context("$HOME not set")?;
