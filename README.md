@@ -6,15 +6,15 @@
 
 Coding agents make it cheap to have several pieces of work in flight at once. The expensive part is everything around them: each task needs its own branch and checkout in every repo it touches, its own agent session, an editor and a shell, and you need to know at a glance which agent is stuck waiting on you and which is still working. Switching between five terminal tabs to find out does not scale.
 
-`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and a sidebar beside every task (or a full-screen overlay on `Ctrl+w`) lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
+`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
 ![The tenx overlay in motion: filtering, the delete prompt, the command line, and an agent that stops and needs you](docs/overlay-demo.gif)
 
 <sub>Generated, not recorded: a scripted scene rendered through the overlay's own widgets. Crisper as an [animated SVG](docs/overlay-demo.svg); the [asciinema cast](docs/overlay-demo.cast) plays in a terminal.</sub>
 
-The same list sits as a column on the left of every task window, so switching is always one glance and one keystroke away:
+That list sits as a column on the left of your terminal, beside the task, so switching is always one glance and one keystroke away:
 
-![The sidebar: the task list as a column beside the task](docs/sidebar.svg)
+![The column: the task list beside the task](docs/column.svg)
 
 ## How it works
 
@@ -105,7 +105,7 @@ tenx                               # attach to the session
 
 Inside the session:
 
-- `Ctrl+w` shows the task list beside the task and focuses it; pressed again from the list, it hides the column. On a phone it opens the overlay full screen.
+- `Ctrl+w` puts the cursor in the column, on the task you are in; pressed again from the column, it hides it. On a phone the column is hidden and `Ctrl+w` shows the list full screen.
 - `tenx` from a task's shell does the same.
 - `tenx` from any other terminal attaches to the same session.
 
@@ -136,18 +136,18 @@ The overlay lists every task from every registered workspace, sectioned by atten
 
 Window 0 of the session is a permanent home instance of the overlay.
 
-### The sidebar
+### The column
 
-Every task window also carries the list as a column on its left, about a fifth of the window wide, the layout cmux made familiar. Each task takes two lines there: the title, then a muted line with what it is waiting on, its workspace, how long it has been resting, and its PR and port chips, as far as they fit. It has the same keys as the overlay, minus the preview panel, since the task itself is right there. `Ctrl+w` from the task shows the column, opening it if hidden, and focuses it; `Ctrl+w` from inside the column hides it and gives the space back. Typing filters, as in the overlay. The arrow keys and `j`/`k` start from the task you are in and step through every task: landing on an open one switches to it, landing on a closed one (drawn dimmer) shows an empty screen in its place until you press `Enter` to open it. The column re-groups itself as statuses change only while the keyboard is in the task, never while you are moving through the list. `Enter` opens the chosen task and puts the cursor in its pane; `q` or `Esc` puts the cursor back in the current task and leaves the column showing. Hiding is per window: `:sidebar` from the popup or the home window adds or removes the column in the current window without moving the cursor. The sidebars do not resolve task state themselves: the watcher publishes a snapshot of every task, and each sidebar renders that, so a dozen open windows cost one resolve pass. With no watcher running a sidebar resolves on its own and says so in its footer.
+`tenx` in a terminal is one process that owns it: the task list as a column on the left, about a fifth of the width, and the tmux session on the right through an embedded terminal, the layout cmux made familiar. tmux stays underneath exactly as before, so the session, the watcher, sweep and secrets are untouched, quitting the client leaves everything running, and a second terminal, or a phone over SSH, gets a column of its own.
 
-### The client (experimental)
+Each task takes two lines: the title, then a muted line with what it is waiting on, its workspace, how long it has been resting, and its PR and port chips, as far as they fit. Closed tasks are drawn dimmer. The column has the overlay's keys, minus the preview panel, since the task itself is right there.
 
-`tenx client` is the same layout done the other way round: one process that owns your terminal, draws the task list as a column on the left, and shows the tmux session on the right through an embedded terminal. tmux stays underneath exactly as before, so the session, the watcher, sweep and secrets are untouched, and quitting the client leaves everything running. Because the column is one process per terminal, its selection and filter survive switching tasks: `Down` always means the next task. `Ctrl+w` shows the column with the cursor on the task you are in, or hides it from inside; `Enter` opens a task and puts the cursor in it; `/` types a filter; `:q` quits the client. On a narrow terminal the column is hidden and `Ctrl+w` shows the list over the whole screen. The client closes any pane sidebars when it starts, and windows created while it runs get none, so the column is never doubled. It is a spike: terminal fidelity inside the client (colours, wide characters, mouse, paste) is what it has to prove.
+`Ctrl+w` puts the cursor in the column on the task you are in; `Ctrl+w` from inside hides the column and gives the width back. The arrow keys and `j`/`k` step through every task: landing on an open one switches to it, landing on a closed one shows an empty screen in its place until `Enter` opens it. `Enter` opens a task and puts the cursor in it; `Esc` or `q` puts the cursor back without switching; `/` types a filter; `:hide` hides the column; `:q` quits the client. Because the column is one process, its selection and filter survive switching tasks, and it re-groups itself as statuses change only while the keyboard is in the task, never while you are moving through the list. On a terminal under 100 columns the column is hidden and `Ctrl+w` shows the list over the whole screen.
 
 ## Commands
 
 ```
-tenx                     attach to (or create) the session; open the overlay when already inside
+tenx                     the column beside the session (creating it if needed); the overlay when already inside
 tenx init [NAME]         create a workspace here (or in NAME/)
 tenx repo add <URL>      add a repo to the workspace (bare clone)
 tenx repo list|fetch
@@ -224,8 +224,7 @@ Global `~/.config/tenx/config.toml`:
 
 ```toml
 bare_dir = ""        # optional override for where bare clones live
-sidebar = false      # true: a sidebar pane inside every new task window (the pre-client layout)
-sidebar_width = 0    # columns; 0 = a fifth of the window, between 30 and 48
+column_width = 0     # the task column, in cells; 0 = a fifth of the terminal, between 30 and 48
 ```
 
 A layout script replaces the default three-pane window. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_CLAUDE_CMD` and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
@@ -260,7 +259,7 @@ Feature claims for the other two are from their READMEs as of September 2026.
 make test        # cargo test + clippy -D warnings for both crates
 make try         # run this build on its own tmux socket, without installing
 make try-stop
-make screenshot  # regenerate docs/overlay.svg and docs/sidebar.svg from the overlay's widgets and fixture data
+make screenshot  # regenerate docs/overlay.svg and docs/column.svg from the overlay's widgets and fixture data
 make demo        # regenerate the animated docs/overlay-demo.svg and .cast by playing a scripted scene
 make demo-gif    # render docs/overlay-demo.gif from the cast (needs agg: brew install agg)
 cargo run -- task list

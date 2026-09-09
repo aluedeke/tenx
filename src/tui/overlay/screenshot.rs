@@ -345,13 +345,13 @@ fn renders_every_section_and_chip_from_fixtures() {
     }
 }
 
-/// The sidebar surface: the same rows in a 36-column pane, two lines per
+/// The client's column: the same rows in a 36-column strip, two lines per
 /// task. No preview, the current task's title in the "current" colour
 /// instead of a chip, chips on the second line, and a footer that fits.
 #[test]
-fn sidebar_renders_narrow() {
+fn column_renders_narrow() {
     let mut overlay = fixture_overlay();
-    overlay.sidebar = true;
+    overlay.client = true;
     overlay.preview = Preview::default();
     let mut term = Terminal::new(TestBackend::new(36, 48)).unwrap();
     term.draw(|f| render(f, &mut overlay)).unwrap();
@@ -373,7 +373,7 @@ fn sidebar_renders_narrow() {
     ] {
         assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
     }
-    assert!(!text.contains("Do you want to proceed?"), "no preview in the sidebar:\n{text}");
+    assert!(!text.contains("Do you want to proceed?"), "no preview in the column:\n{text}");
     // A click on either line of a task selects that task: both screen lines
     // of the second task (filtered position 1, past a spacer and a header)
     // map back to it, and a header line maps to nothing.
@@ -393,7 +393,7 @@ fn sidebar_renders_narrow() {
     let x = text.lines().nth(y as usize).unwrap().find("overlay").unwrap() as u16;
     assert_eq!(buf.cell((x, y)).unwrap().fg, palette::CURRENT.color());
     if std::env::var_os("TENX_SCREENSHOT").is_some() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/sidebar.svg");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/column.svg");
         std::fs::write(&path, svg(buf)).unwrap();
         eprintln!("wrote {}", path.display());
     }

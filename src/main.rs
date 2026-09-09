@@ -3,7 +3,6 @@ mod git;
 mod live;
 mod palette;
 mod progress;
-mod snapshot;
 mod tmux;
 mod tui;
 mod workspace;
@@ -26,18 +25,11 @@ fn run() -> Result<()> {
     match cli.command {
         None => open()?,
 
-        Some(Commands::Overlay { home, sidebar, json }) => {
+        Some(Commands::Overlay { home, json }) => {
             if json {
                 tui::dump_json()?;
             } else {
-                let surface = if home {
-                    tui::Surface::Home
-                } else if sidebar {
-                    tui::Surface::Sidebar
-                } else {
-                    tui::Surface::Popup
-                };
-                tui::run_overlay(surface)?;
+                tui::run_overlay(if home { tui::Surface::Home } else { tui::Surface::Popup })?;
             }
         }
 
@@ -67,13 +59,6 @@ fn run() -> Result<()> {
             }
         },
 
-        Some(Commands::Client) => {
-            let bin = tmux::self_bin()?;
-            tmux::check_version()?;
-            cli::watch::ensure_running(&bin);
-            tui::client::run(&bin.to_string_lossy())?;
-        }
-
         Some(Commands::Watch) => cli::watch::run()?,
 
         Some(Commands::Internal { command }) => match command {
@@ -85,16 +70,6 @@ fn run() -> Result<()> {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
             InternalCommands::AgentLog { cwd, pid, session } => cli::agentlog::run(&cwd, pid, session.as_deref())?,
-            InternalCommands::Sidebar { action, pane } => {
-                let pane = match pane.or_else(|| env::var("TMUX_PANE").ok()) {
-                    Some(p) => p,
-                    None => anyhow::bail!("not inside a tmux pane — pass the pane id"),
-                };
-                match action {
-                    cli::SidebarAction::Cycle => cli::sidebar::cycle(&pane)?,
-                    cli::SidebarAction::Toggle => cli::sidebar::toggle(&tmux::window_of_pane(&pane)?)?,
-                }
-            }
         },
 
         Some(Commands::Secrets { command }) => match command {
@@ -200,26 +175,25 @@ fn open() -> Result<()> {
     cli::watch::ensure_running(&bin);
 
     if tmux::inside_tenx_session() {
-        // Already inside the tenx session → run the overlay in this pane.
+        // Already inside the tenx session (the client's embedded terminal,
+        // or a plain attach) → run the overlay in this pane.
         tui::run_overlay(tui::Surface::Popup)?;
         if let Some(hint) = &stale {
             eprintln!("{hint}");
         }
-    } else if tmux::inside_any_tmux() {
-        // A client of some other tmux server: no in-place switch exists.
-        anyhow::bail!("{}", tmux::foreign_client_hint());
     } else {
-        // Outside tmux entirely → attach, creating the server/session if
-        // missing (exec; does not return on success).
+        // Anywhere else — a plain terminal, or a pane of some other tmux —
+        // the client: the column beside the session, embedded in this
+        // terminal (`tui::client`). It starts the server if needed.
         if !tmux::server_running() {
             eprintln!("  creating session '{}'", tmux::SESSION);
         }
         if let Some(hint) = &stale {
-            // Attaching clears the screen; leave the notice readable first.
+            // The client takes the screen; leave the notice readable first.
             eprintln!("{hint}");
             std::thread::sleep(std::time::Duration::from_millis(2500));
         }
-        tmux::attach_or_create(&bin_str)?;
+        tui::client::run(&bin_str)?;
     }
 
     Ok(())

@@ -1,6 +1,6 @@
-//! `tenx client`: the task list as a column beside the tmux session, in
-//! one process that owns the terminal — the layout cmux made familiar,
-//! done as a TUI outside tmux.
+//! The client — what `tenx` opens: the task list as a column beside the
+//! tmux session, in one process that owns the terminal — the layout cmux
+//! made familiar, done as a TUI outside tmux.
 //!
 //! The right-hand side is `tmux attach` running in a pty
 //! (`term::EmbeddedTerminal`), so tmux stays the session layer untouched:
@@ -34,7 +34,7 @@ use super::overlay::{self, ClientRequest, Overlay};
 use super::term::EmbeddedTerminal;
 use super::Surface;
 
-/// How often the column's rows refresh (the sidebar's cadence).
+/// How often the column's rows refresh.
 const REFRESH: Duration = Duration::from_millis(500);
 /// Frame pacing: the terminal side changes on its own, so redraw this often
 /// even without input.
@@ -90,7 +90,7 @@ impl Client {
         // the task, with tmux's status line under the task, not the whole
         // window.
         self.narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
-        self.column_width = tenx_core::sidebar::width(cols, crate::cli::sidebar::configured_width());
+        self.column_width = tenx_core::column::width(cols, configured_width());
         let (r, c) = self.term_size();
         self.term.resize(r, c);
     }
@@ -122,7 +122,7 @@ impl Client {
     }
 
     /// Ctrl+w: from the terminal, bring up the column (focused); from the
-    /// column, put it away — the same cycle as the sidebar pane's.
+    /// column, put it away.
     fn cycle(&mut self) {
         match (self.column_shown, self.focus) {
             (true, Focus::Column) => self.hide_column(),
@@ -285,6 +285,11 @@ fn render_closed(f: &mut ratatui::Frame, area: Rect, title: &str) {
     f.render_widget(Paragraph::new(lines).alignment(ratatui::layout::Alignment::Center), block);
 }
 
+/// The user's `column_width` from the global config (0 = automatic).
+fn configured_width() -> u16 {
+    crate::workspace::load_global().map(|g| g.column_width).unwrap_or(0)
+}
+
 /// Seconds since the epoch with millis — enough to line a trace up with
 /// what you saw.
 fn chrono_stamp() -> String {
@@ -294,20 +299,13 @@ fn chrono_stamp() -> String {
 
 pub fn run(tenx_bin: &str) -> Result<()> {
     crate::tmux::ensure_session(tenx_bin)?;
-    // The column is the list: a pane sidebar inside a window (from before
-    // this client, or the pane-sidebar layout) would be a second one with
-    // its own filter and cursor. Close them all, restoring each window's
-    // layout; and start on a task window, since home would show the list
-    // twice too.
-    if let Ok(windows) = crate::tmux::list_windows() {
-        for w in windows.iter().filter(|w| w.name != crate::tmux::HOME_WINDOW) {
-            let _ = crate::tmux::close_sidebar(&w.id);
-        }
-        if windows.iter().any(|w| w.active && w.name == crate::tmux::HOME_WINDOW)
-            && let Some(task) = windows.iter().find(|w| w.name != crate::tmux::HOME_WINDOW)
-        {
-            let _ = crate::tmux::select_window(&task.id);
-        }
+    // The column is the list; landing on the home window would show the
+    // list twice. Start on a task window when there is one.
+    if let Ok(windows) = crate::tmux::list_windows()
+        && windows.iter().any(|w| w.active && w.name == crate::tmux::HOME_WINDOW)
+        && let Some(task) = windows.iter().find(|w| w.name != crate::tmux::HOME_WINDOW)
+    {
+        let _ = crate::tmux::select_window(&task.id);
     }
 
     let orig = std::panic::take_hook();
@@ -322,11 +320,7 @@ pub fn run(tenx_bin: &str) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // While a client draws the column, new windows must not grow a pane
-    // sidebar too (`cli::sidebar::wanted`).
-    let _ = crate::tmux::set_global_option(crate::tmux::CLIENT_OPTION, "1");
     let result = run_client(&mut terminal, tenx_bin);
-    let _ = crate::tmux::unset_global_option(crate::tmux::CLIENT_OPTION);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste)?;
@@ -337,7 +331,7 @@ pub fn run(tenx_bin: &str) -> Result<()> {
 fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, _tenx_bin: &str) -> Result<()> {
     let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
     let narrow = cols < crate::tmux::SMALL_CLIENT_COLS as u16;
-    let column_width = tenx_core::sidebar::width(cols, crate::cli::sidebar::configured_width()).min(cols / 2);
+    let column_width = tenx_core::column::width(cols, configured_width()).min(cols / 2);
     let term_cols = if narrow { cols } else { cols - column_width };
 
     // The inner tmux must not think it is nested: `$TMUX` is this client's

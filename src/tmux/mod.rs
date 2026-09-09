@@ -9,10 +9,10 @@
 //! same server with `tenx`, so every surface is the one true session.
 //!
 //! Tabless on purpose: the generated config blanks tmux's own window list. The
-//! overlay (`tenx overlay`: the home window's permanent pane, the Ctrl+w
-//! `display-popup`, and the **sidebar** pane on the left of every task window,
-//! see [`open_sidebar`]) is the only switcher — one binary, one overlay
-//! implementation, three surfaces.
+//! task list is the only switcher: the column of `tenx`'s client
+//! (`tui::client`, the session embedded beside it), and inside the session
+//! the home window's permanent overlay and the Ctrl+w `display-popup` — one
+//! binary, one overlay implementation.
 //!
 //! Every function here is a `tmux -L tenx …` subprocess. `find_bin` doesn't
 //! trust `$PATH` because hooks and spawned panes run with whatever environment
@@ -60,20 +60,6 @@ pub const MIN_VERSION: (u32, u32) = (3, 3);
 /// instead of as a bordered 85% popup (see `render_config`).
 pub const SMALL_CLIENT_COLS: u32 = 100;
 pub const SMALL_CLIENT_ROWS: u32 = 30;
-/// Pane user option marking a sidebar pane (`set -p @tenx_sidebar 1`) — how
-/// [`list_panes`] tells the task list from the task. A pane option, not a
-/// window one: it names *which* pane.
-pub const SIDEBAR_OPTION: &str = "@tenx_sidebar";
-/// Global option a running `tenx client` sets (and clears on exit): the
-/// column is drawn outside tmux, so windows created meanwhile must not get
-/// a sidebar pane as well.
-pub const CLIENT_OPTION: &str = "@tenx_client";
-
-/// Window options holding the window's layout string as it was with and
-/// without the sidebar, saved at each show/hide so the other transition
-/// can restore it (see [`open_sidebar`] and [`close_sidebar`]).
-pub const LAYOUT_WITH_SIDEBAR: &str = "@tenx_layout_sidebar";
-pub const LAYOUT_WITHOUT_SIDEBAR: &str = "@tenx_layout_task";
 /// Per-task cache of the window id (`@12`) last opened for it. A fast path
 /// only — `find_window` by slug is the source of truth, and a stale id (server
 /// restarted) is simply treated as "not open".
@@ -374,22 +360,18 @@ set -g status-left " #{{?#{{@tenx_status}},#{{E:@tenx_status}},#[fg={accent}]#W}
 set -g status-right-length 100
 set -g status-right "#{{E:@tenx_right}} "
 
-# Ctrl+w: the task list. On a small client (a phone) the overlay fills the
-# screen as a popup with no border — an 85% window on 40 columns wastes a
-# fifth of them; `if-shell -F` evaluates the format against the client that
-# pressed the key. Otherwise, in a task window, the sidebar column: shown
-# and focused from the task, hidden from inside it (`tenx internal sidebar
-# cycle`). In the home window, which *is* the list, the key does nothing.
+# Ctrl+w: the overlay as a per-client popup, for a client attached to the
+# session directly (inside `tenx`'s client the key never reaches tmux: the
+# column is outside). `-E` closes it when the overlay exits, which it does
+# right after a jump. On a small client (a phone) the popup fills the screen
+# with no border — an 85% window on 40 columns wastes a fifth of them;
+# `if-shell -F` evaluates the format against the client that pressed the key.
 bind -n C-w if-shell -F "#{{||:#{{<:#{{client_width}},{small_cols}}},#{{<:#{{client_height}},{small_rows}}}}}" {{
     display-popup -E -B -w 100% -h 100% {tenx} overlay
 }} {{
-    if-shell -F "#{{==:#{{window_name}},{home}}}" {{
-    }} {{
-        run-shell -b "{tenx} internal sidebar cycle '#{{pane_id}}'"
-    }}
+    display-popup -E -w 85% -h 85% -T " tenx " {tenx} overlay
 }}
 "##,
-        home = HOME_WINDOW,
         small_cols = SMALL_CLIENT_COLS,
         small_rows = SMALL_CLIENT_ROWS,
         socket = socket(),
@@ -571,70 +553,10 @@ pub fn set_global_option(option: &str, value: &str) -> Result<()> {
 pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, session_id: Option<&str>) -> Result<()> {
     let session = session_id.map(|s| format!(" --session {}", shell_quote(s))).unwrap_or_default();
     let command = format!("{} internal agent-log {} {pid}{session}", tenx_cmd(tenx_bin), shell_quote(cwd));
-    // Under the task's own pane, never under the sidebar (which is what
-    // `-t <window>` alone would pick when the sidebar has focus).
-    let target = main_pane(window_id).unwrap_or_else(|| window_id.to_string());
-    run(&["split-window", "-d", "-v", "-l", "12", "-t", &target, "-c", cwd, &command]).map(drop)
+    run(&["split-window", "-d", "-v", "-l", "12", "-t", window_id, "-c", cwd, &command]).map(drop)
 }
 
-// ── Panes & the sidebar ───────────────────────────────────────────────────────
-
-/// One pane of a window as `list-panes` reports it.
-#[derive(Debug, Clone)]
-pub struct Pane {
-    pub id: String,
-    pub index: u32,
-    /// Carries [`SIDEBAR_OPTION`]: this is the task list, not the task.
-    pub sidebar: bool,
-}
-
-const PANE_FORMAT: &str = "#{pane_id}\t#{pane_index}\t#{@tenx_sidebar}";
-
-/// Every pane of `window` (any target tmux accepts — an id, or a pane id
-/// for the window that holds it).
-pub fn list_panes(window: &str) -> Result<Vec<Pane>> {
-    let text = run(&["list-panes", "-t", window, "-F", PANE_FORMAT])?;
-    Ok(text.lines().filter_map(parse_pane).collect())
-}
-
-fn parse_pane(line: &str) -> Option<Pane> {
-    let mut f = line.split('\t');
-    Some(Pane {
-        id: f.next()?.to_string(),
-        index: f.next()?.parse().ok()?,
-        sidebar: f.next().is_some_and(|v| !v.is_empty()),
-    })
-}
-
-/// The sidebar pane of `window`, if it has one.
-pub fn sidebar_pane(window: &str) -> Option<String> {
-    list_panes(window).ok()?.into_iter().find(|p| p.sidebar).map(|p| p.id)
-}
-
-/// The pane that *is* the task in `window`: the lowest-numbered one that
-/// isn't the sidebar. tmux numbers panes by position (top-left first, and
-/// renumbers as panes come and go — the sidebar itself becomes pane 0), so
-/// that is the top-left task pane: Claude in the built-in layout, the
-/// layout script's first pane otherwise. Where a jump lands, and where an
-/// agent log pane splits from.
-pub fn main_pane(window: &str) -> Option<String> {
-    main_pane_of(&list_panes(window).ok()?)
-}
-
-pub fn main_pane_of(panes: &[Pane]) -> Option<String> {
-    panes.iter().filter(|p| !p.sidebar).min_by_key(|p| p.index).map(|p| p.id.clone())
-}
-
-/// The session's current window — what `select-window` last chose, and
-/// what every attached client shows.
-pub fn current_window() -> Result<String> {
-    Ok(run(&["display-message", "-p", "-t", SESSION, "#{window_id}"])?.trim().to_string())
-}
-
-/// A window's name — the task slug, for a task window.
-pub fn window_name(window: &str) -> Result<String> {
-    Ok(run(&["display-message", "-p", "-t", window, "#{window_name}"])?.trim().to_string())
-}
+// ── Current window ────────────────────────────────────────────────────────────
 
 /// The name of the session's current window (`None` for the home window
 /// or when the server is down) — the task a client is looking at, asked
@@ -643,110 +565,6 @@ pub fn window_name(window: &str) -> Result<String> {
 pub fn current_task() -> Option<String> {
     let name = run(&["display-message", "-p", "-t", SESSION, "#{window_name}"]).ok()?.trim().to_string();
     (!name.is_empty() && name != HOME_WINDOW).then_some(name)
-}
-
-/// The window a pane belongs to.
-pub fn window_of_pane(pane: &str) -> Result<String> {
-    Ok(run(&["display-message", "-p", "-t", pane, "#{window_id}"])?.trim().to_string())
-}
-
-/// The working directory of a window's task pane — where a sidebar added
-/// later starts, so actions it spawns run in the task.
-pub fn pane_path(window: &str) -> Result<String> {
-    let target = main_pane(window).unwrap_or_else(|| window.to_string());
-    Ok(run(&["display-message", "-p", "-t", &target, "#{pane_current_path}"])?.trim().to_string())
-}
-
-pub fn window_width(window: &str) -> Result<u16> {
-    run(&["display-message", "-p", "-t", window, "#{window_width}"])?.trim().parse().context("parse window width")
-}
-
-pub fn select_pane(target: &str) -> Result<()> {
-    run(&["select-pane", "-t", target]).map(drop)
-}
-
-pub fn kill_pane(target: &str) -> Result<()> {
-    run(&["kill-pane", "-t", target]).map(drop)
-}
-
-/// Add the sidebar — `tenx overlay --sidebar`, the task list as a column —
-/// on the left of `window`, full height (`-f`), `width` columns (0 =
-/// automatic, `tenx_core::sidebar::width`), without taking focus (`-d`).
-/// Marks the pane with [`SIDEBAR_OPTION`] and returns its id. Restarted in
-/// a loop like the home overlay: a pane that vanished would snap the layout
-/// back without a word.
-///
-/// Layouts: tmux takes a new pane's width evenly from every pane and hands
-/// a killed pane's width to one neighbour, so a hide/show round trip would
-/// shrink the task's right-hand panes a little more each time. Instead the
-/// window's layout string is saved before the split ([`LAYOUT_WITHOUT_SIDEBAR`],
-/// what [`close_sidebar`] restores) and, when the window was shown with a
-/// sidebar before, that arrangement ([`LAYOUT_WITH_SIDEBAR`]) is re-applied
-/// after it — tmux scales a saved layout to the window's current size.
-pub fn open_sidebar(window: &str, tenx_bin: &str, cwd: &str, width: u16) -> Result<String> {
-    let cols = tenx_core::sidebar::width(window_width(window)?, width);
-    let cmd = format!("while :; do {} overlay --sidebar; sleep 1; done", tenx_cmd(tenx_bin));
-    if let Ok(layout) = window_layout(window) {
-        let _ = set_window_option(window, LAYOUT_WITHOUT_SIDEBAR, &layout);
-    }
-    let id = run(&[
-        "split-window", "-h", "-b", "-f", "-d", "-l", &cols.to_string(), "-t", window, "-c", cwd, "-P", "-F",
-        "#{pane_id}", &cmd,
-    ])?
-    .trim()
-    .to_string();
-    if id.is_empty() {
-        bail!("tmux split-window returned no pane id");
-    }
-    run(&["set-option", "-p", "-t", &id, SIDEBAR_OPTION, "1"])?;
-    if let Some(layout) = window_option(window, LAYOUT_WITH_SIDEBAR) {
-        let _ = select_layout(window, &layout);
-    }
-    Ok(id)
-}
-
-/// Remove the sidebar from `window` and give the task back the layout it
-/// had before the sidebar was shown (see [`open_sidebar`]). The arrangement
-/// with the sidebar — including any resizing done since — is saved first,
-/// so showing it again restores it. No-op without a sidebar.
-pub fn close_sidebar(window: &str) -> Result<()> {
-    let Some(id) = sidebar_pane(window) else { return Ok(()) };
-    if let Ok(layout) = window_layout(window) {
-        let _ = set_window_option(window, LAYOUT_WITH_SIDEBAR, &layout);
-    }
-    kill_pane(&id)?;
-    if let Some(layout) = window_option(window, LAYOUT_WITHOUT_SIDEBAR) {
-        let _ = select_layout(window, &layout);
-    }
-    Ok(())
-}
-
-/// The window's layout string (`#{window_layout}`), which `select-layout`
-/// accepts back.
-pub fn window_layout(window: &str) -> Result<String> {
-    Ok(run(&["display-message", "-p", "-t", window, "#{window_layout}"])?.trim().to_string())
-}
-
-pub fn select_layout(window: &str, layout: &str) -> Result<()> {
-    run(&["select-layout", "-t", window, layout]).map(drop)
-}
-
-/// A global user option's value, `None` when unset.
-pub fn global_option(option: &str) -> Option<String> {
-    let text = run(&["show-options", "-gqv", option]).ok()?;
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_string())
-}
-
-pub fn unset_global_option(option: &str) -> Result<()> {
-    run(&["set-option", "-gu", option]).map(drop)
-}
-
-/// A window user option's value, `None` when unset.
-pub fn window_option(window: &str, option: &str) -> Option<String> {
-    let text = run(&["show-options", "-wqv", "-t", window, option]).ok()?;
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// What a task window needs to be built.
@@ -763,11 +581,6 @@ pub struct TaskWindow<'a> {
     /// safe when one exists: without it, `claude --continue` exits 1 and the
     /// pane closes at once.
     pub resume: bool,
-    /// Add a sidebar pane of this many columns (0 = automatic); `None` for
-    /// none. From `GlobalConfig::{sidebar, sidebar_width}`.
-    pub sidebar: Option<u16>,
-    /// This binary — what the sidebar pane runs.
-    pub tenx_bin: &'a str,
 }
 
 /// Create a task's window and its panes, returning the window's stable id.
@@ -776,18 +589,8 @@ pub struct TaskWindow<'a> {
 ///
 /// Built-in layout — claude on the left, nvim on `TASK.md` top-right, a shell
 /// bottom-right — mirrors the zellij default. A pane whose command exits
-/// closes (tmux's default), which is what `close_on_exit` did. The sidebar,
-/// when wanted, goes in last, on the left of whatever the layout (built-in or
-/// script) produced, so a script sizes its panes against the task's share.
+/// closes (tmux's default), which is what `close_on_exit` did.
 pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
-    let id = open_task_panes(opts)?;
-    if let Some(width) = opts.sidebar {
-        open_sidebar(&id, opts.tenx_bin, opts.task_dir, width)?;
-    }
-    Ok(id)
-}
-
-fn open_task_panes(opts: &TaskWindow) -> Result<String> {
     // `tenx:` (trailing colon) targets the session so the new window is
     // appended to it rather than treated as a window name to match.
     let session = format!("{SESSION}:");
@@ -920,18 +723,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_pane_lines_and_picks_the_task_pane() {
-        let panes: Vec<Pane> = ["%3\t2\t1", "%1\t0\t", "%2\t1\t"].iter().filter_map(|l| parse_pane(l)).collect();
-        assert_eq!(panes.len(), 3);
-        assert!(panes[0].sidebar && !panes[1].sidebar);
-        // The task pane is the lowest index that isn't the sidebar — even
-        // when the sidebar happens to be listed first.
-        assert_eq!(main_pane_of(&panes).as_deref(), Some("%1"));
-        assert_eq!(main_pane_of(&panes[..1]), None);
-        assert!(parse_pane("%3\tx").is_none());
-    }
-
-    #[test]
     fn shell_quote_escapes_single_quotes() {
         assert_eq!(shell_quote("plain"), "'plain'");
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
@@ -940,9 +731,8 @@ mod tests {
     #[test]
     fn config_embeds_binary_and_palette() {
         let c = render_config("/usr/local/bin/tenx");
+        assert!(c.contains("display-popup -E -w 85% -h 85% -T \" tenx \" "));
         assert!(c.contains("display-popup -E -B -w 100% -h 100% "));
-        assert!(c.contains("if-shell -F \"#{==:#{window_name},home}\""));
-        assert!(c.contains("run-shell -b \"'/usr/local/bin/tenx' internal sidebar cycle '#{pane_id}'\""));
         assert!(c.contains("#{||:#{<:#{client_width},100},#{<:#{client_height},30}}"));
         // The popup border must sit on the ground, not the terminal's default bg.
         assert!(c.contains(&format!("popup-border-style \"fg={},bg={}\"", palette::ACCENT.hex(), palette::GROUND.hex())));

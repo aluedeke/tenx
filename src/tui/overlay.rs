@@ -8,14 +8,14 @@
 //!
 //! Single-session model: all tasks live as (invisible) windows in the one
 //! global `tenx` tmux session. The overlay runs on three surfaces
-//! (`tui::Surface`): the session's *home* window (`--home`, long-lived, jump
-//! switches windows without exiting); the Ctrl+w popup (`tmux display-popup
-//! -E`: exits after a jump, and tmux closes the popup with it); and the
-//! *sidebar* (`--sidebar`), a pane on the left of every task window that
-//! renders the watcher's snapshot (`crate::snapshot`) rather than resolving
-//! every task itself — a jump switches windows and hands focus to the task,
-//! and quit keys hand focus back. Same binary, same code — there is exactly
-//! one overlay implementation.
+//! (`tui::Surface`): the *client*'s column (`Surface::Client`, what `tenx`
+//! opens: the list beside an embedded terminal in the same process, so a
+//! jump is the window switch and quit keys hand focus to the task through
+//! `ClientRequest`); the session's *home* window (`--home`, long-lived, jump
+//! switches windows without exiting); and the Ctrl+w popup for a client
+//! attached to the session directly (`tmux display-popup -E`: exits after a
+//! jump, and tmux closes the popup with it). Same binary, same code — there
+//! is exactly one overlay implementation.
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -266,7 +266,7 @@ struct AttachTarget {
 }
 
 /// What the client's column asks the client to do, since it cannot move
-/// focus or hide itself through tmux the way the sidebar pane does.
+/// focus or hide itself: the terminal is in the same process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClientRequest {
     /// Put the keyboard in the embedded terminal (a jump landed, or a quit
@@ -282,31 +282,14 @@ pub(super) struct Overlay {
     /// Running as the session's home base pane (long-lived, never quits) rather
     /// than the Ctrl+w floating pane (exits after a jump).
     home: bool,
-    /// `Surface::Client`: `sidebar` rendering and data, but the window
-    /// switch is the whole of a jump — the embedded terminal shows it —
-    /// and focus moves via `client_request`.
+    /// `Surface::Client`: the column — narrow two-line rows, no preview
+    /// panel (the task is beside it), the window switch is the whole of a
+    /// jump and focus moves via `client_request`.
     client: bool,
     client_request: Option<ClientRequest>,
-    /// Whether the keyboard is in the column (the sidebar pane has focus;
-    /// the client's focus is on its column). The column only re-sorts
+    /// Whether the keyboard is in the column. The column only re-sorts
     /// itself while this is false — never under a moving cursor.
     pub(super) focused: bool,
-    /// Running as a task window's sidebar pane (`Surface::Sidebar`): rows
-    /// come from the watcher's snapshot while it is fresh, there is no
-    /// preview panel (the task is right there), a jump focuses the task and
-    /// quit keys hand focus back to it.
-    sidebar: bool,
-    /// The sidebar's own window (`$TMUX_PANE`'s), where quit keys send focus.
-    own_window: Option<String>,
-    /// That window's name — the slug of the task this sidebar sits beside,
-    /// so movement starts from it rather than from the top of the list.
-    own_slug: Option<String>,
-    /// The snapshot mtime the rows were last built or refreshed from, so an
-    /// unchanged file costs one `stat` per tick and no parse.
-    snapshot_mtime: Option<SystemTime>,
-    /// The last refresh found no fresh snapshot and resolved on its own —
-    /// worth a word in the footer, since it means no watcher is running.
-    snapshot_stale: bool,
     workspaces: Vec<Workspace>,
     tab: Tab,
     input_mode: InputMode,
@@ -343,7 +326,7 @@ pub(super) struct Overlay {
     list_state: ListState,
     line_to_pos: Vec<Option<usize>>,
     /// Rendered height of each list item, in the same order as
-    /// `line_to_pos` — the sidebar's rows are two lines tall, headers one,
+    /// `line_to_pos` — the column's rows are two lines tall, headers one,
     /// so a click's row is walked through these from the scroll offset.
     item_heights: Vec<u16>,
     tabs_area: Rect,
@@ -387,10 +370,6 @@ impl Overlay {
     pub(super) fn new(surface: Surface) -> Self {
         let mut o = Self::empty(surface);
         o.workspaces = workspace::registered_workspaces();
-        if o.sidebar && !o.client {
-            o.own_window = std::env::var("TMUX_PANE").ok().and_then(|p| crate::tmux::window_of_pane(&p).ok());
-            o.own_slug = o.own_window.as_deref().and_then(|w| crate::tmux::window_name(w).ok());
-        }
         o.rebuild_rows();
         o
     }
@@ -438,12 +417,11 @@ impl Overlay {
             })
             .collect();
         format!(
-            "{:?}/{:?} sel={sel} current={:?} filter={:?} stale={} rows=[{}]",
+            "{:?}/{:?} sel={sel} current={:?} filter={:?} rows=[{}]",
             self.focus,
             self.input_mode,
             self.current,
             self.filter,
-            self.snapshot_stale,
             order.join(" ")
         )
     }
@@ -472,11 +450,6 @@ impl Overlay {
             client: surface == Surface::Client,
             client_request: None,
             focused: true,
-            sidebar: matches!(surface, Surface::Sidebar | Surface::Client),
-            own_window: None,
-            own_slug: None,
-            snapshot_mtime: None,
-            snapshot_stale: false,
             workspaces: vec![],
             tab: Tab::Tasks,
             input_mode: InputMode::Insert,
@@ -555,18 +528,6 @@ impl Overlay {
     /// plus one snapshot of Claude Code's session registry that every row
     /// resolves against (`workspace::resolve_task_state`).
     pub(super) fn rebuild_rows(&mut self) {
-        if self.sidebar
-            && let Some((snap, mtime)) = crate::snapshot::read_fresh()
-        {
-            self.snapshot_mtime = Some(mtime);
-            self.snapshot_stale = false;
-            self.rows = self.rows_from_snapshot(&snap);
-            self.current = if self.client { crate::tmux::current_task() } else { snap.current };
-            self.sort_rows();
-            self.apply_filter();
-            return;
-        }
-        self.snapshot_stale = self.sidebar;
         // One flat list across all workspaces, grouped by agent status
         // (`TaskStatus::rank` — needs-input first, idle last) and, within a
         // group, by last status change newest first. Tasks with no agent
@@ -610,6 +571,9 @@ impl Overlay {
         self.rows = rows;
         self.sort_rows();
         self.apply_filter();
+        if self.client {
+            self.current = crate::tmux::current_task();
+        }
     }
 
     fn sort_rows(&mut self) {
@@ -622,88 +586,6 @@ impl Overlay {
         });
     }
 
-    /// Rows from the watcher's snapshot — the same facts `rebuild_rows`
-    /// derives, without touching the registry, tmux or the task tree. A
-    /// workspace the snapshot names but this instance doesn't know yet
-    /// (registered since startup) triggers one registry re-read.
-    fn rows_from_snapshot(&mut self, snap: &crate::snapshot::Snapshot) -> Vec<Row> {
-        if snap.tasks.iter().any(|t| self.ws_index(&t.ws_dir).is_none()) {
-            self.workspaces = workspace::registered_workspaces();
-        }
-        let mut rows = Vec::new();
-        for t in &snap.tasks {
-            let Some(ws_idx) = self.ws_index(&t.ws_dir) else { continue };
-            let status = TaskStatus::from_token(&t.status);
-            let section = if !t.secrets_pending.is_empty() || !t.secrets_pending_set.is_empty() {
-                workspace::TaskGroup::SecretsPending
-            } else {
-                status.group()
-            };
-            let changed = t.changed_at.map(epoch);
-            rows.push(Row {
-                ws_idx,
-                ws_name: t.ws.clone(),
-                slug: t.slug.clone(),
-                title: t.title.clone(),
-                path: PathBuf::from(&t.path),
-                status,
-                group: status,
-                changed,
-                waiting_for: t.waiting_for.clone(),
-                activity: changed.unwrap_or_else(|| epoch(t.created_at)),
-                window_id: t.window_id.clone(),
-                pane: t.pane.clone(),
-                live: crate::live::Live { ports: t.ports.clone(), prs: t.prs.clone(), pr_checked: 0 },
-                repos: t.repos.clone(),
-                secrets_pending: t.secrets_pending.clone(),
-                secrets_pending_set: t.secrets_pending_set.clone(),
-                section,
-            });
-        }
-        rows
-    }
-
-    fn ws_index(&self, ws_dir: &str) -> Option<usize> {
-        self.workspaces.iter().position(|w| w.dir.as_os_str() == ws_dir)
-    }
-
-    /// Sidebar idle tick: re-read the snapshot only when its mtime moved.
-    /// The same set of tasks is updated in place (order frozen, like
-    /// `refresh_statuses`); a task appearing or disappearing rebuilds. A
-    /// stale or missing snapshot falls through to resolving live.
-    fn refresh_from_snapshot(&mut self) -> bool {
-        let Some(mtime) = crate::snapshot::modified_fresh() else {
-            return false;
-        };
-        if Some(mtime) == self.snapshot_mtime {
-            return true;
-        }
-        let Some((snap, mtime)) = crate::snapshot::read_fresh() else {
-            return false;
-        };
-        self.snapshot_mtime = Some(mtime);
-        self.snapshot_stale = false;
-        let same_set = self.rows.len() == snap.tasks.len()
-            && snap.tasks.iter().all(|t| self.rows.iter().any(|r| r.path.as_os_str() == t.path.as_str()));
-        if !same_set {
-            self.rebuild_rows();
-            return true;
-        }
-        self.current = snap.current.clone();
-        for r in self.rows.iter_mut() {
-            let Some(t) = snap.tasks.iter().find(|t| r.path.as_os_str() == t.path.as_str()) else { continue };
-            r.status = TaskStatus::from_token(&t.status);
-            r.title = t.title.clone();
-            r.changed = t.changed_at.map(epoch);
-            r.waiting_for = t.waiting_for.clone();
-            r.pane = t.pane.clone();
-            r.activity = r.changed.unwrap_or(r.activity);
-            r.window_id = t.window_id.clone();
-            r.live = crate::live::Live { ports: t.ports.clone(), prs: t.prs.clone(), pr_checked: 0 };
-        }
-        true
-    }
-
     /// Idle-tick refresh: re-read each row's status/age/tab-id in place,
     /// WITHOUT re-sorting or re-discovering tasks. The list order is frozen
     /// while the overlay is showing (no rows shuffling under the cursor) and
@@ -711,29 +593,18 @@ impl Overlay {
     /// home-pane startup, regaining focus, returning after a jump, or a
     /// mutating action (create/delete/rename).
     pub(super) fn refresh_statuses(&mut self) {
-        if self.sidebar {
-            let done = self.refresh_from_snapshot();
-            if self.client {
-                // The snapshot's `current` is the watcher's view, up to a
-                // tick old; after a switch that lag makes "the task next to
-                // mine" the one already on screen. Ask tmux, every refresh.
-                self.current = crate::tmux::current_task();
-            }
-            if done {
-                return;
-            }
-            if !self.snapshot_stale {
-                // The watcher just went away: rows built from its snapshot
-                // carry no signals; start over from live sources.
-                self.snapshot_stale = true;
-                self.rebuild_rows();
-                return;
-            }
-        }
         let sessions = workspace::claude::sessions();
         let slow = self.slow_refreshed.is_none_or(|t| t.elapsed() >= SLOW_REFRESH);
         if slow {
             self.refresh_windows();
+            // A task created or removed from outside (the CLI, the skill,
+            // another client) is not a row yet: rebuild, keeping the
+            // selection on its task. One `read_dir` per workspace.
+            let on_disk: usize = self.workspaces.iter().map(|ws| ws.task_dir_count()).sum();
+            if on_disk != self.rows.len() {
+                self.tidy();
+                return;
+            }
         }
         let signals = &self.signals;
         let mut rows = std::mem::take(&mut self.rows);
@@ -750,6 +621,11 @@ impl Overlay {
             }
         }
         self.rows = rows;
+        if self.client {
+            // Fresher than the slow refresh's window list: the task beside
+            // the column is what ↓/↑ start from.
+            self.current = crate::tmux::current_task();
+        }
     }
 
     /// One `list-windows` for both the bell signals and the current window.
@@ -839,7 +715,7 @@ impl Overlay {
     }
 
     /// Up: within the list, move up; at the top, return to the search field
-    /// (→ Insert). In Search, stay put — except in the sidebar, where the
+    /// (→ Insert). In Search, stay put — except in the column, where the
     /// list is entered at the task you are sitting in (`own_row`), so the
     /// first Up goes to the task above it.
     fn nav_up(&mut self) {
@@ -875,7 +751,7 @@ impl Overlay {
         self.selected_row().filter(|r| r.window_id.is_none()).map(|r| r.title.clone())
     }
 
-    /// The movement of `nav_down` without the sidebar's window switch — the
+    /// The movement of `nav_down` without the column's window switch — the
     /// mouse wheel browses without switching.
     fn step_down(&mut self) {
         match self.focus {
@@ -925,46 +801,33 @@ impl Overlay {
         self.follow_selection();
     }
 
-    /// Position (in `filtered`) of the task this sidebar's window belongs
-    /// to; `None` on the other surfaces, or when the filter hides it.
+    /// Position (in `filtered`) of the task the column sits beside; `None`
+    /// on the other surfaces, or when the filter hides it.
     fn own_row(&self) -> Option<usize> {
-        if !self.sidebar || self.tab != Tab::Tasks {
+        if !self.client || self.tab != Tab::Tasks {
             return None;
         }
-        let own_slug = if self.client { self.current.as_deref() } else { self.own_slug.as_deref() };
-        self.filtered.iter().position(|&i| {
-            let r = &self.rows[i];
-            (r.window_id.is_some() && r.window_id == self.own_window) || Some(r.slug.as_str()) == own_slug
-        })
+        self.filtered.iter().position(|&i| Some(self.rows[i].slug.as_str()) == self.current.as_deref())
     }
 
-    /// The sidebar follows its selection: moving onto a task whose window is
-    /// open switches to that window, cmux-style, and puts the keyboard in
-    /// *that* window's sidebar (opening one if it was hidden) so the next
-    /// key keeps moving. A task with no window is only selected — ⏎ opens
-    /// it. Never fires from the search field or off the Tasks tab.
+    /// The column follows its selection: moving onto a task whose window is
+    /// open switches to that window, cmux-style — the embedded terminal
+    /// shows it, and the column is the same process, so the selection
+    /// simply carries on. A task with no window is only selected (the
+    /// client shows an empty screen for it; ⏎ opens it). Never fires from
+    /// the search field or off the Tasks tab.
     fn follow_selection(&mut self) {
-        if !self.sidebar || self.tab != Tab::Tasks || self.focus != Focus::List {
+        if !self.client || self.tab != Tab::Tasks || self.focus != Focus::List {
             return;
         }
         let Some(row) = self.selected_row() else { return };
-        let own_slug = if self.client { self.current.as_deref() } else { self.own_slug.as_deref() };
-        if row.window_id.is_none() || Some(row.slug.as_str()) == own_slug {
+        if row.window_id.is_none() || Some(row.slug.as_str()) == self.current.as_deref() {
             return;
         }
         let slug = row.slug.clone();
         let Some(w) = crate::tmux::find_window(&slug).ok().flatten() else { return };
-        if Some(&w.id) == self.own_window.as_ref() {
-            return;
-        }
         if crate::tmux::select_window(&w.id).is_ok() {
-            if self.client {
-                // The embedded terminal shows the new window; the column is
-                // the same process, so the selection simply carries on.
-                self.current = Some(slug);
-            } else {
-                let _ = crate::cli::sidebar::ensure_focused(&w.id);
-            }
+            self.current = Some(slug);
         }
     }
 
@@ -1072,18 +935,12 @@ impl Overlay {
         // pane/tab behind. Jumps already stay open in home mode (see `jump`),
         // so any close reaching here is a quit key: swallow it with a hint.
         if close && self.home {
-            self.status_msg = Some("home overlay — jump to a task instead (Ctrl+w: the sidebar in any task window)".into());
+            self.status_msg = Some("home overlay — jump to a task instead".into());
             return Ok(false);
         }
-        // The sidebar is part of the window; a quit key means "back to the
-        // task", leaving the column showing (Ctrl+w from here hides it —
-        // `cli::sidebar::cycle`).
+        // The column stays; a quit key means "back to the task".
         if close && self.client {
             self.client_request = Some(ClientRequest::FocusTerminal);
-            return Ok(false);
-        }
-        if close && self.sidebar {
-            self.focus_task();
             return Ok(false);
         }
         Ok(close)
@@ -1280,9 +1137,7 @@ impl Overlay {
             "y" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
             "deny" => self.answer(tenx_core::dialog::Answer::No),
             "cancel" => self.cancel_secrets(),
-            "sidebar" | "hide" if self.client => self.client_request = Some(ClientRequest::Hide),
-            "sidebar" => self.toggle_sidebar(),
-            "hide" if self.sidebar => self.toggle_sidebar(),
+            "hide" if self.client => self.client_request = Some(ClientRequest::Hide),
             "o" | "open" => return self.jump(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
         }
@@ -1296,8 +1151,8 @@ impl Overlay {
     /// the selection moved to a different pane; the idle tick passes `force`
     /// so a blocked pane's dialog (and a working one's output) stay live.
     fn refresh_preview(&mut self, force: bool) {
-        if self.sidebar {
-            return; // the task itself is the pane next door
+        if self.client {
+            return; // the task itself is beside the column
         }
         let pane = match (self.tab, &self.mode) {
             (Tab::Tasks, Mode::List | Mode::Command(_)) => self.selected_row().and_then(|r| r.pane.clone()),
@@ -1334,9 +1189,7 @@ impl Overlay {
         };
         let (title, path) = (row.title.clone(), row.path.clone());
         let sessions = workspace::claude::sessions();
-        // A sidebar never lists windows itself; one call here is fine.
-        let signals = if self.sidebar { crate::tmux::signals() } else { self.signals.clone() };
-        let state = workspace::resolve_task_state(&path, &sessions, &signals);
+        let state = workspace::resolve_task_state(&path, &sessions, &self.signals);
         if state.status != TaskStatus::Blocked {
             self.status_msg = Some(format!("'{title}' is not waiting on a prompt"));
             return;
@@ -1381,31 +1234,6 @@ impl Overlay {
         })
     }
 
-    // ── Sidebar ───────────────────────────────────────────────────────────────
-
-    /// Hand focus to the task pane of the sidebar's own window.
-    fn focus_task(&mut self) {
-        if let Some(w) = &self.own_window
-            && let Some(main) = crate::tmux::main_pane(w)
-        {
-            let _ = crate::tmux::select_pane(&main);
-        }
-    }
-
-    /// `:sidebar` — add the sidebar to the current window, or remove it. From
-    /// the sidebar itself that is its own window (`:hide`); from the popup or
-    /// home it is the session's current window.
-    fn toggle_sidebar(&mut self) {
-        let window = self.own_window.clone().or_else(|| crate::tmux::current_window().ok());
-        let Some(window) = window else {
-            self.status_msg = Some("no tenx window to toggle a sidebar in".into());
-            return;
-        };
-        if let Err(e) = crate::cli::sidebar::toggle(&window) {
-            self.status_msg = Some(e.to_string());
-        }
-    }
-
     // ── Jump ──────────────────────────────────────────────────────────────────
 
     fn jump(&mut self) -> Result<bool> {
@@ -1427,20 +1255,9 @@ impl Overlay {
                 self.status_msg = Some(e.to_string());
                 return Ok(false);
             }
-            if self.sidebar && !self.client {
-                // The window switched under every client; land the cursor
-                // in the task's pane (not that window's own sidebar).
-                if let Some(w) = crate::tmux::find_window(&slug).ok().flatten()
-                    && let Some(main) = crate::tmux::main_pane(&w.id)
-                {
-                    let _ = crate::tmux::select_pane(&main);
-                }
-            }
             if self.client {
                 self.current = Some(slug.clone());
                 self.client_request = Some(ClientRequest::FocusTerminal);
-            }
-            if self.sidebar {
                 // The column stays in view: keep the rows in the order they
                 // are on screen and the selection on the task just opened,
                 // so the next ↓ is the task below it. Only the filter goes,
@@ -2067,10 +1884,6 @@ pub fn run(surface: Surface) -> Result<()> {
     Ok(())
 }
 
-fn epoch(secs: u64) -> SystemTime {
-    std::time::UNIX_EPOCH + Duration::from_secs(secs)
-}
-
 const TICK: Duration = Duration::from_millis(500);
 
 fn run_loop(
@@ -2097,16 +1910,6 @@ fn run_loop(
                 // Coming back to look at the overlay (home tab refocused, or
                 // the terminal regained focus) counts as a reopen — recompute
                 // the activity ordering once, here, not on every tick.
-                Event::FocusGained if overlay.sidebar => {
-                    overlay.focused = true;
-                    if matches!(overlay.mode, Mode::List) {
-                        overlay.select_current();
-                    }
-                }
-                Event::FocusLost if overlay.sidebar => {
-                    overlay.focused = false;
-                    overlay.blur();
-                }
                 Event::FocusGained if matches!(overlay.mode, Mode::List) => {
                     overlay.rebuild_rows();
                     overlay.maybe_sweep();
@@ -2116,13 +1919,9 @@ fn run_loop(
         } else if matches!(overlay.mode, Mode::List) {
             // Idle tick — update status glyphs/ages in place; the row order
             // stays frozen (see `refresh_statuses`). The preview follows the
-            // pane live at the same cadence. The column re-groups itself
-            // only while the keyboard is elsewhere.
+            // pane live at the same cadence.
             overlay.refresh_statuses();
             overlay.refresh_preview(true);
-            if overlay.sidebar && !overlay.focused && overlay.sections_stale() {
-                overlay.tidy();
-            }
         }
 
         if let Some((ws_idx, slug)) = overlay.pending_unlock.take() {
@@ -2232,7 +2031,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
     // The body is the list plus, when there's room, the preview panel:
     // beside it on a wide terminal, under it on a tall narrow one (a phone),
     // absent on a small one.
-    let (list_area, preview_area) = if overlay.sidebar {
+    let (list_area, preview_area) = if overlay.client {
         (chunks[2], None)
     } else if chunks[2].width >= PREVIEW_SIDE_MIN_COLS {
         // The list takes only what its widest row needs (laid out as if it
@@ -2313,7 +2112,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
     // ── Body list (tasks or repos) ────────────────────────────────────────────
     let list_width = list_area.width.saturating_sub(2) as usize;
     let (items, line_of_selected, line_to_pos) = match overlay.tab {
-        Tab::Tasks if overlay.sidebar => sidebar_items(overlay, list_width),
+        Tab::Tasks if overlay.client => column_items(overlay, list_width),
         Tab::Tasks => task_items(overlay, list_width),
         Tab::Repos => repo_items(overlay, list_width),
     };
@@ -2346,7 +2145,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
             ];
             if buf.is_empty() {
                 spans.push(Span::styled(
-                    "  new · open · delete · rename · close · sidebar · quit",
+                    "  new · open · delete · rename · close · hide · quit",
                     Style::default().fg(palette::MUTED.color()),
                 ));
             }
@@ -2364,11 +2163,7 @@ fn render_list(f: &mut ratatui::Frame, overlay: &mut Overlay, area: Rect) {
             format!(" {msg}"),
             Style::default().fg(palette::SUCCESS.color()),
         )),
-        _ if overlay.snapshot_stale => Line::from(Span::styled(
-            " no watcher — run `tenx` to start one",
-            Style::default().fg(palette::WARN.color()),
-        )),
-        _ if overlay.sidebar => {
+        _ if overlay.client => {
             // A column of ~36 cells: the mode tag and the two or three keys
             // that matter here; the full hint set lives on the wide surfaces.
             let (tag, tag_style) = mode_tag(overlay.input_mode);
@@ -2566,7 +2361,7 @@ fn task_items(
         // crisp; the status colour lives in the glyph and chip, not the name.
         let selected = pos == overlay.selected && overlay.focus == Focus::List;
         let is_current = overlay.current.as_deref() == Some(row.slug.as_str());
-        // Too narrow for the "current" chip (a sidebar): the title itself
+        // Too narrow for the "current" chip (the column): the title itself
         // takes the chip's colour, so the window you're in still stands out.
         let title_fg = if selected {
             palette::SEL_TEXT.color()
@@ -2678,7 +2473,7 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
     }
 }
 
-/// The sidebar's list: the same groups and rows as `task_items`, shaped for
+/// The column's list: the same groups and rows as `task_items`, shaped for
 /// a column of 30–48 cells. Each task is two lines — the glyph and the
 /// bold title on the first, taking the whole width; on the second, muted
 /// and indented under the title, the workspace, the age of a resting task,
@@ -2686,7 +2481,7 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
 /// The current task's title takes the "current" chip's colour instead of a
 /// chip. No spacer between tasks: the headers already separate the groups,
 /// and a column has less height to spare than width.
-fn sidebar_items(
+fn column_items(
     overlay: &Overlay,
     list_width: usize,
 ) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {

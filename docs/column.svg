@@ -100,28 +100,28 @@
 <text x="304.0" y="509.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="527.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="527.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="527.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">cart abandonment banner      </text>
+<text x="60.4" y="527.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">cart abandonment banner      </text>
 <text x="304.0" y="527.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="545.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="545.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">storefront</text>
 <text x="304.0" y="545.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="563.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="563.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="563.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">terraform drift check        </text>
+<text x="60.4" y="563.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">terraform drift check        </text>
 <text x="304.0" y="563.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="581.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="581.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="304.0" y="581.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="599.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="599.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="599.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">homebrew tap                 </text>
+<text x="60.4" y="599.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">homebrew tap                 </text>
 <text x="304.0" y="599.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="617.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="617.0" fill="#787f8c" textLength="117.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tenx-workspace</text>
 <text x="304.0" y="617.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="635.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="635.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="635.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">ACME-2244 search ranking     </text>
+<text x="60.4" y="635.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">ACME-2244 search ranking     </text>
 <text x="304.0" y="635.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="653.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="653.0" fill="#787f8c" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">acme-api · </text>
@@ -129,21 +129,21 @@
 <text x="304.0" y="653.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="671.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="671.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="671.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">image cdn migration          </text>
+<text x="60.4" y="671.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">image cdn migration          </text>
 <text x="304.0" y="671.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="689.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="689.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">storefront</text>
 <text x="304.0" y="689.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="707.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="707.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="707.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">upgrade postgres 17          </text>
+<text x="60.4" y="707.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">upgrade postgres 17          </text>
 <text x="304.0" y="707.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="725.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="725.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="304.0" y="725.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="743.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="743.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="743.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">multi-currency totals        </text>
+<text x="60.4" y="743.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">multi-currency totals        </text>
 <text x="304.0" y="743.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="761.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="761.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger · </text>
@@ -151,14 +151,14 @@
 <text x="304.0" y="761.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="779.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="779.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="779.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">backup restore drill         </text>
+<text x="60.4" y="779.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">backup restore drill         </text>
 <text x="304.0" y="779.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="797.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="797.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">homelab</text>
 <text x="304.0" y="797.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="815.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="815.0" fill="#606878" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·  </text>
-<text x="60.4" y="815.0" fill="#d6dbe3" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">api reference sweep          </text>
+<text x="60.4" y="815.0" fill="#787f8c" textLength="243.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">api reference sweep          </text>
 <text x="304.0" y="815.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="833.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="833.0" fill="#787f8c" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">docs</text>

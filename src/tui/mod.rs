@@ -12,14 +12,10 @@ pub enum Surface {
     Popup,
     /// `--home`: the session's permanent window 0; never quits.
     Home,
-    /// `--sidebar`: a pane beside the task in every task window, rendering
-    /// the watcher's snapshot; a jump hands focus to the task, quit keys
-    /// hand it back.
-    Sidebar,
-    /// The column inside `tenx client` (`client.rs`): drawn like the
-    /// sidebar, but the task is an embedded terminal in the same process,
-    /// so jumps and quit keys hand focus to it via `ClientRequest` instead
-    /// of tmux.
+    /// The column of the client (`client.rs`, what `tenx` runs): the same
+    /// list, narrow and two lines per task, beside an embedded terminal in
+    /// the same process; jumps and quit keys hand focus to it via
+    /// `ClientRequest`.
     Client,
 }
 

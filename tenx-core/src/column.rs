@@ -1,15 +1,15 @@
-//! Sizing rules for the sidebar — the task list that sits as a column on the
-//! left of every task window (see `tmux::open_sidebar`).
+//! Sizing rule for the column — the task list `tenx` draws on the left of
+//! the embedded session (`tui::client`).
 
-/// The sidebar's share of the window when no width is configured.
+/// The column's share of the terminal when no width is configured.
 pub const DEFAULT_PERCENT: u16 = 20;
 /// Narrower than this and titles truncate to nothing useful; wider and it
 /// takes room from the task on a big screen for no gain.
 pub const MIN_COLS: u16 = 30;
 pub const MAX_COLS: u16 = 48;
 
-/// The sidebar width for a window `window_cols` wide. `configured` is the
-/// user's `sidebar_width` (0 = automatic: [`DEFAULT_PERCENT`] of the window,
+/// The column width for a terminal `window_cols` wide. `configured` is the
+/// user's `column_width` (0 = automatic: [`DEFAULT_PERCENT`] of the window,
 /// clamped to [`MIN_COLS`]..=[`MAX_COLS`]). A configured width is honoured
 /// as given, but never so wide that the task gets less than half the window.
 pub fn width(window_cols: u16, configured: u16) -> u16 {

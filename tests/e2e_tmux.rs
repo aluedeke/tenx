@@ -18,13 +18,20 @@ struct Harness {
 
 impl Harness {
     fn new() -> Option<Harness> {
+        Self::named("")
+    }
+
+    /// Tests in this file run in parallel: each gets its own root, socket and
+    /// home, told apart by `tag`.
+    fn named(tag: &str) -> Option<Harness> {
         let tmux = find_tmux()?;
-        let root = std::env::temp_dir().join(format!("tenx-e2e-{}", std::process::id()));
+        let name = format!("tenx-e2e-{}{tag}", std::process::id());
+        let root = std::env::temp_dir().join(&name);
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("bin")).unwrap();
         fs::create_dir_all(root.join("home")).unwrap();
         fs::create_dir_all(root.join("ws/tasks")).unwrap();
-        let h = Harness { root, socket: format!("tenx-e2e-{}", std::process::id()), tmux };
+        let h = Harness { root, socket: name, tmux };
 
         // Fake agent/editor: something that stays alive so the pane persists.
         for name in ["claude", "nvim"] {
@@ -50,10 +57,6 @@ impl Harness {
         )
         .unwrap();
 
-        // This test exercises the sidebar pane, which is opt-in.
-        fs::create_dir_all(h.root.join("home/.config/tenx")).unwrap();
-        fs::write(h.root.join("home/.config/tenx/config.toml"), "sidebar = true\n").unwrap();
-
         // The server, from the generated config, with a placeholder home window.
         let conf = h.root.join("tmux.conf");
         let out = h.tenx().args(["internal", "tmux-conf"]).output().unwrap();
@@ -62,8 +65,8 @@ impl Harness {
         let st = h
             .tmux()
             // A desktop-sized window: a detached server defaults to 80×24,
-            // where a sidebar plus three task panes leaves a shell too
-            // narrow to print a port number on one line.
+            // where three task panes leave a shell too narrow to print a
+            // port number on one line.
             .args(["-f", s(&conf), "new-session", "-d", "-x", "200", "-y", "50", "-s", "tenx", "-n", "home", "-c", s(&h.root), "sleep 600"])
             .status()
             .unwrap();
@@ -74,8 +77,8 @@ impl Harness {
     fn tmux(&self) -> Command {
         let mut c = Command::new(&self.tmux);
         c.args(["-L", &self.socket]);
-        // The server's environment is what its panes inherit — the sidebar
-        // pane runs this build's `tenx`, which must see the isolated home.
+        // The server's environment is what its panes inherit; anything that
+        // runs this build's `tenx` in a pane must see the isolated home.
         c.env("HOME", self.root.join("home"));
         c
     }
@@ -97,11 +100,56 @@ impl Harness {
     fn ws(&self) -> String {
         self.root.join("ws").to_string_lossy().into_owned()
     }
+
+    /// A second, throwaway tmux server standing in for the user's terminal:
+    /// its one pane runs the client, so keys can be sent and the screen read.
+    fn outer(&self) -> String {
+        format!("{}-outer", self.socket)
+    }
+
+    fn outer_tmux(&self) -> Command {
+        let mut c = Command::new(&self.tmux);
+        c.args(["-L", &self.outer()]);
+        c
+    }
+
+    fn outer_out(&self, args: &[&str]) -> String {
+        let out = self.outer_tmux().args(args).output().unwrap();
+        assert!(out.status.success(), "outer tmux {:?}: {}", args, String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    fn screen(&self) -> String {
+        self.outer_out(&["capture-pane", "-p", "-t", "o"])
+    }
+
+    fn keys(&self, keys: &[&str]) {
+        let mut args = vec!["send-keys", "-t", "o"];
+        args.extend_from_slice(keys);
+        self.outer_out(&args);
+    }
+
+    /// Poll the outer screen until `pred` holds, or fail after `secs`.
+    fn wait_screen(&self, what: &str, secs: u64, pred: impl Fn(&str) -> bool) -> String {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+        loop {
+            let s = self.screen();
+            if pred(&s) {
+                return s;
+            }
+            if std::time::Instant::now() >= deadline {
+                let err = fs::read_to_string(self.root.join("client.err")).unwrap_or_default();
+                panic!("waiting for {what}, screen:\n{s}\nclient stderr: {err}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
 }
 
 impl Drop for Harness {
     fn drop(&mut self) {
         let _ = self.tmux().arg("kill-server").stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let _ = Command::new(&self.tmux).args(["-L", &self.outer(), "kill-server"]).stdout(Stdio::null()).stderr(Stdio::null()).status();
         let _ = fs::remove_dir_all(&self.root);
     }
 }
@@ -144,71 +192,12 @@ fn task_new_open_and_list_against_real_tmux() {
     let smoke = windows.lines().find(|l| l.contains(" smoke-test ")).expect("smoke-test window exists");
     let mut f = smoke.split(' ');
     let id = f.next().unwrap();
-    assert_eq!(f.nth(1), Some("4"), "four panes: sidebar, claude, nvim, shell");
+    assert_eq!(f.nth(1), Some("3"), "three panes: claude, nvim, shell");
     assert_eq!(f.next(), Some("1"), "new window is the session's current one");
     assert_eq!(fs::read_to_string(task_dir.join(".tenx-window-id")).unwrap().trim(), id);
 
     let branch = h.tmux_out(&["list-panes", "-t", "tenx:smoke-test", "-F", "#{pane_current_path}"]);
     assert!(branch.lines().all(|l| l.ends_with("smoke-test")), "every pane starts in the task dir: {branch}");
-
-    // The sidebar: one pane carrying the marker option, leftmost (tmux
-    // numbers panes by position, so it is pane 0 and claude is pane 1), full
-    // height, and not the one with focus — a new task lands you in claude.
-    let panes = h.tmux_out(&[
-        "list-panes", "-t", "tenx:smoke-test", "-F",
-        "#{pane_index} #{pane_left} #{pane_height} #{window_height} #{pane_active} [#{@tenx_sidebar}]",
-    ]);
-    let sidebars: Vec<&str> = panes.lines().filter(|l| l.ends_with("[1]")).collect();
-    assert_eq!(sidebars.len(), 1, "exactly one sidebar pane: {panes}");
-    let mut sb = sidebars[0].split(' ');
-    assert_eq!(sb.next(), Some("0"), "sidebar is pane 0: {panes}");
-    assert_eq!(sb.next(), Some("0"), "sidebar is leftmost: {panes}");
-    let (ph, wh) = (sb.next().unwrap(), sb.next().unwrap());
-    assert_eq!(ph, wh, "sidebar is full height: {panes}");
-    assert_eq!(sb.next(), Some("0"), "sidebar does not take focus: {panes}");
-    let active = panes.lines().find(|l| l.contains(" 1 [")).expect("an active pane");
-    assert!(active.starts_with("1 "), "claude (pane 1) has focus: {panes}");
-
-    // Ctrl+w's handler: from the task, focus the sidebar; from the sidebar,
-    // hide it (claude becomes pane 0 again, and gets the focus back); from
-    // the task again, it comes back focused. Each hide and show restores
-    // the pane sizes it found — tmux alone would shrink the right-hand
-    // panes a little more on every round trip.
-    let sizes = || h.tmux_out(&["list-panes", "-t", "tenx:smoke-test", "-F", "#{pane_width}x#{pane_height}"]).replace('\n', " ");
-    let with_sidebar = sizes();
-    let out = h.tenx().args(["internal", "sidebar", "cycle", &format!("{id}.1")]).output().unwrap();
-    assert!(out.status.success(), "sidebar cycle (focus): {}", String::from_utf8_lossy(&out.stderr));
-    let active = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{@tenx_sidebar}"]);
-    assert_eq!(active, "1", "focus moved to the sidebar");
-    let sidebar_id = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane_id}"]);
-    let out = h.tenx().args(["internal", "sidebar", "cycle", &sidebar_id]).output().unwrap();
-    assert!(out.status.success(), "sidebar cycle (hide): {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "3");
-    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane_index}"]), "0", "back on claude");
-    let without_sidebar = sizes();
-    let widths: Vec<u32> = without_sidebar.split(' ').map(|p| p.split('x').next().unwrap().parse().unwrap()).collect();
-    assert!(widths[0].abs_diff(widths[1]) <= 1, "hidden: claude and the right column split the window evenly again: {without_sidebar}");
-    let out = h.tenx().args(["internal", "sidebar", "cycle", &format!("{id}.0")]).output().unwrap();
-    assert!(out.status.success(), "sidebar cycle (show): {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "4");
-    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{@tenx_sidebar}"]), "1", "shown with focus");
-    assert_eq!(sizes(), with_sidebar, "shown: the same sizes as before hiding");
-    for _ in 0..3 {
-        let sb = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane_id}"]);
-        h.tenx().args(["internal", "sidebar", "cycle", &sb]).output().unwrap();
-        assert_eq!(sizes(), without_sidebar, "hidden again: same layout");
-        h.tenx().args(["internal", "sidebar", "cycle", &format!("{id}.0")]).output().unwrap();
-    }
-    assert_eq!(sizes(), with_sidebar, "stable across repeated round trips");
-
-    // `toggle` removes and adds it without moving the focus.
-    let out = h.tenx().args(["internal", "sidebar", "toggle", &format!("{id}.1")]).output().unwrap();
-    assert!(out.status.success(), "sidebar toggle off: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "3");
-    let out = h.tenx().args(["internal", "sidebar", "toggle", &format!("{id}.0")]).output().unwrap();
-    assert!(out.status.success(), "sidebar toggle on: {}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_panes}"]), "4");
-    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{@tenx_sidebar}"]), "", "focus stayed on the task");
 
     // task list sees the open window.
     let out = h.tenx().args(["task", "list"]).current_dir(h.root.join("ws")).output().unwrap();
@@ -231,7 +220,7 @@ fn task_new_open_and_list_against_real_tmux() {
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
     h.tmux_out(&["select-window", "-t", "tenx:home"]);
-    h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.3", "printf '\\a'", "Enter"]);
+    h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.2", "printf '\\a'", "Enter"]);
     let mut status = String::new();
     for _ in 0..20 {
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -250,11 +239,11 @@ fn task_new_open_and_list_against_real_tmux() {
     // port (pane pid → descendants → lsof), when python3 is around to listen.
     if Command::new("python3").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success()) {
         let listen = "python3 -c 'import socket,time;s=socket.socket();s.bind((\"127.0.0.1\",0));s.listen();print(\"PORT\",s.getsockname()[1],flush=True);time.sleep(300)'";
-        h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.3", listen, "Enter"]);
+        h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.2", listen, "Enter"]);
         let mut port = None;
         for _ in 0..50 {
             std::thread::sleep(std::time::Duration::from_millis(100));
-            let screen = h.tmux_out(&["capture-pane", "-p", "-t", "tenx:smoke-test.3"]);
+            let screen = h.tmux_out(&["capture-pane", "-p", "-t", "tenx:smoke-test.2"]);
             port = screen.lines().find_map(|l| l.strip_prefix("PORT ")).and_then(|p| p.trim().parse::<u16>().ok());
             if port.is_some() {
                 break;
@@ -271,7 +260,7 @@ fn task_new_open_and_list_against_real_tmux() {
             }
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        let panes = h.tmux_out(&["list-panes", "-s", "-t", "tenx", "-F", "#{window_name} #{pane_index} w=#{pane_width} h=#{pane_height} #{pane_current_command} [#{@tenx_sidebar}]"]);
+        let panes = h.tmux_out(&["list-panes", "-s", "-t", "tenx", "-F", "#{window_name} #{pane_index} w=#{pane_width} h=#{pane_height} #{pane_current_command}"]);
         let out = h.tenx().args(["internal", "ports"]).output().unwrap();
         assert!(found, "port {port} should be attributed to smoke-test\npanes:\n{panes}\nports: {}", String::from_utf8_lossy(&out.stdout));
     }
@@ -300,4 +289,72 @@ fn task_new_open_and_list_against_real_tmux() {
     assert!(out.status.success(), "task open after kill: {}", String::from_utf8_lossy(&out.stderr));
     let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_name}"]);
     assert!(windows.lines().any(|l| l == "smoke-test"), "recreated: {windows}");
+}
+
+/// The client: `tenx` in a terminal draws the task column beside the session
+/// it embeds. Driven through a stand-in terminal (a second tmux server whose
+/// pane runs the client), since the client owns a real tty.
+#[test]
+fn client_column_beside_the_embedded_session() {
+    let Some(h) = Harness::named("-client") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+
+    // The client in a 180×40 stand-in terminal, with the isolated home and
+    // the fake agent/editor on its PATH, so the windows it opens are inert.
+    let path = format!("{}:{}", h.root.join("bin").display(), std::env::var("PATH").unwrap_or_default());
+    let q = |v: &str| format!("'{}'", v.replace('\'', "'\\''"));
+    let client = format!(
+        "env HOME={} TENX_TMUX_SOCKET={} TERM=xterm-256color PATH={} {} 2>{}; sleep 60",
+        q(&h.root.join("home").to_string_lossy()),
+        q(&h.socket),
+        q(&path),
+        q(env!("CARGO_BIN_EXE_tenx")),
+        q(&h.root.join("client.err").to_string_lossy())
+    );
+    let st = h.outer_tmux().args(["-f", "/dev/null", "new-session", "-d", "-x", "180", "-y", "40", "-s", "o", &client]).status().unwrap();
+    assert!(st.success(), "outer tmux new-session failed");
+    h.wait_screen("the column", 10, |s| s.contains("Tasks") && s.contains("Repos"));
+
+    for name in ["One", "Two", "Three"] {
+        let out = h.tenx().args(["task", "new", name, "--ws-dir", &h.ws()]).output().unwrap();
+        assert!(out.status.success(), "task new {name}: {}", String::from_utf8_lossy(&out.stderr));
+        std::thread::sleep(std::time::Duration::from_millis(1100)); // distinct creation times keep the order stable
+    }
+    let current = || h.tmux_out(&["display", "-p", "-t", "tenx", "#{window_name}"]);
+    assert_eq!(current(), "three", "the newest task's window is current");
+    h.wait_screen("all three rows", 5, |s| s.contains("One") && s.contains("Two") && s.contains("Three"));
+
+    // Ctrl+w: the column takes the keyboard with the cursor on the current
+    // task; ↓/↑ switch the window under the terminal, one task per press.
+    h.keys(&["C-w"]);
+    h.wait_screen("normal mode", 3, |s| s.contains(" NORMAL "));
+    h.keys(&["Down"]);
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    assert_eq!(current(), "two", "Down switches to the task below");
+    h.keys(&["Down"]);
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    assert_eq!(current(), "one");
+    h.keys(&["Up"]);
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    assert_eq!(current(), "two", "Up switches back");
+    // The embedded session shows it: tmux's status line names the window.
+    h.wait_screen("the embedded status line", 3, |s| s.lines().last().is_some_and(|l| l.contains("two")));
+
+    // ⏎ hands the keyboard to the task; the column's cursor goes away.
+    h.keys(&["Enter"]);
+    h.wait_screen("insert mode after the jump", 3, |s| s.contains(" INSERT "));
+
+    // `:q` from the column quits the client; the session lives on.
+    h.keys(&["C-w"]);
+    h.wait_screen("normal mode", 3, |s| s.contains(" NORMAL "));
+    h.keys(&[":q", "Enter"]);
+    h.wait_screen("the client to exit", 5, |s| !s.contains("Tasks"));
+    let err = fs::read_to_string(h.root.join("client.err")).unwrap_or_default();
+    assert!(err.trim().is_empty(), "client stderr: {err}");
+    let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_name}"]);
+    assert!(windows.lines().any(|l| l == "two"), "session survives the client: {windows}");
 }

@@ -28,15 +28,10 @@ pub enum WorkspaceError {
 pub struct GlobalConfig {
     #[serde(default)]
     pub bare_dir: String,
-    /// Give every task window a sidebar *pane* — the task list as a column
-    /// inside the tmux window (see `tmux::open_sidebar`). Off by default:
-    /// `tenx client` draws the column outside tmux, and a pane sidebar
-    /// inside a window it shows would be a second column.
-    #[serde(default)]
-    pub sidebar: bool,
-    /// Sidebar width in columns; 0 = automatic (`tenx_core::sidebar::width`).
-    #[serde(default)]
-    pub sidebar_width: u16,
+    /// Width of the task column beside the session, in cells; 0 =
+    /// automatic (`tenx_core::column::width`).
+    #[serde(default, alias = "sidebar_width")]
+    pub column_width: u16,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -361,6 +356,14 @@ impl Workspace {
         }
         tasks.sort_by_key(|t| std::cmp::Reverse(t.created_at));
         Ok(tasks)
+    }
+
+    /// How many task directories exist — a cheap "did the task set change"
+    /// probe for a long-running list (one `read_dir`, no per-task reads).
+    pub fn task_dir_count(&self) -> usize {
+        fs::read_dir(self.tasks_dir())
+            .map(|d| d.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).count())
+            .unwrap_or(0)
     }
 
     pub fn find_task(&self, name: &str) -> Result<Task> {

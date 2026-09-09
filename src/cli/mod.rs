@@ -4,7 +4,6 @@ pub mod init;
 pub mod notify;
 pub mod repo;
 pub mod secrets;
-pub mod sidebar;
 pub mod standup;
 pub mod watch;
 pub mod task;
@@ -41,24 +40,11 @@ pub enum Commands {
         /// without exiting; quit keys are disabled)
         #[arg(long)]
         home: bool,
-        /// Run as a task window's sidebar pane: the list as a column beside
-        /// the task, fed by `tenx watch`'s snapshot; a jump switches windows
-        /// and hands focus to the task; quit keys hand focus back instead.
-        #[arg(long, conflicts_with = "home")]
-        sidebar: bool,
         /// Print all tasks and workspaces as JSON (activity-sorted) instead of
         /// running the TUI — for scripts and other front ends.
         #[arg(long)]
         json: bool,
     },
-    /// Run the tenx client: the task list as a column beside the tmux
-    /// session, embedded in this terminal (experimental)
-    ///
-    /// One client per terminal. Ctrl+w shows and focuses the column, or
-    /// hides it from inside; moving the selection switches the task shown
-    /// on the right; ⏎ opens a task and puts the cursor in it. `:q` quits
-    /// the client, the session keeps running.
-    Client,
     /// Watch tasks and notify when one starts waiting on you
     ///
     /// Started automatically when tenx opens the session and runs until the
@@ -105,17 +91,6 @@ pub enum InternalCommands {
     /// Print listening ports per open task window as JSON — what `tenx watch`
     /// caches into each task's `.tenx-live.json`.
     Ports,
-    /// The sidebar pane of a task window (`cli::sidebar`): `cycle` is what
-    /// Ctrl+w runs — show the column and focus it, or from inside it hide
-    /// it; `toggle` adds or removes it without moving focus (the overlay's
-    /// `:sidebar`).
-    Sidebar {
-        #[arg(value_enum)]
-        action: SidebarAction,
-        /// The pane the key was pressed in (`#{pane_id}`), or any pane of the
-        /// window to act on. Default: the pane this runs in (`$TMUX_PANE`).
-        pane: Option<String>,
-    },
     /// Follow a background agent's transcript in a pane; exits when the agent
     /// does. Opened by `tenx watch` when a `--bg` session appears under a task.
     AgentLog {
@@ -128,12 +103,6 @@ pub enum InternalCommands {
         #[arg(long)]
         session: Option<String>,
     },
-}
-
-#[derive(Clone, Copy, clap::ValueEnum)]
-pub enum SidebarAction {
-    Cycle,
-    Toggle,
 }
 
 #[derive(Subcommand)]

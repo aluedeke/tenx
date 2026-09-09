@@ -14,11 +14,10 @@ Inside the binary the layers are independent and wired together by the CLI dispa
 ```
 cli/         argument parsing and one file per subcommand group
 tui/         the ratatui overlay
-tmux/        the session layer: server, config, windows, panes, bell flags
+tmux/        the session layer: server, config, windows, bell flags
 workspace/   the on-disk model: workspaces, tasks, registry, Claude's session registry
 git/         worktree and bare-repo operations
 live.rs      the per-task cache of external facts (ports, PRs)
-snapshot.rs  the watcher's snapshot of every task, which the sidebar panes render
 ```
 
 ## On disk
@@ -37,13 +36,13 @@ The only per-task files tenx owns:
 | `.tenx-live.json` | Cache of ports and PR facts, written only by the watcher. |
 | `.secrets-pending`, `.secrets-pending-set` | Queues of secret requests waiting for a human. |
 
-User-level state lives under `~/.config/tenx/`: a global `config.toml`, the generated `tmux.conf`, the watcher's pid file, its `sidebar.json` snapshot, and `workspaces.d/`, a registry with one file per workspace so the overlay can find them all. Registration is one atomic file write.
+User-level state lives under `~/.config/tenx/`: a global `config.toml`, the generated `tmux.conf`, the watcher's pid file, and `workspaces.d/`, a registry with one file per workspace so the overlay can find them all. Registration is one atomic file write.
 
 ## The session layer
 
-tenx runs its own tmux server on a dedicated socket (`tmux -L tenx`) against a config it generates. Your `~/.tmux.conf` is never read. The config carries the theme, hides the window list in favour of per-window `@tenx_status` options, turns on `monitor-bell`, and binds `Ctrl+w` to the task list: in a task window the sidebar column, shown and focused from the task and hidden from inside it; on a small client a `display-popup` running `tenx overlay`.
+tenx runs its own tmux server on a dedicated socket (`tmux -L tenx`) against a config it generates. Your `~/.tmux.conf` is never read. The config carries the theme, hides the window list in favour of per-window `@tenx_status` options, turns on `monitor-bell`, and binds `Ctrl+w` to a `display-popup` running `tenx overlay` for a client attached to the session directly; inside `tenx`'s own client the key never reaches tmux.
 
-Windows are tasks. `open_task_window` builds the default layout with `new-window` and `split-window`, or runs the workspace's layout script with the task's paths in the environment, then adds the sidebar on the left: a full-height pane running `tenx overlay --sidebar`, a fifth of the window wide, marked with the pane option `@tenx_sidebar`. tmux numbers panes by position, so the sidebar is pane 0 and the task's own panes start at 1; `main_pane` finds the task's first pane, which is where a jump lands. `attach_or_create` execs `new-session -A` with window 0 running `tenx overlay --home` in a restart loop.
+Windows are tasks. `open_task_window` builds the default layout with `new-window` and `split-window`, or runs the workspace's layout script with the task's paths in the environment. `ensure_session` starts the server detached with window 0 running `tenx overlay --home` in a restart loop; `attach_or_create` does the same and attaches, for a plain `tmux` client.
 
 tmux reads its config once at server start. After changing the generated config, kill the server and run `tenx` again.
 
@@ -66,7 +65,6 @@ Blocked and Signaled are the "needs you" states. The watcher notifies on the edg
 - A desktop notification on the edge into Blocked, debounced. Tasks already waiting at start are treated as already notified. Done never notifies, since it fires after every turn.
 - The status bar: `@tenx_status` per task window (glyph, lock when secrets are pending, PR and port chips) and the global right corner, which counts tasks needing you other than the current one. Done is gated on sixty seconds unanswered so the corner does not flicker. Nothing is sent when nothing changed.
 - A log pane for each background agent, once per working directory and pid, running `tenx internal agent-log`, which follows the agent's transcript and exits with it.
-- The sidebar snapshot, `~/.config/tenx/sidebar.json`: every task with its status, timestamps, window, pane and chips. Written only when the document changed, touched otherwise, so the file's mtime tells a sidebar both "something changed" and "the watcher is alive".
 
 The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on a helper thread with a time-to-live that lengthens for parked tasks. It exits when the tmux server is gone.
 
@@ -74,7 +72,7 @@ The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on
 
 `tui/overlay.rs` is the single overlay implementation. It lists every task from every registered workspace, sectioned by attention group, fuzzy-filtered, with a search field in insert mode and a list in normal mode. Actions call straight into the `cli::task` and `cli::repo` functions rather than duplicating their logic.
 
-It runs on three surfaces. *Home* is window 0 of the session: a jump selects the task's window and the overlay stays; quit keys are swallowed. *Popup* is the `Ctrl+w` instance in a window without a sidebar: a jump exits, and tmux closes the popup. Run from a plain terminal outside tmux, a jump records the target and the process attaches after teardown. The *sidebar* is a pane in every task window, the list as a column beside the task, the layout cmux made familiar. There can be a dozen of them, so a sidebar does not resolve tasks itself: it renders the watcher's snapshot, polling one file's mtime per tick, and only resolves on its own when no watcher is running, saying so in its footer. A jump switches the window and puts the cursor in the task's pane; quit keys put it there without switching. `Ctrl+w` shows the column and focuses it, and from inside the column hides it again; `:hide` and `:sidebar` do the same from the command line. The sidebar is on by default and `sidebar = false` in the global config turns it off for new windows.
+It runs on three surfaces. The *client* is what `tenx` opens in a terminal (`tui/client.rs`): one process that owns the terminal, the overlay as a column on the left and `tmux attach` running in a pty on the right (`tui/term.rs`: a `vt100` parser painted by `tui-term`'s widget, keys and mouse encoded back into bytes, bells and OSC 52 clipboard writes forwarded to the real terminal). One client per terminal, each with its own list state. Moving the selection switches the window under the terminal; a closed task shows an empty screen until Enter opens it; `Ctrl+w` moves the keyboard between the column and the task and hides the column from inside; the column re-groups itself only while the keyboard is in the task. *Home* is window 0 of the session: a jump selects the task's window and the overlay stays; quit keys are swallowed. *Popup* is the `Ctrl+w` instance of a client attached to the session directly: a jump exits, and tmux closes the popup. Run from a plain terminal outside tmux, a jump records the target and the process attaches after teardown.
 
 Next to the list, a preview panel shows the selected task's Claude pane: `tmux capture-pane -e` on the pane the session registry names, refreshed on every tick. It is read-only and per client, which is why the overlay previews instead of switching the real window under itself: the current window is per session, so switching it would move every attached client, and merely visiting a window clears its bell flag.
 
