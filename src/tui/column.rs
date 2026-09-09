@@ -109,12 +109,30 @@ struct CreateForm {
     ws_idx: usize,
     name: String,
     repos: Vec<(String, bool)>,
+    /// The task's agent, or `None` to inherit the workspace/global default.
+    agent: Option<crate::agent::AgentKind>,
     focus: usize,
 }
 
 impl CreateForm {
     fn field_count(&self) -> usize {
+        // name, one per repo, then agent.
+        2 + self.repos.len()
+    }
+    /// Focus index of the agent field (the last one).
+    fn agent_field(&self) -> usize {
         1 + self.repos.len()
+    }
+    /// Cycle the agent choice: default → claude → codex → pi → default.
+    fn cycle_agent(&mut self, back: bool) {
+        use crate::agent::AgentKind::{Claude, Codex, Pi};
+        let order = [None, Some(Claude), Some(Codex), Some(Pi)];
+        let cur = order.iter().position(|a| *a == self.agent).unwrap_or(0);
+        let n = order.len();
+        self.agent = order[if back { (cur + n - 1) % n } else { (cur + 1) % n }];
+    }
+    fn agent_label(&self) -> String {
+        self.agent.map(|k| k.as_str().to_string()).unwrap_or_else(|| "default".to_string())
     }
     fn focus_next(&mut self) {
         self.focus = (self.focus + 1) % self.field_count();
@@ -1242,6 +1260,7 @@ impl Column {
             ws_idx,
             name: String::new(),
             repos,
+            agent: None,
             focus: 0,
         });
     }
@@ -1275,8 +1294,13 @@ impl Column {
             },
             KeyCode::Tab | KeyCode::Down => form.focus_next(),
             KeyCode::BackTab | KeyCode::Up => form.focus_prev(),
+            // On the agent field, arrows cycle the choice.
+            KeyCode::Right if form.focus == form.agent_field() => form.cycle_agent(false),
+            KeyCode::Left if form.focus == form.agent_field() => form.cycle_agent(true),
             KeyCode::Char(' ') => {
-                if form.focus >= 1 {
+                if form.focus == form.agent_field() {
+                    form.cycle_agent(false);
+                } else if form.focus >= 1 {
                     let i = form.focus - 1;
                     if i < form.repos.len() {
                         form.repos[i].1 = !form.repos[i].1;
@@ -1335,7 +1359,7 @@ impl Column {
                 pane: None,
                 live: crate::live::Live::default(),
                 repos,
-                agent: crate::agent::agent_for(ws, &ws.dir.join("tasks").join(&slug)),
+                agent: form.agent.unwrap_or_else(|| crate::agent::agent_for(ws, &ws.dir.join("tasks").join(&slug))),
                 secrets_pending: vec![],
                 secrets_pending_set: vec![],
                 section: TaskStatus::Working.group(),
@@ -1348,6 +1372,11 @@ impl Column {
             // runs right after this.
             let ws = &self.workspaces[ws_idx];
             crate::cli::task::new_in(ws, &name, Some(&repos), true).map_err(|e| e.to_string())?;
+            // Pin the chosen agent before `jump` opens the window; `None`
+            // inherits the workspace/global default.
+            if let Some(kind) = form.agent {
+                let _ = crate::agent::set_task_agent(&ws.dir.join("tasks").join(&slug), Some(kind));
+            }
             self.filter.clear();
             self.rebuild_rows();
         }
@@ -2436,6 +2465,12 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         lines.push(Line::from(Span::styled(format!("{prefix}{check} {name}"), style)));
     }
 
+    // Agent picker (the last field): ← / → or space cycle it.
+    lines.push(Line::from(""));
+    let focused = form.focus == form.agent_field();
+    let value = if form.agent.is_none() { format!("{}  (inherits default)", form.agent_label()) } else { form.agent_label() };
+    lines.push(field_line(focused, "agent", &format!("‹ {value} ›")));
+
     let body = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" new task "));
     f.render_widget(body, chunks[0]);
@@ -2447,7 +2482,7 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         ))
     } else {
         Line::from(Span::styled(
-            " ⏎ create   esc cancel   ⇥ next   space toggle repo",
+            " ⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ agent",
             Style::default().fg(palette::MUTED.color()),
         ))
     };
