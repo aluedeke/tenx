@@ -33,8 +33,8 @@ impl Harness {
         fs::create_dir_all(root.join("ws/tasks")).unwrap();
         let h = Harness { root, socket: name, tmux };
 
-        // Fake agent/editor: something that stays alive so the pane persists.
-        for name in ["claude", "nvim"] {
+        // Fake agents/editor: something that stays alive so the pane persists.
+        for name in ["claude", "codex", "pi", "nvim"] {
             let p = h.root.join("bin").join(name);
             fs::write(&p, "#!/bin/sh\nexec sleep 600\n").unwrap();
             #[cfg(unix)]
@@ -357,4 +357,72 @@ fn client_column_beside_the_embedded_session() {
     assert!(err.trim().is_empty(), "client stderr: {err}");
     let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_name}"]);
     assert!(windows.lines().any(|l| l == "two"), "session survives the client: {windows}");
+
+#[test]
+fn codex_task_launches_and_reports_state_through_the_registry() {
+    let Some(h) = Harness::new() else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    // Register the workspace so `overlay --json` enumerates it.
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+
+    // A task pinned to Codex launches the fake `codex` in its first pane.
+    let out = h.tenx().args(["task", "new", "Cx Task", "--agent", "codex", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new --agent codex: {}", String::from_utf8_lossy(&out.stderr));
+    let task_dir = h.root.join("ws/tasks/cx-task");
+    assert_eq!(fs::read_to_string(task_dir.join(".tenx-agent")).unwrap().trim(), "codex");
+    let cmds = h.tmux_out(&["list-panes", "-t", "tenx:cx-task", "-F", "#{pane_start_command}"]);
+    assert!(cmds.lines().any(|l| l.contains("codex")), "first pane runs codex: {cmds}");
+
+    // `task agent` reports the override.
+    let out = h.tenx().args(["task", "agent", "cx-task", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("codex"), "task agent shows codex");
+
+    // A Codex hook event (keyed by the pane's own pid) drives the task to
+    // Working through tenx's registry — the same path a real hook takes.
+    let pane_pid = h
+        .tmux_out(&["list-panes", "-t", "tenx:cx-task", "-F", "#{pane_pid}"])
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    let payload = format!(r#"{{"hook_event_name":"UserPromptSubmit","cwd":"{}"}}"#, task_dir.display());
+    let mut child = h
+        .tenx()
+        .args(["internal", "session-event", "--agent", "codex", "--pid", &pane_pid])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    child.stdin.take().unwrap().write_all(payload.as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success());
+
+    let mut status = String::new();
+    for _ in 0..20 {
+        let out = h.tenx().args(["overlay", "--json"]).output().unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        if let Some(task) = json["tasks"].as_array().unwrap().iter().find(|t| t["slug"] == "cx-task") {
+            status = task["status"].as_str().unwrap_or_default().to_string();
+            assert_eq!(task["agent"].as_str(), Some("codex"), "agent field in json");
+            if status == "working" {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert_eq!(status, "working", "codex UserPromptSubmit should surface as working");
+
+    // SessionEnd removes the record → the task falls back to idle.
+    let payload = format!(r#"{{"hook_event_name":"SessionEnd","cwd":"{}"}}"#, task_dir.display());
+    let mut child = h
+        .tenx()
+        .args(["internal", "session-event", "--agent", "codex", "--pid", &pane_pid])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(payload.as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success());
+    assert!(!h.root.join(format!("home/.config/tenx/sessions/{pane_pid}.json")).exists(), "record deleted on SessionEnd");
 }
