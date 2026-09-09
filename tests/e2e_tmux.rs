@@ -145,6 +145,20 @@ impl Harness {
         self.tmux_out(&["display", "-p", "-t", session, "#{window_name}"])
     }
 
+    /// A task window's size, `WxH`.
+    fn size_of(&self, window: &str) -> String {
+        self.tmux_out(&["display", "-p", "-t", &format!("tenx:{window}"), "#{window_width}x#{window_height}"])
+    }
+
+    /// Poll the server until `pred` holds, or fail after `secs`.
+    fn wait_until(&self, what: &str, secs: u64, pred: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+        while !pred() {
+            assert!(std::time::Instant::now() < deadline, "waiting for {what}");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
+
     fn outer_tmux(&self) -> Command {
         let mut c = Command::new(&self.tmux);
         c.args(["-L", &self.outer()]);
@@ -396,23 +410,58 @@ fn client_column_beside_the_embedded_session() {
     h.wait_screen_of("p", "the phone's task", 10, |s| s.lines().last().is_some_and(|l| l.contains("one")));
     let phone = h.client_session("70");
     assert_ne!(phone, own);
-    assert_eq!(h.current_of(&phone), "one", "a new client starts on the first task window");
+    assert_eq!(h.current_of(&phone), "one", "a new client starts on a task window nobody is on");
     assert_eq!(current(), "two", "the first client is untouched");
+    // A window is sized by whoever is looking at it: the phone's task takes
+    // the phone's size (its 30 rows less tmux's status line), the desktop's
+    // keeps the desktop's (180 minus the 36-column list, 40 rows less one).
+    h.wait_until("the phone's window sized to the phone", 5, || h.size_of("one") == "70x29");
+    assert_eq!(h.size_of("two"), "144x39");
     // Narrow: no column beside the task; Ctrl+w shows the list over the
-    // whole screen, ↑ switches this client's window only, ⏎ hides it again.
+    // whole screen. The list is "no task": the phone's session parks on the
+    // home window, so its task, now unviewed, gets the desktop's size back
+    // (the watcher, within a couple of ticks), and browsing the list
+    // switches nothing — only ⏎ does, which hides the list again.
     assert!(!h.screen_of("p").contains("Tasks"), "no column on a narrow client");
     h.keys_to("p", &["C-w"]);
     h.wait_screen_of("p", "the full-screen list", 3, |s| s.contains(" NORMAL ") && s.contains("Tasks"));
+    assert_eq!(h.current_of(&phone), "home", "the list open is no task");
+    h.wait_until("the left task reset to the desktop's size", 8, || h.size_of("one") == "144x39");
     h.keys_to("p", &["Up"]);
     std::thread::sleep(std::time::Duration::from_millis(700));
-    assert_eq!(h.current_of(&phone), "two", "Up switches the phone's window");
+    assert_eq!(h.current_of(&phone), "home", "browsing the list switches nothing on a phone");
     assert_eq!(current(), "two", "the first client still where it was");
     h.keys_to("p", &["Up"]);
     std::thread::sleep(std::time::Duration::from_millis(700));
-    assert_eq!(h.current_of(&phone), "three");
-    assert_eq!(current(), "two");
+    assert_eq!(h.current_of(&phone), "home");
     h.keys_to("p", &["Enter"]);
     h.wait_screen_of("p", "the list to hide after the jump", 3, |s| !s.contains("Tasks"));
+    assert_eq!(h.current_of(&phone), "three", "⏎ opens the task under the cursor: two up from where the phone was");
+    assert_eq!(current(), "two");
+    h.wait_until("the opened task sized to the phone", 5, || h.size_of("three") == "70x29");
+    // Ctrl+w twice: park on the list, come back to the same task.
+    h.keys_to("p", &["C-w"]);
+    h.wait_screen_of("p", "the list again", 3, |s| s.contains("Tasks"));
+    assert_eq!(h.current_of(&phone), "home");
+    h.keys_to("p", &["C-w"]);
+    h.wait_screen_of("p", "the task again", 3, |s| !s.contains("Tasks"));
+    assert_eq!(h.current_of(&phone), "three", "hiding the list without a jump returns to the task it covered");
+    // Two clients on one window: it takes the smallest of them. The phone
+    // opens the desktop's task and it shrinks to the phone; the phone goes
+    // back to its list and the desktop, alone on it again, gets it back.
+    h.keys_to("p", &["C-w"]);
+    h.wait_screen_of("p", "the list", 3, |s| s.contains("Tasks"));
+    h.keys_to("p", &["Down", "Enter"]);
+    h.wait_screen_of("p", "the shared task", 3, |s| !s.contains("Tasks"));
+    assert_eq!(h.current_of(&phone), "two");
+    assert_eq!(current(), "two", "the desktop is still on it");
+    h.wait_until("the shared task sized to the phone, the smaller", 5, || h.size_of("two") == "70x29");
+    h.keys_to("p", &["C-w"]);
+    h.wait_screen_of("p", "the list", 3, |s| s.contains("Tasks"));
+    h.wait_until("the desktop, alone again, to get its task back", 5, || h.size_of("two") == "144x39");
+    h.keys_to("p", &["C-w"]);
+    h.wait_screen_of("p", "the task again", 3, |s| !s.contains("Tasks"));
+    h.wait_until("the phone back on it, phone-sized again", 5, || h.size_of("two") == "70x29");
     // Crossing the width threshold re-lays the client out: wide brings the
     // column beside the task, narrow again takes it away (the task keeps
     // the keyboard, so the list must not sit on top of it).
@@ -420,12 +469,15 @@ fn client_column_beside_the_embedded_session() {
     h.wait_screen_of("p", "the column beside the task", 3, |s| s.contains("Tasks") && s.contains(" INSERT "));
     h.outer_out(&["resize-window", "-t", "p", "-x", "70", "-y", "30"]);
     h.wait_screen_of("p", "the column to fold away", 3, |s| !s.contains("Tasks"));
-    // Closing the phone's terminal takes its session with it, not the windows.
+    // Closing the phone's terminal takes its session with it, not the
+    // windows; its task, unviewed now, goes back to the desktop's size.
     h.outer_out(&["kill-session", "-t", "p"]);
     std::thread::sleep(std::time::Duration::from_millis(500));
     let sessions = h.tmux_out(&["list-sessions", "-F", "#{session_name}"]);
     assert!(!sessions.lines().any(|l| l == phone), "the phone's session is gone: {sessions}");
     assert_eq!(h.current_of(&own), "two");
+    h.wait_until("the desktop's task back at its size", 5, || h.size_of("two") == "144x39");
+    h.wait_until("the phone's earlier task reset to the desktop's size", 8, || h.size_of("three") == "144x39");
 
     // `:q` from the column quits the client; the session lives on.
     h.keys(&["C-w"]);

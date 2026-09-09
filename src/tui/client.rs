@@ -61,6 +61,13 @@ pub(super) struct Client {
     /// A terminal too narrow for a column: the list takes the whole screen
     /// while shown.
     narrow: bool,
+    /// The window this client's session is on, as last seen — sized to this
+    /// client on arrival when nobody else is on it (`arrive`).
+    viewed: Option<String>,
+    /// On a narrow client, the window left for the home window while the
+    /// list covers the screen (`park`): being on no task at all, so the
+    /// watcher can give the window back its desktop size meanwhile.
+    parked: Option<String>,
     size: (u16, u16),
     last_refresh: Instant,
     quit: bool,
@@ -80,14 +87,99 @@ impl Client {
             column_shown: !narrow,
             column_width,
             narrow,
+            viewed: None,
+            parked: None,
             size: (cols, rows),
             last_refresh: Instant::now(),
             quit: false,
         };
+        c.column.follow = !narrow;
         let (r, w) = c.term_size();
         term.resize(r, w);
         c.term = term;
         c
+    }
+
+    /// The size a window shown in this client's task area gets, as tmux
+    /// reports this client's tty.
+    fn tty_size(&self) -> (u16, u16) {
+        let (r, c) = self.term_size();
+        (c, r)
+    }
+
+    /// This client's session moved onto window `id`: give it the size it
+    /// should now have (`settle`) — a phone arriving on a desktop-sized
+    /// window would otherwise see a clipped corner of it until the watcher's
+    /// next tick.
+    fn arrive(&mut self, id: &str) {
+        self.viewed = Some(id.to_string());
+        self.parked = None;
+        self.column.parked = None;
+        self.settle();
+    }
+
+    /// Size the window this client is on by the rule
+    /// (`tenx_core::column::expected_size`): the smallest of the clients on
+    /// it, this one included. Every tick, so the desktop gets its task back
+    /// the moment the phone leaves it, by whatever route.
+    fn settle(&mut self) {
+        if self.parked.is_some() || self.column.offline {
+            return;
+        }
+        let (Some(id), Some(slug)) = (self.viewed.clone(), self.column.current_slug()) else { return };
+        let clients = crate::tmux::clients();
+        let attached: Vec<(u16, u16)> = clients.iter().map(|c| (c.cols, c.rows)).collect();
+        let mut on_it: Vec<(u16, u16)> =
+            clients.iter().filter(|c| c.task.as_deref() == Some(slug.as_str())).map(|c| (c.cols, c.rows)).collect();
+        on_it.push(self.tty_size());
+        if let Some(size) = tenx_core::column::expected_size(&on_it, &attached)
+            && crate::tmux::window_size_of(&id).is_some_and(|cur| cur != size)
+        {
+            let _ = crate::tmux::resize_window(&id, size.0, size.1);
+        }
+    }
+
+    /// Re-size the window this client is on after its own terminal changed:
+    /// tmux stops sizing a window itself once it has been sized explicitly.
+    fn resize_viewed(&mut self) {
+        self.settle();
+    }
+
+    /// A narrow client's list covers the task: move its session to the home
+    /// window meanwhile, so it is on no task — the watcher gives the task
+    /// its desktop size back, browsing the list switches nothing, and sweep
+    /// sees a window nobody is looking at.
+    fn park(&mut self) {
+        if self.column.offline || self.parked.is_some() {
+            return;
+        }
+        // Before the first tick has recorded the window, the column knows it.
+        let Some(id) = self.viewed.take().or_else(|| self.column.current_window_id()) else { return };
+        if crate::tmux::select_window(crate::tmux::HOME_WINDOW).is_ok() {
+            self.column.parked = self.column.current_slug();
+            self.parked = Some(id);
+        } else {
+            self.viewed = Some(id);
+        }
+    }
+
+    /// The list went away without a jump: back onto the task it covered.
+    fn unpark(&mut self) {
+        let Some(id) = self.parked.take() else { return };
+        if crate::tmux::select_window(&id).is_ok() {
+            self.arrive(&id);
+        }
+    }
+
+    /// After the column handled input: size a window it switched to, then
+    /// act on what it asked of the client.
+    fn after_column(&mut self) {
+        if let Some(id) = self.column.take_switched() {
+            self.arrive(&id);
+        }
+        if let Some(req) = self.column.take_request() {
+            self.handle_request(req);
+        }
     }
 
     /// The column's and the terminal's areas for the current state.
@@ -128,16 +220,25 @@ impl Client {
         // column back beside the task, focus untouched.
         match (was_narrow, self.narrow) {
             (false, true) if self.column_shown && self.focus == Focus::Terminal => self.column_shown = false,
-            (true, false) => self.column_shown = true,
+            (false, true) if self.column_shown => self.park(),
+            (true, false) => {
+                self.column_shown = true;
+                self.unpark();
+            }
             _ => {}
         }
+        self.column.follow = !self.narrow;
         let (r, c) = self.term_size();
         self.term.resize(r, c);
+        self.resize_viewed();
     }
 
     fn show_column(&mut self) {
         self.column_shown = true;
         self.focus_column();
+        if self.narrow {
+            self.park();
+        }
         let (r, c) = self.term_size();
         self.term.resize(r, c);
     }
@@ -159,6 +260,9 @@ impl Client {
         self.focus_terminal();
         let (r, c) = self.term_size();
         self.term.resize(r, c);
+        // A jump already moved the session on (and cleared the parking);
+        // plain Ctrl+w or `:hide` goes back to the task the list covered.
+        self.unpark();
     }
 
     /// Ctrl+w: from the terminal, bring up the column (focused); from the
@@ -198,9 +302,7 @@ impl Client {
             }
             Focus::Column => {
                 self.column.handle_key(key)?;
-                if let Some(req) = self.column.take_request() {
-                    self.handle_request(req);
-                }
+                self.after_column();
                 self.trace(&format!("key {:?} {:?}", key.modifiers, key.code));
             }
         }
@@ -220,9 +322,7 @@ impl Client {
                 self.focus = Focus::Column;
             }
             self.column.handle_mouse(m)?;
-            if let Some(req) = self.column.take_request() {
-                self.handle_request(req);
-            }
+            self.after_column();
             self.trace(&format!("mouse {:?} in column", m.kind));
             return Ok(());
         }
@@ -265,6 +365,17 @@ impl Client {
                 if self.column.sections_stale() {
                     self.column.tidy();
                 }
+            }
+            // The session may have been moved from outside — `tenx task
+            // open` in a pane, the attach's own first `select-window`:
+            // whatever window it is on now gets sized for this client.
+            if self.parked.is_none()
+                && let Some(id) = self.column.current_window_id()
+                && self.viewed.as_deref() != Some(id.as_str())
+            {
+                self.arrive(&id);
+            } else {
+                self.settle();
             }
         }
     }
@@ -374,11 +485,13 @@ pub fn run() -> Result<()> {
     crate::tmux::set_view_session(&session);
     // A fresh grouped session starts on the group's first window, the home
     // shell — but the column is the list; landing there would show the list
-    // twice. Start on a task window when there is one.
-    let start_on = crate::tmux::list_windows()
-        .ok()
-        .and_then(|ws| ws.into_iter().find(|w| w.name != crate::tmux::HOME_WINDOW))
-        .map(|w| w.id);
+    // twice. Start on a task window when there is one: preferably one no
+    // other client is on, so this client can size it for itself instead of
+    // landing in a tug of war over a window the desktop is working in.
+    let start_on = crate::tmux::list_windows().ok().and_then(|ws| {
+        let tasks: Vec<_> = ws.into_iter().filter(|w| w.name != crate::tmux::HOME_WINDOW).collect();
+        tasks.iter().find(|w| !w.active).or(tasks.first()).map(|w| w.id.clone())
+    });
 
     let orig = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

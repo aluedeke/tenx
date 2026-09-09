@@ -115,18 +115,35 @@ fn latest_client_session() -> Option<String> {
         .map(|(_, s)| s)
 }
 
-/// Every attached client as (its session, the task it is looking at — `None`
-/// on the home window). What the watcher's per-client status corner and the
-/// e2e tests read.
-pub fn clients() -> Vec<(String, Option<String>)> {
-    let Ok(out) = run(&["list-clients", "-F", "#{client_session}\t#{window_name}"]) else {
+/// One attached client as `list-clients` reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientView {
+    /// Its grouped session (see the module doc).
+    pub session: String,
+    /// The task it is looking at — `None` on the home window, which is also
+    /// where a narrow client parks while its list covers the screen.
+    pub task: Option<String>,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// Every attached client: what the watcher's per-client status corner and
+/// window-size reset read, and the e2e tests.
+pub fn clients() -> Vec<ClientView> {
+    let Ok(out) = run(&["list-clients", "-F", "#{client_session}\t#{window_name}\t#{client_width}\t#{client_height}"]) else {
         return vec![];
     };
     out.lines()
         .filter_map(|l| {
-            let (s, w) = l.split_once('\t')?;
-            let w = w.trim();
-            Some((s.trim().to_string(), (!w.is_empty() && w != HOME_WINDOW).then(|| w.to_string())))
+            let mut f = l.split('\t');
+            let session = f.next()?.trim().to_string();
+            let w = f.next()?.trim();
+            Some(ClientView {
+                session,
+                task: (!w.is_empty() && w != HOME_WINDOW).then(|| w.to_string()),
+                cols: f.next()?.trim().parse().ok()?,
+                rows: f.next()?.trim().parse().ok()?,
+            })
         })
         .collect()
 }
@@ -137,7 +154,7 @@ pub const HOME_WINDOW: &str = "home";
 pub const MIN_VERSION: (u32, u32) = (3, 3);
 /// A terminal narrower than this gets no column beside the task; the list
 /// shows over the whole screen on Ctrl+w instead (`tui::client`).
-pub const SMALL_CLIENT_COLS: u32 = 100;
+pub const SMALL_CLIENT_COLS: u32 = tenx_core::column::SMALL_CLIENT_COLS as u32;
 /// Per-task cache of the window id (`@12`) last opened for it. A fast path
 /// only — `find_window` by slug is the source of truth, and a stale id (server
 /// restarted) is simply treated as "not open".
@@ -161,6 +178,10 @@ pub struct Window {
     /// `tenx_core::status::Signal`).
     pub bell: bool,
     pub activity: bool,
+    /// The window's one size, whatever clients are on it (see
+    /// `tenx_core::column` for who decides it).
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// The bell/activity flags of every task window, keyed by window name (= task
@@ -497,8 +518,7 @@ pub fn attach_command(name: &str, start_on: Option<&str>) -> (PathBuf, Vec<Strin
 
 // ── Windows ───────────────────────────────────────────────────────────────────
 
-const WINDOW_FORMAT: &str =
-    "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active_clients}\t#{window_bell_flag}\t#{window_activity_flag}";
+const WINDOW_FORMAT: &str = "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active_clients}\t#{window_bell_flag}\t#{window_activity_flag}\t#{window_width}\t#{window_height}";
 
 /// Every window of the base session — the group's, so every client's. Empty (not an error) when the server is down
 /// — one subprocess either way: a failed `list-windows` *is* the liveness
@@ -549,7 +569,9 @@ pub fn is_reserved_slug(slug: &str) -> bool {
 }
 
 /// Make window `id` the current one of the [`view_session`] — this client's,
-/// never another's.
+/// never another's. `id` may also be [`HOME_WINDOW`]: where a narrow client
+/// parks while its list covers the screen, so it counts as looking at
+/// nothing.
 pub fn select_window(id: &str) -> Result<()> {
     run(&["select-window", "-t", &format!("{}:{id}", view_session())]).map(drop)
 }
@@ -704,7 +726,24 @@ fn parse_window(line: &str) -> Option<Window> {
         active: f.next()? != "0",
         bell: f.next()? == "1",
         activity: f.next()? == "1",
+        cols: f.next()?.parse().ok()?,
+        rows: f.next()?.parse().ok()?,
     })
+}
+
+/// Window `id`'s current size.
+pub fn window_size_of(id: &str) -> Option<(u16, u16)> {
+    let out = run(&["display-message", "-p", "-t", id, "#{window_width} #{window_height}"]).ok()?;
+    let mut f = out.split_whitespace();
+    Some((f.next()?.parse().ok()?, f.next()?.parse().ok()?))
+}
+
+/// Size window `id` explicitly. tmux then stops sizing that window itself
+/// (`window-size` becomes `manual` for it), so from here on the clients on
+/// it and the watcher (`cli::watch::settle_sizes`) own its size — the rule
+/// is `tenx_core::column::expected_size`.
+pub fn resize_window(id: &str, cols: u16, rows: u16) -> Result<()> {
+    run(&["resize-window", "-t", id, "-x", &cols.to_string(), "-y", &rows.to_string()]).map(drop)
 }
 
 /// POSIX single-quote quoting for the shell strings tmux runs.
@@ -727,10 +766,11 @@ mod tests {
     #[test]
     fn parses_window_lines() {
         // The fourth column counts the clients looking at the window.
-        let w = parse_window("@3\t2\tadd-repos\t2\t0\t1").unwrap();
+        let w = parse_window("@3\t2\tadd-repos\t2\t0\t1\t144\t44").unwrap();
         assert_eq!((w.id.as_str(), w.name.as_str()), ("@3", "add-repos"));
         assert!(w.active && !w.bell && w.activity);
-        assert!(!parse_window("@3\t2\tadd-repos\t0\t0\t1").unwrap().active);
+        assert_eq!((w.cols, w.rows), (144, 44));
+        assert!(!parse_window("@3\t2\tadd-repos\t0\t0\t1\t70\t29").unwrap().active);
         assert!(parse_window("@3\tx").is_none());
     }
 
@@ -749,8 +789,8 @@ mod tests {
     #[test]
     fn home_is_never_a_task_window() {
         let windows = vec![
-            Window { id: "@0".into(), name: HOME_WINDOW.into(), active: true, bell: true, activity: true },
-            Window { id: "@1".into(), name: "foo".into(), active: false, bell: true, activity: false },
+            Window { id: "@0".into(), name: HOME_WINDOW.into(), active: true, bell: true, activity: true, cols: 80, rows: 24 },
+            Window { id: "@1".into(), name: "foo".into(), active: false, bell: true, activity: false, cols: 80, rows: 24 },
         ];
         let s = signals_from(&windows);
         assert!(!s.contains_key(HOME_WINDOW));

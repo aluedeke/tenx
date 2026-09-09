@@ -188,6 +188,7 @@ pub fn run() -> Result<()> {
             published = current;
             push_status(&snapshot.tasks, &snapshot.windows, &snapshot.clients);
         }
+        settle_sizes(&snapshot.windows, &snapshot.clients);
 
         if tick.is_multiple_of(SESSION_CHECK_POLLS) {
             let alive = crate::tmux::server_running();
@@ -244,7 +245,7 @@ struct Snapshot {
     /// Every attached client's session and the task it is looking at
     /// (`tmux::clients`): each gets a status corner of its own, about the
     /// *other* tasks, so a switch on one client is a status change for it.
-    clients: Vec<(String, Option<String>)>,
+    clients: Vec<crate::tmux::ClientView>,
     /// Tasks with a live Claude Code session, in the shared wire shape
     /// (`workspace::task_json`).
     ///
@@ -504,7 +505,7 @@ const RIGHT_WAIT_GATE_SECS: u64 = 60;
 /// for a bare `tmux attach` to the base session. Called only on a real
 /// change, so a quiet session costs nothing. Rows are `workspace::task_json`,
 /// which already carries the live chips — this doesn't re-read anything.
-fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window], clients: &[(String, Option<String>)]) {
+fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window], clients: &[crate::tmux::ClientView]) {
     if windows.is_empty() {
         return;
     }
@@ -518,8 +519,28 @@ fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window], cli
     }
 
     let _ = crate::tmux::set_global_option("@tenx_right", &right_corner(tasks, None));
-    for (session, current) in clients {
-        let _ = crate::tmux::set_session_option(session, "@tenx_right", &right_corner(tasks, current.as_deref()));
+    for c in clients {
+        let _ = crate::tmux::set_session_option(&c.session, "@tenx_right", &right_corner(tasks, c.task.as_deref()));
+    }
+}
+
+/// Give every task window the size it should have
+/// (`tenx_core::column::expected_size`): the smallest of the clients on it,
+/// or the widest attached client's when nobody is. The clients do the same
+/// for the window they are on, at once; this is the catch-all — a dropped
+/// connection, a client that never got to it — every tick, from the pass's
+/// own window and client lists, with a `resize-window` only when something
+/// differs, so a settled server sends nothing.
+fn settle_sizes(windows: &[crate::tmux::Window], clients: &[crate::tmux::ClientView]) {
+    let attached: Vec<(u16, u16)> = clients.iter().map(|c| (c.cols, c.rows)).collect();
+    for w in windows.iter().filter(|w| w.name != crate::tmux::HOME_WINDOW) {
+        let on_it: Vec<(u16, u16)> =
+            clients.iter().filter(|c| c.task.as_deref() == Some(w.name.as_str())).map(|c| (c.cols, c.rows)).collect();
+        if let Some(size) = tenx_core::column::expected_size(&on_it, &attached)
+            && size != (w.cols, w.rows)
+        {
+            let _ = crate::tmux::resize_window(&w.id, size.0, size.1);
+        }
     }
 }
 
@@ -622,7 +643,7 @@ fn status_line(t: &serde_json::Value, slug: &str) -> String {
 /// itself between pushes. Everything else here is a real state change worth a
 /// repaint — including which task each client is looking at, since its
 /// corner counts the others.
-fn digest(tasks: &[serde_json::Value], clients: &[(String, Option<String>)]) -> String {
+fn digest(tasks: &[serde_json::Value], clients: &[crate::tmux::ClientView]) -> String {
     let mut out = String::new();
     for t in tasks {
         out.push_str(&format!(
@@ -630,8 +651,8 @@ fn digest(tasks: &[serde_json::Value], clients: &[(String, Option<String>)]) -> 
             t["ws_dir"], t["slug"], t["status"], t["waiting_for"], t["sessions"], t["agents"],
         ));
     }
-    for (session, current) in clients {
-        out.push_str(&format!("{session}@{}\n", current.as_deref().unwrap_or("")));
+    for c in clients {
+        out.push_str(&format!("{}@{}\n", c.session, c.task.as_deref().unwrap_or("")));
     }
     out
 }
