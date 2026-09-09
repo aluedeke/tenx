@@ -6,7 +6,7 @@
 
 Coding agents make it cheap to have several pieces of work in flight at once. The expensive part is everything around them: each task needs its own branch and checkout in every repo it touches, its own agent session, an editor and a shell, and you need to know at a glance which agent is stuck waiting on you and which is still working. Switching between five terminal tabs to find out does not scale.
 
-`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running Claude Code, an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
+`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running a coding agent (Claude Code, Codex, or pi), an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
 
 ![A tenx session in motion: the task column beside an agent, switching tasks, filtering, and an agent that stops and needs you](docs/demo.gif)
 
@@ -37,7 +37,7 @@ A task's state is derived live, never recorded:
 | Done | Claude finished its turn and nothing has happened since. |
 | Idle | No live Claude session in the task. |
 
-The state comes from Claude Code's own session registry plus tmux's bell flag. tenx installs no hooks and writes no state of its own.
+The state comes from tenx's own session registry plus tmux's bell flag. Every supported agent — Claude Code, Codex CLI, and pi — feeds that registry the same way, through its own hooks or extension, so the state model is identical whichever agent a task runs. `tenx agent setup <agent>` installs the integration (Claude Code and pi need no trust step; Codex asks you to trust its hook once via `/hooks`), and `tenx` does it for you on first launch.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ The state comes from Claude Code's own session registry plus tmux's bell flag. t
 
 Optional, picked up when present:
 
-- `claude` (Claude Code CLI). The default window layout starts it.
+- A coding agent: `claude` (Claude Code, the default), `codex` (Codex CLI), or `pi`. The default window layout starts the task's agent; set the workspace default with `agent = "codex"` in `config.toml`, or a task's with `tenx task agent <slug> <agent>` / `tenx task new --agent <agent>`.
 - `nvim`. The default layout opens `TASK.md` in it.
 - `gh`. Shows the task branch's pull request as a chip in the column and status bar.
 - `lsof`. Shows ports the task's processes are listening on.
@@ -173,13 +173,16 @@ On a terminal under 100 columns there is no room for a column beside the task, s
 
 Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks immediately, finished tasks after `--after` (default 8h). It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
 
-## Claude Code integration
+## Agent integration
 
-- **Skills.** `tenx init` offers to install `/tenx` and `/standup` into the workspace's `.claude/skills/`. `/tenx` teaches a session about the workspace layout, how to create tasks from tickets, and how to request secrets. `/standup` formats the output of `tenx standup`.
-- **Status.** Each task window shows its state in the tmux status bar, and the right corner counts tasks needing you in other windows.
-- **Background agents.** A non-interactive Claude session running under a task gets a small log pane in that task's window that follows its transcript and closes when it exits.
-- **Tickets.** `tenx task new --description ".." --link "Linear: <url>"` pre-fills `TASK.md`. The skill fetches ticket details when an issue-tracker MCP tool is connected.
-- **Resume.** Reopening a swept or closed task passes `--continue` to Claude, so the conversation picks up where it left off.
+tenx supports Claude Code, Codex CLI, and pi, and treats them uniformly.
+
+- **State.** Each agent reports its status to tenx's session registry through its own hooks (Claude Code, Codex) or a small extension (pi). `tenx agent setup <agent>` installs the integration and `tenx doctor` reports what is wired up; a Codex task also gets its directory trusted in `~/.codex/config.toml` when it opens.
+- **Skills.** `tenx init` offers to install `/tenx` and `/standup` into `.claude/skills/` (for Claude Code) and a portable copy into `.agents/skills/` (for Codex and pi), plus an `AGENTS.md`. `/tenx` teaches a session about the workspace layout, creating tasks from tickets, and requesting secrets; `/standup` formats `tenx standup`.
+- **Status.** Each task window shows its state in the tmux status bar, with the agent named when it isn't the default; the right corner counts tasks needing you in other windows.
+- **Background agents.** A non-interactive session (`codex exec`, `claude -p`, `pi -p`) running under a task gets a small log pane that follows its transcript and closes when it exits.
+- **Tickets.** `tenx task new --description ".." --link "Linear: <url>"` pre-fills `TASK.md`.
+- **Resume.** Reopening a swept or closed task resumes the agent's conversation for that directory (`claude --continue`, `codex resume --last`, `pi -c`).
 
 ## Secrets
 
@@ -232,16 +235,16 @@ Two other projects target the same pain of running many coding agents at once. T
 | What it is | A task manager on top of stock tmux | A native macOS terminal app, built on Ghostty | Its own terminal multiplexer, in Rust |
 | Unit of work | A task: branch plus worktree in every repo, `TASK.md`, one window | A workspace of tabs and panes | A session of panes |
 | Git worktrees per task | Yes, across all repos in the workspace | No | No |
-| Agent state | From Claude Code's session registry. No hooks, no output parsing | Escape sequences, agent hooks, or `cmux notify` | Process names and output heuristics, optional hooks |
-| Agents | Claude Code for state; anything runs in a pane | Any terminal agent | 14+ agents out of the box |
+| Agent state | From tenx's session registry, fed by each agent's own hooks/extension. No output parsing | Escape sequences, agent hooks, or `cmux notify` | Process names and output heuristics, optional hooks |
+| Agents | Claude Code, Codex, and pi (uniform state); anything else runs in a pane | Any terminal agent | 14+ agents out of the box |
 | Detach and reattach over SSH | Yes, it is a tmux session | Attaches to remote tmux sessions (beta) | Yes |
 | Platforms | macOS, Linux | macOS | macOS, Linux, Windows beta |
 | From a phone or tablet | Any SSH client; the column folds away on a narrow terminal | iOS app in beta | Any SSH client |
 | License | MIT or Apache-2.0 | GPL-3.0-or-later | Apache-2.0 |
 
-cmux and herdr replace your terminal or your multiplexer and give every pane an attention state, whichever agent runs in it. tenx keeps your terminal and your tmux and instead owns what happens before the agent starts: the branch, the worktrees across every repo, the notes file, the window, and the secrets. Its state model is narrower on purpose. It reads Claude Code's own session registry rather than guessing from screen output, so a Blocked task is one where Claude is actually waiting on you.
+cmux and herdr replace your terminal or your multiplexer and give every pane an attention state, whichever agent runs in it. tenx keeps your terminal and your tmux and instead owns what happens before the agent starts: the branch, the worktrees across every repo, the notes file, the window, and the secrets. Its state model is narrower on purpose. Each agent reports its own status to tenx through its hooks rather than tenx guessing from screen output, so a Blocked task is one where the agent is actually waiting on you.
 
-Pick cmux if you want a GUI terminal with a sidebar and an integrated browser on a Mac. Pick herdr if you switch between several agents and want a single binary that treats them all the same. Pick tenx if the expensive part of your parallel work is the git side, and the agent is Claude Code. They are not exclusive: a tenx session is a tmux session, so it works inside any terminal, cmux included.
+Pick cmux if you want a GUI terminal with a sidebar and an integrated browser on a Mac. Pick herdr if you want a single binary that treats a dozen agents the same. Pick tenx if the expensive part of your parallel work is the git side, and you run Claude Code, Codex, or pi. They are not exclusive: a tenx session is a tmux session, so it works inside any terminal, cmux included.
 
 Feature claims for the other two are from their READMEs as of September 2026.
 

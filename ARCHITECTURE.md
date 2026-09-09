@@ -6,16 +6,15 @@ A map of the code for someone getting oriented. `CLAUDE.md` covers the same grou
 
 Two crates in one Cargo workspace:
 
-- **`tenx-core/`** holds pure logic: no `std::process::Command`, no filesystem access beyond data a caller hands in. Everything tenx *decides* lives here, as functions over plain values, with unit tests. Modules: `status` (what a task's state is), `dialog` (recognising and answering a permission prompt), `slug`, `time`, `sweep`, `taskmd` (`TASK.md` rendering and parsing), `live` (parsing the per-task cache of ports and PRs).
-- **`tenx`** (the root package) is the binary. It does I/O: shells out to `git`, `tmux`, `gh`, `age` and `sops`, reads Claude Code's session registry, and renders the column.
-
+- **`tenx-core/`** holds pure logic: no `std::process::Command`, no filesystem access beyond data a caller hands in. Everything tenx *decides* lives here, as functions over plain values, with unit tests. Modules: `status` (what a task's state is), `dialog` (recognising and answering a permission prompt), `session_event` (what an agent's hook event does to a session record, and the hooks-config merge), `transcript` (one line of any agent's transcript → a normalized entry), `codex` (reading a Codex rollout's cwd), `slug`, `time`, `sweep`, `taskmd` (`TASK.md` rendering and parsing), `live` (parsing the per-task cache of ports and PRs).
+- **`tenx`** (the root package) is the binary. It does I/O: shells out to `git`, `tmux`, `gh`, `age` and `sops`, reads tenx's session registry (fed by every agent's hooks), and renders the column.
 Inside the binary the layers are independent and wired together by the CLI dispatch in `main.rs`. Each layer only knows about the layers below it.
 
 ```
 cli/         argument parsing and one file per subcommand group
 tui/         the client: the column beside an embedded terminal
 tmux/        the session layer: server, config, windows, bell flags
-workspace/   the on-disk model: workspaces, tasks, registry, Claude's session registry
+workspace/   the on-disk model: workspaces, tasks, registry, and tenx's session registry
 git/         worktree and bare-repo operations
 live.rs      the per-task cache of external facts (ports, PRs)
 ```
@@ -48,9 +47,8 @@ tmux reads its config once at server start. After changing the generated config,
 
 ## Task state
 
-Status resolution is in `tenx_core::status`. Its inputs are Claude Code's session registry (`~/.claude/sessions/<pid>.json`, checked against live pids and scoped to sessions whose pid descends from a pane of the tenx server, plus the daemon-hosted worker of a *parked turn* whose interactive session is in a pane — that worker, not the interactive entry, carries the live status — the interactive entry freezes when it parks — so the pair is folded into one session with the worker's status, `fold_parked`) and the bell flag of the task's window. The rules, in order:
-
-1. Any session `waiting` on a prompt or permission: **Blocked**, with Claude's reason.
+Status resolution is in `tenx_core::status`. Its inputs are tenx's own session registry (`~/.config/tenx/sessions/<pid>.json`, checked against live pids and scoped to sessions whose pid descends from a pane of the tenx server; a *parked turn*'s daemon-hosted worker is folded into its interactive session with `fold_parked`, so the pair reads as one) and the bell flag of the task's window. Every agent writes that registry through its own hooks/extension: a hook (Claude Code, Codex) or an extension (pi) runs `tenx internal session-event`, which maps the lifecycle event via `tenx_core::session_event` and rewrites the record. `tenx agent setup` installs each integration; `agent/` (`AgentKind`) holds what differs per harness — the launch command, the resume rule, the process names. The rules, in order:
+1. Any session `waiting` on a prompt or permission: **Blocked**, with the agent's reason.
 2. The window's bell flag is set: **Signaled**. Any process can raise it with `printf '\a'`; tmux clears it when the window is visited.
 3. Any session `busy`: **Working**.
 4. A live but quiet session: **Done**.
@@ -78,9 +76,8 @@ A blocked task's permission prompt can be answered from the column with `y` or `
 
 ## Task lifecycle
 
-**Create** slugifies the title, writes `TASK.md`, symlinks `.claude` to the workspace's shared one, pre-approves Claude Code's trust dialog for the task directory in `~/.claude.json` (trust inherits from the workspace root, but the shared settings' permission rules need the exact directory trusted — otherwise each new task starts on that dialog), then for each repo fetches the bare clone and adds a worktree on a fresh branch off the default branch. Then, if the server is running, it opens the window.
-
-**Open** looks the window up by slug and selects it, or creates it. `--continue` is passed to Claude only when a transcript for that exact directory exists, because Claude exits when asked to continue a conversation that does not exist.
+**Create** slugifies the title, writes `TASK.md`, symlinks `.claude` (and `AGENTS.md`, when present) to the workspace's shared ones, pre-approves Claude Code's trust dialog for the task directory in `~/.claude.json`, then for each repo fetches the bare clone and adds a worktree on a fresh branch off the default branch. Then, if the server is running, it opens the window.
+**Open** looks the window up by slug and selects it, or creates it. The window runs the task's agent (`AgentKind::launch`), which supplies any resume flag itself — `--continue` for Claude only when a transcript for that exact directory exists (it exits otherwise), `codex resume --last` when a Codex thread for the cwd exists, `pi -c` always.
 
 **Repo changes** share one function with creation. Detaching removes the worktree and its branch and does not force unless asked, so git's refusal to drop a dirty worktree is the safety net.
 
