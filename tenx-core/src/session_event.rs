@@ -51,11 +51,14 @@ const CLAUDE_DIALOG_TOOLS: &[&str] = &["AskUserQuestion", "ExitPlanMode"];
 /// - `is_subagent` is true when the payload carries an `agent_id` — a subagent's
 ///   events must never move the top-level session's record.
 ///
-/// The one-turn latch the v0 hooks suffered (a "waiting" that nothing cleared)
-/// can't happen here: every dialog outcome is followed by an event that sets a
-/// non-waiting status — approve → `PostToolUse`, deny → `PermissionDenied`,
-/// "tell Claude what to do differently" → `UserPromptSubmit`, and the turn's end
-/// → `Stop`.
+/// Most dialog outcomes are followed by an event that sets a non-waiting
+/// status — approve → `PostToolUse`, an auto-mode denial → `PermissionDenied`,
+/// "tell Claude what to do differently" → `UserPromptSubmit`, and the turn's
+/// end → `Stop`. Two are not (measured on Claude Code 2.1.267): a
+/// `PermissionRequest` that auto mode's classifier then allows (the tool just
+/// runs), and a dialog you deny yourself (Escape or "No" fire nothing, not
+/// even `Stop`). Those are settled by looking at the pane —
+/// `crate::status::confirm_permission_waits`.
 pub fn claude_action(
     event: &str,
     tool_name: Option<&str>,

@@ -77,6 +77,52 @@ pub struct Session {
     /// record's `agent` field; drives the overlay's per-agent chip. Empty for
     /// a record that predates the field (read as the default agent).
     pub agent: String,
+    /// Claude Code's `permission_mode` from the last hook payload (`default`,
+    /// `auto`, `acceptEdits`, …). `None` for other agents and old records.
+    /// Only `auto` matters: see [`confirm_permission_waits`].
+    pub permission_mode: Option<String>,
+}
+
+/// Second-guess a `waiting` on a permission dialog against the screen.
+///
+/// The registry alone gets these wrong in two ways, both measured against
+/// Claude Code 2.1.267. In auto mode, `PermissionRequest` fires before the
+/// classifier decides and nothing follows an *allow* until the tool
+/// finishes, so a long `Bash` call the classifier waved through reads as
+/// `waiting` for its whole run (the `permission_prompt` notification
+/// doesn't help: it arrives seconds later whether or not a dialog was
+/// shown). In every mode, a dialog the user *denies* — Escape, or the "No"
+/// option — fires no hook at all, not even `Stop`, so the record says
+/// `waiting` until the next prompt.
+///
+/// `activity(pane)` reads the pane (`crate::dialog::pane_activity` on a
+/// capture): the dialog on screen keeps the wait; "esc to interrupt" means
+/// the turn went on (allowed, tool running) → busy; neither means the turn
+/// is over (denied) → idle. Sessions on any other reason or without a pane,
+/// and a failed capture (`None`), are left alone — fail closed, so a real
+/// prompt is never hidden.
+pub fn confirm_permission_waits(sessions: &mut [Session], activity: &dyn Fn(&str) -> Option<crate::dialog::PaneActivity>) {
+    use crate::dialog::PaneActivity;
+    for s in sessions.iter_mut() {
+        if s.status != SessionStatus::Waiting {
+            continue;
+        }
+        if !s.waiting_for.as_deref().is_some_and(crate::dialog::is_permission_reason) {
+            continue;
+        }
+        let Some(pane) = s.pane.as_deref() else { continue };
+        match activity(pane) {
+            Some(PaneActivity::Running) => {
+                s.status = SessionStatus::Busy;
+                s.waiting_for = None;
+            }
+            Some(PaneActivity::Idle) => {
+                s.status = SessionStatus::Idle;
+                s.waiting_for = None;
+            }
+            Some(PaneActivity::Dialog) | None => {}
+        }
+    }
 }
 
 /// True if `s` is the worker half of a parked turn whose interactive session
@@ -419,7 +465,40 @@ mod tests {
             parked_job_id: None,
             job_id: None,
             agent: "claude".to_string(),
+            permission_mode: None,
         }
+    }
+
+    #[test]
+    fn permission_waits_follow_the_screen() {
+        use crate::dialog::PaneActivity::*;
+        let mut s = session("/w/t", SessionStatus::Waiting, "interactive", 1);
+        s.waiting_for = Some("permission: Bash".into());
+        s.pane = Some("%1".into());
+        let run = |s: &Session, a: Option<crate::dialog::PaneActivity>| {
+            let mut v = vec![s.clone()];
+            confirm_permission_waits(&mut v, &|_| a);
+            (v[0].status, v[0].waiting_for.clone())
+        };
+        // The dialog is up: still waiting.
+        assert_eq!(run(&s, Some(Dialog)), (SessionStatus::Waiting, Some("permission: Bash".into())));
+        // Allowed (by the classifier, or by you in the pane), tool running.
+        assert_eq!(run(&s, Some(Running)), (SessionStatus::Busy, None));
+        // Denied in the pane: the turn is over and no hook said so.
+        assert_eq!(run(&s, Some(Idle)), (SessionStatus::Idle, None));
+        // Capture failed: fail closed.
+        assert_eq!(run(&s, None), (SessionStatus::Waiting, Some("permission: Bash".into())));
+        // The notification's reason is checked the same way; other waits never.
+        let mut n = s.clone();
+        n.waiting_for = Some("permission".into());
+        assert_eq!(run(&n, Some(Idle)), (SessionStatus::Idle, None));
+        let mut n = s.clone();
+        n.waiting_for = Some("input needed".into());
+        assert_eq!(run(&n, Some(Idle)), (SessionStatus::Waiting, Some("input needed".into())));
+        // No pane to look at: untouched.
+        let mut n = s.clone();
+        n.pane = None;
+        assert_eq!(run(&n, Some(Idle)), (SessionStatus::Waiting, Some("permission: Bash".into())));
     }
 
     const TASK: &str = "/ws/tasks/foo";

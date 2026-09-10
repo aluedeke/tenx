@@ -70,6 +70,9 @@ pub struct Record {
     pub parked_job_id: Option<String>,
     #[serde(rename = "jobId", skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
+    /// Claude Code's `permission_mode` from the last hook payload.
+    #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
 }
 
 /// Directory holding tenx's session records.
@@ -155,13 +158,23 @@ pub fn sessions() -> Vec<Session> {
             pane: raw.tmux.as_deref().and_then(tenx_core::dialog::pane_id),
             parked_job_id: raw.parked_job_id,
             job_id: raw.job_id,
+            permission_mode: raw.permission_mode,
         });
     }
     if out.is_empty() {
         return out;
     }
     let scope = pane_scope();
-    fold_parked(in_panes(out, &scope.pane_pids, &scope.tree))
+    let mut out = fold_parked(in_panes(out, &scope.pane_pids, &scope.tree));
+    // A permission wait may be stale — allowed by auto mode's classifier and
+    // running, or denied in the pane with no hook to say so
+    // (`tenx_core::status::confirm_permission_waits`): look at the pane. One
+    // capture per such session, only while one is waiting; a failed capture
+    // keeps the wait (never hide a real prompt).
+    tenx_core::status::confirm_permission_waits(&mut out, &|pane| {
+        crate::tmux::capture_pane(pane).ok().map(|c| tenx_core::dialog::pane_activity(&c))
+    });
+    out
 }
 
 /// Prune records whose pid is no longer alive — the watcher's housekeeping so a

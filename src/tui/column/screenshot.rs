@@ -105,7 +105,7 @@ pub(super) fn fixture_column() -> Column {
             ..fx("stripe webhook signing", "ledger", Idle)
         },
         Fx {
-            waiting_for: Some("permission prompt"),
+            waiting_for: Some("permission: Bash"),
             open: true,
             age: 4 * m,
             ..fx("add release workflow", "tenx-workspace", Blocked)
@@ -307,7 +307,7 @@ fn column_renders_narrow() {
         "INACTIVE",
         "column screenshot",
         "     tenx-workspace",              // second line, indented under the title
-        "      permission prompt  · 4m",    // the reason first, then what else fits
+        "      permission: Bash  · 4m",    // the reason first, then what else fits
         "     acme-api · 54m · :8080",
         "     ledger · 23h · #31 ✓",
         "wants STRIPE_WEBHOOK_SECRET",

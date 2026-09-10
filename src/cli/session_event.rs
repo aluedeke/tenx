@@ -68,6 +68,9 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
             if let Some(tp) = payload.get("transcript_path").and_then(|v| v.as_str()) {
                 record.transcript_path = Some(tp.to_string());
             }
+            if let Some(mode) = payload.get("permission_mode").and_then(|v| v.as_str()) {
+                record.permission_mode = Some(mode.to_string());
+            }
             if let Ok(pane) = std::env::var("TMUX_PANE") {
                 // The hook runs in the agent's pane; keep it for the overlay's
                 // approve-in-place preview. Stored as a bare pane id.

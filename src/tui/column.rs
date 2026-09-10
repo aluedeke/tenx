@@ -1167,7 +1167,7 @@ impl Column {
             self.status_msg = Some(format!("'{title}' is not waiting on a prompt"));
             return;
         }
-        if state.waiting_for.as_deref() != Some(tenx_core::dialog::PERMISSION_PROMPT) {
+        if !state.waiting_for.as_deref().is_some_and(tenx_core::dialog::is_permission_reason) {
             let reason = state.waiting_for.unwrap_or_default();
             self.status_msg = Some(format!("'{title}' is waiting on {reason} — open it to answer (⏎)"));
             return;
@@ -1197,8 +1197,17 @@ impl Column {
     /// The selected row has a permission dialog the column can answer.
     fn selected_answerable(&self) -> bool {
         self.selected_row().is_some_and(|r| {
-            r.status == TaskStatus::Blocked && r.waiting_for.as_deref() == Some(tenx_core::dialog::PERMISSION_PROMPT)
+            r.status == TaskStatus::Blocked && r.waiting_for.as_deref().is_some_and(tenx_core::dialog::is_permission_reason)
         })
+    }
+
+    /// Some task other than the selected one needs you — what the footer's
+    /// `n` hint is for.
+    fn another_needs_you(&self) -> bool {
+        self.filtered
+            .iter()
+            .enumerate()
+            .any(|(pos, &i)| pos != self.selected && Self::row_needs_you(&self.rows[i]))
     }
 
     // ── Jump ──────────────────────────────────────────────────────────────────
