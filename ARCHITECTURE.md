@@ -72,7 +72,7 @@ The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on
 
 The column lists every task from every registered workspace, sectioned by attention group, fuzzy-filtered, with a search field in insert mode and a list in normal mode. Actions call straight into the `cli::task` and `cli::repo` functions rather than duplicating their logic. Moving the selection switches the window under the terminal; a closed task shows an empty screen until Enter opens it; `Ctrl+w` moves the keyboard between the column and the task and hides the column from inside. A status change moves its task to the right section at once, the selection following its task by name rather than by position. Idle windows are swept, rate-limited, when the terminal regains focus.
 
-A blocked task's permission prompt can be answered from the column with `y` or `N`. Claude Code has no API for this, so the answer is a keystroke sent into the pane, guarded twice right before sending: the registry must still say the session waits on a permission prompt (not a question, which `Enter` would answer wrongly), and the captured pane must still show the dialog. The check is `tenx_core::dialog`.
+A blocked task's permission prompt can be answered from the column with `A` or `D`. Claude Code has no API for this, so the answer is a keystroke sent into the pane, guarded twice right before sending: the registry must still say the session waits on a permission prompt (not a question, which `Enter` would answer wrongly), and the captured pane must still show the dialog. The check is `tenx_core::dialog`.
 
 ## Task lifecycle
 

@@ -111,31 +111,32 @@ tenx task rm fix-login-timeout     # removes worktrees, branches and the window
 
 ## The column
 
-The column lists every task from every registered workspace, sectioned by attention: secrets pending, waiting for input, working, inactive. It is Telescope-style: typing filters, and the list has its own keys. A task waiting on a permission prompt can be answered from the column with `y` or `N`: the answer is typed into the task's pane by tmux, and only after tenx has checked that the session is still waiting on a permission dialog and that the dialog is still on screen; anything else (a question from Claude, a prompt already answered) is refused with a message, so `Enter` never lands somewhere unintended.
+The column lists every task from every registered workspace, sectioned by attention: secrets pending, waiting for input, working, inactive. It is Telescope-style: typing filters, and the list has its own keys. A task waiting on a permission prompt can be answered from the column with `A` or `D`: the answer is typed into the task's pane by tmux, and only after tenx has checked that the session is still waiting on a permission dialog and that the dialog is still on screen; anything else (a question from Claude, a prompt already answered) is refused with a message, so `Enter` never lands somewhere unintended.
 
 | Key | Action |
 |---|---|
 | `Ctrl+w` | Into the column, on the task you are in; from the column, hide it |
 | `↓`, `↑`, `j`, `k`, `gg`, `G` | Move; an open task shows as you land on it |
+| `n` | Next task that needs you (blocked, rang the bell, or secrets pending), cycling |
 | `Enter`, `o`, `l` | Open the task, creating its window if needed, and put the cursor in it |
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |
-| `n` | New task |
+| `Ctrl+n` | New task |
 | `a` | Add a repo to the workspace (Repos tab) |
 | `e` | Edit which repos the task has worktrees for |
 | `r` | Rename the task |
 | `x` | Close the task's window (the conversation resumes on next open) |
 | `u` | Unlock pending secrets |
-| `y`, `N` | Approve or deny the task's permission prompt without visiting it |
+| `A`, `D` | Approve or deny the task's permission prompt without visiting it |
 | `dd` | Delete the task |
 | `:` | Command line, see below |
 
-The column opens in the search field (`Ctrl+w` lands in the list instead). Typing filters the list; `Backspace` edits the filter; `Esc` or `↓` leaves the field for the list. `↓` and `↑` from the field land next to the task you are in, not at the top, and `Ctrl+j`/`Ctrl+k` do the same. `Enter` in the field opens the top match. In the list, `↑` from the first row goes back to the field.
+The column opens in the search field (`Ctrl+w` lands in the list instead). Typing filters the list; `Backspace` edits the filter; `Esc` or `↓` leaves the field for the list. `↓` and `↑` from the field land next to the task you are in, not at the top, and `Ctrl+j`/`Ctrl+k` do the same. `Enter` in the field opens the top match. In the list, `↑` from the first row goes back to the field. `Ctrl+w` lands in the list, so `Ctrl+w` `n` from any task reaches the next one that needs you, and `A` or `Enter` deals with it.
 
 The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else.
 
-The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:y`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`). The rest have no key: `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:cancel` withdraws a pending secrets request, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:q` quits the client.
+The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`. The rest have no key: `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:cancel` withdraws a pending secrets request, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:q` quits the client.
 
 The **forms** (new task, edit repos, rename, delete) are keyboard-only. `Tab`/`↓` and `Shift+Tab`/`↑` move between fields, `Space` toggles a repo, `Enter` submits, `Esc` cancels. In the new-task form, `←`/`→` on the agent field cycle the choice. In the edit-repos form, `j`/`k` also move, `x` also toggles, `a` picks every repo and `n` none. Deleting a task, or removing a worktree from the edit-repos form, asks once more; `y` or `Enter` confirms, any other key cancels.
 
@@ -178,7 +179,7 @@ Everything runs in one tmux session on one machine, so any terminal that can SSH
 ssh devbox -t tenx
 ```
 
-On a terminal under 100 columns there is no room for a column beside the task, so the task takes the whole screen and `Ctrl+w` shows the list over it. The rows are the same two lines per task, so titles and status glyphs stay readable on a 40-column phone screen, and a permission prompt can be answered with `y` from the list. Opening a task gives you the agent's whole screen, where you can answer anything else and detach again. The desktop notification goes to the machine running the session, not to the phone.
+On a terminal under 100 columns there is no room for a column beside the task, so the task takes the whole screen and `Ctrl+w` shows the list over it. The rows are the same two lines per task, so titles and status glyphs stay readable on a 40-column phone screen, and a permission prompt can be answered with `A` from the list. Opening a task gives you the agent's whole screen, where you can answer anything else and detach again. The desktop notification goes to the machine running the session, not to the phone.
 
 ## Sweep and pin
 

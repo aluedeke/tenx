@@ -456,7 +456,7 @@ pub fn select_window(id: &str) -> Result<()> {
 }
 
 /// The visible contents of a pane, with its colours (`-e` keeps the SGR
-/// sequences) — what `y`/`N` check before answering a permission prompt.
+/// sequences) — what `A`/`D` check before answering a permission prompt.
 pub fn capture_pane(target: &str) -> Result<String> {
     run(&["capture-pane", "-p", "-e", "-t", target])
 }

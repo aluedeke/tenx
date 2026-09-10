@@ -4,7 +4,8 @@
 //! both a switcher and a task manager — type to filter + Enter to open, plus
 //! Telescope-style create/delete/rename/close bindings on a selected row
 //! (see `Focus`/`InputMode`: the search field is Insert, plain typing
-//! filters; a list row is Normal, plain letters act — `n` new, `d`d delete).
+//! filters; a list row is Normal, plain letters act — `n` next task that
+//! needs you, `A`/`D` answer, `dd` delete; `Ctrl+n` new from either).
 //!
 //! It is drawn by the client (`tui::client`) beside the embedded tmux
 //! session, in the same process: a jump is the window switch (the terminal
@@ -65,7 +66,7 @@ struct Row {
     /// per-task cache, refreshed on the tick.
     window_id: Option<String>,
     /// The pane its Claude session runs in (`%40`), from the session registry
-    /// — what `y`/`N` answer. Refreshed on the
+    /// — what `A`/`D` answer. Refreshed on the
     /// tick with the status.
     pane: Option<String>,
     /// PR chips and listening ports from `.tenx-live.json` (written by
@@ -765,6 +766,39 @@ impl Column {
         self.follow_selection();
     }
 
+    /// Whether a row wants something from you right now: a pending secrets
+    /// request, or an agent that is blocked or has rung the bell. Reads the
+    /// live `status`, not the frozen `group`, so a task that got stuck since
+    /// the list was built still counts.
+    fn row_needs_you(r: &Row) -> bool {
+        r.section == workspace::TaskGroup::SecretsPending || r.status.needs_you()
+    }
+
+    /// `n`: put the cursor on the next task that needs you, cycling through
+    /// the filtered list, and show it — the same follow as ↓/↑, so `A`/`D`
+    /// or ⏎ can act on it at once. From the search field (`:next`) the
+    /// search starts at the top, so the first press lands on the most
+    /// urgent task. Says so when nothing needs you.
+    fn jump_needs_you(&mut self) {
+        if !self.require_tasks() {
+            return;
+        }
+        let needs: Vec<bool> = self.filtered.iter().map(|&i| Self::row_needs_you(&self.rows[i])).collect();
+        let from = match self.focus {
+            Focus::List => Some(self.selected),
+            Focus::Search => None,
+        };
+        match tenx_core::column::next_needing(from, &needs) {
+            Some(i) => {
+                self.status_msg = None;
+                self.focus_list();
+                self.set_cur_sel(i);
+                self.follow_selection();
+            }
+            None => self.status_msg = Some("nothing needs you".into()),
+        }
+    }
+
     /// Position (in `filtered`) of the task the column sits beside; `None`
     /// on the other surfaces, or when the filter hides it.
     fn own_row(&self) -> Option<usize> {
@@ -933,6 +967,7 @@ impl Column {
             KeyCode::Up => self.nav_up(),
             KeyCode::Char('j') if ctrl => self.nav_down(),
             KeyCode::Char('k') if ctrl => self.nav_up(),
+            KeyCode::Char('n') if ctrl => self.start_create(),
             // `:` reaches the pane (zellij doesn't grab it), unlike Ctrl/Alt.
             KeyCode::Char(':') if !ctrl => {
                 self.status_msg = None;
@@ -981,7 +1016,8 @@ impl Column {
             KeyCode::Tab | KeyCode::BackTab => self.toggle_tab(),
             // `n` for a new task (matches the `:n`/`:new` command below),
             // `a` to add a repo — distinct verbs, distinct letters.
-            KeyCode::Char('n') if self.tab == Tab::Tasks => self.start_create(),
+            KeyCode::Char('n') if ctrl => self.start_create(),
+            KeyCode::Char('n') if self.tab == Tab::Tasks => self.jump_needs_you(),
             KeyCode::Char('a') if self.tab == Tab::Repos => self.start_add_repo(),
             KeyCode::Char('r') => {
                 if self.require_tasks() {
@@ -998,8 +1034,8 @@ impl Column {
                     self.close_selected_tab();
                 }
             }
-            KeyCode::Char('y') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
-            KeyCode::Char('N') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::No),
+            KeyCode::Char('A') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
+            KeyCode::Char('D') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::No),
             KeyCode::Char('u') => {
                 if self.require_tasks() {
                     self.start_unlock();
@@ -1096,11 +1132,12 @@ impl Column {
             "e" | "edit" | "edit-repos" => self.start_edit_repos(),
             "x" | "close" => self.close_selected_tab(),
             "u" | "unlock" => self.start_unlock(),
-            "y" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
+            "a" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
             "deny" => self.answer(tenx_core::dialog::Answer::No),
             "cancel" => self.cancel_secrets(),
             "hide" => self.client_request = Some(ClientRequest::Hide),
             "o" | "open" => return self.jump(),
+            "next" => self.jump_needs_you(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
         }
         Ok(false)
@@ -1139,7 +1176,7 @@ impl Column {
 
     // ── Answering a permission prompt ─────────────────────────────────────────
 
-    /// `y` / `N` on a blocked row: answer Claude Code's permission dialog in
+    /// `A` / `D` on a blocked row: answer Claude Code's permission dialog in
     /// the task's own pane without visiting it. The row's status may be up to
     /// a tick old, so the truth is re-read right before the key goes out: the
     /// session must still be waiting on a *permission prompt* (not an
@@ -1997,11 +2034,12 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
             let (tag, tag_style) = mode_tag(column.input_mode);
             let hint = match (column.input_mode, column.tab) {
                 (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) if column.selected_answerable() => " y/N answer · ⏎ open",
+                (InputMode::Normal, Tab::Tasks) if column.selected_answerable() => " A/D answer · ⏎ open",
                 (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.window_id.is_none()) => {
                     " closed · ⏎ open · ↓↑ move"
                 }
-                (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · n new · x close",
+                (InputMode::Normal, Tab::Tasks) if column.another_needs_you() => " n needs you · ⏎ open · ^n new",
+                (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · ^n new · x close",
                 (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab",
             };
             Line::from(vec![Span::styled(tag, tag_style), Span::styled(hint, Style::default().fg(palette::MUTED.color()))])
@@ -2514,4 +2552,74 @@ fn field_line<'a>(focused: bool, label: &str, value: &str) -> Line<'a> {
         Span::styled(format!("{prefix}{label}: "), label_style),
         Span::styled(value.to_string(), value_style),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn selected_slug(c: &Column) -> &str {
+        c.selected_row().map(|r| r.slug.as_str()).unwrap_or("")
+    }
+
+    /// `n` cycles through the tasks that need you — the blocked one, the
+    /// bell, the secrets request — skipping done, working and idle rows,
+    /// and the column shows the task it lands on. `:next` does the same
+    /// from the search field, starting at the top.
+    #[test]
+    fn n_cycles_through_tasks_that_need_you() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        assert_eq!(selected_slug(&c), "add-release-workflow"); // the blocked one
+
+        c.handle_key(plain('n')).unwrap();
+        assert_eq!(selected_slug(&c), "rotate-signing-keys"); // signaled
+        assert_eq!(c.current.as_deref(), Some("rotate-signing-keys"));
+
+        c.handle_key(plain('n')).unwrap();
+        assert_eq!(selected_slug(&c), "stripe-webhook-signing"); // wraps to secrets pending
+
+        c.handle_key(plain('n')).unwrap();
+        assert_eq!(selected_slug(&c), "add-release-workflow");
+
+        // From the search field, `:next` starts at the top.
+        c.focus_search();
+        c.mode = Mode::Command("next".into());
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert_eq!(c.focus, Focus::List);
+        assert_eq!(selected_slug(&c), "stripe-webhook-signing");
+
+        // A filter that hides every such task: the cursor stays, with a message.
+        c.focus_search();
+        for ch in "cdn".chars() {
+            c.handle_key(plain(ch)).unwrap();
+        }
+        c.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap();
+        c.handle_key(plain('n')).unwrap();
+        assert_eq!(c.status_msg.as_deref(), Some("nothing needs you"));
+    }
+
+    /// Ctrl+n opens the new-task form from either mode; `A`/`D` answer.
+    #[test]
+    fn ctrl_n_creates_and_a_d_answer() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+        assert!(matches!(c.mode, Mode::Create(_)));
+        c.mode = Mode::List;
+        c.focus_search();
+        c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+        assert!(matches!(c.mode, Mode::Create(_)));
+        c.mode = Mode::List;
+        // The blocked row is answerable; offline, `answer` reports rather than sends.
+        c.focus_list();
+        c.set_cur_sel(1);
+        assert!(c.selected_answerable());
+        c.handle_key(plain('A')).unwrap();
+        assert!(c.status_msg.is_some(), "A answers (or explains why not)");
+    }
 }

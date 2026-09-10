@@ -1,5 +1,6 @@
-//! Sizing rule for the column — the task list `tenx` draws on the left of
-//! the embedded session (`tui::client`).
+//! Rules for the column — the task list `tenx` draws on the left of the
+//! embedded session (`tui::client`): its width, and where "next task that
+//! needs you" lands.
 
 /// The column's share of the terminal when no width is configured.
 pub const DEFAULT_PERCENT: u16 = 20;
@@ -20,9 +21,42 @@ pub fn width(window_cols: u16, configured: u16) -> u16 {
     (window_cols * DEFAULT_PERCENT / 100).clamp(MIN_COLS, MAX_COLS).min(half)
 }
 
+/// The next row that needs you, cycling: `needs[i]` says whether row `i`
+/// wants attention, `from` is the row the cursor is on (`None` when it is
+/// in the search field, so the search starts at the top). Wraps around the
+/// end and never returns `from` itself unless it is the only row that
+/// qualifies; `None` when nothing does. There is no "previous": the list
+/// is ordered by urgency and the cycle is short, so one direction is enough.
+pub fn next_needing(from: Option<usize>, needs: &[bool]) -> Option<usize> {
+    let n = needs.len();
+    if n == 0 {
+        return None;
+    }
+    // Start one past the cursor, or at row 0 from the search field.
+    let start = from.map_or(0, |i| (i + 1) % n);
+    (0..n).map(|k| (start + k) % n).find(|&i| needs[i])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn next_needing_cycles() {
+        let needs = [false, true, false, true, false];
+        assert_eq!(next_needing(None, &needs), Some(1));
+        assert_eq!(next_needing(Some(1), &needs), Some(3));
+        assert_eq!(next_needing(Some(3), &needs), Some(1)); // wraps
+        assert_eq!(next_needing(Some(0), &needs), Some(1));
+    }
+
+    #[test]
+    fn next_needing_handles_the_edges() {
+        assert_eq!(next_needing(None, &[]), None);
+        assert_eq!(next_needing(Some(0), &[false, false]), None);
+        // The only qualifying row is the one the cursor is on: stay there.
+        assert_eq!(next_needing(Some(2), &[false, false, true]), Some(2));
+    }
 
     #[test]
     fn automatic_width_is_a_clamped_share() {

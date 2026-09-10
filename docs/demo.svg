@@ -284,8 +284,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Updated src/email/welcome.ts with 14 additions and 2 removals                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -456,8 +457,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Updated src/email/welcome.ts with 14 additions and 2 removals                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -574,7 +576,7 @@
 <text x="10.0" y="707.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <rect x="10.0" y="712.0" width="67.2" height="18.0" fill="#6896dc"/>
 <text x="10.0" y="725.0" fill="#171820" textLength="67.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> NORMAL </text>
-<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ↓↑ switch · ⏎ open · </text>
+<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> n needs you · ⏎ open </text>
 <text x="270.4" y="725.0" fill="#6896dc" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐ </text>
 <text x="287.2" y="725.0" fill="#d6dbe3" textLength="142.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails</text>
 <text x="438.4" y="725.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger </text>
@@ -635,8 +637,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Running…                                                                                                           </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -747,7 +750,7 @@
 <text x="10.0" y="707.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <rect x="10.0" y="712.0" width="67.2" height="18.0" fill="#6896dc"/>
 <text x="10.0" y="725.0" fill="#171820" textLength="67.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> NORMAL </text>
-<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ↓↑ switch · ⏎ open · </text>
+<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> n needs you · ⏎ open </text>
 <text x="270.4" y="725.0" fill="#6896dc" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐ </text>
 <text x="287.2" y="725.0" fill="#d6dbe3" textLength="142.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">column screenshot</text>
 <text x="438.4" y="725.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tenx-workspace </text>
@@ -802,8 +805,9 @@
 <text x="60.4" y="203.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">add release workflow   </text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="221.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="221.0" fill="#787f8c" textLength="210.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Churned for 2m 14s · done</text>
@@ -915,7 +919,7 @@
 <text x="10.0" y="707.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <rect x="10.0" y="712.0" width="67.2" height="18.0" fill="#6896dc"/>
 <text x="10.0" y="725.0" fill="#171820" textLength="67.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> NORMAL </text>
-<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ↓↑ switch · ⏎ open · </text>
+<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> n needs you · ⏎ open </text>
 <text x="270.4" y="725.0" fill="#7ac27c" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ </text>
 <text x="287.2" y="725.0" fill="#d6dbe3" textLength="84.0" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">csv export</text>
 <text x="379.6" y="725.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger </text>
@@ -970,8 +974,9 @@
 <text x="60.4" y="203.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">add release workflow   </text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="221.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="221.0" fill="#787f8c" textLength="210.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Churned for 2m 14s · done</text>
@@ -1132,8 +1137,9 @@
 <text x="60.4" y="203.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">add release workflow   </text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="221.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="221.0" fill="#787f8c" textLength="210.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Churned for 2m 14s · done</text>
@@ -1294,8 +1300,9 @@
 <text x="60.4" y="203.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">add release workflow   </text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="221.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="221.0" fill="#787f8c" textLength="210.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Churned for 2m 14s · done</text>
@@ -1745,8 +1752,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -1912,8 +1920,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -2080,8 +2089,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -2248,8 +2258,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -2416,8 +2427,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -2584,8 +2596,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -2752,8 +2765,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -2920,8 +2934,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -3088,8 +3103,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -3256,8 +3272,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -3424,8 +3441,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -3592,8 +3610,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -3760,8 +3779,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -3928,8 +3948,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -4096,8 +4117,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -4264,8 +4286,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -4432,8 +4455,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -4600,8 +4624,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -4768,8 +4793,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -4936,8 +4962,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -5104,8 +5131,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -5272,8 +5300,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -5440,8 +5469,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 0m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●  </text>
@@ -5450,8 +5480,9 @@
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="244.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="257.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="244.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="257.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="257.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="275.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -5608,8 +5639,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="304.0" y="203.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(bell)</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 0m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●  </text>
@@ -5618,8 +5650,9 @@
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="244.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="257.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="244.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="257.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="257.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="262.0" width="16.8" height="18.0" fill="#212734"/>
@@ -5721,7 +5754,7 @@
 <text x="10.0" y="707.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <rect x="10.0" y="712.0" width="67.2" height="18.0" fill="#6896dc"/>
 <text x="10.0" y="725.0" fill="#171820" textLength="67.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> NORMAL </text>
-<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ↓↑ switch · ⏎ open · </text>
+<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> n needs you · ⏎ open </text>
 <text x="270.4" y="725.0" fill="#e4a854" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲ </text>
 <text x="287.2" y="725.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys</text>
 <text x="455.2" y="725.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra </text>
@@ -5744,61 +5777,55 @@
 <text x="18.4" y="59.0" fill="#a78bfa" textLength="16.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">/ </text>
 <text x="253.6" y="59.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="59.0" fill="#d97757" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▘▘ ▝▝</text>
-<text x="354.4" y="59.0" fill="#787f8c" textLength="361.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/tenx-workspace/tasks/add-release-workflow</text>
+<text x="354.4" y="59.0" fill="#787f8c" textLength="100.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">~/tasks/task</text>
 <text x="10.0" y="77.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <text x="10.0" y="95.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┌────────────────────────────┐</text>
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
-<text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> I'll add the release workflow next to the CI one and wire the tag push to it.                                         </text>
+<text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Waiting for a task.                                                                                                   </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="18.4" y="113.0" fill="#a78bfa" textLength="126.0" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">SECRETS PENDING</text>
 <text x="144.4" y="113.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  1</text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<rect x="18.4" y="118.0" width="16.8" height="18.0" fill="#212734"/>
+<rect x="35.2" y="118.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="131.0" fill="#a78bfa" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">🔒 </text>
-<text x="60.4" y="131.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">stripe webhook signing </text>
+<rect x="60.4" y="118.0" width="193.2" height="18.0" fill="#212734"/>
+<text x="60.4" y="131.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">stripe webhook signing </text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="262.0" y="131.0" fill="#d6dbe3" textLength="109.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Bash command</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="136.0" width="193.2" height="18.0" fill="#2a2440"/>
+<rect x="18.4" y="136.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="60.4" y="136.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="149.0" fill="#a78bfa" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> wants STRIPE_WEBHOOK_…</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="262.0" y="167.0" fill="#d6dbe3" textLength="1008.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   gh workflow run release.yml --ref v0.2.0                                                                             </text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="18.4" y="185.0" fill="#e4a854" textLength="142.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">WAITING FOR INPUT</text>
 <text x="161.2" y="185.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  6</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="287.2" y="185.0" fill="#787f8c" textLength="344.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Kick off the release workflow for the tag</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="203.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●  </text>
 <text x="60.4" y="203.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails      </text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 0m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="262.0" y="221.0" fill="#d6dbe3" textLength="1008.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Do you want to proceed?                                                                                                </text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="226.0" width="16.8" height="18.0" fill="#212734"/>
-<rect x="35.2" y="226.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●  </text>
-<rect x="60.4" y="226.0" width="193.2" height="18.0" fill="#212734"/>
-<text x="60.4" y="239.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">add release workflow   </text>
+<text x="60.4" y="239.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">add release workflow   </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="270.4" y="239.0" fill="#6896dc" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ 1. Yes</text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="244.0" width="42.0" height="18.0" fill="#212734"/>
-<rect x="60.4" y="244.0" width="159.6" height="18.0" fill="#212734"/>
-<text x="60.4" y="257.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
-<rect x="220.0" y="244.0" width="33.6" height="18.0" fill="#212734"/>
+<rect x="60.4" y="244.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="257.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="257.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="262.0" y="257.0" fill="#d6dbe3" textLength="1008.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   2. No                                                                                                                </text>
 <text x="10.0" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="275.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="275.0" fill="#d6dbe3" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="270.4" y="275.0" fill="#787f8c" textLength="235.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Esc to cancel · Tab to amend</text>
 <text x="10.0" y="293.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="60.4" y="293.0" fill="#787f8c" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra · 22h</text>
 <text x="253.6" y="293.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -5888,10 +5915,10 @@
 <text x="10.0" y="707.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <rect x="10.0" y="712.0" width="67.2" height="18.0" fill="#6896dc"/>
 <text x="10.0" y="725.0" fill="#171820" textLength="67.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> NORMAL </text>
-<text x="77.2" y="725.0" fill="#787f8c" textLength="168.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> y/N answer · ⏎ open</text>
-<text x="270.4" y="725.0" fill="#e4a854" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">● </text>
-<text x="287.2" y="725.0" fill="#d6dbe3" textLength="168.0" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">add release workflow</text>
-<text x="463.6" y="725.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tenx-workspace </text>
+<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> n needs you · ⏎ open </text>
+<text x="270.4" y="725.0" fill="#606878" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· </text>
+<text x="287.2" y="725.0" fill="#d6dbe3" textLength="184.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">stripe webhook signing</text>
+<text x="480.4" y="725.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger </text>
 <text x="1009.6" y="725.0" fill="#e4a854" textLength="117.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">● 1 need input</text>
 <text x="1127.2" y="725.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="1152.4" y="725.0" fill="#7ac27c" textLength="100.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ 3 waiting </text>
@@ -5946,9 +5973,10 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="208.0" width="42.0" height="18.0" fill="#212734"/>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#212734"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
-<rect x="220.0" y="208.0" width="33.6" height="18.0" fill="#212734"/>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#212734"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<rect x="211.6" y="208.0" width="42.0" height="18.0" fill="#212734"/>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 0m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="221.0" fill="#d6dbe3" textLength="1008.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Do you want to proceed?                                                                                                </text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -5957,8 +5985,9 @@
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="270.4" y="239.0" fill="#6896dc" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ 1. Yes</text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="244.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="257.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="244.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="257.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="257.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="257.0" fill="#d6dbe3" textLength="1008.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   2. No                                                                                                                </text>
 <text x="10.0" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -6055,7 +6084,7 @@
 <text x="10.0" y="707.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <rect x="10.0" y="712.0" width="67.2" height="18.0" fill="#6896dc"/>
 <text x="10.0" y="725.0" fill="#171820" textLength="67.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> NORMAL </text>
-<text x="77.2" y="725.0" fill="#787f8c" textLength="168.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> y/N answer · ⏎ open</text>
+<text x="77.2" y="725.0" fill="#787f8c" textLength="168.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> A/D answer · ⏎ open</text>
 <text x="270.4" y="725.0" fill="#e4a854" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">● </text>
 <text x="287.2" y="725.0" fill="#d6dbe3" textLength="142.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails</text>
 <text x="438.4" y="725.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger </text>
@@ -6116,8 +6145,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -6288,8 +6318,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -6453,8 +6484,9 @@
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -6620,6 +6652,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -6742,6 +6776,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -6864,6 +6900,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -6986,6 +7024,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7108,6 +7148,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7230,6 +7272,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7352,6 +7396,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7474,6 +7520,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7596,6 +7644,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7718,6 +7768,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7840,6 +7892,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -7962,6 +8016,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8084,6 +8140,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8206,6 +8264,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8328,6 +8388,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8450,6 +8512,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8572,6 +8636,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8694,6 +8760,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8816,6 +8884,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -8938,6 +9008,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -9060,6 +9132,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -9182,6 +9256,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -9304,6 +9380,8 @@
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
@@ -9437,8 +9515,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -9609,8 +9688,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -9782,8 +9862,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -9955,8 +10036,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -10128,8 +10210,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -10301,8 +10384,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -10474,8 +10558,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -10647,8 +10732,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -10820,8 +10906,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -10993,8 +11080,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -11166,8 +11254,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -11339,8 +11428,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -11512,8 +11602,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -11685,8 +11776,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -11858,8 +11950,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -12031,8 +12124,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -12204,8 +12298,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -12377,8 +12472,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -12550,8 +12646,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -12723,8 +12820,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -12896,8 +12994,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -13069,8 +13168,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -13242,8 +13342,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -13415,8 +13516,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -13588,8 +13690,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -13761,8 +13864,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -13934,8 +14038,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -14107,8 +14212,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -14280,8 +14386,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -14453,8 +14560,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -14626,8 +14734,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -14799,8 +14908,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -14972,8 +15082,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -15145,8 +15256,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -15318,8 +15430,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -15491,8 +15604,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -15664,8 +15778,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -15837,8 +15952,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -16010,8 +16126,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -16183,8 +16300,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -16356,8 +16474,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -16529,8 +16648,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -16702,8 +16822,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -16875,8 +16996,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -17048,8 +17170,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -17221,8 +17344,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -17394,8 +17518,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -17567,8 +17692,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -17740,8 +17866,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -17913,8 +18040,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -18086,8 +18214,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
@@ -18259,8 +18388,9 @@
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="203.0" fill="#787f8c" textLength="495.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────────────────────────────────────────╯</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="60.4" y="208.0" width="159.6" height="18.0" fill="#3a2e18"/>
-<text x="60.4" y="221.0" fill="#e4a854" textLength="159.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission prompt </text>
+<rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#3a2e18"/>
+<text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
+<text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>

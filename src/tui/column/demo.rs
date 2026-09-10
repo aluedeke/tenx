@@ -447,25 +447,27 @@ fn scene() -> Scene {
     s.type_str("git log --oneline -3", 70);
     s.shot(1400);
     // An agent stops and needs you: its row moves up at once.
-    s.agent_stops_and_waits("onboarding-emails", tenx_core::dialog::PERMISSION_PROMPT);
+    s.agent_stops_and_waits("onboarding-emails", "permission: Bash");
     s.shot(2000);
-    // Ctrl+w lands on the task you are in; ↑ twice reaches the one waiting.
+    // Ctrl+w lands on the task you are in; `n` cycles through what needs
+    // you: the secrets request first, then the permission prompt.
     s.ctrl_w(700);
-    s.key(KeyCode::Up, 1000);
-    s.key(KeyCode::Up, 2200);
-    assert!(s.last_text().contains("y/N answer"), "answerable from the column\n{}", s.last_text());
+    s.key(KeyCode::Char('n'), 1000);
+    s.key(KeyCode::Char('n'), 2200);
+    assert!(s.last_text().contains("A/D answer"), "answerable from the column\n{}", s.last_text());
     // Answer it from here; the task carries on.
-    s.client.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)).unwrap();
+    s.client.handle_key(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::NONE)).unwrap();
     s.answered = true;
     Scene::regroup(&mut s.client.column);
     s.shot(2400);
     // Back to the task.
     s.key(KeyCode::Esc, 2200);
-    // A new task: `n` opens the form in the column — name, repos to check
-    // out — and ⏎ creates it: a branch and worktree in each repo, a
+    // A new task: Ctrl+n opens the form in the column — name, repos to
+    // check out — and ⏎ creates it: a branch and worktree in each repo, a
     // TASK.md, and a window with Claude Code already started.
     s.ctrl_w(700);
-    s.key(KeyCode::Char('n'), 1200);
+    s.client.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+    s.shot(1200);
     assert!(s.last_text().contains(" new task "), "the create form\n{}", s.last_text());
     s.type_str("rate limit alerts", 90);
     s.shot(700);
