@@ -348,6 +348,27 @@ fn client_column_beside_the_embedded_session() {
     h.keys(&["Enter"]);
     h.wait_screen("insert mode after the jump", 3, |s| s.contains(" INSERT "));
 
+    // A workspace registered while the client runs (what `tenx init` does)
+    // is listed without a restart, its tasks included. The column is the
+    // only place the *title* can appear above the embedded status line:
+    // the panes are fake, and the status line (the last line) shows the
+    // window's title on its own, so it must not count.
+    let ws2 = h.root.join("ws2");
+    fs::create_dir_all(ws2.join("tasks")).unwrap();
+    fs::write(
+        ws2.join("config.toml"),
+        format!("name = \"late\"\nlayout = \"\"\n\n[[repos]]\nname = \"origin\"\nurl = \"{}\"\n", h.root.join("origin.git").display()),
+    )
+    .unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/late.toml"), format!("path = \"{}\"\n", ws2.display())).unwrap();
+    let out = h.tenx().args(["task", "new", "Four", "--ws-dir", &ws2.to_string_lossy()]).output().unwrap();
+    assert!(out.status.success(), "task new Four: {}", String::from_utf8_lossy(&out.stderr));
+    h.wait_screen("the late workspace's task in the column", 5, |s| {
+        let mut lines: Vec<&str> = s.lines().collect();
+        lines.pop();
+        lines.iter().any(|l| l.contains("Four"))
+    });
+
     // `:q` from the column quits the client; the session lives on.
     h.keys(&["C-w"]);
     h.wait_screen("normal mode", 3, |s| s.contains(" NORMAL "));

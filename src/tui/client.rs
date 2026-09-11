@@ -410,15 +410,18 @@ fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<(
                 Event::FocusLost => {}
             }
         }
+        // The unlock names its workspace by index into the column's list;
+        // serve it before the tick, whose slow refresh may reload that list
+        // (a workspace registered meanwhile) and renumber it.
+        if let Some((ws_idx, slug)) = client.column.take_unlock() {
+            column::run_unlock(terminal, &mut client.column, ws_idx, &slug)?;
+        }
         client.tick();
         if client.term.take_bell() {
             let _ = execute!(io::stdout(), Print("\x07"));
         }
         for payload in client.term.take_clipboard() {
             let _ = execute!(io::stdout(), Print(format!("\x1b]52;{payload}\x07")));
-        }
-        if let Some((ws_idx, slug)) = client.column.take_unlock() {
-            column::run_unlock(terminal, &mut client.column, ws_idx, &slug)?;
         }
         if client.quit {
             client.term.kill();

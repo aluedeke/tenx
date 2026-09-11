@@ -234,6 +234,27 @@ pub fn registered_workspaces() -> Vec<Workspace> {
     workspaces
 }
 
+/// The registry's entry names, sorted — a cheap "did the registered set
+/// change" probe for a long-running list (one `read_dir`, no file reads),
+/// the workspace-level twin of `Workspace::task_dir_count`. The column
+/// compares it with the snapshot it took when it last loaded the workspaces
+/// and reloads on any difference, so a workspace registered by `tenx init`
+/// (or pruned) while a client runs shows up without a restart. Snapshot it
+/// *after* `registered_workspaces`, which prunes dead entries, so the two
+/// agree.
+pub fn registry_keys() -> Vec<String> {
+    let Ok(dir) = registry_dir() else { return vec![] };
+    let Ok(entries) = fs::read_dir(&dir) else { return vec![] };
+    let mut keys: Vec<String> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect();
+    keys.sort();
+    keys
+}
+
 // ── Workspace discovery ───────────────────────────────────────────────────────
 
 /// Walk up from `dir` until a directory containing config.toml is found.

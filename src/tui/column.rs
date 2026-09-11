@@ -267,6 +267,11 @@ pub(super) struct Column {
     /// struct. The README demo's mode; never set by the client.
     pub(super) offline: bool,
     workspaces: Vec<Workspace>,
+    /// The registry's entry names as of the last `reload_workspaces` — the
+    /// slow refresh compares them with `workspace::registry_keys()` and
+    /// reloads on any difference, so a workspace registered (`tenx init`)
+    /// or pruned while the client runs is listed without a restart.
+    registry: Vec<String>,
     tab: Tab,
     input_mode: InputMode,
     focus: Focus,
@@ -341,9 +346,22 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(300);
 impl Column {
     pub(super) fn new() -> Self {
         let mut o = Self::empty();
-        o.workspaces = workspace::registered_workspaces();
+        o.reload_workspaces();
         o.rebuild_rows();
         o
+    }
+
+    /// Re-read the workspace registry and remember what it listed. Rows are
+    /// not rebuilt here (their `ws_idx` may be stale until they are), so
+    /// every caller follows up with `rebuild_rows`/`tidy`. The Repos tab is
+    /// derived from the same list, so it is rebuilt at once when it has
+    /// been opened.
+    fn reload_workspaces(&mut self) {
+        self.workspaces = workspace::registered_workspaces();
+        self.registry = workspace::registry_keys();
+        if !self.repo_rows.is_empty() {
+            self.rebuild_repo_rows();
+        }
     }
 
     /// A row whose status moved it to another section since the rows were
@@ -421,6 +439,7 @@ impl Column {
             client_request: None,
             offline: false,
             workspaces: vec![],
+            registry: vec![],
             tab: Tab::Tasks,
             input_mode: InputMode::Insert,
             focus: Focus::Search,
@@ -558,12 +577,25 @@ impl Column {
     /// while the column is showing (no rows shuffling under the cursor) and
     /// only recomputed when the list is (re)opened: floating column spawn,
     /// home-pane startup, regaining focus, returning after a jump, or a
-    /// mutating action (create/delete/rename).
+    /// mutating action (create/delete/rename). The one exception is the
+    /// slow refresh's two probes for things that happened outside this
+    /// client — a workspace registered or pruned, a task directory created
+    /// or removed — which rebuild the rows, keeping the selection on its
+    /// task.
     pub(super) fn refresh_statuses(&mut self) {
         let sessions = workspace::sessions::sessions();
         let slow = self.slow_refreshed.is_none_or(|t| t.elapsed() >= SLOW_REFRESH);
         if slow {
             self.refresh_windows();
+            // A workspace registered from outside (`tenx init`, or `tenx`
+            // run inside an unregistered workspace) has tasks this column
+            // has never scanned: reload the list, then rebuild. One
+            // `read_dir` of the registry.
+            if workspace::registry_keys() != self.registry {
+                self.reload_workspaces();
+                self.tidy();
+                return;
+            }
             // A task created or removed from outside (the CLI, the skill,
             // another client) is not a row yet: rebuild, keeping the
             // selection on its task. One `read_dir` per workspace.
