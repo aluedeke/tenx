@@ -315,7 +315,13 @@ fn client_column_beside_the_embedded_session() {
         q(env!("CARGO_BIN_EXE_tenx")),
         q(&h.root.join("client.err").to_string_lossy())
     );
-    let st = h.outer_tmux().args(["-f", "/dev/null", "new-session", "-d", "-x", "180", "-y", "40", "-s", "o", &client]).status().unwrap();
+    // Started in the harness root: the client registers the workspace its
+    // cwd is in, and `cargo test` runs inside a real one.
+    let st = h
+        .outer_tmux()
+        .args(["-f", "/dev/null", "new-session", "-d", "-x", "180", "-y", "40", "-s", "o", "-c", s(&h.root), &client])
+        .status()
+        .unwrap();
     assert!(st.success(), "outer tmux new-session failed");
     h.wait_screen("the column", 10, |s| s.contains("Tasks") && s.contains("Repos"));
 
@@ -368,6 +374,42 @@ fn client_column_beside_the_embedded_session() {
         lines.pop();
         lines.iter().any(|l| l.contains("Four"))
     });
+
+    // `:init <path>` creates a workspace from the column: the form takes a
+    // first repo, and the column reports the new workspace. On disk: the
+    // config, the registry entry, the bare clone, the skills.
+    let ws3 = h.root.join("fresh");
+    h.keys(&["C-w"]);
+    h.wait_screen("normal mode", 3, |s| s.contains(" NORMAL "));
+    h.keys(&["-l", &format!(":init {}", ws3.display())]);
+    h.keys(&["Enter"]);
+    h.wait_screen("the new-workspace form", 3, |s| s.contains(" new workspace "));
+    h.keys(&["Tab", "Tab"]); // path (prefilled), name (defaults), git URL
+    h.keys(&["-l", &h.root.join("origin.git").to_string_lossy()]);
+    h.keys(&["Enter"]);
+    h.wait_screen("the fresh workspace created", 15, |s| s.contains("workspace 'fresh' created"));
+    assert!(ws3.join("config.toml").exists(), "config written");
+    assert!(ws3.join(".bare").join("origin.git").exists(), "repo cloned");
+    assert!(ws3.join(".claude/skills/tenx/SKILL.md").exists(), "skills installed");
+    assert!(ws3.join("AGENTS.md").exists(), "AGENTS.md written");
+    let registered = fs::read_dir(h.root.join("home/.config/tenx/workspaces.d"))
+        .unwrap()
+        .flatten()
+        .filter_map(|e| fs::read_to_string(e.path()).ok())
+        .any(|t| t.contains("fresh"));
+    assert!(registered, "the new workspace is registered");
+    let out = h.tenx().args(["task", "new", "Five", "--ws-dir", &ws3.to_string_lossy()]).output().unwrap();
+    assert!(out.status.success(), "task new in the fresh workspace: {}", String::from_utf8_lossy(&out.stderr));
+    // Back to the Tasks tab, where the new task shows up on the next
+    // refresh, and to the task: Ctrl+w lands on the current task's row,
+    // which only the Tasks tab has, and only once the row exists.
+    h.keys(&["g", "t"]);
+    h.wait_screen("the fresh workspace's task in the column", 5, |s| {
+        let mut lines: Vec<&str> = s.lines().collect();
+        lines.pop();
+        lines.iter().any(|l| l.contains("Five"))
+    });
+    h.keys(&["q"]);
 
     // `:q` from the column quits the client; the session lives on.
     h.keys(&["C-w"]);

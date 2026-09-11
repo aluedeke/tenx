@@ -189,6 +189,36 @@ struct AddRepoForm {
     focus: usize,
 }
 
+/// New-workspace form: what `tenx init` asks, minus the per-machine agent
+/// setup, which `tenx` self-heals on launch. Submitting calls
+/// `cli::init::init_in`, the same step the CLI runs.
+struct NewWorkspaceForm {
+    /// Directory to create (`~` expanded); need not exist yet.
+    path: String,
+    /// Empty = the path's last segment, as the CLI does.
+    name: String,
+    /// One repo is enough for the first task; `a` adds more later.
+    repo_url: String,
+    /// Install /tenx and /standup (Claude, Codex, pi) and AGENTS.md.
+    skills: bool,
+    focus: usize,
+}
+
+impl NewWorkspaceForm {
+    const FIELDS: usize = 4;
+    const SKILLS: usize = 3;
+
+    /// The text field under the cursor, if it is on one.
+    fn field_mut(&mut self) -> Option<&mut String> {
+        match self.focus {
+            0 => Some(&mut self.path),
+            1 => Some(&mut self.name),
+            2 => Some(&mut self.repo_url),
+            _ => None,
+        }
+    }
+}
+
 /// Pending delete confirmation.
 struct Confirm {
     ws_idx: usize,
@@ -242,6 +272,8 @@ enum Mode {
     Create(CreateForm),
     /// Add-repo form (Repos tab), workspace from the selected repo.
     AddRepo(AddRepoForm),
+    /// New-workspace form (`W`, `:init [path]`), from either tab.
+    NewWorkspace(NewWorkspaceForm),
     /// Repo checklist for the selected task (add/detach worktrees).
     EditRepos(EditReposForm),
     Confirm(Confirm),
@@ -736,6 +768,10 @@ impl Column {
     pub(super) fn blur(&mut self) {
         if matches!(self.mode, Mode::List) {
             self.focus_search();
+            // A message is about what you just did here and has been read
+            // by the time the keyboard leaves; Ctrl+w brings back a fresh
+            // column, its footer showing the mode tag, not a stale line.
+            self.status_msg = None;
         }
     }
 
@@ -940,6 +976,7 @@ impl Column {
             Command,
             Create,
             AddRepo,
+            NewWorkspace,
             EditRepos,
             Confirm,
             Rename,
@@ -949,6 +986,7 @@ impl Column {
             Mode::Command(_) => Kind::Command,
             Mode::Create(_) => Kind::Create,
             Mode::AddRepo(_) => Kind::AddRepo,
+            Mode::NewWorkspace(_) => Kind::NewWorkspace,
             Mode::EditRepos(_) => Kind::EditRepos,
             Mode::Confirm(_) => Kind::Confirm,
             Mode::Rename(_) => Kind::Rename,
@@ -958,6 +996,7 @@ impl Column {
             Kind::Command => self.handle_command_key(key),
             Kind::Create => self.handle_create_key(key),
             Kind::AddRepo => self.handle_addrepo_key(key),
+            Kind::NewWorkspace => self.handle_newws_key(key),
             Kind::EditRepos => self.handle_editrepos_key(key),
             Kind::Confirm => {
                 self.handle_confirm_key(key);
@@ -1051,6 +1090,8 @@ impl Column {
             KeyCode::Char('n') if ctrl => self.start_create(),
             KeyCode::Char('n') if self.tab == Tab::Tasks => self.jump_needs_you(),
             KeyCode::Char('a') if self.tab == Tab::Repos => self.start_add_repo(),
+            // `W` for a whole new workspace (`:init [path]`), from either tab.
+            KeyCode::Char('W') => self.start_new_workspace(""),
             KeyCode::Char('r') => {
                 if self.require_tasks() {
                     self.start_rename();
@@ -1125,6 +1166,11 @@ impl Column {
     /// Run a `:` command against the selected task. Returns `Ok(true)` to close
     /// the column. Commands that open a sub-view set `self.mode` themselves.
     fn run_command(&mut self, cmd: &str) -> Result<bool> {
+        // `:init [path]` — the new-workspace form, from either tab.
+        if cmd == "init" || cmd.starts_with("init ") {
+            self.start_new_workspace(cmd["init".len()..].trim());
+            return Ok(false);
+        }
         // Tab switches and quit work from either tab.
         match cmd {
             "tasks" => {
@@ -1543,6 +1589,125 @@ impl Column {
         Ok(())
     }
 
+    // ── New workspace (either tab) ────────────────────────────────────────────
+
+    /// `W` / `:init [path]` — open the new-workspace form. The path defaults
+    /// to a sibling of the selected item's workspace (people keep their
+    /// workspaces together), ready for the name to be typed at the end.
+    fn start_new_workspace(&mut self, path: &str) {
+        let path = if path.is_empty() {
+            self.selected_ws_idx()
+                .and_then(|i| self.workspaces.get(i))
+                .and_then(|ws| ws.dir.parent())
+                .map(|p| format!("{}/", p.display()))
+                .unwrap_or_else(|| "~/".to_string())
+        } else {
+            path.to_string()
+        };
+        self.status_msg = None;
+        self.mode = Mode::NewWorkspace(NewWorkspaceForm {
+            path,
+            name: String::new(),
+            repo_url: String::new(),
+            skills: true,
+            focus: 0,
+        });
+    }
+
+    fn handle_newws_key(&mut self, key: KeyEvent) -> Result<bool> {
+        let mut form = match std::mem::replace(&mut self.mode, Mode::List) {
+            Mode::NewWorkspace(f) => f,
+            other => {
+                self.mode = other;
+                return Ok(false);
+            }
+        };
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let fields = NewWorkspaceForm::FIELDS;
+        match key.code {
+            KeyCode::Esc => return Ok(false), // cancel; mode already List
+            KeyCode::Enter => match self.submit_new_workspace(&form) {
+                // `submit` chose where to land (the list, or the add-repo form).
+                Ok(()) => return Ok(false),
+                Err(e) => self.status_msg = Some(e),
+            },
+            KeyCode::Tab | KeyCode::Down => form.focus = (form.focus + 1) % fields,
+            KeyCode::BackTab | KeyCode::Up => form.focus = (form.focus + fields - 1) % fields,
+            KeyCode::Char(' ') | KeyCode::Left | KeyCode::Right if form.focus == NewWorkspaceForm::SKILLS => {
+                form.skills = !form.skills
+            }
+            KeyCode::Backspace => {
+                if let Some(s) = form.field_mut() {
+                    s.pop();
+                }
+            }
+            KeyCode::Char(c) if !ctrl => {
+                if let Some(s) = form.field_mut() {
+                    s.push(c);
+                }
+            }
+            _ => {}
+        }
+        self.mode = Mode::NewWorkspace(form);
+        Ok(false)
+    }
+
+    /// Create the workspace, then land where it can be seen: it has no
+    /// tasks yet, so the Tasks tab would show nothing of it. Given a repo,
+    /// that is the Repos tab with the repo selected (Ctrl+n there creates
+    /// the first task); without one, the add-repo form for the new
+    /// workspace, since a task needs a repo.
+    fn submit_new_workspace(&mut self, form: &NewWorkspaceForm) -> Result<(), String> {
+        let path = form.path.trim();
+        if path.is_empty() {
+            return Err("path cannot be empty".into());
+        }
+        let dir = PathBuf::from(workspace::expand_home(path));
+        let name = match form.name.trim() {
+            "" => dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .filter(|n| !n.is_empty())
+                .ok_or_else(|| "give a name — the path has no last segment to use".to_string())?,
+            n => n.to_string(),
+        };
+        let url = form.repo_url.trim();
+        let repos = if url.is_empty() {
+            vec![]
+        } else {
+            vec![workspace::RepoConfig { name: crate::cli::repo::infer_name(url), url: url.to_string() }]
+        };
+        if self.offline {
+            self.status_msg = Some(format!("would create workspace '{name}' at {}", dir.display()));
+            return Ok(());
+        }
+        let ws = crate::cli::init::init_in(&dir, &name, repos, String::new(), form.skills).map_err(|e| e.to_string())?;
+        self.filter.clear();
+        self.reload_workspaces();
+        self.tidy();
+        // The registry holds canonical paths; the form's may not be.
+        let created = ws.dir.canonicalize().unwrap_or_else(|_| ws.dir.clone());
+        let Some(ws_idx) = self
+            .workspaces
+            .iter()
+            .position(|w| w.dir.canonicalize().unwrap_or_else(|_| w.dir.clone()) == created)
+        else {
+            return Err(format!("workspace '{name}' created, but it is not in the registry"));
+        };
+        if ws.config.repos.is_empty() {
+            self.status_msg = Some(format!("workspace '{name}' created — add its first repo"));
+            self.mode = Mode::AddRepo(AddRepoForm { ws_idx, url: String::new(), name: String::new(), focus: 0 });
+            return Ok(());
+        }
+        self.select_repos_tab();
+        if let Some(pos) = self.repo_filtered.iter().position(|&i| self.repo_rows[i].ws_idx == ws_idx) {
+            self.repo_selected = pos;
+        }
+        self.focus_list();
+        self.status_msg = Some(format!("workspace '{name}' created"));
+        Ok(())
+    }
+
     // ── Edit repos (Tasks tab) ────────────────────────────────────────────────
 
     /// `e` / `:e` — open the repo checklist for the selected task, prefilled
@@ -1948,6 +2113,8 @@ pub(super) fn render_in(f: &mut ratatui::Frame, column: &mut Column, area: Rect)
         render_create(f, column, area);
     } else if matches!(column.mode, Mode::AddRepo(_)) {
         render_addrepo(f, column, area);
+    } else if matches!(column.mode, Mode::NewWorkspace(_)) {
+        render_newws(f, column, area);
     } else if matches!(column.mode, Mode::EditRepos(_)) {
         render_editrepos(f, column, area);
     } else {
@@ -2425,6 +2592,41 @@ fn render_addrepo(f: &mut ratatui::Frame, column: &Column, area: Rect) {
     } else {
         Line::from(Span::styled(
             " ⏎ clone & add   esc cancel   ⇥ next field",
+            Style::default().fg(palette::MUTED.color()),
+        ))
+    };
+    f.render_widget(Paragraph::new(footer), chunks[1]);
+}
+
+fn render_newws(f: &mut ratatui::Frame, column: &Column, area: Rect) {
+    let Mode::NewWorkspace(form) = &column.mode else { return };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(area);
+
+    let name_hint = if form.name.is_empty() { "   (optional — the path's last segment)" } else { "" };
+    let url_hint = if form.repo_url.is_empty() { "   (optional — a first repo to clone)" } else { "" };
+    let check = if form.skills { "[x]" } else { "[ ]" };
+    let lines = vec![
+        field_line(form.focus == 0, "path", &format!("{}{}", form.path, cursor(form.focus == 0))),
+        Line::from(""),
+        field_line(form.focus == 1, "name", &format!("{}{}{name_hint}", form.name, cursor(form.focus == 1))),
+        Line::from(""),
+        field_line(form.focus == 2, "git URL", &format!("{}{}{url_hint}", form.repo_url, cursor(form.focus == 2))),
+        Line::from(""),
+        field_line(form.focus == NewWorkspaceForm::SKILLS, "skills", &format!("{check} /tenx, /standup and AGENTS.md")),
+    ];
+
+    let body = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" new workspace "));
+    f.render_widget(body, chunks[0]);
+
+    let footer = if let Some(msg) = &column.status_msg {
+        Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
+    } else {
+        Line::from(Span::styled(
+            " ⏎ create   esc cancel   ⇥ next field   space toggle skills",
             Style::default().fg(palette::MUTED.color()),
         ))
     };

@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use std::env;
 use std::path::Path;
 
-fn infer_name(url: &str) -> String {
+pub(crate) fn infer_name(url: &str) -> String {
     url.rsplit('/')
         .next()
         .unwrap_or(url)

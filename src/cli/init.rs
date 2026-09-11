@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::env;
 use std::io::{self, BufRead, Write};
+use std::path::Path;
 
 pub fn run(name: Option<&str>) -> Result<()> {
     let cwd = env::current_dir()?;
@@ -29,49 +30,19 @@ pub fn run(name: Option<&str>) -> Result<()> {
     // Prompt for layout file
     let layout = prompt_layout()?;
 
-    // Create workspace and fill in config
-    let mut ws = crate::workspace::init(&ws_dir, &ws_name)?;
-    ws.config.layout = layout;
-    for repo in repos {
-        ws.config.repos.push(repo);
-    }
-    ws.save_config()?;
+    // Offer the /tenx and /standup skills. Claude Code reads
+    // `.claude/skills`; Codex and pi read `.agents/skills` and `AGENTS.md`, so
+    // a portable copy of each is installed and an AGENTS.md generated. Asked
+    // before anything is written, so creation is the one step `init_in`
+    // (shared with the column's new-workspace form).
+    let skills = prompt_yes_no("Install /tenx and /standup skills (Claude, Codex, pi) and AGENTS.md?")?;
 
-    // Register in the global workspace list so the column can find it.
-    crate::workspace::register_workspace(&ws.dir)?;
-
-    // Clone all repos immediately
-    if !ws.config.repos.is_empty() {
-        let global = crate::workspace::load_global()?;
-        let bare_dir = ws.bare_dir(&global);
+    if !repos.is_empty() {
         eprintln!();
         eprintln!("Syncing repos:");
-        for repo in &ws.config.repos {
-            let verb = if crate::git::bare_repo_path(&bare_dir, &repo.name).exists() {
-                "fetching"
-            } else {
-                "cloning"
-            };
-            let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
-            match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name) {
-                Ok(_) => spinner.done(),
-                Err(e) => {
-                    spinner.fail(&e.to_string());
-                    return Err(e);
-                }
-            }
-        }
     }
-
-    // Offer to install the /tenx and /standup skills. Claude Code reads
-    // `.claude/skills`; Codex and pi read `.agents/skills` and `AGENTS.md`, so
-    // install a portable copy of each and generate an AGENTS.md too.
-    if prompt_yes_no("Install /tenx and /standup skills (Claude, Codex, pi) and AGENTS.md?")? {
-        install_tenx_skill(&ws_dir)?;
-        install_standup_skill(&ws_dir)?;
-        install_agents_skill(&ws_dir, "tenx", TENX_SKILL_MD)?;
-        install_agents_skill(&ws_dir, "standup", STANDUP_SKILL_MD)?;
-        install_agents_md(&ws_dir)?;
+    let ws = init_in(&ws_dir, &ws_name, repos, layout, skills)?;
+    if skills {
         eprintln!("  ✓ skills installed (.claude/skills + .agents/skills) and AGENTS.md written");
     }
 
@@ -97,6 +68,63 @@ pub fn run(name: Option<&str>) -> Result<()> {
         eprintln!("  cd {}", ws.dir.display());
     }
     Ok(())
+}
+
+/// Create a workspace from settled inputs — what `tenx init` does once its
+/// questions are answered, and what the column's new-workspace form calls
+/// directly: the directory with `config.toml` and `tasks/`, the registry
+/// entry (every running column lists it on its next refresh), the repos
+/// cloned, and the skills when asked for. The per-machine agent setup is
+/// not part of it: `tenx` self-heals that on launch.
+pub fn init_in(
+    dir: &Path,
+    name: &str,
+    repos: Vec<crate::workspace::RepoConfig>,
+    layout: String,
+    skills: bool,
+) -> Result<crate::workspace::Workspace> {
+    let mut ws = crate::workspace::init(dir, name)?;
+    ws.config.layout = layout;
+    ws.config.repos = repos;
+    ws.save_config()?;
+
+    // Register in the global workspace list so the column can find it.
+    crate::workspace::register_workspace(&ws.dir)?;
+
+    // Clone all repos immediately (a spinner per repo, as task creation
+    // shows; nothing else, since the column's stderr is the terminal's).
+    if !ws.config.repos.is_empty() {
+        let global = crate::workspace::load_global()?;
+        let bare_dir = ws.bare_dir(&global);
+        for repo in &ws.config.repos {
+            let verb = if crate::git::bare_repo_path(&bare_dir, &repo.name).exists() {
+                "fetching"
+            } else {
+                "cloning"
+            };
+            let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
+            match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name) {
+                Ok(_) => spinner.done(),
+                Err(e) => {
+                    spinner.fail(&e.to_string());
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    if skills {
+        install_skills(&ws.dir)?;
+    }
+    Ok(ws)
+}
+
+fn install_skills(ws_dir: &Path) -> Result<()> {
+    install_tenx_skill(ws_dir)?;
+    install_standup_skill(ws_dir)?;
+    install_agents_skill(ws_dir, "tenx", TENX_SKILL_MD)?;
+    install_agents_skill(ws_dir, "standup", STANDUP_SKILL_MD)?;
+    install_agents_md(ws_dir)
 }
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
@@ -294,7 +322,7 @@ fn prompt_repos() -> Result<Vec<crate::workspace::RepoConfig>> {
         if url.is_empty() {
             break;
         }
-        let default_name = infer_name(&url);
+        let default_name = crate::cli::repo::infer_name(&url);
         let input = prompt(&format!("  Name [{default_name}]"))?;
         let name = if input.is_empty() { default_name } else { input };
         repos.push(crate::workspace::RepoConfig { name, url });
@@ -324,12 +352,4 @@ fn prompt(label: &str) -> Result<String> {
     let mut line = String::new();
     io::stdin().lock().read_line(&mut line)?;
     Ok(line.trim().to_string())
-}
-
-fn infer_name(url: &str) -> String {
-    url.rsplit('/')
-        .next()
-        .unwrap_or(url)
-        .trim_end_matches(".git")
-        .to_string()
 }

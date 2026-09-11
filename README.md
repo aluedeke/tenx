@@ -124,6 +124,7 @@ The column lists every task from every registered workspace, sectioned by attent
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |
 | `Ctrl+n` | New task |
 | `a` | Add a repo to the workspace (Repos tab) |
+| `W` | New workspace |
 | `e` | Edit which repos the task has worktrees for |
 | `r` | Rename the task |
 | `x` | Close the task's window (the conversation resumes on next open) |
@@ -134,11 +135,11 @@ The column lists every task from every registered workspace, sectioned by attent
 
 The column opens in the search field (`Ctrl+w` lands in the list instead). Typing filters the list; `Backspace` edits the filter; `Esc` or `↓` leaves the field for the list. `↓` and `↑` from the field land next to the task you are in, not at the top, and `Ctrl+j`/`Ctrl+k` do the same. `Enter` in the field opens the top match. In the list, `↑` from the first row goes back to the field. `Ctrl+w` lands in the list, so `Ctrl+w` `n` from any task reaches the next one that needs you, and `A` or `Enter` deals with it.
 
-The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else.
+The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else. `W` (or `:init [path]`), from either tab, creates a whole new workspace: a path, a name, a first repo URL and whether to install the skills, the same questions `tenx init` asks. The column then lands on the new workspace's repo in the Repos tab, where `Ctrl+n` creates its first task; given no repo, it opens the add-repo form for it instead, since a task needs one.
 
-The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`. The rest have no key: `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:cancel` withdraws a pending secrets request, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:q` quits the client.
+The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`, `:init [path]`. The rest have no key: `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:cancel` withdraws a pending secrets request, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:q` quits the client.
 
-The **forms** (new task, edit repos, rename, delete) are keyboard-only. `Tab`/`↓` and `Shift+Tab`/`↑` move between fields, `Space` toggles a repo, `Enter` submits, `Esc` cancels. In the new-task form, `←`/`→` on the agent field cycle the choice. In the edit-repos form, `j`/`k` also move, `x` also toggles, `a` picks every repo and `n` none. Deleting a task, or removing a worktree from the edit-repos form, asks once more; `y` or `Enter` confirms, any other key cancels.
+The **forms** (new task, new workspace, add repo, edit repos, rename, delete) are keyboard-only. `Tab`/`↓` and `Shift+Tab`/`↑` move between fields, `Space` toggles a repo, `Enter` submits, `Esc` cancels. In the new-task form, `←`/`→` on the agent field cycle the choice; in the new-workspace form, `Space` on the skills field toggles it. In the edit-repos form, `j`/`k` also move, `x` also toggles, `a` picks every repo and `n` none. Deleting a task, or removing a worktree from the edit-repos form, asks once more; `y` or `Enter` confirms, any other key cancels.
 
 The **mouse** selects but never opens: the wheel scrolls the view without moving the selection, a click on a row selects it (and switches to its window when open), a click on the search box or a tab header focuses that. Opening stays on `Enter`, so a tap on a phone with a desktop client attached can't switch the desktop's window.
 
