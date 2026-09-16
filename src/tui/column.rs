@@ -104,8 +104,10 @@ struct Row {
     section: workspace::TaskGroup,
 }
 
-/// Create-task form (workspace already chosen). `focus`: 0 = name,
-/// 1.. = repo checkboxes.
+/// Create-task form. `focus`: 0 = workspace picker, 1 = name,
+/// 2.. = repo checkboxes, last = agent picker. The workspace starts as the
+/// selected item's (or the first registered one) and ←/→ cycle it; the
+/// repo checklist follows the chosen workspace.
 struct CreateForm {
     ws_idx: usize,
     name: String,
@@ -116,13 +118,30 @@ struct CreateForm {
 }
 
 impl CreateForm {
+    const WORKSPACE: usize = 0;
+    const NAME: usize = 1;
+
     fn field_count(&self) -> usize {
-        // name, one per repo, then agent.
-        2 + self.repos.len()
+        // workspace, name, one per repo, then agent.
+        3 + self.repos.len()
     }
     /// Focus index of the agent field (the last one).
     fn agent_field(&self) -> usize {
-        1 + self.repos.len()
+        2 + self.repos.len()
+    }
+    /// The repo checkbox under the cursor, if it is on one.
+    fn repo_field(&self) -> Option<usize> {
+        self.focus.checked_sub(2).filter(|&i| i < self.repos.len())
+    }
+    /// Cycle the workspace choice through the `count` registered ones.
+    /// Returns whether it changed (the caller reloads the repo list).
+    fn cycle_workspace(&mut self, count: usize, back: bool) -> bool {
+        if count < 2 {
+            return false;
+        }
+        let cur = self.ws_idx.min(count - 1);
+        self.ws_idx = if back { (cur + count - 1) % count } else { (cur + 1) % count };
+        self.ws_idx != cur
     }
     /// Cycle the agent choice: default → claude → codex → pi → default.
     fn cycle_agent(&mut self, back: bool) {
@@ -268,7 +287,8 @@ enum Mode {
     List,
     /// Vim-style `:` command line; the String is the buffer after the colon.
     Command(String),
-    /// New-task form (workspace derived from the current selection).
+    /// New-task form (workspace preselected from the current selection,
+    /// changeable in the form).
     Create(CreateForm),
     /// Add-repo form (Repos tab), workspace from the selected repo.
     AddRepo(AddRepoForm),
@@ -1372,11 +1392,17 @@ impl Column {
         }
     }
 
-    /// `:n` — open the new-task form in the selected item's workspace.
+    /// `:n` — open the new-task form, preselecting the selected item's
+    /// workspace (else the first registered one); the form's workspace
+    /// field changes it.
     fn start_create(&mut self) {
-        let Some(ws_idx) = self.selected_ws_idx() else {
-            self.status_msg = Some("select a task or repo first".into());
-            return;
+        let ws_idx = match self.selected_ws_idx() {
+            Some(i) => i,
+            None if !self.workspaces.is_empty() => 0,
+            None => {
+                self.status_msg = Some("no workspace yet: W creates one".into());
+                return;
+            }
         };
         let repos = self.ws_repos(ws_idx);
         self.status_msg = None;
@@ -1385,7 +1411,7 @@ impl Column {
             name: String::new(),
             repos,
             agent: None,
-            focus: 0,
+            focus: CreateForm::NAME,
         });
     }
 
@@ -1418,27 +1444,31 @@ impl Column {
             },
             KeyCode::Tab | KeyCode::Down => form.focus_next(),
             KeyCode::BackTab | KeyCode::Up => form.focus_prev(),
-            // On the agent field, arrows cycle the choice.
+            // On the workspace and agent fields, arrows (and space) cycle
+            // the choice; a new workspace brings its own repo list.
+            KeyCode::Right | KeyCode::Left | KeyCode::Char(' ') if form.focus == CreateForm::WORKSPACE => {
+                let back = key.code == KeyCode::Left;
+                if form.cycle_workspace(self.workspaces.len(), back) {
+                    form.repos = self.ws_repos(form.ws_idx);
+                }
+            }
             KeyCode::Right if form.focus == form.agent_field() => form.cycle_agent(false),
             KeyCode::Left if form.focus == form.agent_field() => form.cycle_agent(true),
             KeyCode::Char(' ') => {
                 if form.focus == form.agent_field() {
                     form.cycle_agent(false);
-                } else if form.focus >= 1 {
-                    let i = form.focus - 1;
-                    if i < form.repos.len() {
-                        form.repos[i].1 = !form.repos[i].1;
-                    }
-                } else {
+                } else if let Some(i) = form.repo_field() {
+                    form.repos[i].1 = !form.repos[i].1;
+                } else if form.focus == CreateForm::NAME {
                     form.name.push(' ');
                 }
             }
             KeyCode::Backspace => {
-                if form.focus == 0 {
+                if form.focus == CreateForm::NAME {
                     form.name.pop();
                 }
             }
-            KeyCode::Char(c) if !ctrl && form.focus == 0 => form.name.push(c),
+            KeyCode::Char(c) if !ctrl && form.focus == CreateForm::NAME => form.name.push(c),
             _ => {}
         }
         self.mode = Mode::Create(form);
@@ -2721,19 +2751,23 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         .map(|w| w.config.name.clone())
         .unwrap_or_default();
 
+    // Workspace picker (the first field): ← / → cycle through the
+    // registered workspaces when there is more than one.
+    let ws_count = column.workspaces.len();
+    let ws_value = if ws_count > 1 {
+        format!("‹ {ws_name} ›  ({} of {ws_count})", form.ws_idx + 1)
+    } else {
+        ws_name
+    };
     let mut lines = vec![
-        // Chosen workspace shown as context (picked in the previous step).
-        Line::from(vec![
-            Span::styled("  workspace  ", Style::default().fg(palette::MUTED.color())),
-            Span::styled(ws_name, Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD)),
-        ]),
+        field_line(form.focus == CreateForm::WORKSPACE, "workspace", &ws_value),
         Line::from(""),
-        field_line(form.focus == 0, "name", &format!("{}▏", form.name)),
+        field_line(form.focus == CreateForm::NAME, "name", &format!("{}▏", form.name)),
         Line::from(""),
         Line::from(Span::styled("  repos", Style::default().fg(palette::MUTED.color()))),
     ];
     for (i, (name, on)) in form.repos.iter().enumerate() {
-        let focused = form.focus == 1 + i;
+        let focused = form.repo_field() == Some(i);
         let check = if *on { "[x]" } else { "[ ]" };
         let prefix = if focused { "▸ " } else { "  " };
         let style = if focused {
@@ -2763,7 +2797,7 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         ))
     } else {
         Line::from(Span::styled(
-            " ⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ agent",
+            " ⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent",
             Style::default().fg(palette::MUTED.color()),
         ))
     };
@@ -2855,5 +2889,79 @@ mod tests {
         assert!(c.selected_answerable());
         c.handle_key(plain('A')).unwrap();
         assert!(c.status_msg.is_some(), "A answers (or explains why not)");
+    }
+
+    fn ws(name: &str, repos: &[&str]) -> crate::workspace::Workspace {
+        crate::workspace::Workspace {
+            dir: std::path::PathBuf::from(format!("/home/you/{name}")),
+            config: crate::workspace::WorkspaceConfig {
+                schema_version: crate::workspace::CURRENT_SCHEMA,
+                name: name.into(),
+                layout: String::new(),
+                repos: repos
+                    .iter()
+                    .map(|n| crate::workspace::RepoConfig { name: n.to_string(), url: format!("git@github.com:acme/{n}.git") })
+                    .collect(),
+                age_identity: None,
+                agent: String::new(),
+                agents: std::collections::HashMap::new(),
+            },
+        }
+    }
+
+    /// The new-task form starts in the selected task's workspace, and ←/→
+    /// on its workspace field move to another one, bringing that
+    /// workspace's repos along; the task is then created there.
+    #[test]
+    fn create_form_can_change_workspace() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.workspaces = vec![ws("ledger", &["api", "web"]), ws("infra", &["terraform"])];
+        // Every fixture row points at workspace 0.
+        c.focus_list();
+        c.set_cur_sel(1);
+        c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert_eq!((f.ws_idx, f.focus), (0, CreateForm::NAME));
+        assert_eq!(f.repos.len(), 2);
+
+        // Up from the name lands on the workspace field; → picks the next one.
+        c.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)).unwrap();
+        c.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)).unwrap();
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert_eq!((f.ws_idx, f.focus), (1, CreateForm::WORKSPACE));
+        assert_eq!(f.repos, vec![("terraform".to_string(), true)]);
+        // Wraps around; ← goes back.
+        c.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)).unwrap();
+        c.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).unwrap();
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert_eq!(f.ws_idx, 1);
+
+        // Name it and create: the new row belongs to the chosen workspace.
+        c.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).unwrap();
+        for ch in "rotate certs".chars() {
+            c.handle_key(plain(ch)).unwrap();
+        }
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert!(matches!(c.mode, Mode::List));
+        let row = c.rows.iter().find(|r| r.slug == "rotate-certs").expect("created");
+        assert_eq!((row.ws_idx, row.ws_name.as_str()), (1, "infra"));
+        assert_eq!(row.repos, vec!["terraform".to_string()]);
+    }
+
+    /// With no selection but a registered workspace, the form still opens
+    /// (in the first workspace); with none at all it says so.
+    #[test]
+    fn create_form_without_selection() {
+        let mut c = Column::empty();
+        c.offline = true;
+        c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+        assert!(matches!(c.mode, Mode::List));
+        assert_eq!(c.status_msg.as_deref(), Some("no workspace yet: W creates one"));
+
+        c.workspaces = vec![ws("ledger", &["api"])];
+        c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert_eq!(f.ws_idx, 0);
     }
 }
