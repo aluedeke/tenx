@@ -135,9 +135,10 @@ fn run() -> Result<()> {
             TaskCommands::Unpin { name, ws_dir } => {
                 cli::task::unpin(ws_dir.as_deref(), &name)?;
             }
-            TaskCommands::Sweep { after, dry_run } => {
+            TaskCommands::Sweep { after, idle_after, dry_run } => {
                 let after = after.as_deref().map(cli::task::parse_duration).transpose()?;
-                cli::task::sweep(after, dry_run)?;
+                let idle_after = idle_after.as_deref().map(cli::task::parse_duration).transpose()?;
+                cli::task::sweep(after, idle_after, dry_run)?;
             }
         },
     }

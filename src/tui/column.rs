@@ -243,6 +243,8 @@ struct Confirm {
     ws_idx: usize,
     slug: String,
     title: String,
+    /// The task's directory — its window's identity (see `tmux::find_task_window`).
+    path: PathBuf,
 }
 
 /// Rename-title form.
@@ -911,11 +913,12 @@ impl Column {
             return;
         }
         let slug = row.slug.clone();
+        let path = row.path.clone();
         if self.offline {
             self.current = Some(slug);
             return;
         }
-        let Some(w) = crate::tmux::find_window(&slug).ok().flatten() else { return };
+        let Some(w) = crate::tmux::find_task_window(&slug, &path).ok().flatten() else { return };
         if crate::tmux::select_window(&w.id).is_ok() {
             self.current = Some(slug);
         }
@@ -1875,6 +1878,7 @@ impl Column {
                 ws_idx: r.ws_idx,
                 slug: r.slug.clone(),
                 title: r.title.clone(),
+                path: r.path.clone(),
             });
         }
     }
@@ -1892,10 +1896,10 @@ impl Column {
             return;
         }
         // Close the window first (best-effort) so it doesn't linger after the
-        // dir goes. By live slug lookup only — never the cached id: tmux
-        // reuses `@N` after a server restart, so a stale cache can name some
-        // *other* task's window.
-        if let Some(w) = crate::tmux::find_window(&confirm.slug).ok().flatten() {
+        // dir goes. Looked up live, and by task — never the cached id (tmux
+        // reuses `@N` after a server restart) and never by name alone (a slug
+        // is unique only within its workspace).
+        if let Some(w) = crate::tmux::find_task_window(&confirm.slug, &confirm.path).ok().flatten() {
             let _ = crate::tmux::kill_window(&w.id);
         }
         let res = {
@@ -1919,9 +1923,10 @@ impl Column {
         };
         let path = r.path.clone();
         let slug = r.slug.clone();
-        // The live window by slug is the only truth for a kill — a cached id
-        // can belong to another task after a server restart.
-        let id = crate::tmux::find_window(&slug).ok().flatten().map(|w| w.id);
+        // The live window *of this task* is the only truth for a kill — a
+        // cached id can belong to another task after a server restart, and a
+        // name can belong to a namesake in another workspace.
+        let id = crate::tmux::find_task_window(&slug, &path).ok().flatten().map(|w| w.id);
         match id {
             Some(id) => match crate::tmux::kill_window(&id) {
                 Ok(()) => {
@@ -1944,7 +1949,7 @@ impl Column {
             return;
         }
         self.last_swept = Some(Instant::now());
-        let n = crate::cli::task::sweep_quiet(crate::cli::task::DEFAULT_SWEEP_AFTER);
+        let n = crate::cli::task::sweep_quiet(crate::cli::task::DEFAULT_SWEEP_AFTER, crate::cli::task::DEFAULT_IDLE_GRACE);
         if n > 0 {
             self.status_msg = Some(format!("swept {n} idle tab{}", if n == 1 { "" } else { "s" }));
             self.rebuild_rows();

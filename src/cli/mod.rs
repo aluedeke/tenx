@@ -403,11 +403,16 @@ pub enum TaskCommands {
     /// conversation back up exactly where it left off.
     Sweep {
         /// How long a finished ("done, waiting on you") task sits unanswered
-        /// before its window is swept. A genuinely idle task (no live claude
-        /// session at all) is swept immediately regardless. "<N><unit>",
-        /// e.g. "30m", "4h", "2d". Default: 8h.
+        /// before its window is swept. "<N><unit>", e.g. "30m", "4h", "2d".
+        /// Default: 8h.
         #[arg(long)]
         after: Option<String>,
+        /// How long a genuinely idle task (no live agent session at all) must
+        /// have been quiet before its window is swept. The grace exists
+        /// because "idle" is also what a misread looks like. Same format as
+        /// `--after`. Default: 15m.
+        #[arg(long)]
+        idle_after: Option<String>,
         /// Report what would be closed without closing anything.
         #[arg(long)]
         dry_run: bool,

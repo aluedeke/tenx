@@ -324,11 +324,12 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
         bail!("the '{}' session isn't running — run 'tenx' to start it first", crate::tmux::SESSION);
     }
 
-    // Correlate to a live window by its name == the task SLUG. Slugs are
-    // immutable and unique, so this never drifts (unlike the title). Window
-    // names aren't shown anywhere (tabless), so using the slug costs nothing.
+    // Correlate to a live window by the task it was opened for, not by name:
+    // window names are slugs, and a slug is only unique *within* a workspace,
+    // so two workspaces holding a `claude-design` would otherwise take turns
+    // raising — and refreshing the cached id of — each other's window.
     let id_file = task.path.join(crate::tmux::WINDOW_ID_FILE);
-    if let Some(w) = crate::tmux::find_window(slug)? {
+    if let Some(w) = crate::tmux::find_task_window(slug, &task.path)? {
         crate::tmux::select_window(&w.id)?;
         // Refresh the cached id to the live one — only when it changed, so
         // a plain switch leaves the task directory untouched.
@@ -403,7 +404,7 @@ pub fn list() -> Result<()> {
 // touched over months accumulates a window per task ever opened, most of them
 // long since abandoned. `sweep` reclaims that: close what's safe to close,
 // leave everything else exactly as it was. Reopening (`task open`, or the
-// column) is unaffected — `open_in`'s `find_window` just finds none and
+// column) is unaffected — `open_in`'s `find_task_window` just finds none and
 // creates a fresh one, and `has_claude_conversation` still finds the prior
 // transcript, so `--continue` picks the conversation back up.
 //
@@ -486,7 +487,7 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
     tenx_core::time::parse_duration(s).map_err(|e| anyhow::anyhow!(e))
 }
 
-pub use tenx_core::sweep::DEFAULT_SWEEP_AFTER;
+pub use tenx_core::sweep::{DEFAULT_IDLE_GRACE, DEFAULT_SWEEP_AFTER};
 
 /// A task tab `sweep` (or the column's background sweep) has decided is safe
 /// to close, and why — computed once, then either printed+closed (`sweep`) or
@@ -505,7 +506,7 @@ pub struct SweepAction {
 /// window, a pinned task, or a task that's `Blocked`/`Working` — those are
 /// exactly the windows a prompt or an agent is waiting on. Doesn't close
 /// anything itself, so a caller can dry-run, summarize, or act on the list.
-pub fn sweep_candidates(after: Duration) -> Vec<SweepAction> {
+pub fn sweep_candidates(after: Duration, idle_after: Duration) -> Vec<SweepAction> {
     let mut out = Vec::new();
     let live = crate::tmux::list_windows().unwrap_or_default();
     if live.is_empty() {
@@ -513,26 +514,36 @@ pub fn sweep_candidates(after: Duration) -> Vec<SweepAction> {
     }
     let sessions = crate::workspace::sessions::sessions();
     let signals = crate::tmux::signals_from(&live);
+    let pane_paths = crate::tmux::pane_paths_by_window().unwrap_or_default();
     for ws in crate::workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
-            // Windows are named by slug, which is only unique *within* a
-            // workspace (see `Workspace::check_task_new`) — a name collision
-            // across two workspaces is a pre-existing ambiguity `open_in`'s
-            // `find_window` shares, not something sweep introduces.
             if crate::tmux::is_reserved_slug(&task.name) {
                 continue; // a pre-rebuild task named like the home window
             }
-            let Some(w) = live.iter().find(|w| w.name == task.name) else {
-                continue; // not open
+            // Windows are named by slug, and a slug is only unique *within* a
+            // workspace (see `Workspace::check_task_new`) — two registered
+            // workspaces can each hold a `claude-design`. Elsewhere that
+            // ambiguity is settled by `window_owned_by`, the same way `open_in`
+            // settles it: the name is only a shortlist, and the window says
+            // which task it was opened for. Matching on the name alone hands a
+            // dormant task's `Idle` verdict to a namesake's live window and
+            // kills a session mid-turn.
+            let Some(w) = live
+                .iter()
+                .filter(|w| w.name == task.name)
+                .find(|w| crate::tmux::window_owned_by(w, &pane_paths, &task.path))
+            else {
+                continue; // not open, or the window by that name is someone else's
             };
             let state = crate::workspace::resolve_task_state(&task.path, &sessions, &signals);
             let input = tenx_core::sweep::SweepInput {
                 status: state.status,
                 changed: state.changed,
+                quiet_since: w.last_activity,
                 active: w.active,
                 pinned: is_pinned(&task.path),
             };
-            let Some(reason) = tenx_core::sweep::sweep_reason(&input, after, std::time::SystemTime::now()) else {
+            let Some(reason) = tenx_core::sweep::sweep_reason(&input, after, idle_after, std::time::SystemTime::now()) else {
                 continue;
             };
             out.push(SweepAction {
@@ -549,8 +560,8 @@ pub fn sweep_candidates(after: Duration) -> Vec<SweepAction> {
 
 /// `tenx task sweep`: close every current sweep candidate (or, with
 /// `dry_run`, just report them), printing one line per task.
-pub fn sweep(after: Option<Duration>, dry_run: bool) -> Result<()> {
-    let candidates = sweep_candidates(after.unwrap_or(DEFAULT_SWEEP_AFTER));
+pub fn sweep(after: Option<Duration>, idle_after: Option<Duration>, dry_run: bool) -> Result<()> {
+    let candidates = sweep_candidates(after.unwrap_or(DEFAULT_SWEEP_AFTER), idle_after.unwrap_or(DEFAULT_IDLE_GRACE));
     if candidates.is_empty() {
         println!("nothing to sweep");
         return Ok(());
@@ -575,9 +586,9 @@ pub fn sweep(after: Option<Duration>, dry_run: bool) -> Result<()> {
 /// column's background sweep on focus-gained, which runs inside the
 /// alternate screen and would corrupt it by writing to stdout. Returns how
 /// many windows it actually closed.
-pub fn sweep_quiet(after: Duration) -> usize {
+pub fn sweep_quiet(after: Duration, idle_after: Duration) -> usize {
     let mut n = 0;
-    for c in sweep_candidates(after) {
+    for c in sweep_candidates(after, idle_after) {
         if crate::tmux::kill_window(&c.window_id).is_ok() {
             let _ = std::fs::remove_file(c.task_dir.join(crate::tmux::WINDOW_ID_FILE));
             n += 1;

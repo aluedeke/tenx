@@ -32,6 +32,8 @@ The only per-task files tenx owns:
 | `TASK.md` | The task's notes. Rendered on creation, heading rewritten on rename. |
 | `.tenx-window-id` | Cache of the tmux window id. A fast path only; the window is always looked up by slug. |
 | `.tenx-pinned` | Marker that exempts the task from sweep. |
+
+A task's window is additionally tagged, on the tmux side, with the `@tenx_task_dir` window option — the identity `find_task_window` correlates on. Unlike `.tenx-window-id` (a cache that a server restart can alias onto another task's window) it is written by the server that owns the window, so it cannot go stale without the window going with it.
 | `.tenx-live.json` | Cache of ports and PR facts, written only by the watcher. |
 | `.secrets-pending`, `.secrets-pending-set` | Queues of secret requests waiting for a human. |
 
@@ -81,7 +83,7 @@ A blocked task's permission prompt can be answered from the column with `A` or `
 
 **Repo changes** share one function with creation. Detaching removes the worktree and its branch and does not force unless asked, so git's refusal to drop a dirty worktree is the safety net.
 
-**Sweep** closes windows nobody is waiting on. The rule is a pure function in `tenx_core::sweep`: never the current window, a pinned task, or a Blocked or Working task; Idle immediately; Done after the configured age.
+**Sweep** closes windows nobody is waiting on. The rule is a pure function in `tenx_core::sweep`: never the current window, a pinned task, or a Blocked or Working task; Idle once the window has been quiet for the idle grace (default 15m); Done after the configured age. Which window belongs to a task is decided by the `@tenx_task_dir` window option tenx stamps on it when it opens (falling back to its panes' paths for a window opened by an older tenx), not by the window's name — names are slugs, and a slug is only unique within one workspace. `tmux::find_task_window` is that correlation, and everything that selects, closes or sweeps a task's window goes through it.
 
 **Remove** asks for confirmation, then deletes each worktree and its branch and the task directory.
 

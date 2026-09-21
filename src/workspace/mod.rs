@@ -489,17 +489,30 @@ pub fn read_task_display_name(task_dir: &Path) -> String {
 // (unit-tested there). Re-exported so call sites keep the `workspace::` path.
 pub use tenx_core::status::{Signal, TaskGroup, TaskState, TaskStatus};
 
-/// Per-task window signals keyed by slug, from `tmux::signals()`. Empty when
-/// the server is down, which reads as "no bells" — correct, since no window
-/// exists to ring one in.
+/// Per-task window signals from `tmux::signals()`, keyed by the window's task
+/// directory — or, for a window opened before tenx stamped one on
+/// (`tmux::TASK_DIR_OPTION`), by its slug. Empty when the server is down,
+/// which reads as "no bells" — correct, since no window exists to ring one in.
+///
+/// Keyed by directory rather than slug because a slug is only unique within a
+/// workspace: two workspaces holding a `claude-design` collapsed into one
+/// entry, and whichever window tmux listed last supplied the bell for both.
 pub type Signals = std::collections::HashMap<String, Signal>;
 
 /// A task's state: Claude Code's sessions plus its window's bell, resolved by
 /// `tenx_core::status::resolve_task_state`. Pass `sessions` and `signals`
 /// gathered once per refresh, not per task.
 pub fn resolve_task_state(task_dir: &Path, sessions: &[sessions::Session], signals: &Signals) -> TaskState {
-    let slug = task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let signal = signals.get(&slug).copied().unwrap_or_default();
+    // By directory first; by slug only for a window opened before the option
+    // existed, which is exactly the old behaviour for exactly those windows.
+    let signal = signals
+        .get(&*task_dir.to_string_lossy())
+        .or_else(|| {
+            let slug = task_dir.file_name()?.to_string_lossy().into_owned();
+            signals.get(&slug)
+        })
+        .copied()
+        .unwrap_or_default();
     tenx_core::status::resolve_task_state(task_dir, sessions, signal)
 }
 

@@ -164,7 +164,7 @@ tenx task rename <SLUG> <TITLE>
 tenx task add-repo|rm-repo|set-repos <SLUG> <REPOS..>
 tenx task rm <NAME>
 tenx task pin|unpin <NAME>
-tenx task sweep          close windows nobody is waiting on [--after 8h] [--dry-run]
+tenx task sweep          close windows nobody is waiting on [--after 8h] [--idle-after 15m] [--dry-run]
 tenx watch               the attention watcher (started automatically)
 tenx standup             summarize recent activity across tasks
 tenx secrets ...         per-task encrypted secrets, see below
@@ -184,7 +184,7 @@ On a terminal under 100 columns there is no room for a column beside the task, s
 
 ## Sweep and pin
 
-Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks immediately, finished tasks after `--after` (default 8h). It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
+Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks once they have been quiet for `--idle-after` (default 15m), finished tasks after `--after` (default 8h). A task's window is the one its panes are actually in, never just one that shares its slug — the same task name in two workspaces must not close the wrong session. It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
 
 ## Agent integration
 

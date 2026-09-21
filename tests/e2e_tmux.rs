@@ -490,3 +490,120 @@ fn codex_task_launches_and_reports_state_through_the_registry() {
     assert!(child.wait().unwrap().success());
     assert!(!h.root.join(format!("home/.config/tenx/sessions/{pane_pid}.json")).exists(), "record deleted on SessionEnd");
 }
+
+/// The bug this guards: windows are named by task slug, and a slug is only
+/// unique *within* a workspace. `sweep` used to find a task's window by name
+/// alone, across every registered workspace — so a dormant task in one
+/// workspace resolved to `Idle`, matched a namesake's window in another, and
+/// closed a live session mid-turn.
+#[test]
+fn sweep_never_closes_a_namesake_window_from_another_workspace() {
+    let Some(h) = Harness::named("-sweep") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+
+    // The live one: a real window whose panes sit in its own task dir.
+    let out = h.tenx().args(["task", "new", "Dup", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_id} #{window_name}"]);
+    let live_id = windows.lines().find(|l| l.ends_with(" dup")).expect("dup window").split(' ').next().unwrap().to_string();
+
+    // The decoy: same slug, another workspace, never opened — so it has no
+    // window of its own and resolves to `Idle` forever.
+    let ws2 = h.root.join("ws2");
+    fs::create_dir_all(ws2.join("tasks")).unwrap();
+    fs::write(
+        ws2.join("config.toml"),
+        format!("name = \"other\"\nlayout = \"\"\n\n[[repos]]\nname = \"origin\"\nurl = \"{}\"\n", h.root.join("origin.git").display()),
+    )
+    .unwrap();
+    let out = h.tenx().args(["task", "new", "Dup", "--ws-dir", s(&ws2), "--no-open"]).output().unwrap();
+    assert!(out.status.success(), "decoy task new: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(ws2.join("tasks/dup").is_dir(), "decoy task dir exists");
+
+    // Visiting the window clears tmux's bell/activity flags (so the task
+    // reads as plain `Idle`, not "signaled"), and leaving it means it's no
+    // longer the current window — both are spared for reasons of their own,
+    // which would hide everything this test is about.
+    h.tmux_out(&["select-window", "-t", "tenx:dup"]);
+    h.tmux_out(&["select-window", "-t", "tenx:home"]);
+
+    // Both registered, so sweep walks both.
+    let reg = h.root.join("home/.config/tenx/workspaces.d");
+    fs::create_dir_all(&reg).unwrap();
+    fs::write(reg.join("e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+    fs::write(reg.join("other.toml"), format!("path = \"{}\"\n", ws2.display())).unwrap();
+
+    // `--idle-after 0s` waives the grace period, so what's left is the window
+    // *identity* on its own — with the grace in place the seconds-old window
+    // would survive either way and the real bug would go unnoticed.
+    let out = h.tenx().args(["task", "sweep", "--idle-after", "0s", "--dry-run"]).output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.contains("other/"), "the decoy owns no window and must name none: {text}");
+    // The positive control: the window really is idle, and its *own* task
+    // still finds it — the fix rejects the wrong window, not every window.
+    assert!(text.contains("e2e/Dup"), "the task that owns the window still sweeps it: {text}");
+
+    // With the grace period back, a real sweep leaves the seconds-old window
+    // standing — `Idle` alone is no longer enough to close anything.
+    let out = h.tenx().args(["task", "sweep"]).output().unwrap();
+    assert!(out.status.success(), "sweep: {}", String::from_utf8_lossy(&out.stderr));
+    let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_id} #{window_name}"]);
+    assert!(windows.contains(&format!("{live_id} dup")), "the live window survives the sweep: {windows}");
+}
+
+
+/// The other half of the slug-collision bug: `task open` correlated to a
+/// window by name too, so opening a task in one workspace raised — and
+/// rewrote the cached window id of — a namesake's live window in another.
+/// That's also why such a task could never acquire a session of its own.
+#[test]
+fn opening_a_task_never_raises_a_namesake_window_from_another_workspace() {
+    let Some(h) = Harness::named("-open") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+
+    let out = h.tenx().args(["task", "new", "Dup", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let first_id = fs::read_to_string(h.root.join("ws/tasks/dup/.tenx-window-id")).unwrap().trim().to_string();
+
+    // A second workspace with the same slug, not opened.
+    let ws2 = h.root.join("ws2");
+    fs::create_dir_all(ws2.join("tasks")).unwrap();
+    fs::write(
+        ws2.join("config.toml"),
+        format!("name = \"other\"\nlayout = \"\"\n\n[[repos]]\nname = \"origin\"\nurl = \"{}\"\n", h.root.join("origin.git").display()),
+    )
+    .unwrap();
+    let out = h.tenx().args(["task", "new", "Dup", "--ws-dir", s(&ws2), "--no-open"]).output().unwrap();
+    assert!(out.status.success(), "decoy task new: {}", String::from_utf8_lossy(&out.stderr));
+
+    // Opening the second one must give it a window of its own.
+    h.tmux_out(&["select-window", "-t", "tenx:home"]);
+    let out = h.tenx().args(["task", "open", "dup", "--ws-dir", s(&ws2)]).output().unwrap();
+    assert!(out.status.success(), "task open: {}", String::from_utf8_lossy(&out.stderr));
+
+    let second_id = fs::read_to_string(ws2.join("tasks/dup/.tenx-window-id")).unwrap().trim().to_string();
+    assert_ne!(second_id, first_id, "the second task must not adopt the first's window");
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx", "#{window_id}"]), second_id, "and it's the one we landed on");
+
+    // Both windows exist, each tagged with the task it was opened for.
+    let tagged = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_id}\t#{@tenx_task_dir}"]);
+    let dir_of = |id: &str| {
+        tagged
+            .lines()
+            .find(|l| l.starts_with(&format!("{id}\t")))
+            .and_then(|l| l.split_once('\t'))
+            .map(|(_, d)| d.to_string())
+            .unwrap_or_default()
+    };
+    assert!(dir_of(&first_id).ends_with("ws/tasks/dup"), "first window tagged with its task: {tagged}");
+    assert!(dir_of(&second_id).ends_with("ws2/tasks/dup"), "second window tagged with its task: {tagged}");
+
+    // And reopening the first still finds the first, not the newer namesake.
+    let out = h.tenx().args(["task", "open", "dup", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "reopen: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx", "#{window_id}"]), first_id, "reopening the original raises the original");
+}

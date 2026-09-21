@@ -21,8 +21,10 @@ use anyhow::{bail, Context, Result};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::palette;
 
@@ -59,9 +61,18 @@ pub const MIN_VERSION: (u32, u32) = (3, 3);
 /// shows over the whole screen on Ctrl+w instead (`tui::client`).
 pub const SMALL_CLIENT_COLS: u32 = 100;
 /// Per-task cache of the window id (`@12`) last opened for it. A fast path
-/// only — `find_window` by slug is the source of truth, and a stale id (server
+/// only — `find_task_window` is the source of truth, and a stale id (server
 /// restarted) is simply treated as "not open".
 pub const WINDOW_ID_FILE: &str = ".tenx-window-id";
+/// tmux window option carrying the task directory a window was opened for.
+///
+/// Window *names* are task slugs, and a slug is only unique within one
+/// workspace, so a name can't say which task a window is. This can: it's set
+/// once when the window is created, it survives a pane `cd`, and unlike a
+/// cached `@id` it can't be aliased by tmux reusing ids after a server
+/// restart. Anything that selects or closes a task's window correlates on
+/// this, not on the name.
+pub const TASK_DIR_OPTION: &str = "@tenx_task_dir";
 
 /// One tmux window as `list-windows` reports it.
 #[derive(Debug, Clone)]
@@ -78,15 +89,34 @@ pub struct Window {
     /// `tenx_core::status::Signal`).
     pub bell: bool,
     pub activity: bool,
+    /// When anything in the window last produced output (tmux's
+    /// `window_activity`). Unlike `activity`, this doesn't reset when the
+    /// window is visited, so it answers "how long has this been quiet?" —
+    /// the only age `sweep` can read for a task with no session left to ask.
+    /// `None` when tmux reports it unparseably; callers treat that as "no
+    /// idea how old", never as "old enough to close".
+    pub last_activity: Option<SystemTime>,
+    /// The task this window was opened for (`TASK_DIR_OPTION`). `None` for a
+    /// window opened by a tenx that predates the option, or one a user made
+    /// by hand — `window_owned_by` then falls back to the panes' paths.
+    pub task_dir: Option<PathBuf>,
 }
 
-/// The bell/activity flags of every task window, keyed by window name (= task
-/// slug). The home window is excluded: its bells are nobody's task.
+/// The bell/activity flags of every task window, keyed by the task it was
+/// opened for — falling back to the window name (= task slug) for a window
+/// that predates `TASK_DIR_OPTION`. The home window is excluded: its bells are
+/// nobody's task.
+///
+/// Not keyed by name alone: a slug is unique only within a workspace, so two
+/// namesakes collapsed into one entry and shared a bell between them.
 pub fn signals_from(windows: &[Window]) -> crate::workspace::Signals {
     windows
         .iter()
         .filter(|w| w.name != HOME_WINDOW)
-        .map(|w| (w.name.clone(), crate::workspace::Signal { bell: w.bell, activity: w.activity }))
+        .map(|w| {
+            let key = w.task_dir.as_ref().map(|d| d.to_string_lossy().into_owned()).unwrap_or_else(|| w.name.clone());
+            (key, crate::workspace::Signal { bell: w.bell, activity: w.activity })
+        })
         .collect()
 }
 
@@ -400,8 +430,7 @@ pub fn attach_command() -> (PathBuf, Vec<String>) {
 
 // ── Windows ───────────────────────────────────────────────────────────────────
 
-const WINDOW_FORMAT: &str =
-    "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active}\t#{window_bell_flag}\t#{window_activity_flag}";
+const WINDOW_FORMAT: &str = "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active}\t#{window_bell_flag}\t#{window_activity_flag}\t#{window_activity}\t#{@tenx_task_dir}";
 
 /// Every window of the session. Empty (not an error) when the server is down
 /// — one subprocess either way: a failed `list-windows` *is* the liveness
@@ -435,14 +464,87 @@ pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
         .collect())
 }
 
-/// The task window named exactly `name` (windows are named by task slug).
-/// The home window is never a task window, whatever a task is called — a
-/// task slugged `home` must not be able to select, kill or sweep the column.
-pub fn find_window(name: &str) -> Result<Option<Window>> {
-    if name == HOME_WINDOW {
+/// Every window's panes and where each one currently sits, keyed by window id.
+/// Empty when the server is down.
+///
+/// Windows are named by task slug, and a slug is only unique *within* a
+/// workspace — so a name is not an identity. This is: a task's window is the
+/// one whose panes are actually in the task's directory tree. `sweep` needs
+/// that distinction because it acts on the window it matched, and matching the
+/// wrong one means closing somebody else's live session.
+pub fn pane_paths_by_window() -> Result<HashMap<String, Vec<PathBuf>>> {
+    if !server_running() {
+        return Ok(HashMap::new());
+    }
+    let text = run(&["list-panes", "-s", "-t", SESSION, "-F", "#{window_id}\t#{pane_current_path}"])?;
+    let mut out: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    for line in text.lines() {
+        let Some((id, path)) = line.split_once('\t') else { continue };
+        let path = path.trim();
+        if path.is_empty() {
+            continue;
+        }
+        // Resolved, because tmux reports where a pane *really* is: on macOS a
+        // task under `/var/folders/…` comes back as `/private/var/folders/…`,
+        // and a raw prefix test would then match nothing at all.
+        let path = PathBuf::from(path);
+        out.entry(id.to_string()).or_default().push(fs::canonicalize(&path).unwrap_or(path));
+    }
+    Ok(out)
+}
+
+/// Does `window_id` belong to the task rooted at `task_dir`? True when any of
+/// its panes sits in the task's tree — the task dir itself, or a repo checked
+/// out inside it (an agent that `cd`s into a worktree is still in its task).
+///
+/// Deliberately conservative: a window whose every pane has wandered *outside*
+/// the tree reads as "not this task's", so a caller that closes things closes
+/// nothing rather than the wrong thing.
+pub fn window_owned_by(w: &Window, paths: &HashMap<String, Vec<PathBuf>>, task_dir: &Path) -> bool {
+    // Both sides resolved, or a symlink anywhere above the task (`/var` →
+    // `/private/var`, a symlinked home) makes every window look like nobody's.
+    let task = resolved(task_dir);
+    // A window tenx opened says which task it is, whatever its panes have
+    // since `cd`'d to — the answer, when it's there.
+    if let Some(tagged) = &w.task_dir {
+        return resolved(tagged) == task;
+    }
+    // Opened before the option existed: fall back to where the panes are.
+    // A window whose every pane has wandered outside the tree reads as
+    // nobody's, so a caller that closes things closes nothing rather than
+    // the wrong thing.
+    paths.get(&w.id).is_some_and(|ps| ps.iter().any(|p| p.starts_with(&task)))
+}
+
+fn resolved(p: &Path) -> PathBuf {
+    fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// The window belonging to the task at `task_dir` — the one correlation any
+/// caller that selects or closes a window should use. Narrows by name (cheap,
+/// and a task's window is always named by its slug) and then settles which of
+/// the namesakes is actually this task's.
+///
+/// `None` means "this task has no window", and a caller may then open one. It
+/// deliberately does *not* fall back to "some window with the right name":
+/// that's how a task in one workspace ends up driving a namesake's live
+/// session in another.
+pub fn find_task_window(slug: &str, task_dir: &Path) -> Result<Option<Window>> {
+    if slug == HOME_WINDOW {
+        return Ok(None); // a task slugged `home` must never reach the column
+    }
+    let named: Vec<Window> = list_windows()?.into_iter().filter(|w| w.name == slug).collect();
+    if named.is_empty() {
         return Ok(None);
     }
-    Ok(list_windows()?.into_iter().find(|w| w.name == name))
+    // Only an untagged window needs the panes looked up — after one reopen
+    // every window carries its task, and this costs no extra subprocess.
+    let paths = if named.iter().any(|w| w.task_dir.is_none()) {
+        pane_paths_by_window().unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+    Ok(named.into_iter().find(|w| window_owned_by(w, &paths, task_dir)))
 }
 
 /// Slugs that can't be task names because they collide with tmux windows
@@ -558,6 +660,8 @@ pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
     if id.is_empty() {
         bail!("tmux new-window returned no window id");
     }
+    // Stamp the task on the window before anything can look it up.
+    let _ = run(&["set-option", "-w", "-t", &id, TASK_DIR_OPTION, opts.task_dir]);
 
     if let Some(script) = opts.layout_script {
         let status = Command::new(script)
@@ -597,6 +701,14 @@ fn parse_window(line: &str) -> Option<Window> {
         active: f.next()? == "1",
         bell: f.next()? == "1",
         activity: f.next()? == "1",
+        // Absent on a tmux that doesn't report it: the window still lists,
+        // it just has no age — `sweep` then leaves it alone.
+        last_activity: f
+            .next()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .map(|secs| UNIX_EPOCH + Duration::from_secs(secs)),
+        // Empty when the option isn't set (tmux prints nothing for it).
+        task_dir: f.next().map(str::trim).filter(|s| !s.is_empty()).map(PathBuf::from),
     })
 }
 
@@ -625,16 +737,81 @@ mod tests {
         assert!(parse_window("@3\tx").is_none());
     }
 
+    fn win(id: &str, name: &str, task_dir: Option<&str>) -> Window {
+        Window {
+            id: id.into(),
+            name: name.into(),
+            active: false,
+            bell: false,
+            activity: false,
+            last_activity: None,
+            task_dir: task_dir.map(PathBuf::from),
+        }
+    }
+
+    #[test]
+    fn a_tagged_window_belongs_to_the_task_it_was_opened_for() {
+        // Two windows with the same name — the shape every "which window is
+        // this task's" question has to survive.
+        let a = PathBuf::from("/ws-a/tasks/dup");
+        let b = PathBuf::from("/ws-b/tasks/dup");
+        let wa = win("@1", "dup", Some("/ws-a/tasks/dup"));
+        let wb = win("@2", "dup", Some("/ws-b/tasks/dup"));
+        let no_panes = HashMap::new();
+        assert!(window_owned_by(&wa, &no_panes, &a));
+        assert!(!window_owned_by(&wa, &no_panes, &b));
+        assert!(window_owned_by(&wb, &no_panes, &b));
+        assert!(!window_owned_by(&wb, &no_panes, &a));
+        // The tag is the answer even when the panes have wandered off — the
+        // case the pane-path fallback alone gets wrong.
+        let wandered = HashMap::from([("@1".to_string(), vec![PathBuf::from("/elsewhere")])]);
+        assert!(window_owned_by(&wa, &wandered, &a));
+    }
+
+    #[test]
+    fn a_window_belongs_to_the_task_its_panes_sit_in() {
+        // Two windows with the same name — the shape `sweep` has to tell
+        // apart, since a slug is only unique within a workspace.
+        let a = PathBuf::from("/ws-a/tasks/dup");
+        let b = PathBuf::from("/ws-b/tasks/dup");
+        let paths = HashMap::from([
+            ("@1".to_string(), vec![a.join("repo"), a.clone()]),
+            ("@2".to_string(), vec![b.clone()]),
+        ]);
+        // Untagged: opened by a tenx that predates `TASK_DIR_OPTION`.
+        let w1 = win("@1", "dup", None);
+        let w2 = win("@2", "dup", None);
+        assert!(window_owned_by(&w1, &paths, &a));
+        assert!(!window_owned_by(&w1, &paths, &b));
+        assert!(window_owned_by(&w2, &paths, &b));
+        // A task with no window of its own owns none of them, however it's
+        // named — the case that used to close somebody else's session.
+        assert!(!window_owned_by(&w1, &paths, Path::new("/ws-c/tasks/dup")));
+        assert!(!window_owned_by(&win("@9", "dup", None), &paths, &a));
+    }
+
     #[test]
     fn home_is_never_a_task_window() {
         let windows = vec![
-            Window { id: "@0".into(), name: HOME_WINDOW.into(), active: true, bell: true, activity: true },
-            Window { id: "@1".into(), name: "foo".into(), active: false, bell: true, activity: false },
+            Window { id: "@0".into(), name: HOME_WINDOW.into(), active: true, bell: true, activity: true, last_activity: None, task_dir: None },
+            Window { id: "@1".into(), name: "foo".into(), active: false, bell: true, activity: false, last_activity: None, task_dir: None },
         ];
         let s = signals_from(&windows);
         assert!(!s.contains_key(HOME_WINDOW));
-        assert!(s["foo"].bell);
+        assert!(s["foo"].bell); // untagged: still keyed by slug
         assert!(is_reserved_slug("home") && !is_reserved_slug("homer"));
+    }
+
+    #[test]
+    fn namesake_windows_do_not_share_a_bell() {
+        let mut a = win("@1", "dup", Some("/ws-a/tasks/dup"));
+        a.bell = true;
+        let b = win("@2", "dup", Some("/ws-b/tasks/dup"));
+        let s = signals_from(&[a, b]);
+        // Keyed by task, so the second no longer overwrites the first.
+        assert!(s["/ws-a/tasks/dup"].bell);
+        assert!(!s["/ws-b/tasks/dup"].bell);
+        assert!(!s.contains_key("dup"));
     }
 
     #[test]
