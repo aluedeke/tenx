@@ -1697,8 +1697,25 @@ impl Column {
         use super::job::Then;
         match then {
             Then::Nothing => {}
-            // By slug, not position: the rebuild re-sorted everything.
             Then::SelectTask(ws_idx, slug) => {
+                self.select_task(ws_idx, &slug);
+            }
+            // A task that has just been built: give it its window, then land
+            // the selection on it.
+            Then::OpenTask(ws_idx, slug) => {
+                if !self.offline
+                    && let Some(ws) = self.workspaces.get(ws_idx)
+                    && let Err(e) = crate::cli::task::ensure_window_in(ws, &slug)
+                {
+                    // The task exists and its worktrees are there; only the
+                    // window is missing, and ⏎ still makes one. Say so rather
+                    // than losing the "created" message to an error.
+                    self.status_msg = Some(format!("created '{slug}', but its window didn't open: {e}"));
+                }
+                // The row was built before the window existed, so its
+                // `window_id` is stale — re-read so it reads as open, not
+                // closed, the moment it appears.
+                self.rebuild_rows();
                 self.select_task(ws_idx, &slug);
             }
             Then::Workspace(dir) => self.finish_new_workspace(&dir),
@@ -1806,7 +1823,7 @@ impl Column {
             self.sort_rows();
             self.apply_filter();
             let (job_name, agent) = (name.clone(), form.agent);
-            self.start_job(plan, super::job::Then::SelectTask(ws_idx, slug.clone()), move |rep| {
+            self.start_job(plan, super::job::Then::OpenTask(ws_idx, slug.clone()), move |rep| {
                 // Reloaded on the worker rather than captured: `Workspace` is
                 // read from disk, and this is the convention everywhere else
                 // — derive state from the live source, don't carry a snapshot
@@ -1825,7 +1842,10 @@ impl Column {
             });
             // The ghost row is the selection, so ⏎ and the footer both have
             // something to point at; `jump` is deliberately not run here —
-            // there is no window to jump to until the job lands.
+            // there is no window to jump to until the job lands, and when it
+            // does the window opens *detached* (`Then::OpenTask`): a new task
+            // should be running, not waiting on a ⏎, but it must not drag the
+            // terminal off whatever you are looking at.
             let selected = self
                 .filtered
                 .iter()
@@ -2230,6 +2250,8 @@ impl Column {
             crate::cli::task::set_repos_steps(&self.workspaces[ws_idx], &slug, &desired),
         );
         let slug2 = slug.clone();
+        // `SelectTask`, not `OpenTask`: editing an existing task's repos is no
+        // reason to open a window it didn't have.
         self.start_job(plan, super::job::Then::SelectTask(ws_idx, slug.clone()), move |rep| {
             let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
             crate::cli::task::set_repos_in(&ws, &slug2, &desired, false, rep).map_err(|e| e.to_string())?;

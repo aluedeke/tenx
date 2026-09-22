@@ -37,6 +37,10 @@ pub(super) enum Then {
     /// job was building, whose ghost row has just been replaced by the real
     /// one. Positions moved in the rebuild, so it is found by slug.
     SelectTask(usize, String),
+    /// As `SelectTask`, but give the task a window first — detached, so it is
+    /// open and its agent is running without the terminal leaving wherever it
+    /// was. What a freshly created task wants.
+    OpenTask(usize, String),
     /// A workspace was created here: re-read the registry, then land on its
     /// repos — or on the add-repo form, when it was created without one.
     Workspace(PathBuf),

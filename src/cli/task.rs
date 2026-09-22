@@ -124,6 +124,7 @@ pub fn new_with(
             layout_script: if layout.is_empty() { None } else { Some(layout) },
             agent: agent.as_str(),
             agent_cmd: &agent_cmd,
+            detached: false,
         };
         let id = crate::tmux::open_task_window(&opts)?;
         std::fs::write(task_dir.join(crate::tmux::WINDOW_ID_FILE), &id)?;
@@ -416,6 +417,13 @@ pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
 /// changes the *session's* current window, which is what an attaching client
 /// lands on.
 pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
+    open_window(ws, slug, false)
+}
+
+/// Find-or-create a task's window. `detached` keeps the session's current
+/// window where it is, both when the window already exists and when it is
+/// created here.
+fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached: bool) -> Result<()> {
     let task = ws.find_task(slug)?;
 
     if !crate::tmux::server_running() {
@@ -428,7 +436,9 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     // raising — and refreshing the cached id of — each other's window.
     let id_file = task.path.join(crate::tmux::WINDOW_ID_FILE);
     if let Some(w) = crate::tmux::find_task_window(slug, &task.path)? {
-        crate::tmux::select_window(&w.id)?;
+        if !detached {
+            crate::tmux::select_window(&w.id)?;
+        }
         // Refresh the cached id to the live one — only when it changed, so
         // a plain switch leaves the task directory untouched.
         if std::fs::read_to_string(&id_file).map(|s| s.trim() != w.id).unwrap_or(true) {
@@ -453,10 +463,21 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
         layout_script: if layout.is_empty() { None } else { Some(layout) },
         agent: agent.as_str(),
         agent_cmd: &agent_cmd,
+        detached,
     };
     let id = crate::tmux::open_task_window(&opts)?;
     std::fs::write(&id_file, &id)?;
     Ok(())
+}
+
+/// Give a task a window without going to it: the agent starts, the task reads
+/// as open, and whatever you were looking at stays on screen.
+///
+/// What the column does when a task it created finishes setting up — a new
+/// task should be *running*, not sitting closed waiting for a ⏎, but it should
+/// not steal the terminal either.
+pub fn ensure_window_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
+    open_window(ws, slug, true)
 }
 
 /// Seed Claude Code's trust grant for a task directory so its first launch

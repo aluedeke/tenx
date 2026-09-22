@@ -638,11 +638,18 @@ pub struct TaskWindow<'a> {
     /// `claude --name 'slug' --continue`). Built by `agent::AgentKind`, which
     /// already decided any resume flag, so tmux just runs it.
     pub agent_cmd: &'a str,
+    /// Create the window without making it the session's current one.
+    ///
+    /// `new-window` selects what it creates, and the session's current window
+    /// is what every attached client shows — so opening a task the ordinary
+    /// way drags every terminal to it. A task created from the column wants
+    /// its window (and its agent) running, but not your screen.
+    pub detached: bool,
 }
 
 /// Create a task's window and its panes, returning the window's stable id.
-/// The window becomes the session's current one, so a client that's attached
-/// (or about to attach) lands on it.
+/// The window becomes the session's current one — so a client that's attached
+/// (or about to attach) lands on it — unless `opts.detached`.
 ///
 /// Built-in layout — claude on the left, nvim on `TASK.md` top-right, a shell
 /// bottom-right — mirrors the zellij default. A pane whose command exits
@@ -653,6 +660,9 @@ pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
     let session = format!("{SESSION}:");
     let first_cmd = if opts.layout_script.is_some() { None } else { Some(opts.agent_cmd) };
     let mut args = vec!["new-window", "-t", &session, "-n", opts.slug, "-c", opts.task_dir, "-P", "-F", "#{window_id}"];
+    if opts.detached {
+        args.push("-d");
+    }
     if let Some(c) = first_cmd {
         args.push(c);
     }
