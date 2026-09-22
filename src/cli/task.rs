@@ -16,13 +16,33 @@ pub struct TaskMd<'a> {
 pub fn new(name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd, agent: Option<crate::agent::AgentKind>) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
-    new_with(&ws, name, repos, no_open, md, agent)
+    new_with(&ws, name, repos, no_open, md, agent, crate::progress::for_cli().as_ref())
 }
 
 /// Create a task in an explicit workspace (no cwd dependency), with an empty
-/// `TASK.md` body. Used by the column's create flow.
-pub fn new_in(ws: &crate::workspace::Workspace, name: &str, repos: Option<&[String]>, no_open: bool) -> Result<()> {
-    new_with(ws, name, repos, no_open, &TaskMd::default(), None)
+/// `TASK.md` body. Used by the column's create flow, which passes a reporter
+/// that feeds the column's progress panel instead of printing.
+pub fn new_in(
+    ws: &crate::workspace::Workspace,
+    name: &str,
+    repos: Option<&[String]>,
+    no_open: bool,
+    rep: &dyn crate::progress::Reporter,
+) -> Result<()> {
+    new_with(ws, name, repos, no_open, &TaskMd::default(), None, rep)
+}
+
+/// The steps `new_in` will report, in order, for a plan built before the work
+/// starts. One per repo — the clone dominates, and the worktree that follows
+/// it is the same step finishing.
+///
+/// Kept beside `new_with` so the plan and the work can't drift apart: the
+/// column builds its panel from this and then indexes events by position.
+pub fn new_steps(ws: &crate::workspace::Workspace, repos: Option<&[String]>) -> Vec<String> {
+    match repos {
+        Some(r) => r.to_vec(),
+        None => ws.config.repos.iter().map(|r| r.name.clone()).collect(),
+    }
 }
 
 /// Create a task in an explicit workspace with a pre-filled `TASK.md`. `agent`
@@ -35,6 +55,7 @@ pub fn new_with(
     no_open: bool,
     md: &TaskMd,
     agent: Option<crate::agent::AgentKind>,
+    rep: &dyn crate::progress::Reporter,
 ) -> Result<()> {
     let display_name = name.to_string();
     let slug = crate::workspace::slugify(name);
@@ -78,8 +99,8 @@ pub fn new_with(
         crate::agent::set_task_agent(&task_dir, Some(a))?;
     }
 
-    for repo_name in &repo_names {
-        ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, slug)?;
+    for (step, repo_name) in repo_names.iter().enumerate() {
+        ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, slug, rep, step)?;
     }
 
     if !no_open {
@@ -123,47 +144,79 @@ fn ensure_repo_worktree(
     task_dir: &Path,
     repo_name: &str,
     slug: &str,
+    rep: &dyn crate::progress::Reporter,
+    step: usize,
 ) -> Result<()> {
+    use crate::progress::Event;
     let repo = ws
         .find_repo(repo_name)
         .ok_or_else(|| crate::workspace::WorkspaceError::RepoNotFound(repo_name.to_string()))?;
 
     let bare_path = crate::git::bare_repo_path(bare_dir, &repo.name);
-    let verb = if bare_path.exists() { "fetching" } else { "cloning" };
-    let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
-    match crate::git::ensure_synced(&repo.url, bare_dir, &repo.name) {
-        Ok(_) => spinner.done(),
-        Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
-    }
+    let exists = bare_path.exists();
+    rep.emit(Event::Start {
+        step,
+        label: repo.name.clone(),
+        verb: crate::git::Synced::verb(exists),
+    });
+
+    // Sync and worktree are one step: the clone is nearly all of the time,
+    // and splitting them would make the panel flicker a second line per repo
+    // for something that finishes in milliseconds.
+    let mut on = |snap| rep.emit(Event::Update { step, snap });
+    let synced = match crate::git::ensure_synced(&repo.url, bare_dir, &repo.name, &mut on) {
+        Ok(s) => s,
+        Err(e) => {
+            rep.emit(Event::Failed { step, err: e.to_string() });
+            return Err(e);
+        }
+    };
 
     let worktree_path = task_dir.join(&repo.name);
-    let spinner = crate::progress::Spinner::new(format!("worktree {}", repo.name));
-    match crate::git::add_worktree(&bare_path, &worktree_path, slug) {
-        Ok(_) => spinner.done(),
-        Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
+    if let Err(e) = crate::git::add_worktree(&bare_path, &worktree_path, slug, &mut on) {
+        rep.emit(Event::Failed { step, err: e.to_string() });
+        return Err(e);
     }
+    rep.emit(Event::Done { step, note: synced.note().to_string() });
     Ok(())
 }
 
 /// Add worktrees for `repos` to an existing task (cwd's workspace, or `ws_dir`).
 pub fn add_repo(ws_dir: Option<&str>, task: &str, repos: &[String]) -> Result<()> {
     let (ws, slug) = resolve_task(ws_dir, task)?;
-    add_repo_in(&ws, &slug, repos)
+    add_repo_in(&ws, &slug, repos, crate::progress::for_cli().as_ref())
 }
 
 /// Add worktrees for `repos` to an existing task. Idempotent: repos the task
 /// already has are skipped, so callers can pass a whole desired set without
 /// diffing it first.
-pub fn add_repo_in(ws: &crate::workspace::Workspace, slug: &str, repos: &[String]) -> Result<()> {
+pub fn add_repo_in(
+    ws: &crate::workspace::Workspace,
+    slug: &str,
+    repos: &[String],
+    rep: &dyn crate::progress::Reporter,
+) -> Result<()> {
+    add_repo_from(ws, slug, repos, rep, 0)
+}
+
+/// [`add_repo_in`] numbering its steps from `base`, so `set_repos_in` can run
+/// additions and removals into one plan without their indices colliding.
+fn add_repo_from(
+    ws: &crate::workspace::Workspace,
+    slug: &str,
+    repos: &[String],
+    rep: &dyn crate::progress::Reporter,
+    base: usize,
+) -> Result<()> {
     let global = crate::workspace::load_global()?;
     let task = ws.find_task(slug)?;
     let bare_dir = ws.bare_dir(&global);
-    for name in repos {
+    for (i, name) in repos.iter().enumerate() {
         if task.repos.iter().any(|r| r == name) {
             continue;
         }
         // task.name is the slug, i.e. the branch name the other worktrees use.
-        ensure_repo_worktree(ws, &bare_dir, &task.path, name, &task.name)?;
+        ensure_repo_worktree(ws, &bare_dir, &task.path, name, &task.name, rep, base + i)?;
     }
     Ok(())
 }
@@ -171,7 +224,7 @@ pub fn add_repo_in(ws: &crate::workspace::Workspace, slug: &str, repos: &[String
 /// Detach `repos` from an existing task (cwd's workspace, or `ws_dir`).
 pub fn rm_repo(ws_dir: Option<&str>, task: &str, repos: &[String], force: bool) -> Result<()> {
     let (ws, slug) = resolve_task(ws_dir, task)?;
-    rm_repo_in(&ws, &slug, repos, force)
+    rm_repo_in(&ws, &slug, repos, force, crate::progress::for_cli().as_ref())
 }
 
 /// Remove `repos`' worktrees from an existing task, along with their task
@@ -187,22 +240,40 @@ pub fn rm_repo_in(
     slug: &str,
     repos: &[String],
     force: bool,
+    rep: &dyn crate::progress::Reporter,
 ) -> Result<()> {
+    rm_repo_from(ws, slug, repos, force, rep, 0)
+}
+
+/// [`rm_repo_in`] numbering its steps from `base` — see [`add_repo_from`].
+fn rm_repo_from(
+    ws: &crate::workspace::Workspace,
+    slug: &str,
+    repos: &[String],
+    force: bool,
+    rep: &dyn crate::progress::Reporter,
+    base: usize,
+) -> Result<()> {
+    use crate::progress::Event;
     let global = crate::workspace::load_global()?;
     let task = ws.find_task(slug)?;
     let bare_dir = ws.bare_dir(&global);
-    for name in repos {
+    for (i, name) in repos.iter().enumerate() {
         if !task.repos.iter().any(|r| r == name) {
             continue;
         }
+        let step = base + i;
+        rep.emit(Event::Start { step, label: name.clone(), verb: "detaching" });
         let bare_path = crate::git::bare_repo_path(&bare_dir, name);
         let worktree_path = task.path.join(name);
-        let spinner = crate::progress::Spinner::new(format!("detaching {name}"));
         let res = crate::git::remove_worktree(&bare_path, &worktree_path, force)
             .and_then(|()| crate::git::delete_branch(&bare_path, &task.name));
         match res {
-            Ok(()) => spinner.done(),
-            Err(e) => { spinner.fail(&e.to_string()); return Err(e); }
+            Ok(()) => rep.emit(Event::Done { step, note: "detached".into() }),
+            Err(e) => {
+                rep.emit(Event::Failed { step, err: e.to_string() });
+                return Err(e);
+            }
         }
     }
     Ok(())
@@ -216,7 +287,17 @@ pub fn rm_repo_in(
 /// had are still intact rather than half-detached.
 pub fn set_repos(ws_dir: Option<&str>, task: &str, repos: &[String], force: bool) -> Result<()> {
     let (ws, slug) = resolve_task(ws_dir, task)?;
-    set_repos_in(&ws, &slug, repos, force)
+    set_repos_in(&ws, &slug, repos, force, crate::progress::for_cli().as_ref())
+}
+
+/// The steps `set_repos_in` will report, in order: every addition, then every
+/// removal — the order the work runs in, so a plan built from this lines up
+/// with the events by index.
+pub fn set_repos_steps(ws: &crate::workspace::Workspace, slug: &str, repos: &[String]) -> Vec<String> {
+    let Ok(task) = ws.find_task(slug) else { return Vec::new() };
+    let add = repos.iter().filter(|r| !task.repos.contains(r)).cloned();
+    let remove = task.repos.iter().filter(|r| !repos.contains(r)).cloned();
+    add.chain(remove).collect()
 }
 
 pub fn set_repos_in(
@@ -224,6 +305,7 @@ pub fn set_repos_in(
     slug: &str,
     repos: &[String],
     force: bool,
+    rep: &dyn crate::progress::Reporter,
 ) -> Result<()> {
     if repos.is_empty() {
         bail!("a task must keep at least one repo — delete the task instead");
@@ -240,8 +322,9 @@ pub fn set_repos_in(
         .filter(|r| !repos.contains(r))
         .cloned()
         .collect();
-    add_repo_in(ws, slug, &add)?;
-    rm_repo_in(ws, slug, &remove, force)
+    // Removals are numbered after the additions, matching `set_repos_steps`.
+    add_repo_from(ws, slug, &add, rep, 0)?;
+    rm_repo_from(ws, slug, &remove, force, rep, add.len())
 }
 
 /// Resolve a workspace (explicit dir, else cwd) and a task slug. An explicit
@@ -287,7 +370,7 @@ pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
 /// ends). `repos` is the picked subset (None = all).
 pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd, agent: Option<crate::agent::AgentKind>) -> Result<()> {
     let ws = crate::workspace::load(Path::new(ws_dir))?;
-    new_with(&ws, name, repos, no_open, md, agent)
+    new_with(&ws, name, repos, no_open, md, agent, crate::progress::for_cli().as_ref())
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).

@@ -403,6 +403,8 @@ fn client_column_beside_the_embedded_session() {
     // Back to the Tasks tab, where the new task shows up on the next
     // refresh, and to the task: Ctrl+w lands on the current task's row,
     // which only the Tasks tab has, and only once the row exists.
+    // Three tabs now (Tasks │ Repos │ Work), so Repos → Work → Tasks.
+    h.keys(&["g", "t"]);
     h.keys(&["g", "t"]);
     h.wait_screen("the fresh workspace's task in the column", 5, |s| {
         let mut lines: Vec<&str> = s.lines().collect();

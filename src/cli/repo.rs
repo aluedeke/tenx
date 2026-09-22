@@ -19,12 +19,18 @@ pub fn add(url: &str, name: Option<&str>, ws_dir: Option<&str>) -> Result<()> {
         Some(dir) => crate::workspace::load(Path::new(dir))?,
         None => crate::workspace::find(&env::current_dir()?)?,
     };
-    add_in(&mut ws, url, name)
+    add_in(&mut ws, url, name, crate::progress::for_cli().as_ref())
 }
 
 /// Add a repo to an explicit workspace (bare clone + config). Used by `add` and
 /// the column's Repos tab, which targets the selected repo's workspace.
-pub fn add_in(ws: &mut crate::workspace::Workspace, url: &str, name: Option<&str>) -> Result<()> {
+pub fn add_in(
+    ws: &mut crate::workspace::Workspace,
+    url: &str,
+    name: Option<&str>,
+    rep: &dyn crate::progress::Reporter,
+) -> Result<()> {
+    use crate::progress::Event;
     let global = crate::workspace::load_global()?;
 
     let repo_name = name.map(|s| s.to_string()).unwrap_or_else(|| infer_name(url));
@@ -35,7 +41,13 @@ pub fn add_in(ws: &mut crate::workspace::Workspace, url: &str, name: Option<&str
         bail!("bare repo already exists at {}", bare_path.display());
     }
 
-    crate::git::bare_clone(url, &bare_dir, &repo_name)?;
+    rep.emit(Event::Start { step: 0, label: repo_name.clone(), verb: "cloning" });
+    let mut on = |snap| rep.emit(Event::Update { step: 0, snap });
+    if let Err(e) = crate::git::bare_clone(url, &bare_dir, &repo_name, &mut on) {
+        rep.emit(Event::Failed { step: 0, err: e.to_string() });
+        return Err(e);
+    }
+    rep.emit(Event::Done { step: 0, note: "cloned".into() });
 
     ws.add_repo(crate::workspace::RepoConfig {
         name: repo_name.clone(),
@@ -77,17 +89,23 @@ pub fn fetch(name: Option<&str>) -> Result<()> {
         None => ws.config.repos.clone(),
     };
 
-    for repo in &repos {
+    // One reported step per repo, like every other multi-repo operation, so
+    // a fetch of a large repo shows what it is doing instead of a bare "...".
+    let rep = crate::progress::for_cli();
+    for (step, repo) in repos.iter().enumerate() {
         let bare_path = crate::git::bare_repo_path(&bare_dir, &repo.name);
         if !bare_path.exists() {
             eprintln!("! repo '{}' not cloned yet — run: tenx repo add {}", repo.name, repo.url);
             continue;
         }
-        eprint!("  fetching {} ... ", repo.name);
-        match crate::git::fetch(&bare_path) {
-            Ok(true) => eprintln!("✓ updated"),
-            Ok(false) => eprintln!("✓ up to date"),
-            Err(e) => eprintln!("✗ {}", e),
+        rep.emit(crate::progress::Event::Start { step, label: repo.name.clone(), verb: "fetching" });
+        let mut on = |snap| rep.emit(crate::progress::Event::Update { step, snap });
+        match crate::git::fetch(&bare_path, &mut on) {
+            Ok(updated) => {
+                let note = if updated { "updated" } else { "up to date" };
+                rep.emit(crate::progress::Event::Done { step, note: note.into() });
+            }
+            Err(e) => rep.emit(crate::progress::Event::Failed { step, err: e.to_string() }),
         }
     }
     Ok(())

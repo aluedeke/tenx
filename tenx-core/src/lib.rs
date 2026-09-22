@@ -9,6 +9,7 @@
 pub mod codex;
 pub mod dialog;
 pub mod live;
+pub mod progress;
 pub mod column;
 pub mod secrets;
 pub mod session_event;

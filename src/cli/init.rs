@@ -41,7 +41,7 @@ pub fn run(name: Option<&str>) -> Result<()> {
         eprintln!();
         eprintln!("Syncing repos:");
     }
-    let ws = init_in(&ws_dir, &ws_name, repos, layout, skills)?;
+    let ws = init_in(&ws_dir, &ws_name, repos, layout, skills, crate::progress::for_cli().as_ref())?;
     if skills {
         eprintln!("  ✓ skills installed (.claude/skills + .agents/skills) and AGENTS.md written");
     }
@@ -82,6 +82,7 @@ pub fn init_in(
     repos: Vec<crate::workspace::RepoConfig>,
     layout: String,
     skills: bool,
+    rep: &dyn crate::progress::Reporter,
 ) -> Result<crate::workspace::Workspace> {
     let mut ws = crate::workspace::init(dir, name)?;
     ws.config.layout = layout;
@@ -91,22 +92,25 @@ pub fn init_in(
     // Register in the global workspace list so the column can find it.
     crate::workspace::register_workspace(&ws.dir)?;
 
-    // Clone all repos immediately (a spinner per repo, as task creation
-    // shows; nothing else, since the column's stderr is the terminal's).
+    // Clone all repos immediately, one reported step each, exactly as task
+    // creation does. Where that lands — a line on the CLI's stdout, a panel in
+    // the column — is the reporter's business, not this function's.
     if !ws.config.repos.is_empty() {
+        use crate::progress::Event;
         let global = crate::workspace::load_global()?;
         let bare_dir = ws.bare_dir(&global);
-        for repo in &ws.config.repos {
-            let verb = if crate::git::bare_repo_path(&bare_dir, &repo.name).exists() {
-                "fetching"
-            } else {
-                "cloning"
-            };
-            let spinner = crate::progress::Spinner::new(format!("{verb} {}", repo.name));
-            match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name) {
-                Ok(_) => spinner.done(),
+        for (step, repo) in ws.config.repos.iter().enumerate() {
+            let exists = crate::git::bare_repo_path(&bare_dir, &repo.name).exists();
+            rep.emit(Event::Start {
+                step,
+                label: repo.name.clone(),
+                verb: crate::git::Synced::verb(exists),
+            });
+            let mut on = |snap| rep.emit(Event::Update { step, snap });
+            match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name, &mut on) {
+                Ok(synced) => rep.emit(Event::Done { step, note: synced.note().to_string() }),
                 Err(e) => {
-                    spinner.fail(&e.to_string());
+                    rep.emit(Event::Failed { step, err: e.to_string() });
                     return Err(e);
                 }
             }

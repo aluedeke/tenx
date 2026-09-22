@@ -237,6 +237,11 @@ impl Client {
     }
 
     fn tick(&mut self) {
+        // Every frame, not on the slow clock: a job's panel animates, and its
+        // events arrive as fast as git writes them. This is also the only
+        // place a finished job's effects reach the column — on this thread,
+        // never on the worker's.
+        self.column.drain_job();
         if self.last_refresh.elapsed() >= REFRESH {
             self.last_refresh = Instant::now();
             if self.column.in_list_mode() {

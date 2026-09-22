@@ -26,11 +26,11 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Tabs},
+    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph},
     Terminal,
 };
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 use unicode_width::UnicodeWidthStr;
 
@@ -102,6 +102,12 @@ struct Row {
     /// override doesn't have to invent a fake `TaskStatus` variant to express
     /// "wants you but idle".
     section: workspace::TaskGroup,
+    /// A task a running job is still building: its directory and worktrees do
+    /// not exist yet. Listed from the moment you hit ⏎ so the task is visibly
+    /// *there* while its repos clone, rather than appearing minutes later.
+    /// Cleared when the job lands and `rebuild_rows` reads the real thing off
+    /// disk. A pending row is not openable — it has no window and no worktree.
+    pending: bool,
 }
 
 /// Create-task form. `focus`: 0 = workspace picker, 1 = name,
@@ -254,10 +260,31 @@ struct RenameForm {
     buffer: String,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Tab {
     Tasks,
     Repos,
+    /// The long operations running off the UI thread, and the last few that
+    /// finished. Its label carries a `[n]` of what is still going, so the
+    /// count is visible from the other tabs without costing the list any rows.
+    Work,
+}
+
+impl Tab {
+    /// Left-to-right order, for cycling and for laying the bar out.
+    const ALL: [Tab; 3] = [Tab::Tasks, Tab::Repos, Tab::Work];
+
+    fn label(self) -> &'static str {
+        match self {
+            Tab::Tasks => "Tasks",
+            Tab::Repos => "Repos",
+            Tab::Work => "Work",
+        }
+    }
+
+    fn index(self) -> usize {
+        Tab::ALL.iter().position(|t| *t == self).unwrap_or(0)
+    }
 }
 
 /// Telescope-style input mode for the list view. Insert = type filters (default,
@@ -341,6 +368,24 @@ pub(super) struct Column {
     repo_filtered: Vec<usize>,
     repo_selected: usize,
     status_msg: Option<String>,
+    /// Long operations running off the UI thread — creating a task, adding a
+    /// repo, reconciling a checklist, deleting a task — plus the last few that
+    /// finished, kept so an outcome (especially a failure) can be read after
+    /// the footer message has gone. The Work tab renders this list.
+    ///
+    /// Several may run at once: `git::lock_repo` serialises whatever actually
+    /// collides, so two jobs on different repos have no reason to queue behind
+    /// each other. See `tui::job`.
+    jobs: Vec<super::job::Job>,
+    /// Position within the Work tab's list.
+    work_selected: usize,
+    /// Advances on `progress::TICK`, for anything that animates without new
+    /// data: the pending row's glyph, the job panel's spinner and marquee.
+    /// Paced on its own clock rather than per draw — the client redraws at
+    /// ~30fps for the embedded terminal's sake, and a braille spinner at that
+    /// rate is a blur.
+    frame: usize,
+    last_frame: Option<Instant>,
     mode: Mode,
     /// Set by `start_unlock` (the `u` key / `:unlock`) to (workspace index,
     /// slug). `run_loop` checks this after every event and, when set,
@@ -357,6 +402,11 @@ pub(super) struct Column {
     // (None for workspace-group headers and blank separators). The three areas
     // are the tab bar, search box, and list, recorded during render.
     list_state: ListState,
+    /// Each tab's x-range in the bar, recorded during render so a click maps
+    /// to the tab actually drawn there. The bar is laid out by hand (rather
+    /// than by ratatui's `Tabs`) precisely so these are exact — the old
+    /// half-the-width guess only ever worked for two tabs.
+    tab_spans: Vec<(u16, u16)>,
     line_to_pos: Vec<Option<usize>>,
     /// Rendered height of each list item, in the same order as
     /// `line_to_pos` — the column's rows are two lines tall, headers one,
@@ -506,12 +556,17 @@ impl Column {
             repo_filtered: vec![],
             repo_selected: 0,
             status_msg: None,
+            jobs: Vec::new(),
+            work_selected: 0,
+            frame: 0,
+            last_frame: None,
             mode: Mode::List,
             pending_unlock: None,
             list_state: ListState::default(),
             line_to_pos: Vec::new(),
             item_heights: Vec::new(),
             tabs_area: Rect::default(),
+            tab_spans: Vec::new(),
             search_area: Rect::default(),
             list_area: Rect::default(),
             last_swept: None,
@@ -524,21 +579,30 @@ impl Column {
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
 
-    fn toggle_tab(&mut self) {
-        self.tab = match self.tab {
-            Tab::Tasks => Tab::Repos,
-            Tab::Repos => Tab::Tasks,
-        };
+    /// `gt` / Tab forward, `gT` / BackTab back, through all three tabs.
+    fn cycle_tab(&mut self, back: bool) {
+        let n = Tab::ALL.len();
+        let i = self.tab.index();
+        let next = if back { (i + n - 1) % n } else { (i + 1) % n };
+        self.select_tab(Tab::ALL[next]);
+    }
+
+    fn select_tab(&mut self, tab: Tab) {
+        self.tab = tab;
         if self.tab == Tab::Repos && self.repo_rows.is_empty() {
             self.rebuild_repo_rows();
+        }
+        self.clamp_work_selection();
+    }
+
+    fn clamp_work_selection(&mut self) {
+        if self.work_selected >= self.jobs.len() {
+            self.work_selected = self.jobs.len().saturating_sub(1);
         }
     }
 
     fn select_repos_tab(&mut self) {
-        self.tab = Tab::Repos;
-        if self.repo_rows.is_empty() {
-            self.rebuild_repo_rows();
-        }
+        self.select_tab(Tab::Repos);
     }
 
     /// Scan every workspace's repos for clone status + last commit. Synchronous
@@ -589,6 +653,7 @@ impl Column {
                     state.status.group()
                 };
                 rows.push(Row {
+                    pending: false,
                     ws_idx,
                     ws_name: ws.config.name.clone(),
                     slug: task.name.clone(),
@@ -610,6 +675,14 @@ impl Column {
                 });
             }
         }
+        // A task a job is still building has a directory only once the worker
+        // gets that far, so carry its ghost row across the rebuild — but only
+        // while the real row is absent, or the two would both be listed.
+        let ghosts: Vec<Row> = std::mem::take(&mut self.rows)
+            .into_iter()
+            .filter(|g| g.pending && !rows.iter().any(|r| r.ws_idx == g.ws_idx && r.slug == g.slug))
+            .collect();
+        rows.extend(ghosts);
         self.rows = rows;
         self.sort_rows();
         self.apply_filter();
@@ -653,8 +726,11 @@ impl Column {
             // A task created or removed from outside (the CLI, the skill,
             // another client) is not a row yet: rebuild, keeping the
             // selection on its task. One `read_dir` per workspace.
+            // Ghost rows have no directory yet, so they are discounted here
+            // — otherwise a running create job would trip this every tick.
             let on_disk: usize = self.workspaces.iter().map(|ws| ws.task_dir_count()).sum();
-            if on_disk != self.rows.len() {
+            let ghosts = self.rows.iter().filter(|r| r.pending).count();
+            if on_disk != self.rows.len() - ghosts {
                 self.tidy();
                 return;
             }
@@ -662,6 +738,11 @@ impl Column {
         let signals = &self.signals;
         let mut rows = std::mem::take(&mut self.rows);
         for r in rows.iter_mut() {
+            // Nothing to resolve for a task that isn't on disk yet: its
+            // status is "a job is building it", which the job owns.
+            if r.pending {
+                continue;
+            }
             let state = workspace::resolve_task_state(&r.path, &sessions, signals);
             r.status = state.status;
             r.changed = state.changed;
@@ -725,6 +806,7 @@ impl Column {
         match self.tab {
             Tab::Tasks => self.filtered.len(),
             Tab::Repos => self.repo_filtered.len(),
+            Tab::Work => self.jobs.len(),
         }
     }
 
@@ -732,6 +814,7 @@ impl Column {
         match self.tab {
             Tab::Tasks => self.selected,
             Tab::Repos => self.repo_selected,
+            Tab::Work => self.work_selected,
         }
     }
 
@@ -739,6 +822,7 @@ impl Column {
         match self.tab {
             Tab::Tasks => self.selected = i,
             Tab::Repos => self.repo_selected = i,
+            Tab::Work => self.work_selected = i,
         }
     }
 
@@ -961,13 +1045,11 @@ impl Column {
             MouseEventKind::ScrollUp => self.scroll_view(-1),
             MouseEventKind::Down(MouseButton::Left) => {
                 if mouse::hit(self.tabs_area, m.column, m.row) {
-                    // Two tabs split the bar width; left half = Tasks, right = Repos.
                     let rel = m.column.saturating_sub(self.tabs_area.x);
-                    let want_repos = rel >= self.tabs_area.width / 2;
-                    match (want_repos, self.tab) {
-                        (true, Tab::Tasks) => self.select_repos_tab(),
-                        (false, Tab::Repos) => self.tab = Tab::Tasks,
-                        _ => {}
+                    if let Some(i) = self.tab_spans.iter().position(|(a, b)| rel >= *a && rel < *b)
+                        && let Some(tab) = Tab::ALL.get(i).copied()
+                    {
+                        self.select_tab(tab);
                     }
                 } else if mouse::hit(self.search_area, m.column, m.row) {
                     self.focus_search();
@@ -1047,7 +1129,8 @@ impl Column {
         match key.code {
             KeyCode::Esc => self.focus_list(), // → Normal (also reachable via ↓)
             KeyCode::Char('c') if ctrl => return Ok(true),
-            KeyCode::Tab | KeyCode::BackTab => self.toggle_tab(),
+            KeyCode::Tab => self.cycle_tab(false),
+            KeyCode::BackTab => self.cycle_tab(true),
             KeyCode::Enter => {
                 if self.tab == Tab::Tasks {
                     // Enter from the search field opens the top match.
@@ -1091,8 +1174,10 @@ impl Column {
         if let Some(p) = self.pending.take() {
             match (p, key.code) {
                 ('g', KeyCode::Char('g')) => self.move_top(),
-                ('g', KeyCode::Char('t' | 'T')) => self.toggle_tab(),
-                ('d', KeyCode::Char('d')) if self.require_tasks() => self.start_delete(),
+                ('g', KeyCode::Char('t')) => self.cycle_tab(false),
+            ('g', KeyCode::Char('T')) => self.cycle_tab(true),
+                ('d', KeyCode::Char('d')) if self.tab == Tab::Work => self.dismiss_job(),
+            ('d', KeyCode::Char('d')) if self.require_tasks() => self.start_delete(),
                 _ => {} // incomplete/unknown sequence — cancel
             }
             return Ok(false);
@@ -1107,7 +1192,8 @@ impl Column {
             KeyCode::Char('G') => self.move_bottom(),
             KeyCode::Char('j') | KeyCode::Down => self.nav_down(),
             KeyCode::Char('k') | KeyCode::Up => self.nav_up(),
-            KeyCode::Tab | KeyCode::BackTab => self.toggle_tab(),
+            KeyCode::Tab => self.cycle_tab(false),
+            KeyCode::BackTab => self.cycle_tab(true),
             // `n` for a new task (matches the `:n`/`:new` command below),
             // `a` to add a repo — distinct verbs, distinct letters.
             KeyCode::Char('n') if ctrl => self.start_create(),
@@ -1204,7 +1290,32 @@ impl Column {
                 self.select_repos_tab();
                 return Ok(false);
             }
+            "work" | "jobs" => {
+                self.select_tab(Tab::Work);
+                return Ok(false);
+            }
+            // Quitting kills the client, and a job runs in one of its
+            // threads — so leaving would take a clone with it. Refuse once
+            // and name what is running; `:q!` goes anyway, as in vim. The
+            // work is recoverable either way (an interrupted bare clone is
+            // detected and re-cloned), but losing ten minutes of download
+            // without being told is not something to do silently.
             "q" | "quit" => {
+                match self.jobs.iter().find(|j| !j.landed()) {
+                    Some(job) => {
+                        let n = self.active_jobs();
+                        let what = if n > 1 {
+                            format!("{n} jobs still running")
+                        } else {
+                            job.plan.title.clone()
+                        };
+                        self.status_msg = Some(format!("{what} — :q! quits anyway"));
+                    }
+                    None => self.client_request = Some(ClientRequest::Quit),
+                }
+                return Ok(false);
+            }
+            "q!" | "quit!" => {
                 self.client_request = Some(ClientRequest::Quit);
                 return Ok(false);
             }
@@ -1360,6 +1471,12 @@ impl Column {
         let Some(row) = self.selected_row() else {
             return Ok(false);
         };
+        // A task still being built has no directory and no window; opening it
+        // would fail with git's error rather than the real reason.
+        if row.pending {
+            self.status_msg = Some(format!("'{}' is still being set up", row.title));
+            return Ok(false);
+        }
         let ws_idx = row.ws_idx;
         let slug = row.slug.clone();
         if !self.offline {
@@ -1387,6 +1504,7 @@ impl Column {
     fn selected_ws_idx(&self) -> Option<usize> {
         match self.tab {
             Tab::Tasks => self.selected_row().map(|r| r.ws_idx),
+            Tab::Work => None,
             Tab::Repos => self
                 .repo_filtered
                 .get(self.repo_selected)
@@ -1478,6 +1596,148 @@ impl Column {
         Ok(false)
     }
 
+    // ── Background jobs ───────────────────────────────────────────────────────
+
+    /// How many jobs are still going. This is the `[n]` on the Work tab.
+    fn active_jobs(&self) -> usize {
+        self.jobs.iter().filter(|j| !j.landed()).count()
+    }
+
+    /// True while any long operation is running.
+    fn job_running(&self) -> bool {
+        self.active_jobs() > 0
+    }
+
+    /// Keep this many settled jobs. They are the only record of an outcome
+    /// once the footer message has been replaced — a failed clone you were
+    /// not looking at when it failed would otherwise leave no trace.
+    const JOB_HISTORY: usize = 10;
+
+    /// Start `work` on a worker thread, with `plan` describing its steps.
+    ///
+    /// Several jobs may run at once: anything that would actually collide is
+    /// serialised by `git::lock_repo`, so two clones of different repos have
+    /// no reason to wait for each other. The panel-free cost of this is that
+    /// the Work tab, not a modal, is where they are watched.
+    fn start_job<F>(&mut self, plan: tenx_core::progress::Plan, then: super::job::Then, work: F)
+    where
+        F: FnOnce(&dyn crate::progress::Reporter) -> Result<String, String> + Send + 'static,
+    {
+        self.status_msg = None;
+        // Drop the oldest settled jobs so the list stays bounded, keeping
+        // every running one regardless.
+        let settled = self.jobs.iter().filter(|j| j.landed()).count();
+        if settled >= Self::JOB_HISTORY {
+            let mut drop = settled - Self::JOB_HISTORY + 1;
+            self.jobs.retain(|j| {
+                if j.landed() && drop > 0 {
+                    drop -= 1;
+                    return false;
+                }
+                true
+            });
+        }
+        self.jobs.push(super::job::Job::spawn(plan, then, work));
+        self.clamp_work_selection();
+    }
+
+    /// Fold whatever the running jobs have reported into their plans, and
+    /// finish up any that landed. Called once per client tick; returns true if
+    /// the screen should be redrawn.
+    ///
+    /// This is where a job's effects reach the column's state — on the UI
+    /// thread, from disk, after the work is done. No worker touches `self`, so
+    /// there is nothing to lock.
+    pub(super) fn drain_job(&mut self) -> bool {
+        if self.last_frame.is_none_or(|t| t.elapsed() >= crate::progress::TICK) {
+            self.last_frame = Some(Instant::now());
+            self.frame = self.frame.wrapping_add(1);
+        }
+        if self.jobs.is_empty() {
+            return false;
+        }
+        // Collect what landed on this tick before touching the column: the
+        // follow-ups rebuild rows, which must not happen mid-iteration.
+        let mut settled: Vec<(super::job::Then, Result<String, String>)> = Vec::new();
+        let mut running = false;
+        for job in self.jobs.iter_mut() {
+            if job.landed() {
+                continue;
+            }
+            job.drain();
+            match job.take_landing() {
+                Some(outcome) => settled.push((job.then.clone(), outcome)),
+                None => running = true,
+            }
+        }
+        if settled.is_empty() {
+            // Redraw while anything runs even when nothing arrived: the
+            // spinners and the marquee animate off `frame`.
+            return running;
+        }
+        // One rebuild covers every job that landed together.
+        self.drop_pending();
+        self.rebuild_rows();
+        self.rebuild_repo_rows();
+        for (then, outcome) in settled {
+            match outcome {
+                Ok(msg) => {
+                    self.status_msg = Some(msg);
+                    self.finish(then);
+                }
+                Err(e) => self.status_msg = Some(e),
+            }
+        }
+        self.clamp_work_selection();
+        true
+    }
+
+    /// The landed job's follow-up, run against freshly rebuilt rows.
+    fn finish(&mut self, then: super::job::Then) {
+        use super::job::Then;
+        match then {
+            Then::Nothing => {}
+            // By slug, not position: the rebuild re-sorted everything.
+            Then::SelectTask(ws_idx, slug) => {
+                self.select_task(ws_idx, &slug);
+            }
+            Then::Workspace(dir) => self.finish_new_workspace(&dir),
+        }
+    }
+
+    /// Put the selection on a task by slug. By slug and not by position
+    /// because every rebuild re-sorts the list.
+    fn select_task(&mut self, ws_idx: usize, slug: &str) {
+        if let Some(pos) = self
+            .filtered
+            .iter()
+            .position(|&i| self.rows[i].ws_idx == ws_idx && self.rows[i].slug == slug)
+        {
+            self.tab = Tab::Tasks;
+            self.selected = pos;
+        }
+    }
+
+    /// Remove every ghost row whose job is no longer running. The real ones
+    /// come back from `rebuild_rows`.
+    fn drop_pending(&mut self) {
+        self.rows.retain(|r| !r.pending);
+        self.apply_filter();
+    }
+
+    /// Forget a settled job from the Work tab. Running ones stay: there is
+    /// nothing to dismiss until they finish.
+    fn dismiss_job(&mut self) {
+        match self.jobs.get(self.work_selected) {
+            Some(job) if job.landed() => {
+                self.jobs.remove(self.work_selected);
+                self.clamp_work_selection();
+            }
+            Some(_) => self.status_msg = Some("still running — it clears when it finishes".into()),
+            None => {}
+        }
+    }
+
     /// Create the task and select its row. `Ok(true)` when the new row is now
     /// the selection (so a `jump` lands on it), `Ok(false)` if it couldn't be
     /// found in the rebuilt list.
@@ -1502,6 +1762,7 @@ impl Column {
             let ws = &self.workspaces[ws_idx];
             let now = SystemTime::now();
             self.rows.push(Row {
+                pending: false,
                 ws_idx,
                 ws_name: ws.config.name.clone(),
                 path: ws.dir.join("tasks").join(&slug),
@@ -1525,17 +1786,55 @@ impl Column {
             self.sort_rows();
             self.apply_filter();
         } else {
-            // no_open=true: the window is opened by the `jump` the caller
-            // runs right after this.
-            let ws = &self.workspaces[ws_idx];
-            crate::cli::task::new_in(ws, &name, Some(&repos), true).map_err(|e| e.to_string())?;
-            // Pin the chosen agent before `jump` opens the window; `None`
-            // inherits the workspace/global default.
-            if let Some(kind) = form.agent {
-                let _ = crate::agent::set_task_agent(&ws.dir.join("tasks").join(&slug), Some(kind));
+            if self.job_running() {
+                return Err("one repo operation at a time — this one is still running".into());
             }
+            let ws = &self.workspaces[ws_idx];
+            let ws_dir = ws.dir.clone();
+            let task_dir = ws.dir.join("tasks").join(&slug);
+            let plan = tenx_core::progress::Plan::new(
+                format!("creating '{name}'"),
+                crate::cli::task::new_steps(ws, Some(&repos)),
+            );
+
+            // The row appears now, ghosted, and the clone fills in behind it:
+            // the task is visibly *there* from the keystroke that made it,
+            // instead of after a minute of frozen screen.
+            let ghost = self.ghost_row(ws_idx, &slug, &name, &repos, form.agent);
+            self.rows.push(ghost);
             self.filter.clear();
-            self.rebuild_rows();
+            self.sort_rows();
+            self.apply_filter();
+            let (job_name, agent) = (name.clone(), form.agent);
+            self.start_job(plan, super::job::Then::SelectTask(ws_idx, slug.clone()), move |rep| {
+                // Reloaded on the worker rather than captured: `Workspace` is
+                // read from disk, and this is the convention everywhere else
+                // — derive state from the live source, don't carry a snapshot
+                // across a thread boundary.
+                let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
+                // no_open=true: the window is opened by the `jump` that
+                // follows the job landing, not from the worker — tmux calls
+                // belong on the thread that owns the terminal.
+                crate::cli::task::new_in(&ws, &job_name, Some(&repos), true, rep).map_err(|e| e.to_string())?;
+                // Pin the chosen agent before anything opens the window;
+                // `None` inherits the workspace/global default.
+                if let Some(kind) = agent {
+                    let _ = crate::agent::set_task_agent(&task_dir, Some(kind));
+                }
+                Ok(format!("created '{job_name}'"))
+            });
+            // The ghost row is the selection, so ⏎ and the footer both have
+            // something to point at; `jump` is deliberately not run here —
+            // there is no window to jump to until the job lands.
+            let selected = self
+                .filtered
+                .iter()
+                .position(|&i| self.rows[i].ws_idx == ws_idx && self.rows[i].slug == slug);
+            if let Some(pos) = selected {
+                self.tab = Tab::Tasks;
+                self.selected = pos;
+            }
+            return Ok(false);
         }
         let selected = match self
             .filtered
@@ -1551,6 +1850,43 @@ impl Column {
         };
         self.status_msg = Some(format!("created '{name}'"));
         Ok(selected)
+    }
+
+    /// A placeholder row for a task a job is still building. Filed under
+    /// `Working` — something *is* working on it — with nothing derived from
+    /// disk, because none of it is on disk yet.
+    fn ghost_row(
+        &self,
+        ws_idx: usize,
+        slug: &str,
+        title: &str,
+        repos: &[String],
+        agent: Option<crate::agent::AgentKind>,
+    ) -> Row {
+        let ws = &self.workspaces[ws_idx];
+        let path = ws.dir.join("tasks").join(slug);
+        let now = SystemTime::now();
+        Row {
+            pending: true,
+            ws_idx,
+            ws_name: ws.config.name.clone(),
+            path: path.clone(),
+            slug: slug.to_string(),
+            title: title.to_string(),
+            status: TaskStatus::Working,
+            group: TaskStatus::Working,
+            changed: Some(now),
+            waiting_for: None,
+            activity: now,
+            window_id: None,
+            pane: None,
+            live: crate::live::Live::default(),
+            repos: repos.to_vec(),
+            agent: agent.unwrap_or_else(|| crate::agent::agent_for(ws, &path)),
+            secrets_pending: vec![],
+            secrets_pending_set: vec![],
+            section: TaskStatus::Working.group(),
+        }
     }
 
     // ── Add repo (Repos tab) ──────────────────────────────────────────────────
@@ -1612,13 +1948,18 @@ impl Column {
             return Err("git URL cannot be empty".into());
         }
         let name = form.name.trim();
-        let name_opt = if name.is_empty() { None } else { Some(name) };
-        {
-            let ws = &mut self.workspaces[form.ws_idx];
-            crate::cli::repo::add_in(ws, &url, name_opt).map_err(|e| e.to_string())?;
+        let name_opt = if name.is_empty() { None } else { Some(name.to_string()) };
+        if self.job_running() {
+            return Err("one repo operation at a time — this one is still running".into());
         }
-        self.rebuild_repo_rows();
-        self.status_msg = Some("repo added".into());
+        let repo_name = name_opt.clone().unwrap_or_else(|| crate::cli::repo::infer_name(&url));
+        let ws_dir = self.workspaces[form.ws_idx].dir.clone();
+        let plan = tenx_core::progress::Plan::new(format!("cloning {repo_name}"), [repo_name.clone()]);
+        self.start_job(plan, super::job::Then::Nothing, move |rep| {
+            let mut ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
+            crate::cli::repo::add_in(&mut ws, &url, name_opt.as_deref(), rep).map_err(|e| e.to_string())?;
+            Ok(format!("added repo '{repo_name}'"))
+        });
         Ok(())
     }
 
@@ -1714,31 +2055,51 @@ impl Column {
             self.status_msg = Some(format!("would create workspace '{name}' at {}", dir.display()));
             return Ok(());
         }
-        let ws = crate::cli::init::init_in(&dir, &name, repos, String::new(), form.skills).map_err(|e| e.to_string())?;
+        if self.job_running() {
+            return Err("one repo operation at a time — this one is still running".into());
+        }
+        // The workspace directory and its config are written in an instant;
+        // it is the repo clone inside `init_in` that takes the time, so the
+        // whole call goes to the worker and the landing does the rest.
+        let steps: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
+        let plan = tenx_core::progress::Plan::new(format!("creating workspace '{name}'"), steps);
         self.filter.clear();
+        let (dir2, name2, skills) = (dir.clone(), name.clone(), form.skills);
+        self.start_job(plan, super::job::Then::Workspace(dir.clone()), move |rep| {
+            crate::cli::init::init_in(&dir2, &name2, repos, String::new(), skills, rep)
+                .map(|_| format!("workspace '{name2}' created"))
+                .map_err(|e| e.to_string())
+        });
+        Ok(())
+    }
+
+    /// Land on a workspace the job just created: the Repos tab with it
+    /// selected, or the add-repo form when it was created without a repo,
+    /// since a task needs one.
+    fn finish_new_workspace(&mut self, dir: &Path) {
         self.reload_workspaces();
         self.tidy();
         // The registry holds canonical paths; the form's may not be.
-        let created = ws.dir.canonicalize().unwrap_or_else(|_| ws.dir.clone());
+        let created = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
         let Some(ws_idx) = self
             .workspaces
             .iter()
             .position(|w| w.dir.canonicalize().unwrap_or_else(|_| w.dir.clone()) == created)
         else {
-            return Err(format!("workspace '{name}' created, but it is not in the registry"));
+            self.status_msg = Some("workspace created, but it is not in the registry".into());
+            return;
         };
-        if ws.config.repos.is_empty() {
+        if self.workspaces[ws_idx].config.repos.is_empty() {
+            let name = self.workspaces[ws_idx].config.name.clone();
             self.status_msg = Some(format!("workspace '{name}' created — add its first repo"));
             self.mode = Mode::AddRepo(AddRepoForm { ws_idx, url: String::new(), name: String::new(), focus: 0 });
-            return Ok(());
+            return;
         }
         self.select_repos_tab();
         if let Some(pos) = self.repo_filtered.iter().position(|&i| self.repo_rows[i].ws_idx == ws_idx) {
             self.repo_selected = pos;
         }
         self.focus_list();
-        self.status_msg = Some(format!("workspace '{name}' created"));
-        Ok(())
     }
 
     // ── Edit repos (Tasks tab) ────────────────────────────────────────────────
@@ -1750,6 +2111,12 @@ impl Column {
             self.status_msg = Some("select a task first".into());
             return;
         };
+        // Its worktrees are being created right now; editing the set would
+        // race the job that is building it.
+        if row.pending {
+            self.status_msg = Some("still being set up — wait for it to finish".into());
+            return;
+        }
         let (ws_idx, slug, title, have) =
             (row.ws_idx, row.slug.clone(), row.title.clone(), row.repos.clone());
         let mut picks: Vec<RepoPick> = self
@@ -1848,31 +2215,39 @@ impl Column {
     /// diff again natively (it's the source of truth for what's on disk), so
     /// this just hands over the desired set.
     fn apply_repo_changes(&mut self, form: &EditReposForm) {
-        let (added, removed) = (form.added().len(), form.removed().len());
-        let res = {
-            let ws = &self.workspaces[form.ws_idx];
-            crate::cli::task::set_repos_in(ws, &form.slug, &form.desired(), false)
-        };
-        match res {
-            Ok(()) => {
-                let keep = form.slug.clone();
-                self.rebuild_rows();
-                if let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].slug == keep) {
-                    self.selected = pos;
-                }
-                self.status_msg = Some(match (added, removed) {
-                    (a, 0) => format!("added {a} repo(s) to '{}'", form.title),
-                    (0, r) => format!("detached {r} repo(s) from '{}'", form.title),
-                    (a, r) => format!("added {a}, detached {r} in '{}'", form.title),
-                });
-            }
-            Err(e) => self.status_msg = Some(e.to_string()),
+        if self.job_running() {
+            self.status_msg = Some("one repo operation at a time — this one is still running".into());
+            return;
         }
+        let (added, removed) = (form.added().len(), form.removed().len());
+        let desired = form.desired();
+        let (ws_idx, slug, title) = (form.ws_idx, form.slug.clone(), form.title.clone());
+        let ws_dir = self.workspaces[ws_idx].dir.clone();
+        // `set_repos_steps` walks the same diff, in the same order, that
+        // `set_repos_in` will report against — additions, then removals.
+        let plan = tenx_core::progress::Plan::new(
+            format!("updating '{title}'"),
+            crate::cli::task::set_repos_steps(&self.workspaces[ws_idx], &slug, &desired),
+        );
+        let slug2 = slug.clone();
+        self.start_job(plan, super::job::Then::SelectTask(ws_idx, slug.clone()), move |rep| {
+            let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
+            crate::cli::task::set_repos_in(&ws, &slug2, &desired, false, rep).map_err(|e| e.to_string())?;
+            Ok(match (added, removed) {
+                (a, 0) => format!("added {a} repo(s) to '{title}'"),
+                (0, r) => format!("detached {r} repo(s) from '{title}'"),
+                (a, r) => format!("added {a}, detached {r} in '{title}'"),
+            })
+        });
     }
 
     // ── Delete ────────────────────────────────────────────────────────────────
 
     fn start_delete(&mut self) {
+        if self.selected_row().is_some_and(|r| r.pending) {
+            self.status_msg = Some("still being set up — wait for it to finish".into());
+            return;
+        }
         if let Some(r) = self.selected_row() {
             self.mode = Mode::Confirm(Confirm {
                 ws_idx: r.ws_idx,
@@ -1902,17 +2277,31 @@ impl Column {
         if let Some(w) = crate::tmux::find_task_window(&confirm.slug, &confirm.path).ok().flatten() {
             let _ = crate::tmux::kill_window(&w.id);
         }
-        let res = {
-            let ws = &self.workspaces[confirm.ws_idx];
-            crate::cli::task::rm_in(ws, &confirm.slug, true)
-        };
-        match res {
-            Ok(()) => {
-                self.rebuild_rows();
-                self.status_msg = Some(format!("deleted '{}'", confirm.title));
-            }
-            Err(e) => self.status_msg = Some(e.to_string()),
+        if self.job_running() {
+            self.status_msg = Some("one repo operation at a time — this one is still running".into());
+            return;
         }
+        // Removing N worktrees is local, but on a large repo it is still
+        // seconds of filesystem work — long enough to be worth not freezing
+        // the client for. It reports no phases, so its panel is the
+        // indeterminate one.
+        let ws_dir = self.workspaces[confirm.ws_idx].dir.clone();
+        let (slug, title) = (confirm.slug.clone(), confirm.title.clone());
+        let plan = tenx_core::progress::Plan::new(format!("deleting '{title}'"), [title.clone()]);
+        self.start_job(plan, super::job::Then::Nothing, move |rep| {
+            rep.emit(crate::progress::Event::Start { step: 0, label: title.clone(), verb: "deleting" });
+            let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
+            match crate::cli::task::rm_in(&ws, &slug, true) {
+                Ok(()) => {
+                    rep.emit(crate::progress::Event::Done { step: 0, note: "deleted".into() });
+                    Ok(format!("deleted '{title}'"))
+                }
+                Err(e) => {
+                    rep.emit(crate::progress::Event::Failed { step: 0, err: e.to_string() });
+                    Err(e.to_string())
+                }
+            }
+        });
     }
 
     // ── Close tab ─────────────────────────────────────────────────────────────
@@ -2142,6 +2531,7 @@ pub(super) fn render_in(f: &mut ratatui::Frame, column: &mut Column, area: Rect)
         Block::default().style(Style::default().bg(palette::GROUND.color()).fg(palette::TEXT.color())),
         area,
     );
+
     // Dispatch on a discriminant (not `match &column.mode`) so the list path can
     // take `&mut column` without a live immutable borrow of `column.mode`.
     if matches!(column.mode, Mode::Create(_)) {
@@ -2155,6 +2545,174 @@ pub(super) fn render_in(f: &mut ratatui::Frame, column: &mut Column, area: Rect)
     } else {
         render_list(f, column, area);
     }
+}
+
+
+// ── The Work tab ─────────────────────────────────────────────────────────────
+
+/// At most this many step lines per job. Beyond it the entry scrolls a window
+/// around the active step rather than growing: a workspace with a dozen repos
+/// would otherwise push every other job off the screen.
+const MAX_STEP_LINES: usize = 3;
+
+/// One job as list lines: its title and step counter, the steps around the one
+/// running, an overall bar, and what git says about the transfer.
+///
+/// A settled job collapses to its title and outcome — there is nothing left to
+/// animate, and the point of keeping it is that you can read what happened.
+fn job_lines(job: &super::job::Job, frame: usize, width: usize, selected: bool) -> Vec<Line<'static>> {
+    use tenx_core::progress::StepState;
+    let dim = Style::default().fg(palette::MUTED.color());
+    let inner = width.saturating_sub(2);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    let title_fg = if selected { palette::SEL_TEXT.color() } else { palette::TEXT.color() };
+    let (glyph, glyph_style) = if job.failed() {
+        ("✗", Style::default().fg(palette::DANGER.color()))
+    } else if job.landed() {
+        ("✓", Style::default().fg(palette::SUCCESS.color()))
+    } else {
+        (
+            crate::progress::FRAMES[frame % crate::progress::FRAMES.len()],
+            Style::default().fg(palette::ACCENT.color()),
+        )
+    };
+    let counter = if job.landed() { String::new() } else { format!("  {}", job.plan.counter()) };
+    let title_w = inner.saturating_sub(2 + counter.width()).max(1);
+    lines.push(Line::from(vec![
+        Span::styled(format!("{glyph} "), glyph_style),
+        Span::styled(
+            pad_cell(&job.plan.title, title_w),
+            Style::default().fg(title_fg).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(counter, dim),
+    ]));
+
+    if job.landed() {
+        // The outcome line: the message on success, the error on failure.
+        if let Some(note) = job.outcome_note() {
+            let style = if job.failed() {
+                Style::default().fg(palette::DANGER.color())
+            } else {
+                dim
+            };
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(truncate(note, inner.saturating_sub(2)), style),
+            ]));
+        }
+        return lines;
+    }
+
+    // A window around the active step, so a long repo list still shows what is
+    // happening now rather than the first three repos forever.
+    let active = job.plan.active().unwrap_or(0);
+    let total = job.plan.steps.len();
+    let start = active.saturating_sub(MAX_STEP_LINES - 1).min(total.saturating_sub(MAX_STEP_LINES));
+    for (i, step) in job.plan.steps.iter().enumerate().skip(start).take(MAX_STEP_LINES) {
+        let (g, style) = match &step.state {
+            StepState::Pending => ("·", Style::default().fg(palette::IDLE.color())),
+            StepState::Running(_) => (
+                crate::progress::FRAMES[(frame + i) % crate::progress::FRAMES.len()],
+                Style::default().fg(palette::ACCENT.color()),
+            ),
+            StepState::Done(_) => ("✓", Style::default().fg(palette::SUCCESS.color())),
+            StepState::Failed(_) => ("✗", Style::default().fg(palette::DANGER.color())),
+        };
+        let note = step.note().to_string();
+        // The label takes what the note leaves — a repo name is worth more
+        // than the phase word, so the note is what gets dropped first.
+        let label_w = inner.saturating_sub(4 + note.width() + 1).max(1);
+        let label_style = match step.state {
+            StepState::Pending => dim,
+            _ => Style::default().fg(palette::TEXT.color()),
+        };
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{g} "), style),
+            Span::styled(pad_cell(&step.label, label_w), label_style),
+            Span::styled(note, dim),
+        ]));
+    }
+
+    // The overall bar: every step, not just the one running, so it matches the
+    // step counter beside the title and doesn't restart per repo.
+    let snap = job.active_snapshot();
+    let determinate = snap.is_some_and(|s| s.percent.is_some());
+    let bar_w = inner.saturating_sub(8).max(1);
+    if determinate {
+        let frac = job.plan.fraction();
+        let filled = tenx_core::progress::bar(bar_w, frac);
+        let cut = filled.chars().take_while(|c| *c == '█').count();
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(filled.chars().take(cut).collect::<String>(), Style::default().fg(palette::ACCENT.color())),
+            Span::styled(filled.chars().skip(cut).collect::<String>(), Style::default().fg(palette::BORDER.color())),
+            Span::styled(format!(" {:>3}%", (frac * 100.0).round() as u16), dim),
+        ]));
+    } else {
+        // Nothing has reported a percent yet (or ever will — a worktree
+        // removal reports nothing). A still bar would read as a hang.
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                tenx_core::progress::marquee(bar_w, frame),
+                Style::default().fg(palette::ACCENT.color()),
+            ),
+        ]));
+    }
+
+    let transfer = snap.as_ref().map(tenx_core::progress::transfer_line).unwrap_or_default();
+    if !transfer.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(truncate(&transfer, inner.saturating_sub(2)), dim),
+        ]));
+    }
+    lines
+}
+
+/// The Work tab's list: every job, newest last, running ones first-class and
+/// settled ones collapsed to their outcome.
+fn work_items(column: &Column, width: usize) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {
+    let mut items = Vec::new();
+    let mut line_to_pos = Vec::new();
+    let mut selected_line = None;
+    for (i, job) in column.jobs.iter().enumerate() {
+        if i == column.work_selected && column.focus == Focus::List {
+            selected_line = Some(items.len());
+        }
+        let selected = i == column.work_selected && column.focus == Focus::List;
+        let mut lines = job_lines(job, column.frame, width, selected);
+        lines.push(Line::from(""));
+        items.push(ListItem::new(lines));
+        line_to_pos.push(Some(i));
+    }
+    if items.is_empty() {
+        for line in work_empty_lines() {
+            items.push(ListItem::new(line));
+            line_to_pos.push(None);
+        }
+    }
+    (items, selected_line, line_to_pos)
+}
+
+/// What the Work tab says when nothing has run yet.
+fn work_empty_lines() -> Vec<Line<'static>> {
+    let dim = Style::default().fg(palette::MUTED.color());
+    vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled("nothing running", Style::default().fg(palette::TEXT.color())),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled("clones and worktree changes", dim),
+        ]),
+        Line::from(vec![Span::raw("  "), Span::styled("show up here while they run.", dim)]),
+    ]
 }
 
 fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
@@ -2176,12 +2734,45 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     column.list_area = list_area;
 
     // ── Tab bar (its own row, not on a border) ────────────────────────────────
-    let tabs = Tabs::new(vec![" Tasks ", " Repos "])
-        .select(if column.tab == Tab::Tasks { 0 } else { 1 })
-        .style(Style::default().fg(palette::MUTED.color()))
-        .highlight_style(Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD))
-        .divider(Span::styled("│", Style::default().fg(palette::MUTED.color())));
-    f.render_widget(tabs, chunks[0]);
+    // `Work [2]` — the count of running jobs, so the one thing you might be
+    // waiting on is legible from any tab without costing the list a row. The
+    // brackets are dropped when nothing is running, rather than showing a
+    // `[0]` that draws the eye for no reason.
+    //
+    // Laid out by hand rather than with ratatui's `Tabs` so each tab's x-range
+    // is known exactly for the mouse, and so the `[n]` can keep its own colour
+    // instead of inheriting the selected/unselected style.
+    let active = column.active_jobs();
+    let mut spans: Vec<Span> = Vec::new();
+    let mut tab_spans: Vec<(u16, u16)> = Vec::new();
+    let mut x: u16 = 0;
+    for (i, t) in Tab::ALL.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("│", Style::default().fg(palette::MUTED.color())));
+            x += 1;
+        }
+        let start = x;
+        let selected = *t == column.tab;
+        let style = Style::default()
+            .fg(if selected { palette::ACCENT.color() } else { palette::MUTED.color() })
+            .add_modifier(if selected { Modifier::BOLD } else { Modifier::empty() });
+        let label = format!(" {} ", t.label());
+        x += label.width() as u16;
+        spans.push(Span::styled(label, style));
+        if *t == Tab::Work && active > 0 {
+            // Always the attention colour, selected or not: the point of the
+            // count is to be seen from the other tabs.
+            let count = format!("[{active}] ");
+            x += count.width() as u16;
+            spans.push(Span::styled(
+                count,
+                Style::default().fg(palette::INFO.color()).add_modifier(Modifier::BOLD),
+            ));
+        }
+        tab_spans.push((start, x));
+    }
+    column.tab_spans = tab_spans;
+    f.render_widget(Paragraph::new(Line::from(spans)), chunks[0]);
 
     // ── Search box (or the rename input) ──────────────────────────────────────
     let title = if matches!(column.mode, Mode::Rename(_)) {
@@ -2218,6 +2809,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     let (items, line_of_selected, line_to_pos) = match column.tab {
         Tab::Tasks => column_items(column, list_width),
         Tab::Repos => repo_items(column, list_width),
+        Tab::Work => work_items(column, list_width),
     };
     column.line_to_pos = line_to_pos;
     column.item_heights = items.iter().map(|i| i.height() as u16).collect();
@@ -2248,6 +2840,12 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
                     Style::default().fg(palette::MUTED.color()),
                 ));
             }
+            if buf == "q" && column.job_running() {
+                spans.push(Span::styled(
+                    "  ! to quit anyway",
+                    Style::default().fg(palette::WARN.color()),
+                ));
+            }
             Line::from(spans)
         }
         (Mode::Confirm(c), _) => Line::from(Span::styled(
@@ -2268,6 +2866,9 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
             let (tag, tag_style) = mode_tag(column.input_mode);
             let hint = match (column.input_mode, column.tab) {
                 (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
+                (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.pending) => {
+                    " setting up · esc detach"
+                }
                 (InputMode::Normal, Tab::Tasks) if column.selected_answerable() => " A/D answer · ⏎ open",
                 (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.window_id.is_none()) => {
                     " closed · ⏎ open · ↓↑ move"
@@ -2275,6 +2876,8 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
                 (InputMode::Normal, Tab::Tasks) if column.another_needs_you() => " n needs you · ⏎ open · ^n new",
                 (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · ^n new · x close",
                 (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab",
+                (InputMode::Normal, Tab::Work) if column.jobs.is_empty() => " gt tab",
+                (InputMode::Normal, Tab::Work) => " dd dismiss · gt tab",
             };
             Line::from(vec![Span::styled(tag, tag_style), Span::styled(hint, Style::default().fg(palette::MUTED.color()))])
         }
@@ -2323,7 +2926,13 @@ fn group_color(group: workspace::TaskGroup) -> ratatui::style::Color {
 }
 
 /// status colour, plus a gap. Shared by both list shapes.
-fn row_glyph(row: &Row) -> (String, Style) {
+fn row_glyph(row: &Row, frame: usize) -> (String, Style) {
+    if row.pending {
+        // Still being built: the same spinner the panel shows, so the row and
+        // the panel below read as one thing.
+        let f = crate::progress::FRAMES[frame % crate::progress::FRAMES.len()];
+        return (format!("{f}  "), Style::default().fg(palette::ACCENT.color()));
+    }
     if !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty() {
         ("🔒 ".to_string(), Style::default().fg(palette::ACCENT.color()))
     } else {
@@ -2335,6 +2944,9 @@ fn row_glyph(row: &Row) -> (String, Style) {
 /// wants unlocked, else Claude Code's own waiting reason. `None` when it
 /// wants nothing.
 fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static palette::Rgb)> {
+    if row.pending {
+        return Some(("setting up".to_string(), &palette::ACCENT, &palette::CHIP_SECRETS_BG));
+    }
     if !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty() {
         let wants: Vec<String> = row
             .secrets_pending
@@ -2404,7 +3016,7 @@ fn column_items(
         } else {
             palette::TEXT.color()
         };
-        let (glyph, glyph_style) = row_glyph(row);
+        let (glyph, glyph_style) = row_glyph(row, column.frame);
         // Sized per row, not per list: a column has no other columns to line
         // up with, so every title gets the whole width.
         let title_w = list_width.saturating_sub(INDENT).max(1);
