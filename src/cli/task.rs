@@ -160,6 +160,18 @@ fn ensure_repo_worktree(
         verb: crate::git::Synced::verb(exists),
     });
 
+    // Held across the sync *and* the worktree add, so another tenx can't
+    // clone into this bare repo while we branch off it. Say so before
+    // blocking: a step that sits still because someone else holds the repo
+    // must not look like one that has hung.
+    let _lock = match crate::git::try_lock_repo(bare_dir, &repo.name)? {
+        Some(lock) => lock,
+        None => {
+            rep.emit(Event::Start { step, label: repo.name.clone(), verb: "waiting for" });
+            crate::git::lock_repo(bare_dir, &repo.name)?
+        }
+    };
+
     // Sync and worktree are one step: the clone is nearly all of the time,
     // and splitting them would make the panel flicker a second line per repo
     // for something that finishes in milliseconds.
@@ -264,6 +276,9 @@ fn rm_repo_from(
         }
         let step = base + i;
         rep.emit(Event::Start { step, label: name.clone(), verb: "detaching" });
+        // Removing the worktree and deleting the branch both write the bare
+        // repo, so they take the same lock a clone does.
+        let _lock = crate::git::lock_repo(&bare_dir, name)?;
         let bare_path = crate::git::bare_repo_path(&bare_dir, name);
         let worktree_path = task.path.join(name);
         let res = crate::git::remove_worktree(&bare_path, &worktree_path, force)

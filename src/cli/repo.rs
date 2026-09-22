@@ -42,6 +42,7 @@ pub fn add_in(
     }
 
     rep.emit(Event::Start { step: 0, label: repo_name.clone(), verb: "cloning" });
+    let _lock = crate::git::lock_repo(&bare_dir, &repo_name)?;
     let mut on = |snap| rep.emit(Event::Update { step: 0, snap });
     if let Err(e) = crate::git::bare_clone(url, &bare_dir, &repo_name, &mut on) {
         rep.emit(Event::Failed { step: 0, err: e.to_string() });

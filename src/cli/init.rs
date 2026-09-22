@@ -106,6 +106,7 @@ pub fn init_in(
                 label: repo.name.clone(),
                 verb: crate::git::Synced::verb(exists),
             });
+            let _lock = crate::git::lock_repo(&bare_dir, &repo.name)?;
             let mut on = |snap| rep.emit(Event::Update { step, snap });
             match crate::git::ensure_synced(&repo.url, &bare_dir, &repo.name, &mut on) {
                 Ok(synced) => rep.emit(Event::Done { step, note: synced.note().to_string() }),
