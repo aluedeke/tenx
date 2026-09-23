@@ -2537,12 +2537,9 @@ fn subseq_match(needle: &str, haystack: &str) -> bool {
 /// pane in the `tenx-zellij` column, running the real CLI directly): this
 /// function never touches the identity, the encrypted bundle, or a secret
 /// value itself, it just hands the real terminal to the real `age`/`sops`
-/// process. Delegates the actual sequencing (decrypt if release-pending,
-/// then set once per pending value-name) to `cli::secrets::fulfill_in` —
-/// shared with `tenx-zellij`'s spawned pane, which calls the same logic via
-/// `tenx secrets fulfill` since it can only shell out, not link against
-/// these functions directly. Keeping both callers on one implementation is
-/// deliberate — see `fulfill_in`'s own doc comment.
+/// process. The sitting itself — review, grant or deny, values, one
+/// passphrase — is `cli::secrets::fulfill_in`, the same as
+/// `tenx secrets fulfill` from a shell.
 pub(super) fn run_unlock(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     column: &mut Column,
@@ -2556,7 +2553,6 @@ pub(super) fn run_unlock(
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste)?;
     terminal.show_cursor()?;
 
-    println!("secrets for '{slug}'...\n");
     let result = (|| -> Result<()> {
         let ws = column.workspaces.get(ws_idx).context("workspace no longer registered")?;
         let task = ws.find_task(slug)?;

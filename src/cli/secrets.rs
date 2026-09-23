@@ -1,104 +1,109 @@
-//! Task-scoped secret unlock (`ARCHITECTURE.md` § Secrets has the overview;
-//! this doc comment is the authoritative detail). This module shells out to the system
-//! `age`/`age-keygen`/`sops` binaries rather than linking a crypto crate,
-//! matching `git/mod.rs`'s reasoning for shelling to `git`: it's what the user
-//! already has installed, at whatever version, with no reimplementation risk.
-//! `sops` is the one encrypt/decrypt tool used everywhere now — our own
-//! sealed bundle, agent-added secrets, and adopted secrets (see *Sops
-//! adoption* below) all go
-//! through it uniformly — but it has no passphrase prompt of its own: it
-//! always needs an already-decrypted identity file via `SOPS_AGE_KEY_FILE`,
-//! so raw `age -d` is still what actually unwraps a passphrase-protected
-//! identity (see `sops_decrypt`), and `age -p`/`age-keygen` are still what
-//! generates/protects one (see `generate_identity`). `age` never
-//! encrypts/decrypts a *secret value* directly anymore — only the identity
-//! that guards them.
-//!
-//! Command names deliberately track `sops`'s own vocabulary now — `encrypt`
-//! (was `seal`), `decrypt` (was `unlock`), `set` (was `add`) — and, `set`
-//! especially, their actual semantics too, not just the names: `set` is
-//! literally `sops set` under the hood, editing the *existing* sealed bundle
-//! in place. That's a real behavior change from the `add` this replaced, not
-//! just a rename — see `set`'s own doc comment for what that costs.
+//! Task-scoped secrets (`ARCHITECTURE.md` § Secrets has the overview; this
+//! doc comment is the authoritative detail). This module shells out to the
+//! system `age`/`age-keygen`/`sops` binaries rather than linking a crypto
+//! crate, matching `git/mod.rs`'s reasoning for shelling to `git`: it's what
+//! the user already has installed, at whatever version, with no
+//! reimplementation risk. `sops` does every encrypt/decrypt — the task's own
+//! bundle, values a human types in, and adopted secrets (see *Sops adoption*
+//! below) — but it has no passphrase prompt of its own: it needs an
+//! already-decrypted identity file via `SOPS_AGE_KEY_FILE`, so raw `age -d`
+//! is still what unwraps a passphrase-protected identity (`with_plain_identity`),
+//! and `age -p`/`age-keygen` are still what generate and protect one
+//! (`generate_identity`).
 //!
 //! Hard rule, enforced throughout this file, not just documented: **no
-//! function here ever writes a decrypted secret value to stdout.** `decrypt`
-//! only ever writes to its fixed task-scoped file (`--output`, `Stdio::null()`
-//! on every child process that could theoretically emit plaintext). Stdout an
-//! agent's Bash tool captures becomes part of its own conversation transcript
-//! — a durable artifact outside the task folder that `task rm`'s cleanup never
-//! reaches, so this is a stricter guarantee than "the agent may read the
-//! plaintext file afterward".
+//! function here ever writes a decrypted secret value to stdout.** Released
+//! values only ever go to their fixed task-scoped files; a child process that
+//! could emit plaintext has its stdout either nulled or captured into memory,
+//! never inherited. Stdout an agent's Bash tool captures becomes part of its
+//! conversation transcript — a durable artifact outside the task folder that
+//! `task rm`'s cleanup never reaches.
 //!
-//! `decrypt` is safe for an agent to call, not just a human: before touching
-//! anything, it tries to open `/dev/tty` — the exact file `age`'s own
-//! passphrase prompt reads from (not stdin; confirmed by `age`'s own error
-//! when it's missing: "standard input is not a terminal, and /dev/tty is not
-//! available"). A Bash-tool child process normally has no controlling
-//! terminal, so this fails there, and `decrypt` falls back to enqueue-then-
-//! wait behavior instead of letting a raw `age`/`sops` tty error surface:
-//! append the given name to a durable per-task marker file, never touching
-//! the identity or an encrypted bundle, then **block** until a human acts on
-//! it (see *Waiting* below). Idempotent — re-requesting an already-pending
-//! name is a no-op, so a chatty agent can't spam repeat notifications. When
-//! `/dev/tty` *is* reachable (a human's real shell, or the column's spawned
-//! pane), `decrypt` proceeds straight to the real decrypt, same passphrase
-//! prompt as always. Which behavior a caller gets is decided entirely by
-//! whether a real terminal is actually there, not by which subcommand name
-//! was typed.
+//! **Asking.** An agent asks with one command, `need NAME... [--why ..]`, and
+//! never has to know what kind of request it is making. `sops` encrypts
+//! values only, so the key names of every sealed file are readable without
+//! the identity (`tenx_core::secrets::sealed_keys`), and `need` routes each
+//! name by looking: already released → nothing to do; sealed somewhere (a
+//! key of the task's bundle, or a key or filename fragment of an adopted
+//! file) → the *release* queue; nowhere → the *value* queue, meaning a human
+//! must type one. Only the name is ever queued, never a value — a queued
+//! plaintext sitting on disk before any human confirmed anything would be a
+//! strictly worse exposure than anything else in this design. `--why` is
+//! kept beside the queues (`workspace::SECRETS_WHY_FILE`) and shown to
+//! whoever answers. `decrypt NAME` and `set NAME` from an agent are the old
+//! spellings: `decrypt` is `need`, `set` forces the value queue (rotating a
+//! value that already exists).
 //!
-//! `set` mirrors that shape with its own queue (`enqueue_pending_set`): with
-//! no terminal it records "someone needs to type in a value for `name`" and
-//! waits; with one it prompts for the value (masked) and the passphrase and
-//! performs the edit. What it never does is queue a *value* — `sops set`
-//! edits an already-encrypted document in place, which needs the identity's
-//! passphrase, so an agent can't add a secret without a human, and a queued
-//! plaintext value sitting on disk before any human confirmed anything would
-//! be a strictly worse exposure than anything else in this design. Only the
-//! *name* is queued; the value is typed by the human, on the real terminal,
-//! when they fulfil it.
+//! **Who acts.** Every entry point first tries to open `/dev/tty` — the exact
+//! file `age`'s own passphrase prompt reads (not stdin; `age`'s error when
+//! it's missing: "standard input is not a terminal, and /dev/tty is not
+//! available"). A Bash-tool child process has no controlling terminal, so
+//! from an agent the commands only enqueue and wait, never touching the
+//! identity or a sealed file. With a terminal (a human's shell, or the
+//! column's unlock) they act.
 //!
-//! **Waiting.** The point of an agent asking for a credential is usually
-//! that it can't continue without it, so on the no-terminal path both
-//! `decrypt` and `set` block after enqueueing (`wait_for_human`): poll the
-//! queue once a second until the name is gone, then decide what that meant
-//! — `tenx_core::secrets::wait_outcome` — from the disk alone: an output
-//! file (the released plaintext, or the re-encrypted bundle for `set`)
-//! modified at or after the request means *fulfilled*, nothing modified
-//! means *withdrawn* (`cancel`). No receipt or tombstone is recorded — the
-//! queue removal is already the commit point, because every fulfilment path
-//! writes its output *before* clearing the name. The wait is bounded
-//! (`--timeout`, default `DEFAULT_WAIT`) because an agent's shell tool kills
-//! long-running commands: on timeout the request stays queued and the exit
-//! message says to re-run the same command, which resumes waiting thanks to
-//! the idempotent enqueue. `--no-wait` restores the fire-and-forget behavior.
+//! **Answering.** `fulfill` is the one sitting a human answers everything in:
+//! it lists what's pending with each reason, asks once whether to grant all,
+//! deny all, or pick, reads a value (masked) for each granted value request,
+//! and then unwraps the identity **once** — one passphrase — to seal the new
+//! values into the bundle and release every granted name. A value typed in is
+//! released in the same sitting, so the agent that asked for it gets it
+//! without asking again. Release is per name: the task's `.secrets.env`
+//! holds exactly the names granted so far (`tenx_core::secrets::merge_dotenv`),
+//! not the whole bundle; adopted files are released whole, one file per
+//! matching name. A denial is written down with the human's note
+//! (`workspace::SECRETS_DENIED_FILE`) *before* the name leaves its queue, and
+//! a fulfilment writes its output before the name leaves — the queue removal
+//! is always the commit point.
 //!
-//! `cancel` withdraws a request — removes the name from either queue (or
-//! `--all`) and nothing else. It never touches key material, so it is safe
-//! from anywhere, and a waiter blocked on that name sees the removal and
-//! exits reporting the withdrawal rather than silently succeeding.
+//! **Waiting.** The point of an agent asking is usually that it can't
+//! continue without the answer, so `need` blocks after enqueueing
+//! (`wait_for_human`): poll once a second until each name has left both
+//! queues, then decide from the disk alone what that meant —
+//! `tenx_core::secrets::wait_outcome`: a denial recorded → *denied*; a
+//! released output modified at or after the request → *granted*; neither →
+//! *withdrawn* (`cancel`). The wait is bounded (`--timeout`, default
+//! `DEFAULT_WAIT`) because an agent's shell tool kills long-running commands:
+//! on timeout the request stays queued and re-running resumes it, thanks to
+//! the idempotent enqueue. Each outcome has its own exit code (`Exit`,
+//! `tenx_core::secrets::exit_code`) so an agent can branch without parsing.
 //!
-//! Nothing tenx seals needs a `.gitignore`: `.secrets.enc.env`/`.secrets.env`/
-//! `.secrets-pending` all live directly under a task's own directory
-//! (`tasks/<slug>/`), which is never itself a git repo (only the `<repo>/`
-//! worktree subdirectories under it are) — so they're structurally outside
-//! git's reach, and `task rm`'s existing `fs::remove_dir_all(&task.path)`
-//! already shreds them for free on teardown. This does *not* extend to
-//! adopted secrets (see §4.2 below and `find_sops_covered_files`) — those
-//! decrypt to a sibling of their ciphertext *inside* the repo worktree,
-//! matching the project's own convention, so it's that project's own
-//! `.gitignore` (not ours) doing the work there.
+//! Nothing tenx seals needs a `.gitignore`: the bundle, `.secrets.env`, the
+//! queues and `.secrets-adopted/` all live directly under the task's own
+//! directory (`tasks/<slug>/`), which is never itself a git repo (only the
+//! `<repo>/` worktree subdirectories under it are) — so they're structurally
+//! outside git's reach, and `task rm`'s `fs::remove_dir_all(&task.path)`
+//! shreds them on teardown. Adopted secrets are decrypted there too and only
+//! *symlinked* into their worktree (see *Sops adoption*).
 
 use anyhow::{bail, Context, Result};
+use std::collections::HashSet;
 use std::env;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime};
 
-use tenx_core::secrets::{wait_outcome, WaitOutcome};
+use tenx_core::secrets::{self as rules, WaitOutcome};
 
 use crate::workspace::{self, Task, Workspace};
+
+/// An error carrying its own process exit code — how a wait reports denied /
+/// withdrawn / still pending apart (`tenx_core::secrets::exit_code`).
+/// `main` maps it; every other error exits 1.
+#[derive(Debug)]
+pub struct Exit {
+    pub code: i32,
+    pub message: String,
+}
+
+impl std::fmt::Display for Exit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Exit {}
 
 /// Resolve or create the age identity for the active workspace.
 pub fn init() -> Result<()> {
@@ -107,7 +112,7 @@ pub fn init() -> Result<()> {
 
     if let Ok(path) = resolve_identity_path(&ws) {
         eprintln!("using existing age identity at {}", path.display());
-        eprintln!("(nothing to do — tenx secrets encrypt/set/decrypt will use it)");
+        eprintln!("(nothing to do — tenx secrets need/set will use it)");
         return Ok(());
     }
 
@@ -155,20 +160,80 @@ pub fn encrypt(task_slug: &str, file: &str) -> Result<()> {
     Ok(())
 }
 
-/// Set one secret in the current task's (resolved from cwd) sealed bundle —
-/// literally `sops set`: decrypts the bundle's existing data key and
-/// re-encrypts with `name` added/updated, leaving every other key as it was.
-/// Same tty-detection shape as `decrypt`, mirrored: no real terminal →
-/// enqueue "someone needs to supply a value for `name`" (own queue, see
-/// `enqueue_pending_set`) and return, never touching the identity or the
-/// bundle. Real terminal → prompt for the value first (masked — tenx's own
-/// prompt, `read_masked_line`, since `age`'s passphrase masking doesn't cover
-/// this), *then* the passphrase, then perform the edit. The value is never a
-/// CLI argument or read from stdin (ps-visible to `ps`/`/proc`, and stdin
-/// specifically would collide with piping a value in non-interactively,
-/// which this command no longer supports on purpose) — always typed directly
-/// into `/dev/tty`, same channel the passphrase itself uses. `wait` is how
-/// long the no-terminal path blocks for a human (`None`: enqueue and return).
+
+// ── Asking ──────────────────────────────────────────────────────────────────
+
+/// Ask for `names` for the current task (resolved from cwd): route each to
+/// the queue that can satisfy it and, from an agent, wait up to `wait` for a
+/// human to answer (`None`: enqueue and return). See module docs, *Asking*.
+pub fn need(names: &[String], why: Option<&str>, wait: Option<Duration>) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = workspace::find(&cwd)?;
+    let task = current_task(&ws, &cwd)?;
+    need_in(&ws, &task, names, why, wait)
+}
+
+/// Same as [`need`], for an explicit workspace/task rather than cwd.
+pub fn need_in(ws: &Workspace, task: &Task, names: &[String], why: Option<&str>, wait: Option<Duration>) -> Result<()> {
+    for name in names {
+        check_name(name)?;
+    }
+    let requested_at = request_instant();
+    let mut asked: Vec<String> = Vec::new();
+    for name in names {
+        if asked.contains(name) {
+            continue;
+        }
+        if let Some(at) = released_at(task, name) {
+            eprintln!("✓ '{name}' is already released → {}", at.display());
+            continue;
+        }
+        let queue = if is_sealed(task, name) { Queue::Release } else { Queue::Value };
+        enqueue(task, queue, name, why)?;
+        asked.push(name.clone());
+    }
+    if asked.is_empty() {
+        return Ok(());
+    }
+    if tty_available() {
+        // A human typed it: answer on the spot, in the same sitting the
+        // column's unlock opens.
+        return fulfill_in(ws, task);
+    }
+    match wait {
+        Some(timeout) => wait_for_human(task, &asked, requested_at, timeout),
+        None => Ok(()),
+    }
+}
+
+/// Put `name` on `queue`, clear any earlier denial of it, and record `why`.
+/// Idempotent: a name already on either queue stays where it is, so a
+/// chatty agent re-running the same request can't spam notifications.
+fn enqueue(task: &Task, queue: Queue, name: &str, why: Option<&str>) -> Result<()> {
+    set_note(task, workspace::SECRETS_DENIED_FILE, name, None)?;
+    if let Some(why) = why.map(str::trim).filter(|w| !w.is_empty()) {
+        set_note(task, workspace::SECRETS_WHY_FILE, name, Some(why))?;
+    }
+    if let Some(on) = queued_on(task, name) {
+        eprintln!("'{name}' is already requested for task '{}' — {}", task.name, on.what());
+        return Ok(());
+    }
+    queue.push(task, name)?;
+    eprintln!("requested '{name}' for task '{}' — {}", task.name, queue.what());
+    Ok(())
+}
+
+/// Supply a value for `name` in the current task's (resolved from cwd)
+/// sealed bundle — literally `sops set`, editing the bundle in place and
+/// leaving every other key as it was. From an agent it can only ask: the
+/// name goes on the value queue even when something is already sealed under
+/// it (that's how an agent asks for a rotation). From a terminal it prompts
+/// for the value (masked — tenx's own prompt, `read_masked_line`), then the
+/// passphrase, and seals it; if someone had asked for `name`, or it was
+/// released before, it's released in the same unlock. The value is never a
+/// CLI argument or read from stdin (visible to `ps`, and stdin would invite
+/// piping one in) — always typed into `/dev/tty`, the channel the passphrase
+/// itself uses.
 pub fn set(name: &str, wait: Option<Duration>) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
@@ -176,99 +241,86 @@ pub fn set(name: &str, wait: Option<Duration>) -> Result<()> {
     set_in(&ws, &task, name, wait)
 }
 
-/// Same as [`set`], for an explicit workspace/task rather than cwd — used by
-/// the front ends, same reasoning as [`decrypt_in`]: they pick a task from a
-/// list spanning every workspace rather than being invoked from inside one.
+/// Same as [`set`], for an explicit workspace/task rather than cwd.
 pub fn set_in(ws: &Workspace, task: &Task, name: &str, wait: Option<Duration>) -> Result<()> {
-    if name.is_empty() || name.contains(['/', '\\', '"']) || name == "." || name == ".." {
-        bail!("invalid secret name: {name:?}");
-    }
-
+    check_name(name)?;
     if !tty_available() {
-        // Mirrors `decrypt`'s tty fallback, but in the opposite direction:
-        // this isn't "release something already sealed", it's "someone needs
-        // to type in a value for something that doesn't exist yet" — a
-        // genuinely different queue (see module docs and
-        // `workspace::SECRETS_PENDING_SET_FILE`), fulfilled by a human simply
-        // re-running `set` from a real terminal, same command either way.
         let requested_at = request_instant();
-        enqueue_pending_set(task, name)?;
-        if let Some(timeout) = wait {
-            wait_for_human(task, Queue::Set, name, requested_at, timeout)?;
-        }
-        return Ok(());
+        enqueue(task, Queue::Value, name, None)?;
+        return match wait {
+            Some(timeout) => wait_for_human(task, &[name.to_string()], requested_at, timeout),
+            None => Ok(()),
+        };
     }
-
-    let identity = resolve_identity_path(ws)?;
-    let bundle = bundle_path(task);
-    ensure_bundle_exists(&identity, &bundle)?;
 
     let value = read_masked_line(&format!("value for '{name}'"))?;
     if value.is_empty() {
         bail!("no value given — aborted, nothing was set");
     }
-
-    sops_set(&identity, &bundle, name, &value)?;
-    clear_pending_set(task, name)?;
-    eprintln!("✓ set '{name}' for task '{}' — released at the next decrypt", task.name);
-    Ok(())
-}
-
-/// Append `name` to the current task's durable pending-request marker file.
-/// This is the enqueue-only half of `decrypt`'s tty-detection fallback (see
-/// module docs) — the only thing that runs when `/dev/tty` isn't reachable.
-/// Idempotent: re-requesting an already-pending name is a no-op, so a chatty
-/// agent re-running `decrypt` can't spam repeat notifications.
-fn enqueue_pending(task: &Task, name: &str) -> Result<()> {
-    let pending_path = pending_path(task);
-    let mut names = read_pending(task);
-    if names.iter().any(|n| n == name) {
-        eprintln!("'{name}' already pending for task '{}'", task.name);
-        return Ok(());
+    // Asked for, or granted before (a rotation must not leave the old
+    // plaintext in place): release it in the same unlock.
+    let release = queued_on(task, name).is_some() || released_at(task, name).is_some();
+    let values = [(name.to_string(), value)];
+    with_unlocked(ws, |id| if release { seal_and_release(id, task, &values, &[]) } else { seal(id, task, &values) })?;
+    if !release {
+        eprintln!("  released to the task when someone asks for it: tenx secrets need {name}");
     }
-    names.push(name.to_string());
-    std::fs::write(&pending_path, names.join("\n") + "\n")
-        .with_context(|| format!("write {}", pending_path.display()))?;
-    eprintln!("requested '{name}' for task '{}' — see: tenx secrets status", task.name);
     Ok(())
 }
 
-/// Append `name` to the current task's pending-*set* marker file — the
-/// enqueue-only half of `set`'s tty-detection fallback. Separate file from
-/// `enqueue_pending` above: this queue means "a human needs to type in a
-/// value for `name`", not "release something already sealed" — different
-/// fulfillment action, so it can't share `decrypt`'s queue (see module
-/// docs and `workspace::SECRETS_PENDING_SET_FILE`). Idempotent, same
-/// reasoning as `enqueue_pending`.
-fn enqueue_pending_set(task: &Task, name: &str) -> Result<()> {
-    let path = pending_set_path(task);
-    let mut names = read_pending_set(task);
-    if names.iter().any(|n| n == name) {
-        eprintln!("value for '{name}' already requested for task '{}'", task.name);
-        return Ok(());
+/// Release the current task's (resolved from cwd) secrets. From a terminal:
+/// `name` if given, else whatever is pending release, else everything sealed.
+/// From an agent this is the old spelling of [`need`] for one name.
+pub fn decrypt(name: Option<&str>, wait: Option<Duration>) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = workspace::find(&cwd)?;
+    let task = current_task(&ws, &cwd)?;
+    decrypt_in(&ws, &task, name, wait)
+}
+
+/// Same as [`decrypt`], for an explicit workspace/task rather than cwd.
+pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>, wait: Option<Duration>) -> Result<()> {
+    if !tty_available() {
+        let Some(name) = name else {
+            bail!(
+                "no real terminal available (this looks like an agent's Bash tool) — \
+                 say what you need, e.g.: tenx secrets need STRIPE_KEY --why \"...\""
+            );
+        };
+        return need_in(ws, task, &[name.to_string()], None, wait);
     }
-    names.push(name.to_string());
-    std::fs::write(&path, names.join("\n") + "\n").with_context(|| format!("write {}", path.display()))?;
-    eprintln!("requested a value for '{name}' for task '{}' — see: tenx secrets status", task.name);
-    Ok(())
+    if let Some(n) = name {
+        check_name(n)?;
+    }
+    if !bundle_path(task).exists() && find_sops_covered_files(task).is_empty() {
+        bail!(
+            "no sealed secrets for task '{}' — run: tenx secrets set <NAME>, or tenx secrets encrypt {} <file>",
+            task.name,
+            task.name
+        );
+    }
+    reroute(task)?;
+    let pending = Queue::Release.names(task);
+    let want: Option<Vec<String>> = match name {
+        Some(n) if !is_sealed(task, n) => {
+            eprintln!("nothing sealed under '{n}' — supply a value with: tenx secrets set {n}");
+            if pending.is_empty() {
+                return Ok(());
+            }
+            Some(pending)
+        }
+        Some(n) => Some(pending.into_iter().filter(|p| p != n).chain([n.to_string()]).collect()),
+        None if !pending.is_empty() => Some(pending),
+        None => None,
+    };
+    let released = with_unlocked(ws, |id| release(id, task, want.as_deref()))?;
+    Queue::Release.remove(task, &released)
 }
 
-/// Interactive convenience: do whatever's pending for the current task
-/// (resolved from cwd) in one sitting — `decrypt` once if anything is
-/// pending release (satisfies every pending release-name at once, same as
-/// `decrypt` itself), then `set` once per pending value-name (each is an
-/// independent edit, so each gets its own value-then-passphrase round; see
-/// `set_in`'s doc comment for why those can't be batched into one
-/// passphrase entry). Exists specifically for spawn-a-real-pane callers
-/// (`tenx-zellij`, which can only shell out to a subprocess, not link
-/// against `decrypt_in`/`set_in` directly) so they don't have to reimplement
-/// this sequencing themselves — the native column's `run_unlock` uses
-/// [`fulfill_in`] for the same reason, even though it *could* call
-/// `decrypt_in`/`set_in` directly, just to keep the two callers from
-/// drifting on what "handle everything pending for this task" means.
-/// Errors from one step are printed but don't stop the rest; returns `Err`
-/// at the end if anything failed, so a non-interactive caller's exit code
-/// still reflects it.
+// ── Answering ───────────────────────────────────────────────────────────────
+
+/// Answer everything pending for the current task (resolved from cwd) in one
+/// sitting — see module docs, *Answering*.
 pub fn fulfill() -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
@@ -276,81 +328,239 @@ pub fn fulfill() -> Result<()> {
     fulfill_in(&ws, &task)
 }
 
-/// Same as [`fulfill`], for an explicit workspace/task rather than cwd —
-/// same reasoning as [`decrypt_in`]/[`set_in`].
+/// Same as [`fulfill`], for an explicit workspace/task — what the column's
+/// unlock (`tui::column::run_unlock`) runs. Needs a real terminal: every
+/// prompt reads `/dev/tty`.
 pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
-    let mut failed = false;
-    if !workspace::secrets_pending(&task.path).is_empty()
-        && let Err(e) = decrypt_in(ws, task, None, None)
-    {
-        eprintln!("tenx: {e}");
-        failed = true;
+    reroute(task)?;
+    let rows: Vec<(String, Queue)> = Queue::Release
+        .names(task)
+        .into_iter()
+        .map(|n| (n, Queue::Release))
+        .chain(Queue::Value.names(task).into_iter().map(|n| (n, Queue::Value)))
+        .collect();
+    if rows.is_empty() {
+        eprintln!("nothing pending for task '{}'", task.name);
+        return Ok(());
     }
-    for name in workspace::secrets_pending_set(&task.path) {
-        if let Err(e) = set_in(ws, task, &name, None) {
-            eprintln!("tenx: {e}");
-            failed = true;
+
+    let why = workspace::secrets_why(&task.path);
+    let width = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+    eprintln!("secrets requested for '{}':\n", task.display_name);
+    for (name, queue) in &rows {
+        match queue {
+            Queue::Release => eprintln!("  {name:<width$}  release    {}", sealed_in(task, name)),
+            Queue::Value => eprintln!("  {name:<width$}  new value"),
+        }
+        if let Some((_, w)) = why.iter().find(|(n, w)| n == name && !w.is_empty()) {
+            eprintln!("  {:<width$}  why: {w}", "");
         }
     }
-    if failed {
-        bail!("one or more secrets actions failed for task '{}' — see above", task.name);
+    eprintln!();
+
+    let answer = read_tty_line("grant all? [Y]es · [n]o, deny all · [p]ick")?.trim().to_lowercase();
+    let granted: Vec<(String, Queue)> = match answer.as_str() {
+        "" | "y" | "yes" => rows.clone(),
+        "n" | "no" => Vec::new(),
+        "p" | "pick" => {
+            let mut picked = Vec::new();
+            for row in &rows {
+                let a = read_tty_line(&format!("  grant '{}'? [Y/n]", row.0))?.trim().to_lowercase();
+                if matches!(a.as_str(), "" | "y" | "yes") {
+                    picked.push(row.clone());
+                }
+            }
+            picked
+        }
+        other => bail!("didn't understand {other:?} — nothing was changed"),
+    };
+
+    let denied: Vec<String> = rows.iter().filter(|r| !granted.contains(r)).map(|(n, _)| n.clone()).collect();
+    if !denied.is_empty() {
+        let note = read_tty_line("note for the agent (optional)")?;
+        deny_in(task, &denied, Some(note.trim()))?;
+    }
+
+    let mut values = Vec::new();
+    for (name, _) in granted.iter().filter(|(_, q)| *q == Queue::Value) {
+        let value = read_masked_line(&format!("value for '{name}' (empty to skip)"))?;
+        if value.is_empty() {
+            eprintln!("  skipped '{name}' — still pending");
+        } else {
+            values.push((name.clone(), value));
+        }
+    }
+    let to_release: Vec<String> =
+        granted.iter().filter(|(_, q)| *q == Queue::Release).map(|(n, _)| n.clone()).collect();
+    if values.is_empty() && to_release.is_empty() {
+        return Ok(());
+    }
+    with_unlocked(ws, |id| seal_and_release(id, task, &values, &to_release))
+}
+
+/// Refuse pending requests for the current task (resolved from cwd), with
+/// an optional note the waiting agent is shown.
+pub fn deny(names: &[String], note: Option<&str>) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = workspace::find(&cwd)?;
+    let task = current_task(&ws, &cwd)?;
+    deny_in(&task, names, note)
+}
+
+/// Same as [`deny`], for an explicit task. The denial is written before the
+/// name leaves its queue — the commit point — so a waiter can never mistake
+/// it for a withdrawal.
+pub fn deny_in(task: &Task, names: &[String], note: Option<&str>) -> Result<()> {
+    let pending: Vec<String> = names.iter().filter(|n| queued_on(task, n).is_some()).cloned().collect();
+    for n in names.iter().filter(|n| !pending.contains(n)) {
+        eprintln!("nothing pending named '{n}' for task '{}'", task.name);
+    }
+    if pending.is_empty() {
+        return Ok(());
+    }
+    for n in &pending {
+        set_note(task, workspace::SECRETS_DENIED_FILE, n, Some(note.unwrap_or("")))?;
+    }
+    let set: HashSet<String> = pending.iter().cloned().collect();
+    Queue::Release.remove(task, &set)?;
+    Queue::Value.remove(task, &set)?;
+    eprintln!("denied {} for task '{}'", pending.join(", "), task.name);
+    Ok(())
+}
+
+/// Withdraw pending requests for the current task (resolved from cwd): one
+/// `name` from whichever queue holds it, or everything when `name` is
+/// `None`. Touches nothing but the queue files — no identity, no bundle, no
+/// plaintext — so it is safe to run from anywhere, an agent's Bash tool
+/// included. A waiter blocked on a withdrawn name exits saying so.
+pub fn cancel(name: Option<&str>) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let ws = workspace::find(&cwd)?;
+    let task = current_task(&ws, &cwd)?;
+    cancel_in(&task, name)
+}
+
+/// Same as [`cancel`], for an explicit task — used by the column's `:cancel`.
+pub fn cancel_in(task: &Task, name: Option<&str>) -> Result<()> {
+    let pick = |q: Queue| -> Vec<String> { q.names(task).into_iter().filter(|x| name.is_none_or(|n| x == n)).collect() };
+    let (drop_release, drop_value) = (pick(Queue::Release), pick(Queue::Value));
+    if drop_release.is_empty() && drop_value.is_empty() {
+        match name {
+            Some(n) => eprintln!("nothing pending named '{n}' for task '{}'", task.name),
+            None => eprintln!("nothing pending for task '{}'", task.name),
+        }
+        return Ok(());
+    }
+    Queue::Release.remove(task, &drop_release.iter().cloned().collect())?;
+    Queue::Value.remove(task, &drop_value.iter().cloned().collect())?;
+    let withdrawn: Vec<String> =
+        drop_release.into_iter().chain(drop_value.into_iter().map(|n| format!("{n} (needs value)"))).collect();
+    eprintln!("withdrew {} for task '{}'", withdrawn.join(", "), task.name);
+    Ok(())
+}
+
+/// With an unlocked identity: seal `values` into the bundle, then release
+/// them together with `release_names` — the whole sitting on one unwrap. A
+/// sealed value's name joins the release queue *before* it leaves the value
+/// queue, so a waiter never sees it in neither queue before its plaintext is
+/// written.
+fn seal_and_release(id: &Path, task: &Task, values: &[(String, String)], release_names: &[String]) -> Result<()> {
+    seal(id, task, values)?;
+    for (name, _) in values {
+        Queue::Release.push(task, name)?;
+        Queue::Value.remove(task, &HashSet::from([name.clone()]))?;
+    }
+    let names: Vec<String> = release_names.iter().cloned().chain(values.iter().map(|(n, _)| n.clone())).collect();
+    let released = release(id, task, Some(&names))?;
+    Queue::Release.remove(task, &released)?;
+    let missed: Vec<&str> = names.iter().filter(|n| !released.contains(*n)).map(String::as_str).collect();
+    if !missed.is_empty() {
+        bail!("couldn't release {} — still pending", missed.join(", "));
     }
     Ok(())
 }
 
+/// With an unlocked identity: `sops set` each of `values` into the task's
+/// bundle, creating the bundle first if this is its first value.
+fn seal(id: &Path, task: &Task, values: &[(String, String)]) -> Result<()> {
+    if values.is_empty() {
+        return Ok(());
+    }
+    let bundle = bundle_path(task);
+    ensure_bundle_exists(id, &bundle)?;
+    for (name, value) in values {
+        run_sops_set(id, &bundle, name, value)?;
+        eprintln!("✓ sealed '{name}' into {}", bundle.display());
+    }
+    Ok(())
+}
+
+/// With an unlocked identity: release `want` (every sealed name when `None`).
+/// Bundle keys are merged into `.secrets.env` — only the ones asked for, next
+/// to whatever earlier releases granted; an adopted file is released whole
+/// when any wanted name matches it (`file_matches_request`). Returns the
+/// names satisfied.
+fn release(id: &Path, task: &Task, want: Option<&[String]>) -> Result<HashSet<String>> {
+    let mut satisfied = HashSet::new();
+    let bundle = bundle_path(task);
+    if bundle.exists() {
+        let sealed = rules::sealed_keys(&std::fs::read_to_string(&bundle).unwrap_or_default());
+        let pick: Vec<String> = match want {
+            Some(w) => w.iter().filter(|n| sealed.contains(n)).cloned().collect(),
+            None => sealed,
+        };
+        if !pick.is_empty() {
+            let plaintext = run_sops_decrypt_to_memory(id, &bundle)?;
+            let out = released_path(task);
+            let existing = std::fs::read_to_string(&out).unwrap_or_default();
+            write_private(&out, &rules::merge_dotenv(&existing, &plaintext, Some(&pick)))?;
+            eprintln!("✓ released {} → {}", pick.join(", "), out.display());
+            satisfied.extend(pick);
+        }
+    }
+    for ciphertext in find_sops_covered_files(task) {
+        let matched: Vec<String> =
+            want.unwrap_or_default().iter().filter(|n| file_matches_request(&ciphertext, n)).cloned().collect();
+        if want.is_some() && matched.is_empty() {
+            continue;
+        }
+        release_adopted(id, task, &ciphertext)?;
+        satisfied.extend(matched);
+    }
+    Ok(satisfied)
+}
+
+/// Move release requests nothing sealed can satisfy to the value queue — a
+/// name queued without routing (an older tenx), or whose sealed file has
+/// since gone. Pushed before removed, same commit-point rule as
+/// `seal_and_release`.
+fn reroute(task: &Task) -> Result<()> {
+    let stale: HashSet<String> = Queue::Release.names(task).into_iter().filter(|n| !is_sealed(task, n)).collect();
+    for n in &stale {
+        Queue::Value.push(task, n)?;
+    }
+    Queue::Release.remove(task, &stale)
+}
+
+/// Resolve the identity and unwrap it once for everything `f` does — the
+/// single passphrase prompt of a sitting.
+fn with_unlocked<T>(ws: &Workspace, f: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
+    let identity = resolve_identity_path(ws)?;
+    with_plain_identity(&identity, f)
+}
+
+// ── Waiting ─────────────────────────────────────────────────────────────────
+
 /// How long the no-terminal path waits by default. Deliberately under the
 /// two minutes Claude Code's Bash tool allows a command before killing it
 /// (which would be a noisy failure instead of this clean "still pending,
-/// re-run" exit); the `/tenx` skill tells the agent to raise both when it
-/// really can't continue without the secret.
+/// re-run" exit); the `/tenx` skill tells the agent to run it in the
+/// background with a longer `--timeout` instead.
 pub const DEFAULT_WAIT: Duration = Duration::from_secs(100);
 
 /// Poll interval while waiting — the same order as the watcher's 2 s tick;
 /// a human typing a passphrase is the slow part, not this.
 const WAIT_POLL: Duration = Duration::from_secs(1);
-
-/// Which queue a wait or cancel is about. The two queues have different
-/// fulfilment actions and therefore different outputs to watch for.
-#[derive(Clone, Copy)]
-enum Queue {
-    /// `decrypt`'s queue: fulfilled by releasing plaintext.
-    Release,
-    /// `set`'s queue: fulfilled by `sops set` rewriting the sealed bundle.
-    Set,
-}
-
-impl Queue {
-    fn names(self, task: &Task) -> Vec<String> {
-        match self {
-            Queue::Release => read_pending(task),
-            Queue::Set => read_pending_set(task),
-        }
-    }
-
-    /// Modification times of every file a fulfilment of this queue would
-    /// have written — `tenx_core::secrets::wait_outcome`'s evidence. Files
-    /// that don't exist contribute nothing.
-    fn output_mtimes(self, task: &Task) -> Vec<SystemTime> {
-        let mut paths = Vec::new();
-        match self {
-            Queue::Release => {
-                paths.push(task.path.join(".secrets.env"));
-                if let Ok(entries) = std::fs::read_dir(task.path.join(".secrets-adopted")) {
-                    paths.extend(entries.flatten().map(|e| e.path()));
-                }
-            }
-            Queue::Set => paths.push(bundle_path(task)),
-        }
-        paths.iter().filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()).collect()
-    }
-
-    fn verb(self) -> &'static str {
-        match self {
-            Queue::Release => "release",
-            Queue::Set => "supply a value for",
-        }
-    }
-}
 
 /// The instant a request is considered made, for `wait_outcome`'s "written at
 /// or after the request" test. Padded back by a couple of seconds so a
@@ -362,50 +572,78 @@ fn request_instant() -> SystemTime {
     SystemTime::now() - Duration::from_secs(2)
 }
 
-/// Block until `name` leaves `queue` — or `timeout` passes — and say which.
-/// See the module docs (*Waiting*) for the contract; this is the I/O half,
-/// the decision is `tenx_core::secrets::wait_outcome`. Errors on both
-/// withdrawal and timeout so an agent's exit code reflects that it did *not*
-/// get what it asked for; the message tells the two apart.
-fn wait_for_human(task: &Task, queue: Queue, name: &str, requested_at: SystemTime, timeout: Duration) -> Result<()> {
+/// Block until every one of `names` has left both queues — or `timeout`
+/// passes — reporting each outcome as it lands. See the module docs
+/// (*Waiting*); the decision per name is `tenx_core::secrets::wait_outcome`,
+/// the exit code `tenx_core::secrets::exit_code`.
+fn wait_for_human(task: &Task, names: &[String], requested_at: SystemTime, timeout: Duration) -> Result<()> {
     let deadline = Instant::now() + timeout;
     eprintln!(
-        "waiting for someone to {} '{name}' (up to {}) — withdraw with: tenx secrets cancel {name}",
-        queue.verb(),
+        "waiting up to {} for someone to answer — withdraw with: tenx secrets cancel <NAME>",
         fmt_wait(timeout)
     );
+    let mut outcomes = vec![WaitOutcome::Pending; names.len()];
     loop {
-        let still_pending = queue.names(task).iter().any(|n| n == name);
-        match wait_outcome(still_pending, &queue.output_mtimes(task), requested_at) {
-            WaitOutcome::Fulfilled => {
-                match queue {
-                    Queue::Release => eprintln!(
-                        "✓ '{name}' released for task '{}' — see {}",
-                        task.name,
-                        task.path.join(".secrets.env").display()
-                    ),
-                    Queue::Set => eprintln!(
-                        "✓ a value for '{name}' was set for task '{}' — run: tenx secrets decrypt {name}",
-                        task.name
-                    ),
-                }
-                return Ok(());
+        let denied = notes(task, workspace::SECRETS_DENIED_FILE);
+        let outputs = release_output_mtimes(task);
+        for (name, outcome) in names.iter().zip(outcomes.iter_mut()) {
+            if *outcome != WaitOutcome::Pending {
+                continue;
             }
-            WaitOutcome::Cancelled => {
-                bail!("the request for '{name}' was withdrawn before it was fulfilled")
-            }
-            WaitOutcome::Pending => {}
+            let note = denied.iter().find(|(n, _)| n == name).map(|(_, t)| t.as_str());
+            *outcome = rules::wait_outcome(queued_on(task, name).is_some(), note.is_some(), &outputs, requested_at);
+            report(task, name, outcome, note);
         }
-        if Instant::now() >= deadline {
-            bail!(
-                "'{name}' is still pending for task '{}' after {} — it stays queued; re-run the same \
-                 command to keep waiting, or withdraw it with: tenx secrets cancel {name}",
-                task.name,
-                fmt_wait(timeout)
-            );
+        if !outcomes.contains(&WaitOutcome::Pending) || Instant::now() >= deadline {
+            break;
         }
         std::thread::sleep(WAIT_POLL);
     }
+    let still: Vec<&str> = names
+        .iter()
+        .zip(&outcomes)
+        .filter(|(_, o)| **o == WaitOutcome::Pending)
+        .map(|(n, _)| n.as_str())
+        .collect();
+    let code = rules::exit_code(&outcomes);
+    let message = match code {
+        0 => return Ok(()),
+        rules::EXIT_DENIED => "denied — don't ask for it again without saying why you need it".to_string(),
+        rules::EXIT_WITHDRAWN => "the request was withdrawn before anyone answered".to_string(),
+        _ => format!(
+            "{} still pending after {} — it stays queued; re-run the same command to keep waiting, \
+             or withdraw it with: tenx secrets cancel <NAME>",
+            still.join(", "),
+            fmt_wait(timeout)
+        ),
+    };
+    Err(Exit { code, message }.into())
+}
+
+/// One line per settled name, as it settles.
+fn report(task: &Task, name: &str, outcome: &WaitOutcome, note: Option<&str>) {
+    match outcome {
+        WaitOutcome::Pending => {}
+        WaitOutcome::Fulfilled => match released_at(task, name) {
+            Some(at) => eprintln!("✓ '{name}' granted → {}", at.display()),
+            None => eprintln!("✓ '{name}' granted"),
+        },
+        WaitOutcome::Denied => match note.filter(|n| !n.is_empty()) {
+            Some(note) => eprintln!("✗ '{name}' denied: {note}"),
+            None => eprintln!("✗ '{name}' denied"),
+        },
+        WaitOutcome::Cancelled => eprintln!("✗ '{name}' withdrawn before anyone answered"),
+    }
+}
+
+/// Modification times of every file a release writes — `wait_outcome`'s
+/// evidence. Files that don't exist contribute nothing.
+fn release_output_mtimes(task: &Task) -> Vec<SystemTime> {
+    let mut paths = vec![released_path(task)];
+    if let Ok(entries) = std::fs::read_dir(task.path.join(".secrets-adopted")) {
+        paths.extend(entries.flatten().map(|e| e.path()));
+    }
+    paths.iter().filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()).collect()
 }
 
 /// "100s" / "9m" — exact, unlike `tenx_core::time::format_duration`, which
@@ -414,50 +652,6 @@ fn wait_for_human(task: &Task, queue: Queue, name: &str, requested_at: SystemTim
 fn fmt_wait(d: Duration) -> String {
     let secs = d.as_secs();
     if secs > 0 && secs.is_multiple_of(60) { format!("{}m", secs / 60) } else { format!("{secs}s") }
-}
-
-/// Withdraw pending requests for the current task (resolved from cwd): one
-/// `name` from whichever queue holds it, or everything when `name` is
-/// `None`. Touches nothing but the two queue files — no identity, no bundle,
-/// no plaintext — so it is safe to run from anywhere, agent's Bash tool
-/// included. A waiter blocked on a withdrawn name exits with an error saying
-/// so (see `wait_for_human`).
-pub fn cancel(name: Option<&str>) -> Result<()> {
-    let cwd = env::current_dir()?;
-    let ws = workspace::find(&cwd)?;
-    let task = current_task(&ws, &cwd)?;
-    cancel_in(&task, name)
-}
-
-/// Same as [`cancel`], for an explicit task — used by the column's `:cancel`,
-/// same reasoning as [`decrypt_in`].
-pub fn cancel_in(task: &Task, name: Option<&str>) -> Result<()> {
-    let release = read_pending(task);
-    let set = read_pending_set(task);
-    let (drop_release, drop_set): (Vec<String>, Vec<String>) = match name {
-        None => (release, set),
-        Some(n) => (
-            release.into_iter().filter(|x| x == n).collect(),
-            set.into_iter().filter(|x| x == n).collect(),
-        ),
-    };
-    if drop_release.is_empty() && drop_set.is_empty() {
-        match name {
-            Some(n) => eprintln!("nothing pending named '{n}' for task '{}'", task.name),
-            None => eprintln!("nothing pending for task '{}'", task.name),
-        }
-        return Ok(());
-    }
-    clear_pending_names(task, &drop_release.iter().cloned().collect())?;
-    for n in &drop_set {
-        clear_pending_set(task, n)?;
-    }
-    let withdrawn: Vec<String> = drop_release
-        .into_iter()
-        .chain(drop_set.into_iter().map(|n| format!("{n} (needs value)")))
-        .collect();
-    eprintln!("withdrew {} for task '{}'", withdrawn.join(", "), task.name);
-    Ok(())
 }
 
 /// Whether a real controlling terminal is reachable right now — the same
@@ -469,159 +663,58 @@ fn tty_available() -> bool {
     std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").is_ok()
 }
 
-/// Decrypt the current task's (resolved from cwd) secrets — or, when no real
-/// terminal is reachable, enqueue `name` for a human to release and wait up
-/// to `wait` for that to happen (`None`: enqueue and return). See module
-/// docs for the tty-detection fallback this implements.
-pub fn decrypt(name: Option<&str>, wait: Option<Duration>) -> Result<()> {
-    let cwd = env::current_dir()?;
-    let ws = workspace::find(&cwd)?;
-    let task = current_task(&ws, &cwd)?;
-    decrypt_in(&ws, &task, name, wait)
+// ── What is where (no identity needed) ──────────────────────────────────────
+
+/// Where `name` has already been released to, if anywhere: a key of
+/// `.secrets.env`, or an adopted file it matches whose plaintext is in place.
+fn released_at(task: &Task, name: &str) -> Option<PathBuf> {
+    let env_file = released_path(task);
+    let released = std::fs::read_to_string(&env_file).unwrap_or_default();
+    if rules::dotenv_keys(&released).iter().any(|k| k == name) {
+        return Some(env_file);
+    }
+    find_sops_covered_files(task)
+        .into_iter()
+        .filter(|f| file_matches_request(f, name))
+        .map(|f| strip_enc_suffix(&f))
+        .find(|p| p.exists())
 }
 
-/// Same as [`decrypt`], for an explicit workspace/task rather than cwd — used
-/// by the front ends (native `tui::column` and the `tenx-zellij` wasm plugin,
-/// via a spawned pane whose cwd is set to the task directory rather than a
-/// direct call), which pick a task from a list spanning every workspace
-/// rather than being invoked from inside one. Both front ends only ever call
-/// this from a real interactive pane, so `name` is always `None` there — the
-/// tty-detection fallback below exists for the CLI/agent path.
-pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>, wait: Option<Duration>) -> Result<()> {
-    let requested_at = request_instant();
-    if let Some(name) = name {
-        enqueue_pending(task, name)?;
+/// Whether something sealed can satisfy `name` — a key of the task's
+/// bundle, or an adopted file it matches.
+fn is_sealed(task: &Task, name: &str) -> bool {
+    bundle_keys(task).iter().any(|k| k == name) || find_sops_covered_files(task).iter().any(|f| file_matches_request(f, name))
+}
+
+/// Human-readable "where would this come from", for the answering sheet.
+fn sealed_in(task: &Task, name: &str) -> String {
+    let mut from: Vec<String> = Vec::new();
+    if bundle_keys(task).iter().any(|k| k == name) {
+        from.push("task bundle".into());
     }
-    if !tty_available() {
-        let Some(name) = name else {
-            bail!(
-                "no real terminal available (this looks like an agent's Bash tool) — \
-                 pass what you need, e.g.: tenx secrets decrypt STRIPE_KEY"
-            );
-        };
-        // Already enqueued above; that's the whole non-interactive contract
-        // — never touch the identity or an encrypted bundle from here. All
-        // that's left is to wait for a human to do it.
-        if let Some(timeout) = wait {
-            wait_for_human(task, Queue::Release, name, requested_at, timeout)?;
-        }
-        return Ok(());
+    for f in find_sops_covered_files(task).iter().filter(|f| file_matches_request(f, name)) {
+        from.push(f.strip_prefix(&task.path).unwrap_or(f).display().to_string());
     }
+    from.join(", ")
+}
 
-    let identity = resolve_identity_path(ws)?;
+fn bundle_keys(task: &Task) -> Vec<String> {
+    rules::sealed_keys(&std::fs::read_to_string(bundle_path(task)).unwrap_or_default())
+}
 
-    let bundle = bundle_path(task);
-    let sops_files = find_sops_covered_files(task);
-    let pending = workspace::secrets_pending(&task.path);
+/// The task's released dotenv file — exactly the bundle names granted so far.
+fn released_path(task: &Task) -> PathBuf {
+    task.path.join(".secrets.env")
+}
 
-    if !bundle.exists() && sops_files.is_empty() {
-        bail!(
-            "no sealed secrets for task '{}' — run: tenx secrets encrypt {} <file>, or tenx secrets set <name>",
-            task.name,
-            task.name
-        );
+fn check_name(name: &str) -> Result<()> {
+    if !rules::valid_name(name) {
+        bail!("invalid secret name: {name:?} — a key like STRIPE_KEY, or a file fragment like staging");
     }
-
-    // Which pending names refer to a specific sops file (see
-    // `file_matches_request`) vs. something else entirely (a field inside
-    // our own bundle, a typo, free text). A repo adopted from an existing
-    // project can have more than one sops-covered file — checkly's
-    // local-support has both `secrets.staging.enc.env` and
-    // `secrets.prod.enc.env` — and "decrypt every file this repo has,
-    // regardless of which one was actually asked for" would violate the
-    // same least-privilege principle the rest of this design holds
-    // everywhere else. So: if a pending request names a specific file,
-    // unlock only that one. With nothing that names a file specifically,
-    // fall back to every sops file found — matches how our own single
-    // bundle already has no partial-release concept, so "nothing named,
-    // unlock what's here" isn't a new behavior, just the existing one.
-    let named_sops_files: Vec<&PathBuf> = sops_files
-        .iter()
-        .filter(|f| pending.iter().any(|n| file_matches_request(f, n)))
-        .collect();
-    let fell_back_to_all = named_sops_files.is_empty();
-    let selected_sops: Vec<&PathBuf> =
-        if fell_back_to_all { sops_files.iter().collect() } else { named_sops_files };
-
-    let mut satisfied: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    if bundle.exists() {
-        let out_path = task.path.join(".secrets.env");
-        sops_decrypt(&identity, &bundle, &out_path)?;
-        set_permissions_600(&out_path)?;
-        eprintln!("✓ decrypted → {}", out_path.display());
-        // The bundle is all-or-nothing (we control what's sealed/set into
-        // it, so least-privilege already happened earlier) — satisfies any
-        // pending name that isn't specifically claimed by a sops file match
-        // above.
-        for n in &pending {
-            if !sops_files.iter().any(|f| file_matches_request(f, n)) {
-                satisfied.insert(n.clone());
-            }
-        }
-    }
-
-    // Adopted secrets (see *Sops adoption* below): a repo the task has a worktree for
-    // may already have its own age/sops setup — an existing `.sops.yaml`
-    // plus `*.enc.*` files, sealed by that project's own tooling, not by
-    // `tenx secrets encrypt`. The real plaintext never lands inside the
-    // worktree at all — it's decrypted to `.secrets-adopted/` directly under
-    // the task directory (never a git repo, same structural guarantee our
-    // own bundle already has), and a relative symlink is placed at the
-    // conventional sibling name (`secrets.staging.enc.env` → the worktree
-    // gets `secrets.staging.env`, pointing back at the real file) so the
-    // project's own tooling finds it exactly where it already expects to —
-    // reading through a symlink is indistinguishable from a real file to
-    // anything that isn't specifically inspecting the filesystem entry type.
-    // This closes a real gap the old direct-write-into-the-worktree approach
-    // had: it trusted that project's own `.gitignore` already covered the
-    // plaintext filename, unverified — a wrong or missing pattern meant a
-    // plain `git add -A` could stage the actual secret. Now even that
-    // mistake only stages a symlink (a relative path, no secret bytes) — the
-    // real content structurally can't be committed by any git operation
-    // inside the worktree, matching the guarantee `.secrets.enc.env` already
-    // has for our own bundle.
-    for ciphertext in &selected_sops {
-        let plaintext_out = strip_enc_suffix(ciphertext);
-        let storage_path = adopted_secret_storage_path(task, ciphertext);
-        if let Some(parent) = storage_path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-        }
-        sops_decrypt(&identity, ciphertext, &storage_path)?;
-        set_permissions_600(&storage_path)?;
-
-        // Always recreate the symlink fresh — whatever was previously at
-        // this path (a stale symlink from an earlier decrypt, or a real
-        // plaintext file left over from before this fix existed) is exactly
-        // what a fresh decrypt is supposed to replace.
-        let _ = std::fs::remove_file(&plaintext_out);
-        let target = adopted_symlink_target(task, ciphertext, &storage_path);
-        std::os::unix::fs::symlink(&target, &plaintext_out).with_context(|| {
-            format!("symlink {} -> {}", plaintext_out.display(), target.display())
-        })?;
-        eprintln!(
-            "✓ decrypted (sops) → {} (stored outside the repo at {}, symlinked in)",
-            plaintext_out.display(),
-            storage_path.display()
-        );
-    }
-    for n in &pending {
-        let claimed_by_selection = selected_sops.iter().any(|f| file_matches_request(f, n));
-        // A name that matches nothing at all (not a specific file, and we
-        // fell back to "everything") is satisfied by that fallback too.
-        let satisfied_by_fallback = fell_back_to_all && !sops_files.is_empty() && !claimed_by_selection;
-        if claimed_by_selection || satisfied_by_fallback {
-            satisfied.insert(n.clone());
-        }
-    }
-
-    // Leaves anything not actually resolved this time (e.g. "prod" still
-    // pending after only "staging" was requested and unlocked) for a future
-    // unlock, rather than wiping the whole queue regardless of what was
-    // actually released.
-    clear_pending_names(task, &satisfied)?;
     Ok(())
 }
+
+// ── Bundle and identity ─────────────────────────────────────────────────────
 
 /// Path of the task's own sealed bundle — a `sops`-encrypted dotenv document.
 /// `.env` on the end isn't cosmetic: `sops` auto-detects format from the
@@ -635,18 +728,21 @@ fn bundle_path(task: &Task) -> PathBuf {
 /// `sops set` needs an existing document to edit — it has no "create if
 /// missing" mode of its own (confirmed against the real binary: it rejects
 /// `--age` on `set` outright, there's no way to hand it recipients for a
-/// document that doesn't exist yet). So the first-ever `set` for a task
-/// bootstraps an empty encrypted document, using the same public-key-only
-/// encrypt `seal`'s first bundle uses — after that, every `set` is a genuine
-/// in-place edit of the same document.
-fn ensure_bundle_exists(identity: &Path, bundle: &Path) -> Result<()> {
+/// document that doesn't exist yet). So the first value ever sealed for a
+/// task bootstraps an empty encrypted document to the unlocked identity's
+/// own recipients — after that, every `set` is a genuine in-place edit.
+fn ensure_bundle_exists(plain_identity: &Path, bundle: &Path) -> Result<()> {
     if bundle.exists() {
         return Ok(());
     }
-    let recipient = resolve_recipient(identity)?;
+    let out = Command::new("age-keygen").arg("-y").arg(plain_identity).output().context("run age-keygen -y")?;
+    if !out.status.success() {
+        bail!("age-keygen -y failed: {}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    let recipients: Vec<String> = String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
     let tmp = std::env::temp_dir().join(format!("tenx-bootstrap-{}.env", std::process::id()));
     std::fs::write(&tmp, "").with_context(|| format!("write {}", tmp.display()))?;
-    let result = sops_encrypt(&recipient, &tmp, bundle);
+    let result = sops_encrypt(&recipients.join(","), &tmp, bundle);
     let _ = std::fs::remove_file(&tmp);
     result
 }
@@ -673,16 +769,10 @@ fn sops_encrypt(recipient: &str, plaintext: &Path, out: &Path) -> Result<()> {
 }
 
 /// Set `name` = `value` in `bundle` via `sops set --value-stdin`, editing the
-/// existing document in place rather than creating anything new — needs
-/// `identity`'s decrypt access every call, unwrapped first if it's
-/// passphrase-protected (see `with_plain_identity`). The value goes through
-/// `sops`'s own stdin channel (`--value-stdin`, "avoids leaking secrets in
-/// process listings" per its own `--help`) rather than argv, same reasoning
-/// as everywhere else in this module.
-fn sops_set(identity: &Path, bundle: &Path, name: &str, value: &str) -> Result<()> {
-    with_plain_identity(identity, |plain_identity| run_sops_set(plain_identity, bundle, name, value))
-}
-
+/// existing document in place, with an already-unwrapped identity (see
+/// `with_plain_identity`). The value goes through `sops`'s own stdin channel
+/// (`--value-stdin`, "avoids leaking secrets in process listings" per its
+/// own `--help`) rather than argv, same reasoning as everywhere else here.
 fn run_sops_set(identity_file: &Path, bundle: &Path, name: &str, value: &str) -> Result<()> {
     // sops's `set` path expression addresses a top-level key as `["key"]`;
     // the value must be JSON-encoded too (confirmed against the real
@@ -756,17 +846,16 @@ fn with_plain_identity<T>(identity: &Path, f: impl FnOnce(&Path) -> Result<T>) -
 
 // ── Sops adoption ───────────────────────────────────────────────────────────
 
-/// Whether a pending request name plausibly refers to this specific
-/// sops-covered file — a loose, case-insensitive substring match against the
-/// filename. `"staging"` matches `secrets.staging.enc.env`; the exact
-/// filename always matches itself. We only ever see filenames without
-/// decrypting, so this can't (and doesn't try to) match a field *inside* a
-/// file — a name that doesn't match any file here is assumed to be about
-/// something else (a field in our own bundle, free text, a typo) and falls
-/// through to `unlock_in`'s "nothing named a specific file" fallback.
+/// Whether a request name refers to this sops-covered file: a loose,
+/// case-insensitive substring of its filename (`"staging"` matches
+/// `secrets.staging.enc.env`; the exact filename always matches itself), or
+/// exactly one of the keys sealed in it — readable without the identity,
+/// see `tenx_core::secrets::sealed_keys` — so an agent can ask for
+/// `DATABASE_URL` without knowing which file holds it.
 fn file_matches_request(file: &Path, requested: &str) -> bool {
     let name = file.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
     name.contains(&requested.to_lowercase())
+        || rules::sealed_keys(&std::fs::read_to_string(file).unwrap_or_default()).iter().any(|k| k == requested)
 }
 
 /// Files inside this task's repo worktrees that an existing `.sops.yaml`
@@ -853,15 +942,44 @@ fn adopted_symlink_target(task: &Task, ciphertext: &Path, storage_path: &Path) -
     target
 }
 
-/// Decrypt one sops-covered file to `plaintext_out` using `identity`. `sops`
-/// resolves its decryption key via `SOPS_AGE_KEY_FILE`, which — unlike raw
-/// `age -i -` — must be a real file path, not something stdin can feed it,
-/// so a passphrase-protected identity needs a real (temporary, immediately
-/// shredded) intermediate file — see `with_plain_identity`.
-fn sops_decrypt(identity: &Path, ciphertext: &Path, plaintext_out: &Path) -> Result<()> {
-    with_plain_identity(identity, |plain_identity| run_sops_decrypt(plain_identity, ciphertext, plaintext_out))
+/// With an unlocked identity: decrypt one adopted file. The plaintext never
+/// lands inside the worktree — it goes to `.secrets-adopted/` directly
+/// under the task directory (never a git repo, the same structural guarantee
+/// the task's own bundle has), and a relative symlink is placed at the
+/// conventional sibling name (`secrets.staging.enc.env` → the worktree gets
+/// `secrets.staging.env`, pointing back at the real file) so the project's
+/// own tooling finds it exactly where it expects to. A wrong or missing
+/// `.gitignore` pattern in that project can then only ever stage a symlink
+/// (a relative path, no secret bytes), never the secret.
+fn release_adopted(id: &Path, task: &Task, ciphertext: &Path) -> Result<()> {
+    let plaintext_out = strip_enc_suffix(ciphertext);
+    let storage_path = adopted_secret_storage_path(task, ciphertext);
+    if let Some(parent) = storage_path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    run_sops_decrypt(id, ciphertext, &storage_path)?;
+    set_permissions_600(&storage_path)?;
+
+    // Always recreate the symlink fresh — whatever was previously at this
+    // path (a stale symlink from an earlier release, or a real plaintext file
+    // left over from before adoption stored outside the worktree) is exactly
+    // what a fresh release is supposed to replace.
+    let _ = std::fs::remove_file(&plaintext_out);
+    let target = adopted_symlink_target(task, ciphertext, &storage_path);
+    std::os::unix::fs::symlink(&target, &plaintext_out)
+        .with_context(|| format!("symlink {} -> {}", plaintext_out.display(), target.display()))?;
+    eprintln!(
+        "✓ released (sops) → {} (stored outside the repo at {}, symlinked in)",
+        plaintext_out.display(),
+        storage_path.display()
+    );
+    Ok(())
 }
 
+/// Decrypt one sops-covered file to `plaintext_out` with an already
+/// unwrapped identity. `sops` resolves its decryption key via
+/// `SOPS_AGE_KEY_FILE`, which must be a real file path — hence
+/// `with_plain_identity`'s short-lived copy for a passphrase-protected one.
 fn run_sops_decrypt(identity_file: &Path, ciphertext: &Path, plaintext_out: &Path) -> Result<()> {
     let out = Command::new("sops")
         .env("SOPS_AGE_KEY_FILE", identity_file)
@@ -877,6 +995,23 @@ fn run_sops_decrypt(identity_file: &Path, ciphertext: &Path, plaintext_out: &Pat
     Ok(())
 }
 
+/// Decrypt `ciphertext` into memory, for a per-name release. `sops`'s stdout
+/// is captured by this process, never inherited, so the plaintext reaches
+/// neither our stdout nor a file until `release` writes the chosen keys.
+fn run_sops_decrypt_to_memory(identity_file: &Path, ciphertext: &Path) -> Result<String> {
+    let out = Command::new("sops")
+        .env("SOPS_AGE_KEY_FILE", identity_file)
+        .arg("-d")
+        .arg(ciphertext)
+        .stdin(Stdio::null())
+        .output()
+        .context("run sops -d")?;
+    if !out.status.success() {
+        bail!("sops decrypt failed: {}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    String::from_utf8(out.stdout).context("decrypted bundle isn't UTF-8")
+}
+
 fn set_dir_permissions_700(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut perms = std::fs::metadata(path)?.permissions();
@@ -888,7 +1023,7 @@ fn set_dir_permissions_700(path: &Path) -> Result<()> {
 /// Metadata-only overview across every task in the workspace: whether it has
 /// a sealed bundle, whether it's currently unlocked, and what's pending.
 /// Never reads or prints a secret value — only presence/absence of files and
-/// the (informational) names collected by `request`.
+/// the (informational) names collected by `need`.
 pub fn status() -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
@@ -903,8 +1038,8 @@ pub fn status() -> Result<()> {
             bundle_path(task).exists() || !sops_files.is_empty();
         let unlocked = task.path.join(".secrets.env").exists()
             || sops_files.iter().any(|f| strip_enc_suffix(f).exists());
-        let pending = read_pending(task);
-        let pending_set = read_pending_set(task);
+        let pending = Queue::Release.names(task);
+        let pending_set = Queue::Value.names(task);
         if !sealed && !unlocked && pending.is_empty() && pending_set.is_empty() {
             continue;
         }
@@ -1141,60 +1276,105 @@ fn current_task(ws: &Workspace, cwd: &Path) -> Result<Task> {
     ws.find_task(&slug)
 }
 
-// ── Pending-request marker ───────────────────────────────────────────────────
+// ── Queues and their side files ─────────────────────────────────────────────
 
-fn pending_path(task: &Task) -> PathBuf {
-    task.path.join(workspace::SECRETS_PENDING_FILE)
+/// The two request queues. Different fulfilment actions — release something
+/// sealed vs. have a human type a value — so different files
+/// (`workspace::SECRETS_PENDING_FILE` / `SECRETS_PENDING_SET_FILE`), which
+/// the column, the watcher and `task_json` read too. Newline-separated names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Queue {
+    Release,
+    Value,
 }
 
-/// `workspace::secrets_pending` is the shared reader (also used by
-/// `task_json`, so the column/status bar see the same data this module
-/// writes) — this is just the `Task`-typed convenience wrapper for it.
-fn read_pending(task: &Task) -> Vec<String> {
-    workspace::secrets_pending(&task.path)
-}
-
-/// Remove `resolved` names from the task's pending list, leaving any others
-/// (e.g. a second sops file that wasn't actually decrypted this time)
-/// pending for a future unlock — partial resolution, not "unlock ran, so the
-/// whole queue must be satisfied now."
-fn clear_pending_names(task: &Task, resolved: &std::collections::HashSet<String>) -> Result<()> {
-    let remaining: Vec<String> =
-        read_pending(task).into_iter().filter(|n| !resolved.contains(n)).collect();
-    let path = pending_path(task);
-    if remaining.is_empty() {
-        let _ = std::fs::remove_file(&path);
-    } else {
-        std::fs::write(&path, remaining.join("\n") + "\n")
-            .with_context(|| format!("write {}", path.display()))?;
+impl Queue {
+    fn path(self, task: &Task) -> PathBuf {
+        task.path.join(match self {
+            Queue::Release => workspace::SECRETS_PENDING_FILE,
+            Queue::Value => workspace::SECRETS_PENDING_SET_FILE,
+        })
     }
-    Ok(())
-}
 
-fn pending_set_path(task: &Task) -> PathBuf {
-    task.path.join(workspace::SECRETS_PENDING_SET_FILE)
-}
-
-/// `workspace::secrets_pending_set` is the shared reader (also used by
-/// `task_json`) — this is just the `Task`-typed convenience wrapper, same
-/// pattern as `read_pending` above for the other queue.
-fn read_pending_set(task: &Task) -> Vec<String> {
-    workspace::secrets_pending_set(&task.path)
-}
-
-/// Remove `name` from the pending-set queue after a successful `set` —
-/// single-name, not a `HashSet` like `clear_pending_names`, since one `set`
-/// call resolves exactly the one name it was called with, never more.
-fn clear_pending_set(task: &Task, name: &str) -> Result<()> {
-    let remaining: Vec<String> = read_pending_set(task).into_iter().filter(|n| n != name).collect();
-    let path = pending_set_path(task);
-    if remaining.is_empty() {
-        let _ = std::fs::remove_file(&path);
-    } else {
-        std::fs::write(&path, remaining.join("\n") + "\n")
-            .with_context(|| format!("write {}", path.display()))?;
+    fn names(self, task: &Task) -> Vec<String> {
+        match self {
+            Queue::Release => workspace::secrets_pending(&task.path),
+            Queue::Value => workspace::secrets_pending_set(&task.path),
+        }
     }
-    Ok(())
+
+    /// Append `name` unless it's already there.
+    fn push(self, task: &Task, name: &str) -> Result<()> {
+        let mut names = self.names(task);
+        if names.iter().any(|n| n == name) {
+            return Ok(());
+        }
+        names.push(name.to_string());
+        self.write(task, &names)
+    }
+
+    /// Drop `names` from the queue, and the reasons of any name that is now
+    /// on neither queue.
+    fn remove(self, task: &Task, names: &HashSet<String>) -> Result<()> {
+        if names.is_empty() {
+            return Ok(());
+        }
+        let remaining: Vec<String> = self.names(task).into_iter().filter(|n| !names.contains(n)).collect();
+        self.write(task, &remaining)?;
+        let why = notes(task, workspace::SECRETS_WHY_FILE);
+        if why.iter().any(|(n, _)| queued_on(task, n).is_none()) {
+            let keep: Vec<(String, String)> = why.into_iter().filter(|(n, _)| queued_on(task, n).is_some()).collect();
+            write_notes(task, workspace::SECRETS_WHY_FILE, &keep)?;
+        }
+        Ok(())
+    }
+
+    fn write(self, task: &Task, names: &[String]) -> Result<()> {
+        let path = self.path(task);
+        if names.is_empty() {
+            let _ = std::fs::remove_file(&path);
+            return Ok(());
+        }
+        std::fs::write(&path, names.join("\n") + "\n").with_context(|| format!("write {}", path.display()))
+    }
+
+    /// What a request on this queue is waiting for, in the agent's words.
+    fn what(self) -> &'static str {
+        match self {
+            Queue::Release => "it's sealed; waiting for someone to release it",
+            Queue::Value => "nothing is sealed under that name; waiting for someone to type a value",
+        }
+    }
+}
+
+/// Which queue `name` is on, if any.
+fn queued_on(task: &Task, name: &str) -> Option<Queue> {
+    [Queue::Release, Queue::Value].into_iter().find(|q| q.names(task).iter().any(|n| n == name))
+}
+
+/// A `NAME<TAB>text` side file of the task — the reasons, the denials.
+fn notes(task: &Task, file: &str) -> Vec<(String, String)> {
+    rules::parse_notes(&std::fs::read_to_string(task.path.join(file)).unwrap_or_default())
+}
+
+/// Set (`Some`) or drop (`None`) `name`'s entry in a side file.
+fn set_note(task: &Task, file: &str, name: &str, text: Option<&str>) -> Result<()> {
+    let current = notes(task, file);
+    let next = match text {
+        Some(text) => rules::upsert_note(current, name, text),
+        None if current.iter().any(|(n, _)| n == name) => current.into_iter().filter(|(n, _)| n != name).collect(),
+        None => return Ok(()),
+    };
+    write_notes(task, file, &next)
+}
+
+fn write_notes(task: &Task, file: &str, notes: &[(String, String)]) -> Result<()> {
+    let path = task.path.join(file);
+    if notes.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        return Ok(());
+    }
+    std::fs::write(&path, rules::render_notes(notes)).with_context(|| format!("write {}", path.display()))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1244,7 +1424,7 @@ fn read_masked_line(label: &str) -> Result<String> {
     if unsafe { libc::tcgetattr(fd, &mut term) } != 0 {
         let mut line = String::new();
         io::BufReader::new(&tty).read_line(&mut line).context("read from /dev/tty")?;
-        return tenx_core::secrets::clean_typed_value(&line).map_err(anyhow::Error::msg);
+        return rules::clean_typed_value(&line).map_err(anyhow::Error::msg);
     }
     let original = term;
     term.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
@@ -1284,9 +1464,37 @@ fn read_masked_line(label: &str) -> Result<String> {
     if !read_result? {
         bail!("aborted — nothing was set");
     }
-    let value = tenx_core::secrets::clean_typed_value(&String::from_utf8_lossy(&buf)).map_err(anyhow::Error::msg)?;
+    let value = rules::clean_typed_value(&String::from_utf8_lossy(&buf)).map_err(anyhow::Error::msg)?;
     if !value.is_empty() {
-        let _ = writeln!(&tty, "  got {}", tenx_core::secrets::describe_value(&value));
+        let _ = writeln!(&tty, "  got {}", rules::describe_value(&value));
     }
     Ok(value)
+}
+
+/// Write `content` to `path`, owner-only from the first byte — a released
+/// plaintext never exists with the umask's default permissions, not even
+/// between a write and a chmod.
+fn write_private(path: &Path, content: &str) -> Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("open {}", path.display()))?;
+    set_permissions_600(path)?; // it may have existed with wider permissions
+    file.write_all(content.as_bytes()).with_context(|| format!("write {}", path.display()))
+}
+
+/// Prompt on the real terminal and read one line, echoed — the answering
+/// sheet's questions. `/dev/tty`, not stdin, for the same reason as
+/// `read_masked_line`.
+fn read_tty_line(label: &str) -> Result<String> {
+    let tty = std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").context("open /dev/tty")?;
+    write!(&tty, "{label}: ")?;
+    (&tty).flush()?;
+    let mut line = String::new();
+    io::BufReader::new(&tty).read_line(&mut line).context("read from /dev/tty")?;
+    Ok(rules::strip_paste_markers(&line).trim_end_matches(['\n', '\r']).to_string())
 }

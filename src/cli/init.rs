@@ -244,7 +244,7 @@ after `gh pr create`; record decisions and gotchas under `## Notes`.
     tenx task list             list all tasks and open windows
     tenx task new "<title>"    create a task (worktrees + TASK.md)
     tenx task open <name>      switch to a task's window
-    tenx secrets decrypt <n>   ask for a credential (safe to run; enqueues a request)
+    tenx secrets need <n> --why "…"   ask for a credential (safe to run; waits for a human)
     tenx secrets status        show sealed/unlocked/pending state
 
 The `/tenx` skill (in `.agents/skills/tenx`) has the full detail on tasks,

@@ -202,16 +202,29 @@ tenx supports Claude Code, Codex CLI, and pi, and treats them uniformly.
 
 `tenx secrets` gives a task credentials without ever putting a value in an agent's transcript. It shells out to the `age` and `sops` you already have installed.
 
+An agent asks with one command and says why:
+
 ```sh
-tenx secrets init                  # find or create a passphrase-protected age identity
-tenx secrets encrypt <slug> .env   # seal a file as the task's bundle
-tenx secrets set <NAME>            # add one value, typed into the terminal, never an argument
-tenx secrets decrypt [NAME]        # release the bundle to tasks/<slug>/.secrets.env
-tenx secrets cancel <NAME> | --all # withdraw a pending request
+tenx secrets need STRIPE_KEY DATABASE_URL --why "run the webhook tests"
+```
+
+tenx works out what each name needs without the passphrase, because sops leaves key names readable. A name that's already released returns at once. One that's sealed in the task's bundle or in a repo's own sops file waits for you to release it. One that isn't stored anywhere waits for you to type a value. From an agent's shell tool, which has no terminal, `need` only enqueues and then blocks until you answer. The column lists the task under "secrets pending", the notification carries the reason, and the exit code tells the agent the outcome: 0 granted, 3 still pending, 4 denied, 5 withdrawn. The wait is bounded (`--timeout`, default 100 s) and a timed-out request stays queued, so re-running resumes it.
+
+You answer with `u` in the column (or `tenx secrets fulfill`). It is one sitting: the requests with their reasons, one question (grant all, deny all, or pick, with a note for anything denied), a masked prompt for each value to type, then the passphrase **once**. New values are sealed into the task's bundle and released in the same unlock. Release is per name: `tasks/<slug>/.secrets.env` holds exactly the names granted so far. Repos that already use sops with their own `.sops.yaml` are adopted as-is. A matching file is released whole, outside the worktree, and symlinked into place.
+
+```sh
+tenx secrets need <NAME>... [--why ..]   # ask (agents); from a terminal, answers on the spot
+tenx secrets fulfill                     # answer everything pending: grant, deny, type values
+tenx secrets set <NAME>                  # seal a value, typed into the terminal, never an argument
+tenx secrets decrypt [NAME]              # release sealed secrets without a request
+tenx secrets deny <NAME>... [--note ..]  # refuse a request; the agent sees the note
+tenx secrets cancel <NAME> | --all       # withdraw a request
+tenx secrets init                        # find or create a passphrase-protected age identity
+tenx secrets encrypt <slug> .env         # seal a whole file as the task's bundle
 tenx secrets status
 ```
 
-`decrypt` and `set` decide what to do by whether a real terminal is reachable. From your shell they prompt for the passphrase and act. From an agent's shell tool, which has no controlling terminal, they enqueue a request and then block until you act on it, so the agent picks up the moment the secret lands. The column shows the task under "secrets pending" and `u` unlocks it in a pane where you type the passphrase; `:cancel` withdraws the request instead, and the waiting agent is told. The wait is bounded (`--timeout`, default 100 s, under a shell tool's usual kill limit) and the request survives a timeout, so re-running resumes waiting; `--no-wait` enqueues and returns. Repos that already use sops with their own `.sops.yaml` are adopted as-is. Decrypted values are written to files, never to stdout.
+Decrypted values are written to files, never to stdout.
 
 ## Configuration
 

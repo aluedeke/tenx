@@ -70,29 +70,30 @@ Keep TASK.md current at all times:
 
 ## Secrets
 
-If a task needs a credential (API key, token, DB password) and it isn't already sitting somewhere readable, ask for it — don't try to find, guess, or work around it another way:
+If a task needs a credential (API key, token, DB password) and it isn't already sitting somewhere readable, ask for it — don't try to find, guess, or work around it another way. One command, whatever the secret:
 
-    tenx secrets decrypt <NAME> --timeout 9m
+    tenx secrets need STRIPE_KEY DATABASE_URL --why "run the webhook integration tests" --timeout 30m
 
-It's always safe to run, even if this workspace hasn't set up secrets at all: from your Bash tool (no real terminal attached) it can't touch the credential itself — it enqueues a durable, visible request (the tenx status bar and column show it, and the user gets a desktop notification) and then **blocks until a human releases it**. Releasing it for real requires that human typing the decryption passphrase themselves, from a normal shell or the tenx column — that's the whole point, so **never** run `tenx secrets init` or `encrypt` yourself.
+Always say **why** in a few words: the human sees it in the notification and when they answer, and it's what they decide on. `need` works out by itself what each name needs — already released (returns at once), sealed and waiting for a human to release it, or not stored anywhere yet so a human must type a value — so you never have to know which. It's always safe to run: from your Bash tool (no real terminal) it can't touch key material; it only enqueues a request (the tenx column and status bar show it, the user gets a desktop notification) and waits for a human, who unlocks with their own passphrase. **Never** run `tenx secrets init`, `encrypt`, or `fulfill` yourself.
 
-How to wait: run it with your Bash tool's timeout set to its maximum (600000 ms) and `--timeout 9m`, so the command outlives a slow human. Exit code 0 means it's released — carry on. Exit code 1 with "still pending" means nobody has answered yet: the request is still queued, so if you genuinely can't proceed without it, just run the same command again (an already-pending name is a no-op, not a repeat notification) — or do other useful work first and come back. Exit code 1 with "withdrawn" means a human cancelled the request; don't re-ask for the same thing without saying why you need it. If you'd rather not block at all (the secret is nice-to-have, or you have plenty of other work), pass `--no-wait` to enqueue and return immediately.
+How to wait: if your harness can run a command in the background and tell you when it exits (Claude Code's Bash tool with `run_in_background`), do that with a long `--timeout` like `30m` and carry on with other work. Otherwise run it in the foreground with the Bash tool's timeout at its maximum (600000 ms) and `--timeout 9m`. The exit code says what happened:
 
-If you no longer need something you asked for — the task changed, you found another way, the user gave you the value some other way — withdraw it so nobody is chased for it:
+- **0** — granted. Continue.
+- **3** — still pending (nobody answered in time). The request stays queued; re-run the same command to keep waiting — it won't notify again.
+- **4** — denied. The output has the human's note if they left one. Don't ask again without explaining why you need it.
+- **5** — withdrawn with `cancel`.
+
+`--no-wait` enqueues and returns at once, for a secret that's nice to have.
+
+Where granted secrets land — read them from the file, never print them:
+- **Keys** (`STRIPE_KEY`) go to `tasks/<name>/.secrets.env`, a plain `KEY=VALUE` file holding exactly the names you've been granted.
+- **Repos with their own sops setup** (a `.sops.yaml` in a worktree): name a key inside one of its `*.enc.*` files, or a fragment of the file's name (`staging`). The whole file is released as its plaintext sibling in the worktree (`secrets.staging.enc.env` → `secrets.staging.env`, a symlink to a copy outside git). If there's more than one such file, name the one you need.
+
+If you no longer need something you asked for, withdraw it so nobody is chased for it:
 
     tenx secrets cancel <NAME>      # or --all
 
-`cancel` only edits the request queue, never key material, so it's safe from your Bash tool too. `tenx secrets status` is also safe to run any time — it only shows sealed/unlocked/pending state, never values.
-
-Two shapes of secret you might find, depending on the repo:
-- **Sealed by tenx** — lands at `tasks/<name>/.secrets.env` (a plain `KEY=VALUE` file). `<NAME>` here is just a label for the human approving it; decrypting always releases the whole file.
-- **Adopted from the repo's own setup** (`.sops.yaml` already in a worktree) — lands as a plaintext sibling of its ciphertext, inside that worktree (e.g. `secrets.staging.enc.env` → `secrets.staging.env`). Here `<NAME>` actually matters: it's matched against candidate filenames, so if a repo has more than one (e.g. `secrets.staging.enc.env` *and* `secrets.prod.enc.env`), name the **file** you need (or a distinctive fragment like `staging`) so only that one gets released — not a field inside it, and not the whole set. A name that doesn't match any file falls back to releasing everything found, so still err toward naming the file rather than nothing.
-
-If instead **you need a secret that doesn't exist yet** — nothing to release, someone has to supply a value (an API key you don't have, a password to generate) — ask for it the same way:
-
-    tenx secrets set <NAME> --timeout 9m
-
-Same rules as `decrypt`: your Bash tool has no real terminal, so this can never actually set anything — it enqueues a durable "someone needs to supply a value for `<NAME>`" request and waits for a human to fulfil it (same timeout/re-run/`--no-wait`/`cancel` handling as above). You never type or pipe a value here at all; a human supplies it later, prompted for it directly when they run `set` themselves (from a real shell or the column) — you never see or relay the value in either direction, so nothing about it ever touches your own output or the conversation transcript. Once it reports the value was set, run `tenx secrets decrypt <NAME>` to have it released to you.
+`cancel` and `tenx secrets status` only read or edit the request queues, never values, so both are safe from your Bash tool.
 
 ## Common commands
 
@@ -102,8 +103,7 @@ Same rules as `decrypt`: your Bash tool has no real terminal, so this can never 
     tenx task list             list all tasks and open tabs
     tenx task rm <name>        remove task and worktrees
     tenx repo add <url>        add a repo to the workspace
-    tenx secrets decrypt <n>   ask for a credential and wait for it (see Secrets above)
-    tenx secrets set <n>       ask for a secret that doesn't exist yet (see Secrets above)
+    tenx secrets need <n>… --why "…"   ask for credentials and wait (see Secrets above)
     tenx secrets cancel <n>    withdraw a request you no longer need
     tenx secrets status        check sealed/unlocked/pending state
 

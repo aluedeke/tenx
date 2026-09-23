@@ -580,6 +580,23 @@ pub fn secrets_pending_set(task_dir: &Path) -> Vec<String> {
     read_name_list(&task_dir.join(SECRETS_PENDING_SET_FILE))
 }
 
+/// Filename of the reasons an agent gave for its pending requests
+/// (`tenx secrets need --why`), `NAME<TAB>why` per line. Informational only —
+/// shown to the human who answers and in the notification; entries for names
+/// no longer queued are pruned whenever a queue changes.
+pub const SECRETS_WHY_FILE: &str = ".secrets-why";
+
+/// `(name, why)` for every request that came with a reason.
+pub fn secrets_why(task_dir: &Path) -> Vec<(String, String)> {
+    tenx_core::secrets::parse_notes(&fs::read_to_string(task_dir.join(SECRETS_WHY_FILE)).unwrap_or_default())
+}
+
+/// Filename of the human's denials, `NAME<TAB>note` per line — the one
+/// outcome of a request the disk can't otherwise tell apart from a
+/// withdrawal (see `tenx_core::secrets`). Cleared per name when that name is
+/// requested again.
+pub const SECRETS_DENIED_FILE: &str = ".secrets-denied";
+
 fn read_name_list(path: &Path) -> Vec<String> {
     fs::read_to_string(path)
         .unwrap_or_default()

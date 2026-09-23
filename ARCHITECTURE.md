@@ -37,6 +37,7 @@ The only per-task files tenx owns:
 A task's window is additionally tagged, on the tmux side, with the `@tenx_task_dir` window option — the identity `find_task_window` correlates on. Unlike `.tenx-window-id` (a cache that a server restart can alias onto another task's window) it is written by the server that owns the window, so it cannot go stale without the window going with it.
 | `.tenx-live.json` | Cache of ports and PR facts, written only by the watcher. |
 | `.secrets-pending`, `.secrets-pending-set` | Queues of secret requests waiting for a human. |
+| `.secrets-why`, `.secrets-denied` | The agent's reason for each pending request; the human's note on each denial. |
 
 User-level state lives under `~/.config/tenx/`: a global `config.toml`, the generated `tmux.conf`, the watcher's pid file, and `workspaces.d/`, a registry with one file per workspace so the column can find them all. Registration is one atomic file write.
 
@@ -108,11 +109,17 @@ A blocked task's permission prompt can be answered from the column with `A` or `
 
 **Identity.** The workspace config's `age_identity` wins if set. Otherwise the standard locations `sops` and `age` already use are checked: `$SOPS_AGE_KEY_FILE`, `~/.config/sops/age`, `~/.config/age`. Failing that, `init` generates a passphrase-protected identity with `age-keygen` and `age -p`. The passphrase is the whole confirmation gate: `age` has no daemon and no cache, so every decrypt asks for it.
 
-**A task's own bundle** is sealed at `tasks/<slug>/.secrets.enc.env` and released to `.secrets.env` beside it, mode 0600. The task directory is not a git repository, so nothing there needs ignoring.
+**A task's own bundle** is sealed at `tasks/<slug>/.secrets.enc.env`. Released names are merged into `.secrets.env` beside it, mode 0600: it holds exactly the names granted, not the whole bundle. The task directory is not a git repository, so nothing there needs ignoring.
 
 **Adopted secrets** are a repo's own pre-existing sops setup: a `.sops.yaml` plus `*.enc.*` files sealed by that project's tooling. They are decrypted to `.secrets-adopted/` under the task directory, outside every worktree, and symlinked into place so the plaintext never sits inside a git checkout.
 
-**Agent safety.** No function in the module writes a decrypted value to stdout, because an agent's captured stdout becomes a transcript that outlives the task. `decrypt` and `set` check whether `/dev/tty` is reachable, the same file `age`'s own prompt reads. When it is, they act. When it is not, which is the case inside an agent's shell tool, each appends its request to a queue (a name only: a queued *value* would mean plaintext on disk before any human confirmed anything) and then blocks until a human acts on it, polling the queue once a second for up to `--timeout`. Whether the name left the queue because it was fulfilled or withdrawn (`cancel`) is decided from the disk alone, `tenx_core::secrets::wait_outcome`: an output file modified at or after the request means fulfilled. Removal from the queue is the commit point, since every fulfilment writes its output first. A timed-out request stays queued so re-running resumes the wait; `--no-wait` restores fire-and-forget.
+**Asking.** An agent runs `need NAME... --why ..`. sops encrypts values only, so key names are readable without the identity (`tenx_core::secrets::sealed_keys`), and each name is routed by looking. Already released means there is nothing to do. Sealed in the bundle, or matching an adopted file by key or filename, puts it on the release queue. Anything else goes on the value queue, where a human must type it. Only names are queued, never values. `decrypt NAME` and `set NAME` from an agent are the older spellings.
+
+**Agent safety.** No function in the module writes a decrypted value to stdout, because an agent's captured stdout becomes a transcript that outlives the task. Every entry point checks whether `/dev/tty` is reachable, the same file `age`'s own prompt reads. When it is not, which is the case inside an agent's shell tool, the command only enqueues and waits, and never touches key material.
+
+**Answering.** `fulfill` (the column's `u`) is one sitting. It shows each request with its reason and asks once: grant all, deny all, or pick. It reads a value for each granted value request, then unwraps the identity once, so there is one passphrase for everything. With it, `fulfill` seals the new values and releases every granted name, the new ones included. A denial is recorded with the human's note before the name leaves its queue, and a release writes its output first. Removal from the queue is always the commit point.
+
+**Waiting.** The agent polls once a second for up to `--timeout`. Once a name has left both queues, the outcome is decided from the disk alone (`tenx_core::secrets::wait_outcome`): a recorded denial means denied, a released output written at or after the request means granted, and neither means withdrawn. Each outcome has its own exit code. A timed-out request stays queued, so re-running resumes the wait.
 
 ## Testing
 

@@ -209,6 +209,19 @@ struct Note {
     reason: Option<String>,
 }
 
+/// A secrets notification's text: the names, then the distinct reasons the
+/// agent gave for them (`tenx secrets need --why`) — what you need to decide
+/// before switching to the task at all.
+fn secrets_reason(names: &[String], why: &[(String, String)]) -> String {
+    let mut reasons: Vec<&str> = Vec::new();
+    for (_, w) in why.iter().filter(|(n, w)| names.contains(n) && !w.is_empty()) {
+        if !reasons.contains(&w.as_str()) {
+            reasons.push(w);
+        }
+    }
+    if reasons.is_empty() { names.join(", ") } else { format!("{} — {}", names.join(", "), reasons.join("; ")) }
+}
+
 /// One resolve pass over every task, serving both consumers.
 ///
 /// The desktop notification needs the blocked *edge*; the status bar needs every
@@ -314,13 +327,14 @@ fn resolve_all() -> Snapshot {
                 ));
             }
             let pending_names = workspace::secrets_pending(&task.path);
+            let why = workspace::secrets_why(&task.path);
             if !pending_names.is_empty() {
                 secrets_pending.push((
                     key.clone(),
                     Note {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
-                        reason: Some(pending_names.join(", ")),
+                        reason: Some(secrets_reason(&pending_names, &why)),
                     },
                 ));
             }
@@ -331,7 +345,7 @@ fn resolve_all() -> Snapshot {
                     Note {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
-                        reason: Some(format!("{} (needs value)", pending_set_names.join(", "))),
+                        reason: Some(format!("{} (needs value)", secrets_reason(&pending_set_names, &why))),
                     },
                 ));
             }
@@ -747,6 +761,14 @@ mod tests {
         let t = json!({"status": "idle"});
         let text = plain(&status_line(&t, "my-task"));
         assert_eq!(text, format!("{} my-task", TaskStatus::Idle.glyph()));
+    }
+
+    #[test]
+    fn secrets_reason_appends_distinct_reasons() {
+        let names = vec!["A".to_string(), "B".to_string()];
+        let why = vec![("A".into(), "run tests".into()), ("B".into(), "run tests".into()), ("C".into(), "other".into())];
+        assert_eq!(secrets_reason(&names, &why), "A, B — run tests");
+        assert_eq!(secrets_reason(&names, &[]), "A, B");
     }
 
     #[test]

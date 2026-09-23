@@ -16,7 +16,8 @@ use std::env;
 fn main() {
     if let Err(e) = run() {
         eprintln!("tenx: {e}");
-        std::process::exit(1);
+        let code = e.downcast_ref::<cli::secrets::Exit>().map_or(1, |x| x.code);
+        std::process::exit(code);
     }
 }
 
@@ -74,6 +75,9 @@ fn run() -> Result<()> {
         Some(Commands::Secrets { command }) => match command {
             SecretsCommands::Init => cli::secrets::init()?,
             SecretsCommands::Encrypt { task, file } => cli::secrets::encrypt(&task, &file)?,
+            SecretsCommands::Need { names, why, no_wait, timeout } => {
+                cli::secrets::need(&names, why.as_deref(), secrets_wait(no_wait, timeout.as_deref())?)?
+            }
             SecretsCommands::Set { name, no_wait, timeout } => {
                 cli::secrets::set(&name, secrets_wait(no_wait, timeout.as_deref())?)?
             }
@@ -81,6 +85,7 @@ fn run() -> Result<()> {
                 cli::secrets::decrypt(name.as_deref(), secrets_wait(no_wait, timeout.as_deref())?)?
             }
             SecretsCommands::Fulfill => cli::secrets::fulfill()?,
+            SecretsCommands::Deny { names, note } => cli::secrets::deny(&names, note.as_deref())?,
             SecretsCommands::Cancel { name, all: _ } => cli::secrets::cancel(name.as_deref())?,
             SecretsCommands::Status => cli::secrets::status()?,
         },
@@ -150,7 +155,7 @@ fn run() -> Result<()> {
 /// create) it from a plain terminal, or run the column directly when already
 /// inside it. If cwd is inside a workspace, self-heal the registry first so it
 /// shows up in the column.
-/// `--no-wait`/`--timeout` → how long `secrets decrypt`/`set` block for a
+/// `--no-wait`/`--timeout` → how long `secrets need`/`decrypt`/`set` block for a
 /// human on the no-terminal path (`None`: enqueue and return).
 fn secrets_wait(no_wait: bool, timeout: Option<&str>) -> Result<Option<std::time::Duration>> {
     if no_wait {

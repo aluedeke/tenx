@@ -132,17 +132,42 @@ pub enum SecretsCommands {
         /// File to encrypt (typically a .env)
         file: String,
     },
+    /// Ask for secrets for the current task (task resolved from cwd)
+    ///
+    /// The one command an agent needs. Each name is routed by looking at
+    /// what's sealed (key names are readable without the passphrase):
+    /// already released → nothing to do; sealed in the task's bundle or an
+    /// adopted sops file → a release request; nowhere → a request for a
+    /// human to type a value. From an agent's shell tool (no terminal) it
+    /// then waits for a human to answer; from a real terminal it answers
+    /// straight away. Exit codes: 0 granted, 3 still pending (re-run to keep
+    /// waiting), 4 denied, 5 withdrawn.
+    Need {
+        /// Names to ask for — dotenv keys (STRIPE_KEY), or a fragment of an
+        /// adopted sops file's name (staging)
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// Why you need them — shown to the human who answers
+        #[arg(long)]
+        why: Option<String>,
+        /// Enqueue and return immediately instead of waiting (no-terminal path only)
+        #[arg(long)]
+        no_wait: bool,
+        /// How long to wait for a human before giving up — "<N><unit>", e.g.
+        /// "90s", "30m". The request stays queued on timeout; re-running
+        /// resumes waiting. Default: 100s, under a shell tool's usual kill
+        /// limit.
+        #[arg(long, conflicts_with = "no_wait")]
+        timeout: Option<String>,
+    },
     /// Set one secret in the current task's sealed bundle (task resolved from cwd)
     ///
-    /// Literally `sops set`: edits the existing document in
-    /// place, reusing its data key. Same tty-detection shape as `decrypt`,
-    /// mirrored: real terminal reachable → prompts for the value (masked),
-    /// then the passphrase, then edits; not reachable → enqueues "someone
-    /// needs to supply a value for this" instead, agent-safe, own queue
-    /// separate from `decrypt`'s, and waits for a human to fulfil it (same
-    /// --timeout/--no-wait as `decrypt`). The value itself is never a CLI
-    /// argument or read from stdin — always typed directly into the real
-    /// terminal.
+    /// Literally `sops set`: edits the existing document in place. From a
+    /// real terminal it prompts for the value (masked), then the
+    /// passphrase, and seals it — releasing it too if someone had asked for
+    /// it. From an agent's shell tool it can only ask a human to supply a
+    /// value (use `need` unless you mean to replace one that exists). The
+    /// value is never a CLI argument or read from stdin.
     Set {
         /// Secret name (becomes its key in the decrypted .secrets.env)
         name: String,
@@ -156,33 +181,18 @@ pub enum SecretsCommands {
         #[arg(long, conflicts_with = "no_wait")]
         timeout: Option<String>,
     },
-    /// Ask for the current task's secrets (task resolved from cwd)
+    /// Release the current task's secrets (task resolved from cwd)
     ///
-    /// The one command both an agent and a human use. Whether it prompts for
-    /// a passphrase or just enqueues a durable request depends entirely on
-    /// whether a real terminal is reachable (checked via /dev/tty, the same
-    /// thing age's own prompt reads from), never on how it's invoked: from a
-    /// human's real shell or the column's spawned pane it decrypts straight
-    /// away; from an agent's Bash tool (no controlling terminal) it falls
-    /// back to enqueueing the request and waiting for a human to release it
-    /// — never touches the identity or the encrypted bundle in that case.
-    /// When it does decrypt: the task's own sealed
-    /// bundle into tasks/<slug>/.secrets.env, and/or any sops-covered files
-    /// an adopted repo already has (to their plaintext sibling, inside the
-    /// worktree) — filtered by pending names when any match a filename,
-    /// otherwise every sops file found. Never prints a decrypted value to
-    /// stdout — file output only.
+    /// From a real terminal: prompts for the passphrase and releases NAME,
+    /// else whatever is pending release, else everything sealed — the
+    /// task's bundle into tasks/<slug>/.secrets.env, adopted sops files to
+    /// their plaintext sibling (stored outside the worktree, symlinked in).
+    /// From an agent's shell tool it's the older spelling of `need NAME`.
+    /// Never prints a decrypted value to stdout.
     Decrypt {
-        /// Secret name to ask for (shown in `status`)
-        ///
-        /// Used by the non-interactive fallback and to seed the request queue
-        /// before an interactive decrypt. For the task's own sealed bundle this is just a label —
-        /// decrypt always releases the whole bundle. For an adopted repo with
-        /// its own .sops.yaml, it's matched against candidate filenames and
-        /// *does* select which file gets decrypted (e.g. "staging" vs
-        /// "prod") — name the file, not a field inside it. Required when no
-        /// real terminal is reachable (nothing else to do in that case);
-        /// optional otherwise.
+        /// Secret name — a key of the bundle, or a fragment of an adopted
+        /// sops file's name ("staging"). Required when no real terminal is
+        /// reachable.
         name: Option<String>,
         /// Enqueue and return immediately instead of waiting (no-terminal path only)
         #[arg(long)]
@@ -194,14 +204,26 @@ pub enum SecretsCommands {
         #[arg(long, conflicts_with = "no_wait")]
         timeout: Option<String>,
     },
-    /// Do whatever is pending for the current task in one sitting (task resolved from cwd)
+    /// Answer everything pending for the current task in one sitting (task resolved from cwd)
     ///
-    /// Decrypts if anything is pending release, then runs `set` once per
-    /// pending value-request. Human-only in
-    /// practice (each step still needs a real terminal); exists mainly for
-    /// the column's spawned pane, so it doesn't need to know which of the
-    /// two pending kinds a task has before deciding what to run.
+    /// Lists each request with the agent's reason, asks once whether to
+    /// grant all, deny all or pick, reads a value for each granted value
+    /// request, then takes the passphrase once to seal the new values and
+    /// release every granted name. What `u` in the column runs. Needs a real
+    /// terminal.
     Fulfill,
+    /// Refuse pending requests for the current task (task resolved from cwd)
+    ///
+    /// The waiting agent is told, with your note. `fulfill` asks the same
+    /// question interactively.
+    Deny {
+        /// Names to refuse
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// Why — shown to the agent that asked
+        #[arg(long)]
+        note: Option<String>,
+    },
     /// Withdraw a pending request for the current task (task resolved from cwd)
     ///
     /// Removes the name from whichever queue holds it (release or value)
