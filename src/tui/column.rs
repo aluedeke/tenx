@@ -15,7 +15,7 @@
 use anyhow::{Context, Result};
 use crossterm::{
     event::{
-        DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, KeyCode, KeyEvent, KeyModifiers,
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, KeyCode, KeyEvent, KeyModifiers,
         MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
@@ -2550,7 +2550,10 @@ pub(super) fn run_unlock(
     slug: &str,
 ) -> Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange)?;
+    // Bracketed paste off too: the client turned it on for the embedded
+    // terminal, and left on it wraps a pasted secret in `ESC[200~`…`ESC[201~`
+    // at the value prompt.
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste)?;
     terminal.show_cursor()?;
 
     println!("secrets for '{slug}'...\n");
@@ -2567,7 +2570,7 @@ pub(super) fn run_unlock(
     let _ = io::stdin().read_line(&mut discard);
 
     enable_raw_mode()?;
-    execute!(terminal.backend_mut(), EnterAlternateScreen, EnableMouseCapture, EnableFocusChange)?;
+    execute!(terminal.backend_mut(), EnterAlternateScreen, EnableMouseCapture, EnableFocusChange, EnableBracketedPaste)?;
     terminal.clear()?;
     // Pending state changed (cleared on success) — rebuild so the row moves
     // out of SECRETS PENDING rather than showing a stale glyph until the next

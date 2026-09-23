@@ -44,6 +44,48 @@ pub fn wait_outcome(still_pending: bool, outputs: &[SystemTime], requested_at: S
     }
 }
 
+/// Bracketed-paste markers (`ESC[200~` … `ESC[201~`): a terminal wraps a
+/// paste in them whenever the program in front asked for bracketed paste —
+/// the tenx client does, for its embedded terminal — and a prompt reading
+/// raw bytes gets them as part of the value.
+const PASTE_START: &str = "\x1b[200~";
+const PASTE_END: &str = "\x1b[201~";
+
+/// Strip bracketed-paste markers from terminal input.
+pub fn strip_paste_markers(raw: &str) -> String {
+    raw.replace(PASTE_START, "").replace(PASTE_END, "")
+}
+
+/// Clean a secret value typed or pasted at tenx's masked prompt: drop
+/// bracketed-paste markers and the line ending, then refuse anything that
+/// still carries control characters (an escape sequence from the terminal,
+/// a stray Ctrl key) — sealing those silently stores a value that differs
+/// from the one the human meant, and nobody can see it: the prompt is masked.
+/// A tab is allowed; everything else below space and DEL is not.
+pub fn clean_typed_value(raw: &str) -> Result<String, String> {
+    let value = strip_paste_markers(raw).trim_end_matches(['\n', '\r']).to_string();
+    if let Some(c) = value.chars().find(|c| c.is_control() && *c != '\t') {
+        return Err(format!(
+            "the value contains a control character ({:?}) — probably terminal escape codes from the paste; nothing was set",
+            c
+        ));
+    }
+    Ok(value)
+}
+
+/// What the human is shown after a masked entry, so a wrong paste is caught
+/// before it's sealed: the length, and the last four characters of anything
+/// long enough that four don't give it away.
+pub fn describe_value(value: &str) -> String {
+    let n = value.chars().count();
+    if n >= 16 {
+        let tail: String = value.chars().skip(n - 4).collect();
+        format!("{n} characters, ending …{tail}")
+    } else {
+        format!("{n} characters")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +116,26 @@ mod tests {
         // request made after it.
         assert_eq!(wait_outcome(false, &[t(50)], t(100)), WaitOutcome::Cancelled);
         assert_eq!(wait_outcome(false, &[], t(100)), WaitOutcome::Cancelled);
+    }
+
+    #[test]
+    fn pasted_values_lose_their_bracketed_paste_markers() {
+        assert_eq!(clean_typed_value("\x1b[200~sntrys_abc123\x1b[201~\n"), Ok("sntrys_abc123".to_string()));
+        assert_eq!(clean_typed_value("typed\r\n"), Ok("typed".to_string()));
+        assert_eq!(clean_typed_value("with\ttab"), Ok("with\ttab".to_string()));
+        assert_eq!(clean_typed_value(""), Ok(String::new()));
+    }
+
+    #[test]
+    fn other_control_characters_are_refused_not_sealed() {
+        assert!(clean_typed_value("abc\x1b[Adef").is_err());
+        assert!(clean_typed_value("abc\x7f").is_err());
+        assert!(clean_typed_value("a\nb").is_err());
+    }
+
+    #[test]
+    fn describing_a_value_shows_a_tail_only_when_long() {
+        assert_eq!(describe_value("short"), "5 characters");
+        assert_eq!(describe_value("sntrys_0123456789abcdef"), "23 characters, ending …cdef");
     }
 }

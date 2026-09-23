@@ -1216,16 +1216,22 @@ fn prompt(label: &str) -> Result<String> {
     Ok(line.trim().to_string())
 }
 
-/// Prompt on the real terminal with input echo disabled, for `set`'s value
-/// prompt — the passphrase itself is masked for free (`age -p` handles its
-/// own prompt), but the secret *value* `set` asks for is tenx's own prompt,
-/// so tenx has to do the masking itself. Reads `/dev/tty` directly rather
-/// than stdin, same reasoning as `tty_available`: works regardless of
-/// whatever stdin happens to be redirected to. Uses `libc` termios directly
-/// rather than pulling in a crate for this one call — `libc` is already a
-/// dependency. Falls back to unmasked (rather than failing outright) if
-/// `tcgetattr`/`tcsetattr` themselves fail, which would only happen on a
-/// `/dev/tty` that isn't a real terminal in some unexpected way.
+/// Prompt on the real terminal with input echo disabled, for a secret
+/// value — the passphrase is masked by `age`'s own prompt, but the value is
+/// tenx's prompt, so tenx masks it. Reads `/dev/tty` directly rather than
+/// stdin, same reasoning as `tty_available`. Uses `libc` termios directly
+/// rather than pulling in a crate for this one call.
+///
+/// Non-canonical, byte by byte, rather than a line read: canonical mode
+/// caps a line at `MAX_CANON` (1024 bytes on macOS) and silently drops the
+/// rest — a long JWT or PEM would be sealed truncated. `ISIG` is off too, so
+/// Ctrl-C aborts here with the terminal restored instead of killing the
+/// process with echo still off. Backspace and Ctrl-U edit as usual. What
+/// was read goes through `tenx_core::secrets::clean_typed_value` — a paste
+/// arrives wrapped in bracketed-paste markers whenever the terminal has that
+/// mode on — and the human is shown its length and tail
+/// (`describe_value`), since they can't see what they entered. Falls back
+/// to a plain line read if `/dev/tty` isn't a real terminal after all.
 fn read_masked_line(label: &str) -> Result<String> {
     use std::os::fd::AsRawFd;
 
@@ -1235,21 +1241,52 @@ fn read_masked_line(label: &str) -> Result<String> {
 
     let fd = tty.as_raw_fd();
     let mut term: libc::termios = unsafe { std::mem::zeroed() };
-    let masked = unsafe { libc::tcgetattr(fd, &mut term) } == 0;
+    if unsafe { libc::tcgetattr(fd, &mut term) } != 0 {
+        let mut line = String::new();
+        io::BufReader::new(&tty).read_line(&mut line).context("read from /dev/tty")?;
+        return tenx_core::secrets::clean_typed_value(&line).map_err(anyhow::Error::msg);
+    }
     let original = term;
-    if masked {
-        term.c_lflag &= !libc::ECHO;
-        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &term) };
-    }
+    term.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
+    term.c_cc[libc::VMIN] = 1;
+    term.c_cc[libc::VTIME] = 0;
+    unsafe { libc::tcsetattr(fd, libc::TCSANOW, &term) };
 
-    let mut line = String::new();
-    let read_result = io::BufReader::new(&tty).read_line(&mut line);
+    let mut buf: Vec<u8> = Vec::new();
+    let mut byte = [0u8; 1];
+    let read_result: Result<bool> = loop {
+        match (&tty).read(&mut byte) {
+            Ok(0) => break Ok(true),
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => break Err(e).context("read from /dev/tty"),
+        }
+        match byte[0] {
+            b'\r' | b'\n' => break Ok(true),
+            0x03 => break Ok(false), // Ctrl-C
+            0x04 if buf.is_empty() => break Ok(true), // Ctrl-D
+            0x15 => buf.clear(),     // Ctrl-U
+            0x7f | 0x08 => {
+                // Backspace: drop one whole UTF-8 character.
+                while let Some(b) = buf.pop() {
+                    if b & 0xC0 != 0x80 {
+                        break;
+                    }
+                }
+            }
+            b => buf.push(b),
+        }
+    };
 
-    if masked {
-        unsafe { libc::tcsetattr(fd, libc::TCSANOW, &original) };
-    }
+    unsafe { libc::tcsetattr(fd, libc::TCSANOW, &original) };
     let _ = writeln!(&tty); // the Enter keypress wasn't echoed either
 
-    read_result.context("read from /dev/tty")?;
-    Ok(line.trim_end_matches(['\n', '\r']).to_string())
+    if !read_result? {
+        bail!("aborted — nothing was set");
+    }
+    let value = tenx_core::secrets::clean_typed_value(&String::from_utf8_lossy(&buf)).map_err(anyhow::Error::msg)?;
+    if !value.is_empty() {
+        let _ = writeln!(&tty, "  got {}", tenx_core::secrets::describe_value(&value));
+    }
+    Ok(value)
 }
