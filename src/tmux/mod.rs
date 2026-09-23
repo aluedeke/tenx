@@ -629,8 +629,15 @@ pub fn client_by_pid(pid: u32) -> Option<String> {
 /// client's own loop is what forwards keystrokes into the popup.
 pub fn popup_tenx(client: &str, cwd: &str, title: &str, tenx_bin: &str, args: &str) -> Result<i32> {
     let command = format!("{} {args}", tenx_cmd(tenx_bin));
+    // Drawn in the column's colours, not the terminal's defaults: its ground
+    // and body text, and the frame of the active pane (a popup has the
+    // keyboard). Per-popup flags rather than the server's popup options, so
+    // no restart is needed for them to apply.
+    let body = format!("bg={},fg={}", palette::GROUND.hex(), palette::TEXT.hex());
+    let frame = format!("fg={}", palette::BORDER_ACTIVE.hex());
     let status = cmd()
-        .args(["display-popup", "-c", client, "-E", "-d", cwd, "-w", "80%", "-h", "70%", "-T", title, &command])
+        .args(["display-popup", "-c", client, "-E", "-d", cwd, "-w", "80%", "-h", "70%", "-T", title])
+        .args(["-b", "single", "-s", &body, "-S", &frame, &command])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

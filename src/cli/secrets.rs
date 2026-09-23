@@ -86,6 +86,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tenx_core::secrets::{self as rules, WaitOutcome};
 
+use crate::palette;
 use crate::workspace::{self, Task, Workspace};
 
 /// An error carrying its own process exit code — how a wait reports denied /
@@ -357,14 +358,15 @@ pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
 
     let why = workspace::secrets_why(&task.path);
     let width = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
-    eprintln!("secrets requested for '{}':\n", task.display_name);
+    eprintln!("{}\n", paint(&palette::BRIGHT, &format!("secrets requested for '{}'", task.display_name)));
     for (name, queue) in &rows {
+        let label = paint(&palette::ACCENT, &format!("{name:<width$}"));
         match queue {
-            Queue::Release => eprintln!("  {name:<width$}  release    {}", sealed_in(task, name)),
-            Queue::Value => eprintln!("  {name:<width$}  new value"),
+            Queue::Release => eprintln!("  {label}  release    {}", paint(&palette::MUTED, &sealed_in(task, name))),
+            Queue::Value => eprintln!("  {label}  new value"),
         }
         if let Some((_, w)) = why.iter().find(|(n, w)| n == name && !w.is_empty()) {
-            eprintln!("  {:<width$}  why: {w}", "");
+            eprintln!("  {:<width$}  {}", "", paint(&palette::MUTED, &format!("why: {w}")));
         }
     }
     eprintln!();
@@ -1507,9 +1509,20 @@ fn read_masked_line(label: &str) -> Result<String> {
     }
     let value = rules::clean_typed_value(&String::from_utf8_lossy(&buf)).map_err(anyhow::Error::msg)?;
     if !value.is_empty() {
-        let _ = writeln!(&tty, "  got {}", rules::describe_value(&value));
+        let _ = writeln!(&tty, "  {}", paint(&palette::MUTED, &format!("got {}", rules::describe_value(&value))));
     }
     Ok(value)
+}
+
+/// `text` in a palette colour, so the answering sheet reads like the column
+/// it's opened from — only when stderr is a terminal and `NO_COLOR` is
+/// unset, so an agent's captured output stays plain.
+fn paint(color: &palette::Rgb, text: &str) -> String {
+    use std::io::IsTerminal;
+    if !io::stderr().is_terminal() || env::var_os("NO_COLOR").is_some() {
+        return text.to_string();
+    }
+    format!("\x1b[38;2;{};{};{}m{text}\x1b[39m", color.0, color.1, color.2)
 }
 
 /// Write `content` to `path`, owner-only from the first byte — a released
