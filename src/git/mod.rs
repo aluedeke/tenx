@@ -179,8 +179,7 @@ pub fn bare_clone(url: &str, bare_dir: &Path, name: &str, on: OnProgress) -> Res
 fn last_error(stderr: &str) -> String {
     tenx_core::progress::split_progress(stderr)
         .filter(|l| tenx_core::progress::parse_git_line(l).is_none())
-        .filter(|l| !l.is_empty() && *l != "remote:")
-        .next_back()
+        .rfind(|l| !l.is_empty() && *l != "remote:")
         .unwrap_or("no output")
         .to_string()
 }

@@ -148,7 +148,7 @@ fn codex_has_conversation(task_dir: &Path) -> bool {
         // only when we can confirm it. Confirm from the plain file.
         first_line(&f)
             .and_then(|l| tenx_core::codex::session_meta_cwd(&l))
-            .map(|c| std::path::Path::new(&c) == want || std::path::PathBuf::from(&c) == want)
+            .map(|c| std::path::Path::new(&c) == want)
             .unwrap_or(false)
     })
 }
