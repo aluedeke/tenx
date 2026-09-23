@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use std::env;
 use std::io::{self, BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use tenx_core::skills::{skill_state, SkillState};
 
 pub fn run(name: Option<&str>) -> Result<()> {
     let cwd = env::current_dir()?;
@@ -125,45 +127,114 @@ pub fn init_in(
 }
 
 fn install_skills(ws_dir: &Path) -> Result<()> {
-    install_tenx_skill(ws_dir)?;
-    install_standup_skill(ws_dir)?;
-    install_agents_skill(ws_dir, "tenx", TENX_SKILL_MD)?;
-    install_agents_skill(ws_dir, "standup", STANDUP_SKILL_MD)?;
-    install_agents_md(ws_dir)
+    for (path, content) in skill_files(ws_dir) {
+        if path.exists() {
+            continue;
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, content)?;
+    }
+    Ok(())
 }
+
+/// Every file `install_skills` writes, with what this binary writes there:
+/// the `/tenx` and `/standup` skills for Claude (`.claude/skills`) and in
+/// the portable shape Codex and pi read (`.agents/skills`, see
+/// [`portable_skill`]), and `AGENTS.md`. The one list installing,
+/// refreshing and `doctor` all work from.
+fn skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
+    vec![
+        (ws_dir.join(".claude/skills/tenx/SKILL.md"), TENX_SKILL_MD.to_string()),
+        (ws_dir.join(".claude/skills/standup/SKILL.md"), STANDUP_SKILL_MD.to_string()),
+        (ws_dir.join(".agents/skills/tenx/SKILL.md"), portable_skill("tenx", TENX_SKILL_MD)),
+        (ws_dir.join(".agents/skills/standup/SKILL.md"), portable_skill("standup", STANDUP_SKILL_MD)),
+        (ws_dir.join("AGENTS.md"), AGENTS_MD.to_string()),
+    ]
+}
+
+/// Bring a workspace's installed skills up to date (`tenx_core::skills` has
+/// the rule): only files that exist are looked at — installing them is
+/// `tenx init`'s opt-in — a stale one is rewritten, an edited one is left
+/// alone. Returns each file's state as found, for `doctor`. Best-effort: a
+/// file that can't be rewritten stays `Stale` in the result.
+pub fn refresh_skills(ws_dir: &Path) -> Vec<(PathBuf, SkillState, bool)> {
+    let mut found = Vec::new();
+    for (path, current) in skill_files(ws_dir) {
+        let Ok(installed) = std::fs::read_to_string(&path) else { continue };
+        let state = skill_state(&installed, &current, SHIPPED_SKILLS);
+        let updated = state == SkillState::Stale && std::fs::write(&path, &current).is_ok();
+        found.push((path, state, updated));
+    }
+    found
+}
+
+/// [`refresh_skills`] over every registered workspace — what launching
+/// `tenx` does, so no workspace keeps instructions from an older tenx.
+pub fn refresh_all_skills() {
+    for ws in crate::workspace::registered_workspaces() {
+        refresh_skills(&ws.dir);
+    }
+}
+
+/// Replace edited skill files with the current version, keeping each
+/// edited copy beside it as `<name>.orig` — `tenx doctor --reset-skills`,
+/// the explicit way to take tenx's version when [`refresh_skills`] won't.
+/// Returns the files replaced.
+pub fn reset_skills(ws_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut replaced = Vec::new();
+    for (path, current) in skill_files(ws_dir) {
+        let Ok(installed) = std::fs::read_to_string(&path) else { continue };
+        if skill_state(&installed, &current, SHIPPED_SKILLS) != SkillState::Edited {
+            continue;
+        }
+        let mut orig = path.clone().into_os_string();
+        orig.push(".orig");
+        std::fs::write(&orig, &installed).with_context(|| format!("write {}", PathBuf::from(&orig).display()))?;
+        std::fs::write(&path, &current).with_context(|| format!("write {}", path.display()))?;
+        replaced.push(path);
+    }
+    Ok(replaced)
+}
+
+/// `tenx_core::skills::content_hash` of every rendering of a file in
+/// [`skill_files`] that any tenx release has written, current ones included
+/// — what lets [`refresh_skills`] tell tenx's own untouched words from a
+/// user's edit. Append the new hash whenever a skill, `portable_skill` or
+/// `AGENTS_MD` changes; `every_current_rendering_is_listed_as_shipped` fails
+/// with the value to add. Never remove one.
+const SHIPPED_SKILLS: &[u64] = &[
+    0xda48c7c75191a270, // agentsmd 24fee45
+    0x21c9ce83220c1e00, // standup 24fee45
+    0x17bbde9e628b2a0e, // standup 24fee45 portable
+    0x91bec1c8a7cfa9ba, // tenx 24fee45
+    0x44966dc4a48f5483, // tenx 24fee45 portable
+    0x0dfe5ed7bfd21fd0, // tenx 13ff6d5
+    0x14641f697a0fdcb7, // tenx 13ff6d5 portable
+    0x0415f72b19da1b80, // tenx 1ee4604
+    0xf177b1144376d83b, // tenx 1ee4604 portable
+    0x9deb20dda2c11565, // tenx 1cd5a06
+    0xbaa310a7e30c139a, // tenx 1cd5a06 portable
+    0x375325c5482f13e4, // tenx a39877a
+    0x4f247643abb13a03, // tenx a39877a portable
+    0xc5f80b81422f14db, // tenx a9dd131
+    0xa2995fb62ec036cc, // tenx a9dd131 portable
+    0xd58823fadaacde70, // tenx 83522c4
+    0x67998069f4b8013d, // tenx 83522c4 portable
+    0xc067dc7d58158936, // tenx 6cf43da
+    0x1f8afba826ad6f99, // tenx 6cf43da portable
+    0xb6dd288de89a9683, // tenx: `need --why`
+    0x980d762777468b70, // tenx: `need --why` portable
+    0x646c555ee28e1303, // agentsmd: `need`
+];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
     let answer = prompt(&format!("{question} [Y/n]"))?;
     Ok(!answer.eq_ignore_ascii_case("n"))
 }
 
-fn install_tenx_skill(ws_dir: &std::path::Path) -> Result<()> {
-    let skill_dir = ws_dir.join(".claude").join("skills").join("tenx");
-    std::fs::create_dir_all(&skill_dir)?;
-    let skill_path = skill_dir.join("SKILL.md");
-    if skill_path.exists() {
-        return Ok(());
-    }
-    std::fs::write(&skill_path, TENX_SKILL_MD)?;
-    Ok(())
-}
-
 const TENX_SKILL_MD: &str = include_str!("skills/tenx.md");
-
-/// Install a portable copy of a skill into `.agents/skills/<name>/SKILL.md` —
-/// the location Codex and pi read (Claude uses `.claude/skills`). Portable
-/// means an Agent-Skills `name:` header and no Claude-only dynamic command
-/// injection; see [`portable_skill`].
-fn install_agents_skill(ws_dir: &std::path::Path, name: &str, src: &str) -> Result<()> {
-    let skill_dir = ws_dir.join(".agents").join("skills").join(name);
-    std::fs::create_dir_all(&skill_dir)?;
-    let skill_path = skill_dir.join("SKILL.md");
-    if skill_path.exists() {
-        return Ok(());
-    }
-    std::fs::write(&skill_path, portable_skill(name, src))?;
-    Ok(())
-}
 
 /// Rewrite a Claude skill into the portable Agent-Skills shape: a `name:` +
 /// `description:` header (dropping `allowed-tools`, which not every agent
@@ -207,18 +278,6 @@ fn split_frontmatter(src: &str) -> (String, &str) {
     (description, body)
 }
 
-/// Write the workspace `AGENTS.md` — the cross-agent context file Codex reads
-/// from a task's cwd and pi walks up to find (Claude reads it too). Points at
-/// the tenx skill and states the task-boundary rule up front.
-fn install_agents_md(ws_dir: &std::path::Path) -> Result<()> {
-    let path = ws_dir.join("AGENTS.md");
-    if path.exists() {
-        return Ok(());
-    }
-    std::fs::write(&path, AGENTS_MD)?;
-    Ok(())
-}
-
 const AGENTS_MD: &str = r#"# Working in this tenx workspace
 
 This directory is a **tenx** workspace: one or more bare git repos, and a
@@ -250,16 +309,6 @@ after `gh pr create`; record decisions and gotchas under `## Notes`.
 The `/tenx` skill (in `.agents/skills/tenx`) has the full detail on tasks,
 tickets, and secrets.
 "#;
-
-fn install_standup_skill(ws_dir: &std::path::Path) -> Result<()> {
-    let skill_dir = ws_dir.join(".claude").join("skills").join("standup");
-    std::fs::create_dir_all(&skill_dir)?;
-    let skill_path = skill_dir.join("SKILL.md");
-    if !skill_path.exists() {
-        std::fs::write(&skill_path, STANDUP_SKILL_MD)?;
-    }
-    Ok(())
-}
 
 const STANDUP_SKILL_MD: &str = r#"---
 description: Generate a daily standup report from yesterday's Claude Code activity and workspace task files. Use when the user asks for a standup, daily summary, or what was done yesterday.
@@ -357,4 +406,66 @@ fn prompt(label: &str) -> Result<String> {
     let mut line = String::new();
     io::stdin().lock().read_line(&mut line)?;
     Ok(line.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tenx_core::skills::content_hash;
+
+    #[test]
+    fn every_current_rendering_is_listed_as_shipped() {
+        // Without its hash here, the next release couldn't recognise today's
+        // files as its own, and would leave them stale forever.
+        let missing: Vec<String> = skill_files(Path::new("/ws"))
+            .into_iter()
+            .map(|(path, content)| (path, content_hash(content.as_bytes())))
+            .filter(|(_, hash)| !SHIPPED_SKILLS.contains(hash))
+            .map(|(path, hash)| format!("    0x{hash:016x}, // {}", path.display()))
+            .collect();
+        assert!(missing.is_empty(), "skills changed — add to SHIPPED_SKILLS:\n{}", missing.join("\n"));
+    }
+
+    #[test]
+    fn refresh_replaces_stale_files_and_keeps_edited_ones() {
+        let ws = std::env::temp_dir().join(format!("tenx-skills-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&ws);
+        let files = skill_files(&ws);
+        let (stale, _) = &files[0];
+        let (edited, _) = &files[4];
+        std::fs::create_dir_all(stale.parent().unwrap()).unwrap();
+        // A rendering tenx shipped before: its hash is in the list.
+        let old = "an old skill\n";
+        assert!(!SHIPPED_SKILLS.contains(&content_hash(old.as_bytes())));
+        std::fs::write(stale, old).unwrap();
+        std::fs::write(edited, "my own AGENTS.md\n").unwrap();
+
+        // Not shipped → both edited, nothing touched; missing files not created.
+        let found = refresh_skills(&ws);
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().all(|(_, s, updated)| *s == SkillState::Edited && !updated));
+        assert!(!files[1].0.exists());
+
+        // Reset takes tenx's version and keeps the edited copy.
+        let replaced = reset_skills(&ws).unwrap();
+        assert_eq!(replaced.len(), 2);
+        assert_eq!(std::fs::read_to_string(edited).unwrap(), files[4].1);
+        assert_eq!(std::fs::read_to_string(ws.join("AGENTS.md.orig")).unwrap(), "my own AGENTS.md\n");
+        assert!(refresh_skills(&ws).iter().all(|(_, s, _)| *s == SkillState::Current));
+        std::fs::remove_dir_all(&ws).unwrap();
+    }
+
+    #[test]
+    fn a_shipped_old_version_is_refreshed() {
+        let ws = std::env::temp_dir().join(format!("tenx-skills-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&ws);
+        let (path, current) = skill_files(&ws).swap_remove(0);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // The /tenx skill as it shipped before `need` existed.
+        let old = current.replace("tenx secrets need", "tenx secrets decrypt");
+        std::fs::write(&path, &old).unwrap();
+        let shipped: Vec<u64> = SHIPPED_SKILLS.iter().copied().chain([content_hash(old.as_bytes())]).collect();
+        assert_eq!(skill_state(&old, &current, &shipped), SkillState::Stale);
+        std::fs::remove_dir_all(&ws).unwrap();
+    }
 }

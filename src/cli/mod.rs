@@ -58,8 +58,14 @@ pub enum Commands {
         #[command(subcommand)]
         command: AgentCommands,
     },
-    /// Report agent integration health: binaries, versions, hooks, tmux options
-    Doctor,
+    /// Report agent integration health: binaries, versions, hooks, tmux
+    /// options, and whether each workspace's installed skills are current
+    Doctor {
+        /// Replace installed skill files you edited with tenx's current
+        /// version, keeping your copy beside each as <file>.orig
+        #[arg(long)]
+        reset_skills: bool,
+    },
     /// Manage per-task encrypted secrets (age + sops)
     ///
     /// Commands are named and behave like their `sops` equivalents:

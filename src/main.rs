@@ -61,7 +61,7 @@ fn run() -> Result<()> {
             }
         },
 
-        Some(Commands::Doctor) => cli::doctor::run()?,
+        Some(Commands::Doctor { reset_skills }) => cli::doctor::run(reset_skills)?,
 
         Some(Commands::Internal { command }) => match command {
             InternalCommands::TmuxConf => print!("{}", tmux::render_config()),
@@ -191,6 +191,12 @@ fn open() -> Result<()> {
     // step. Sentinel-guarded (see `auto_setup`), so it runs once and never
     // fights a user who later removes an integration.
     cli::session_event::auto_setup();
+
+    // Skills `tenx init` installed are refreshed to this binary's version,
+    // in every registered workspace — untouched ones only; an edited file is
+    // left alone and reported by `tenx doctor`. A few small reads per
+    // workspace, silent.
+    cli::init::refresh_all_skills();
 
     if tmux::inside_tenx_session() {
         // Already inside the session (the client's embedded terminal, or a

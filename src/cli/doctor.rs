@@ -8,7 +8,7 @@
 use crate::agent::AgentKind;
 use anyhow::Result;
 
-pub fn run() -> Result<()> {
+pub fn run(reset_skills: bool) -> Result<()> {
     println!("tenx doctor\n");
 
     println!("Agents:");
@@ -46,7 +46,52 @@ pub fn run() -> Result<()> {
     println!("\nAgent panes:");
     report_agent_panes();
 
+    println!("\nWorkspace skills:");
+    report_skills(reset_skills)?;
+
     Ok(())
+}
+
+/// Refresh every registered workspace's installed skills (the same pass a
+/// launch runs) and say where each stands; with `reset`, first replace the
+/// edited ones (`cli::init::reset_skills`).
+fn report_skills(reset: bool) -> Result<()> {
+    use tenx_core::skills::SkillState;
+    let workspaces = crate::workspace::registered_workspaces();
+    let mut edited_any = false;
+    for ws in &workspaces {
+        if reset {
+            for path in crate::cli::init::reset_skills(&ws.dir)? {
+                println!("  {:<16} replaced {} (yours kept as .orig)", ws.config.name, rel(&ws.dir, &path));
+            }
+        }
+        let found = crate::cli::init::refresh_skills(&ws.dir);
+        if found.is_empty() {
+            println!("  {:<16} none installed", ws.config.name);
+            continue;
+        }
+        let updated: Vec<String> = found.iter().filter(|(_, _, u)| *u).map(|(p, _, _)| rel(&ws.dir, p)).collect();
+        let edited: Vec<String> =
+            found.iter().filter(|(_, s, _)| *s == SkillState::Edited).map(|(p, _, _)| rel(&ws.dir, p)).collect();
+        let failed = found.iter().any(|(_, s, u)| *s == SkillState::Stale && !u);
+        let mut line = if updated.is_empty() { "current ✓".to_string() } else { format!("updated {}", updated.join(", ")) };
+        if !edited.is_empty() {
+            edited_any = true;
+            line.push_str(&format!(" · edited, left alone: {}", edited.join(", ")));
+        }
+        if failed {
+            line.push_str(" · couldn't rewrite a stale file (permissions?)");
+        }
+        println!("  {:<16} {line}", ws.config.name);
+    }
+    if edited_any {
+        println!("  (to take tenx's current version of an edited file: tenx doctor --reset-skills)");
+    }
+    Ok(())
+}
+
+fn rel(base: &std::path::Path, path: &std::path::Path) -> String {
+    path.strip_prefix(base).unwrap_or(path).display().to_string()
 }
 
 /// The agent's `--version`, first line, trimmed.

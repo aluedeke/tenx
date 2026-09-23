@@ -13,6 +13,7 @@ pub mod progress;
 pub mod column;
 pub mod secrets;
 pub mod session_event;
+pub mod skills;
 pub mod slug;
 pub mod status;
 pub mod sweep;
