@@ -10,7 +10,7 @@ jobs:
   commits:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Check commit messages
@@ -31,10 +31,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - uses: actions/checkout@v6
+      # The version pinned in rust-toolchain.toml, with its components.
+      - name: Install Rust
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       # The e2e test drives a throwaway tmux server (tests/e2e_tmux.rs).
       - name: Install tmux

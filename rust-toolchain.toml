@@ -1,0 +1,9 @@
+# The one Rust every build uses — local `cargo`, CI, and the release builds
+# (rustup reads this file). Pinned rather than "stable" so a new Rust release
+# can't turn main red on its own: clippy runs with -D warnings, and each
+# release adds lints. Upgrading is a deliberate commit: bump the version, fix
+# what the new clippy flags, and CI checks it like any other change.
+[toolchain]
+channel = "1.98.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
