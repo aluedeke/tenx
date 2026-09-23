@@ -8,7 +8,7 @@ jobs:
   # Every commit message must be a Conventional Commit (scripts/check-commit-msg.sh):
   # the subject becomes the changelog and the type decides the version bump.
   commits:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -28,7 +28,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # Pinned images, not *-latest: the image decides the tmux the e2e test
+        # drives (apt's on Ubuntu), so it moves only when we move it — like
+        # the Rust version in rust-toolchain.toml. GitHub retires images
+        # after ~2 years; bump then.
+        os: [ubuntu-24.04, macos-26]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
