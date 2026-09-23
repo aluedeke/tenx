@@ -37,6 +37,11 @@ pub trait TaskScreen {
     fn take_bell(&self) -> bool;
     fn take_clipboard(&self) -> Vec<String>;
     fn kill(&mut self);
+    /// The pid of the program running in it — the embedded `tmux attach`,
+    /// which is how the client finds its own tmux client to aim a popup at.
+    fn pid(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// Paint a `vt100` screen into `area` with `tui-term`'s widget, cursor
@@ -161,6 +166,10 @@ impl TaskScreen for EmbeddedTerminal {
 
     fn kill(&mut self) {
         let _ = self.child.kill();
+    }
+
+    fn pid(&self) -> Option<u32> {
+        self.child.process_id()
     }
 }
 

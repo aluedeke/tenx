@@ -610,6 +610,35 @@ pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, ses
     run(&["split-window", "-d", "-v", "-l", "12", "-t", window_id, "-c", cwd, &command]).map(drop)
 }
 
+// ── Popups ────────────────────────────────────────────────────────────────────
+
+/// The name of the tmux client whose process is `pid` — the tenx client's
+/// own embedded `tmux attach`, so a popup lands in front of the person who
+/// asked for it and not on some other attached terminal.
+pub fn client_by_pid(pid: u32) -> Option<String> {
+    let out = run(&["list-clients", "-F", "#{client_pid} #{client_name}"]).ok()?;
+    out.lines().find_map(|l| {
+        let (p, name) = l.split_once(' ')?;
+        (p.parse::<u32>().ok()? == pid).then(|| name.to_string())
+    })
+}
+
+/// Run `tenx <args>` in a popup over `client`, in `cwd`, titled `title`.
+/// Blocks until the popup closes (`-E`: when the command exits) and returns
+/// the command's exit status — so call it off the drawing thread: the
+/// client's own loop is what forwards keystrokes into the popup.
+pub fn popup_tenx(client: &str, cwd: &str, title: &str, tenx_bin: &str, args: &str) -> Result<i32> {
+    let command = format!("{} {args}", tenx_cmd(tenx_bin));
+    let status = cmd()
+        .args(["display-popup", "-c", client, "-E", "-d", cwd, "-w", "80%", "-h", "70%", "-T", title, &command])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("run tmux display-popup")?;
+    Ok(status.code().unwrap_or(1))
+}
+
 // ── Current window ────────────────────────────────────────────────────────────
 
 /// The name of the session's current window (`None` for the home window

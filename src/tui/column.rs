@@ -537,6 +537,17 @@ impl Column {
         self.pending_unlock.take()
     }
 
+    /// The task a `take_unlock` names, looked up now.
+    pub(super) fn unlock_task(&self, ws_idx: usize, slug: &str) -> Option<workspace::Task> {
+        self.workspaces.get(ws_idx)?.find_task(slug).ok()
+    }
+
+    /// Say something in the footer — how the client reports an outcome that
+    /// arrived from off the key path (an unlock popup closing).
+    pub(super) fn set_status(&mut self, msg: String) {
+        self.status_msg = Some(msg);
+    }
+
     /// A column with no workspaces and no rows, touching nothing outside the
     /// process — `new` fills it from the registry; the screenshot test fills
     /// it with fixtures.
@@ -2522,7 +2533,9 @@ fn subseq_match(needle: &str, haystack: &str) -> bool {
     true
 }
 
-/// Suspend the TUI to run the real, interactive secrets fulfillment —
+/// The fallback unlock, for when the client can't aim a tmux popup at its
+/// own attach (`Client::start_unlock` is the normal path): suspend the TUI
+/// to run the real, interactive secrets fulfillment —
 /// leaves raw mode and the alternate screen so `age`'s passphrase prompt (and
 /// `set`'s own value prompt) reach this pane's *real* controlling terminal
 /// (which is unaffected by raw-mode/alt-screen state either way, but the

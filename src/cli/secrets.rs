@@ -261,7 +261,7 @@ pub fn set_in(ws: &Workspace, task: &Task, name: &str, wait: Option<Duration>) -
     // plaintext in place): release it in the same unlock.
     let release = queued_on(task, name).is_some() || released_at(task, name).is_some();
     let values = [(name.to_string(), value)];
-    with_unlocked(ws, |id| if release { seal_and_release(id, task, &values, &[]) } else { seal(id, task, &values) })?;
+    with_unlocked(ws, true, |id| if release { seal_and_release(id, task, &values, &[]) } else { seal(id, task, &values) })?;
     if !release {
         eprintln!("  released to the task when someone asks for it: tenx secrets need {name}");
     }
@@ -313,19 +313,30 @@ pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>, wait: Option<
         None if !pending.is_empty() => Some(pending),
         None => None,
     };
-    let released = with_unlocked(ws, |id| release(id, task, want.as_deref()))?;
+    let released = with_unlocked(ws, false, |id| release(id, task, want.as_deref()))?;
     Queue::Release.remove(task, &released)
 }
 
 // ── Answering ───────────────────────────────────────────────────────────────
 
 /// Answer everything pending for the current task (resolved from cwd) in one
-/// sitting — see module docs, *Answering*.
-pub fn fulfill() -> Result<()> {
-    let cwd = env::current_dir()?;
-    let ws = workspace::find(&cwd)?;
-    let task = current_task(&ws, &cwd)?;
-    fulfill_in(&ws, &task)
+/// sitting — see module docs, *Answering*. With `hold`, wait for Enter
+/// before returning: the column runs this in a popup that closes when it
+/// exits, and the outcome should be readable first.
+pub fn fulfill(hold: bool) -> Result<()> {
+    let result = (|| {
+        let cwd = env::current_dir()?;
+        let ws = workspace::find(&cwd)?;
+        let task = current_task(&ws, &cwd)?;
+        fulfill_in(&ws, &task)
+    })();
+    if hold {
+        if let Err(e) = &result {
+            eprintln!("\ntenx: {e}");
+        }
+        let _ = read_tty_line("\npress Enter to close");
+    }
+    result
 }
 
 /// Same as [`fulfill`], for an explicit workspace/task — what the column's
@@ -395,7 +406,7 @@ pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
     if values.is_empty() && to_release.is_empty() {
         return Ok(());
     }
-    with_unlocked(ws, |id| seal_and_release(id, task, &values, &to_release))
+    with_unlocked(ws, !values.is_empty(), |id| seal_and_release(id, task, &values, &to_release))
 }
 
 /// Refuse pending requests for the current task (resolved from cwd), with
@@ -543,9 +554,27 @@ fn reroute(task: &Task) -> Result<()> {
 }
 
 /// Resolve the identity and unwrap it once for everything `f` does — the
-/// single passphrase prompt of a sitting.
-fn with_unlocked<T>(ws: &Workspace, f: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
-    let identity = resolve_identity_path(ws)?;
+/// single passphrase prompt of a sitting. With `may_create` (the sitting
+/// seals a new value, which any identity can do) and nothing to resolve, a
+/// human is offered one on the spot rather than sent off to `tenx secrets
+/// init` with what they just typed thrown away. Not for a release alone: a
+/// fresh identity can't open anything sealed before it existed.
+fn with_unlocked<T>(ws: &Workspace, may_create: bool, f: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
+    let identity = match resolve_identity_path(ws) {
+        Ok(path) => path,
+        Err(e) if may_create && ws.config.age_identity.is_none() && tty_available() => {
+            let target = workspace::home_dir()?.join(".config").join("age").join("keys.txt");
+            eprintln!("\nno age identity yet — tenx seals secrets to one, kept at {}", target.display());
+            let answer = read_tty_line("create it now, protected by a passphrase you choose? [Y/n]")?;
+            if !matches!(answer.trim().to_lowercase().as_str(), "" | "y" | "yes") {
+                return Err(e);
+            }
+            generate_identity(&target)?;
+            eprintln!("✓ created {} — now unlock it once more to seal:", target.display());
+            target
+        }
+        Err(e) => return Err(e),
+    };
     with_plain_identity(&identity, f)
 }
 
@@ -805,6 +834,9 @@ fn run_sops_set(identity_file: &Path, bundle: &Path, name: &str, value: &str) ->
     Ok(())
 }
 
+/// How many times a sitting asks for the passphrase before giving up.
+const PASSPHRASE_ATTEMPTS: u32 = 3;
+
 /// Run `f` with a plain (non-passphrase-protected) identity file `sops` can
 /// consume via `SOPS_AGE_KEY_FILE` — `identity` itself if it's already one,
 /// or a one-time-use plain copy unwrapped from it (passphrase prompted on
@@ -824,20 +856,29 @@ fn with_plain_identity<T>(identity: &Path, f: impl FnOnce(&Path) -> Result<T>) -
     let tmp_identity = tmp_dir.join("identity");
 
     let result = (|| -> Result<T> {
-        let status = Command::new("age")
-            .arg("-d")
-            .arg("-o")
-            .arg(&tmp_identity)
-            .arg(identity)
-            .stdin(Stdio::inherit()) // passphrase prompt reaches the real terminal
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("run age -d (identity)")?;
-        if !status.success() {
-            bail!("failed to decrypt the identity (wrong passphrase?)");
+        // A mistyped passphrase gets another go (as `sudo` gives one) rather
+        // than ending the sitting — everything typed before this point, the
+        // values included, would be lost with it.
+        for attempt in 1..=PASSPHRASE_ATTEMPTS {
+            let status = Command::new("age")
+                .arg("-d")
+                .arg("-o")
+                .arg(&tmp_identity)
+                .arg(identity)
+                .stdin(Stdio::inherit()) // passphrase prompt reaches the real terminal
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit())
+                .status()
+                .context("run age -d (identity)")?;
+            if status.success() {
+                return f(&tmp_identity);
+            }
+            if attempt == PASSPHRASE_ATTEMPTS || !tty_available() {
+                break;
+            }
+            eprintln!("try again ({} of {PASSPHRASE_ATTEMPTS}):", attempt + 1);
         }
-        f(&tmp_identity)
+        bail!("failed to decrypt the identity (wrong passphrase?) — nothing was changed")
     })();
 
     let _ = std::fs::remove_dir_all(&tmp_dir); // shred immediately, success or not

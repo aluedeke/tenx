@@ -28,6 +28,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 use std::io;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use super::column::{self, ClientRequest, Column};
@@ -57,6 +58,9 @@ pub(super) struct Client {
     size: (u16, u16),
     last_refresh: Instant,
     quit: bool,
+    /// An unlock popup in flight: the task's slug, and where its thread
+    /// reports the popup's exit status once it closes (`start_unlock`).
+    unlock: Option<(String, mpsc::Receiver<Result<i32, String>>)>,
 }
 
 impl Client {
@@ -76,6 +80,7 @@ impl Client {
             size: (cols, rows),
             last_refresh: Instant::now(),
             quit: false,
+            unlock: None,
         };
         let (r, w) = c.term_size();
         term.resize(r, w);
@@ -134,6 +139,66 @@ impl Client {
     fn focus_column(&mut self) {
         self.focus = Focus::Column;
         self.column.select_current();
+    }
+
+    /// Answer a task's pending secrets in a tmux popup over this client's
+    /// own tmux attach (`cli::secrets::fulfill` with `--hold`), the column
+    /// staying drawn and live behind it. The popup is a terminal of its own —
+    /// none of the modes the client set on the real one (bracketed paste,
+    /// mouse, the alternate screen) reach its prompts. `display-popup` blocks
+    /// until it closes, and it is this loop that forwards keys into it, so it
+    /// runs on a thread; `poll_unlock` picks up the result. `false` when a
+    /// popup can't be aimed (no tmux client found for the embedded
+    /// terminal), so the caller falls back to `column::run_unlock`.
+    fn start_unlock(&mut self, ws_idx: usize, slug: &str) -> bool {
+        if self.unlock.is_some() {
+            self.column.set_status("an unlock is already open".into());
+            return true;
+        }
+        let Some(task) = self.column.unlock_task(ws_idx, slug) else { return false };
+        let Some(tmux_client) = self.term.pid().and_then(crate::tmux::client_by_pid) else { return false };
+        let Ok(bin) = crate::tmux::self_bin() else { return false };
+        let (tx, rx) = mpsc::channel();
+        let title = format!(" secrets · {} ", task.display_name);
+        std::thread::spawn(move || {
+            let result = crate::tmux::popup_tenx(
+                &tmux_client,
+                &task.path.to_string_lossy(),
+                &title,
+                &bin.to_string_lossy(),
+                "secrets fulfill --hold",
+            );
+            let _ = tx.send(result.map_err(|e| e.to_string()));
+        });
+        self.unlock = Some((slug.to_string(), rx));
+        // The popup takes keys through the terminal.
+        self.handle_request(ClientRequest::FocusTerminal);
+        true
+    }
+
+    /// Once the unlock popup has closed: back to the column, with the rows
+    /// rebuilt so the task leaves SECRETS PENDING, and the outcome in the
+    /// footer.
+    fn poll_unlock(&mut self) {
+        let Some((slug, rx)) = &self.unlock else { return };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err("the popup thread went away".into()),
+        };
+        let slug = slug.clone();
+        self.unlock = None;
+        self.column.rebuild_rows();
+        if !self.column_shown {
+            self.show_column();
+        } else {
+            self.focus_column();
+        }
+        self.column.set_status(match result {
+            Ok(0) => format!("secrets answered for '{slug}'"),
+            Ok(_) => format!("unlock for '{slug}' didn't finish — tenx secrets status"),
+            Err(e) => format!("unlock popup failed: {e}"),
+        });
     }
 
     fn hide_column(&mut self) {
@@ -418,9 +483,12 @@ fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<(
         // The unlock names its workspace by index into the column's list;
         // serve it before the tick, whose slow refresh may reload that list
         // (a workspace registered meanwhile) and renumber it.
-        if let Some((ws_idx, slug)) = client.column.take_unlock() {
+        if let Some((ws_idx, slug)) = client.column.take_unlock()
+            && !client.start_unlock(ws_idx, &slug)
+        {
             column::run_unlock(terminal, &mut client.column, ws_idx, &slug)?;
         }
+        client.poll_unlock();
         client.tick();
         if client.term.take_bell() {
             let _ = execute!(io::stdout(), Print("\x07"));

@@ -84,7 +84,7 @@ fn run() -> Result<()> {
             SecretsCommands::Decrypt { name, no_wait, timeout } => {
                 cli::secrets::decrypt(name.as_deref(), secrets_wait(no_wait, timeout.as_deref())?)?
             }
-            SecretsCommands::Fulfill => cli::secrets::fulfill()?,
+            SecretsCommands::Fulfill { hold } => cli::secrets::fulfill(hold)?,
             SecretsCommands::Deny { names, note } => cli::secrets::deny(&names, note.as_deref())?,
             SecretsCommands::Cancel { name, all: _ } => cli::secrets::cancel(name.as_deref())?,
             SecretsCommands::Status => cli::secrets::status()?,

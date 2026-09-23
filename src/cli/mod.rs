@@ -217,7 +217,12 @@ pub enum SecretsCommands {
     /// request, then takes the passphrase once to seal the new values and
     /// release every granted name. What `u` in the column runs. Needs a real
     /// terminal.
-    Fulfill,
+    Fulfill {
+        /// Wait for Enter before exiting, so the outcome can be read — for
+        /// the column's unlock popup, which closes when this exits
+        #[arg(long, hide = true)]
+        hold: bool,
+    },
     /// Refuse pending requests for the current task (task resolved from cwd)
     ///
     /// The waiting agent is told, with your note. `fulfill` asks the same
