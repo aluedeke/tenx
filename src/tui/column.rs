@@ -327,6 +327,8 @@ enum Mode {
     EditRepos(EditReposForm),
     Confirm(Confirm),
     Rename(RenameForm),
+    /// `?` / `:help` — every key, from `KEYS`; the u16 is the scroll offset.
+    Help(u16),
 }
 
 /// What the column asks the client to do, since it cannot move focus or
@@ -1085,6 +1087,7 @@ impl Column {
             EditRepos,
             Confirm,
             Rename,
+            Help,
         }
         let kind = match self.mode {
             Mode::List => Kind::List,
@@ -1095,6 +1098,7 @@ impl Column {
             Mode::EditRepos(_) => Kind::EditRepos,
             Mode::Confirm(_) => Kind::Confirm,
             Mode::Rename(_) => Kind::Rename,
+            Mode::Help(_) => Kind::Help,
         };
         let close = match kind {
             Kind::List => self.handle_list_key(key),
@@ -1108,6 +1112,10 @@ impl Column {
                 Ok(false)
             }
             Kind::Rename => self.handle_rename_key(key),
+            Kind::Help => {
+                self.handle_help_key(key);
+                Ok(false)
+            }
         }?;
         // The column stays; a quit key means "back to the task".
         if close {
@@ -1232,9 +1240,28 @@ impl Column {
                 self.status_msg = None;
                 self.mode = Mode::Command(String::new());
             }
+            KeyCode::Char('?') => self.mode = Mode::Help(0),
             _ => {}
         }
         Ok(false)
+    }
+
+    /// The help overlay scrolls like a pager; any other key closes it, so it
+    /// never swallows the key you went to it to look up for more than once.
+    fn handle_help_key(&mut self, key: KeyEvent) {
+        let Mode::Help(scroll) = &mut self.mode else { return };
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => *scroll = scroll.saturating_add(1),
+            KeyCode::Char('k') | KeyCode::Up => *scroll = scroll.saturating_sub(1),
+            KeyCode::Char('d') if ctrl => *scroll = scroll.saturating_add(10),
+            KeyCode::Char('u') if ctrl => *scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown | KeyCode::Char(' ') => *scroll = scroll.saturating_add(10),
+            KeyCode::PageUp => *scroll = scroll.saturating_sub(10),
+            KeyCode::Char('g') | KeyCode::Home => *scroll = 0,
+            KeyCode::Char('G') | KeyCode::End => *scroll = u16::MAX,
+            _ => self.mode = Mode::List,
+        }
     }
 
     fn require_tasks(&mut self) -> bool {
@@ -1322,6 +1349,10 @@ impl Column {
             // `:n` works from either tab — it uses the selected item's workspace.
             "n" | "new" => {
                 self.start_create();
+                return Ok(false);
+            }
+            "h" | "help" | "?" | "keys" => {
+                self.mode = Mode::Help(0);
                 return Ok(false);
             }
             "" => return Ok(false),
@@ -2564,6 +2595,8 @@ pub(super) fn render_in(f: &mut ratatui::Frame, column: &mut Column, area: Rect)
         render_newws(f, column, area);
     } else if matches!(column.mode, Mode::EditRepos(_)) {
         render_editrepos(f, column, area);
+    } else if matches!(column.mode, Mode::Help(_)) {
+        render_help(f, column, area);
     } else {
         render_list(f, column, area);
     }
@@ -2858,7 +2891,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
             ];
             if buf.is_empty() {
                 spans.push(Span::styled(
-                    "  new · open · delete · rename · close · hide · quit",
+                    "  new · open · delete · rename · close · help · quit",
                     Style::default().fg(palette::MUTED.color()),
                 ));
             }
@@ -2896,15 +2929,156 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
                     " closed · ⏎ open · ↓↑ move"
                 }
                 (InputMode::Normal, Tab::Tasks) if column.another_needs_you() => " n needs you · ⏎ open · ^n new",
-                (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · ^n new · x close",
-                (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab",
-                (InputMode::Normal, Tab::Work) if column.jobs.is_empty() => " gt tab",
+                (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · ^n new · ? keys",
+                (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab · ? keys",
+                (InputMode::Normal, Tab::Work) if column.jobs.is_empty() => " gt tab · ? keys",
                 (InputMode::Normal, Tab::Work) => " dd dismiss · gt tab",
             };
             Line::from(vec![Span::styled(tag, tag_style), Span::styled(hint, Style::default().fg(palette::MUTED.color()))])
         }
     };
     f.render_widget(Paragraph::new(footer), chunks[3]);
+}
+
+// ── Help (`?`, `:help`) ──────────────────────────────────────────────────────
+
+/// Every key the column answers to, by section, for the `?` overlay. Keep it
+/// in step with `handle_*_key`, `run_command` and the README's key table.
+const KEYS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "anywhere",
+        &[
+            ("^w", "into the column / hide it"),
+            ("?", "this help (list mode)"),
+            (":", "command line"),
+        ],
+    ),
+    (
+        "search field",
+        &[
+            ("type", "filter"),
+            ("⏎", "open the top match"),
+            ("↓ ↑ ^j ^k", "into the list at your task"),
+            ("esc", "into the list"),
+            ("⇥ ⇧⇥", "switch tab"),
+            ("^n", "new task"),
+        ],
+    ),
+    (
+        "list",
+        &[
+            ("j k ↓ ↑", "move"),
+            ("gg G", "top / bottom"),
+            ("⏎ o l", "open task"),
+            ("n", "next task that needs you"),
+            ("A D", "approve / deny permission"),
+            ("u", "unlock pending secrets"),
+            ("^n", "new task"),
+            ("r", "rename"),
+            ("e", "edit repos"),
+            ("x", "close window"),
+            ("dd", "delete (Work tab: dismiss)"),
+            ("a", "add repo (Repos tab)"),
+            ("W", "new workspace"),
+            ("i /", "search field"),
+            ("⇥ gt gT", "switch tab (⇧⇥ back)"),
+            ("esc q ^c", "back to the task"),
+        ],
+    ),
+    (
+        "commands",
+        &[
+            (":n", "new task (:new)"),
+            (":o", "open task (:open)"),
+            (":r", "rename"),
+            (":e", "edit repos (:edit-repos)"),
+            (":x", "close window (:close)"),
+            (":u", "unlock secrets (:unlock)"),
+            (":cancel", "withdraw secrets request"),
+            (":a", "approve (:approve)"),
+            (":deny", "deny permission"),
+            (":d :rm", "delete task"),
+            (":next", "next needing you"),
+            (":agent", "show / set agent [kind]"),
+            (":init", "new workspace [path]"),
+            (":tasks", "Tasks tab (:repos :work)"),
+            (":hide", "hide the column"),
+            (":q :q!", "quit client"),
+            (":help", "this help"),
+        ],
+    ),
+    (
+        "forms",
+        &[
+            ("⇥ ↓ ⇧⇥ ↑", "next / previous field"),
+            ("← →", "cycle workspace / agent"),
+            ("space", "toggle"),
+            ("⏎", "submit"),
+            ("esc", "cancel"),
+        ],
+    ),
+];
+
+/// The `KEYS` table as lines: a section heading, then `key  action` rows
+/// with the keys padded to the widest in the table so the actions align.
+fn help_lines() -> Vec<Line<'static>> {
+    let key_w = KEYS
+        .iter()
+        .flat_map(|(_, rows)| rows.iter())
+        .map(|(k, _)| k.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut lines = Vec::new();
+    for (i, (section, rows)) in KEYS.iter().enumerate() {
+        if i > 0 {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            format!(" {section}"),
+            Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD),
+        )));
+        for (key, action) in rows.iter() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {key:<key_w$}  "),
+                    Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(*action),
+            ]));
+        }
+    }
+    lines
+}
+
+fn render_help(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(area);
+    let lines = help_lines();
+    // Clamp here, where the height is known, so `G` (u16::MAX) lands on the
+    // last page and `k` from there moves at once.
+    let visible = chunks[0].height.saturating_sub(2);
+    let max = (lines.len() as u16).saturating_sub(visible);
+    let scroll = match &mut column.mode {
+        Mode::Help(s) => {
+            *s = (*s).min(max);
+            *s
+        }
+        _ => 0,
+    };
+    let body = Paragraph::new(lines)
+        .scroll((scroll, 0))
+        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" keys "));
+    f.render_widget(body, chunks[0]);
+    let more = if scroll < max { " ↓ more" } else { "" };
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            format!(" j/k scroll · any key closes{more}"),
+            Style::default().fg(palette::MUTED.color()),
+        ))),
+        chunks[1],
+    );
 }
 
 /// The footer's mode tag: INSERT on green, NORMAL on blue.
@@ -3471,6 +3645,42 @@ mod tests {
 
     fn selected_slug(c: &Column) -> &str {
         c.selected_row().map(|r| r.slug.as_str()).unwrap_or("")
+    }
+
+    /// `?` from the list and `:help` both open the key overlay; scrolling
+    /// stays inside it, any other key closes it without acting on it.
+    #[test]
+    fn question_mark_and_help_command_open_the_key_overlay() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap(); // → list
+        let before = selected_slug(&c).to_string();
+        c.handle_key(plain('?')).unwrap();
+        assert!(matches!(c.mode, Mode::Help(0)));
+        c.handle_key(plain('j')).unwrap();
+        assert!(matches!(c.mode, Mode::Help(1)));
+        c.handle_key(plain('x')).unwrap(); // closes; must not close a window
+        assert!(matches!(c.mode, Mode::List));
+        assert_eq!(selected_slug(&c), before);
+
+        for ch in ":help".chars() {
+            c.handle_key(plain(ch)).unwrap();
+        }
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert!(matches!(c.mode, Mode::Help(_)));
+    }
+
+    /// The overlay lives in a ~36-cell column: keep the key column narrow
+    /// enough that every action still has room to be read.
+    #[test]
+    fn help_keys_fit_the_column() {
+        for (_, rows) in KEYS {
+            for (key, action) in rows.iter() {
+                assert!(key.chars().count() <= 10, "key label too wide: {key}");
+                assert!(action.chars().count() <= 26, "action too long: {action}");
+            }
+        }
+        assert!(!help_lines().is_empty());
     }
 
     /// `n` cycles through the tasks that need you — the blocked one, the
