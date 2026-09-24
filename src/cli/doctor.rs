@@ -2,7 +2,8 @@
 //! reading the wrong state has one place to explain itself. Reports, per agent,
 //! whether its binary is on PATH and its version, and whether tenx's session
 //! integration is installed; then the tmux options the non-Claude TUIs need;
-//! then any pane running an agent that isn't reporting to tenx's registry
+//! then whether the client's terminal reports Shift+Enter; then any pane
+//! running an agent that isn't reporting to tenx's registry
 //! (usually a Codex hook awaiting its one-time `/hooks` trust).
 
 use crate::agent::AgentKind;
@@ -39,6 +40,7 @@ pub fn run(reset_skills: bool) -> Result<()> {
     if crate::tmux::server_running() {
         report_tmux_option("extended-keys", "on");
         report_tmux_option("allow-passthrough", "on");
+        report_keyboard();
     } else {
         println!("  not running (start it with: tenx)");
     }
@@ -119,6 +121,13 @@ fn report_tmux_option(name: &str, want: &str) {
         Some(v) => println!("  {name} = {v} (expected {want}; restart: tmux -L tenx kill-server then tenx)"),
         None => println!("  {name} unset (expected {want}; restart: tmux -L tenx kill-server then tenx)"),
     }
+}
+
+/// Whether Shift+Enter can reach an agent, from what the client recorded
+/// (`tenx_core::keyboard`).
+fn report_keyboard() {
+    let recorded = crate::tmux::show_global_option(crate::tmux::KEYBOARD_OPTION);
+    println!("  {}", tenx_core::keyboard::doctor_line(recorded.as_deref()));
 }
 
 /// Panes whose foreground process is a coding agent, and whether a session

@@ -8,6 +8,7 @@
 
 pub mod codex;
 pub mod dialog;
+pub mod keyboard;
 pub mod live;
 pub mod progress;
 pub mod column;
