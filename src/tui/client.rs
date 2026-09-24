@@ -20,7 +20,8 @@ use anyhow::{Context, Result};
 use crossterm::{
     event::{
         self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste, EnableFocusChange,
-        EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent,
+        EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers, KeyboardEnhancementFlags, MouseEvent,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     style::Print,
@@ -436,18 +437,33 @@ pub fn run() -> Result<()> {
     let orig = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
+        let _ = execute!(io::stderr(), PopKeyboardEnhancementFlags);
         let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste);
         orig(info);
     }));
     enable_raw_mode()?;
+    // A legacy terminal sends Shift+Enter as a bare `\r`, indistinguishable
+    // from Enter, so agents in the task pane could never get a newline. The
+    // kitty keyboard protocol's first level reports the modifier; terminals
+    // without it (Terminal.app) keep sending `\r`.
+    let enhanced = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
+    let terminal_name = std::env::var("TERM_PROGRAM").or_else(|_| std::env::var("TERM")).unwrap_or_default();
+    let keyboard = format!("{} {terminal_name}", if enhanced { "kitty" } else { "legacy" });
+    let _ = crate::tmux::set_global_option(crate::tmux::KEYBOARD_OPTION, keyboard.trim_end());
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableFocusChange, EnableBracketedPaste)?;
+    if enhanced {
+        execute!(stdout, PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES))?;
+    }
     let backend = LinkBackend::new(CrosstermBackend::new(stdout));
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_client(&mut terminal);
 
     disable_raw_mode()?;
+    if enhanced {
+        execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags)?;
+    }
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, DisableFocusChange, DisableBracketedPaste)?;
     terminal.show_cursor()?;
     result

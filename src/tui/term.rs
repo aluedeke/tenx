@@ -333,6 +333,12 @@ pub fn encode_key(key: &KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
             out.extend_from_slice(c.encode_utf8(&mut b).as_bytes());
             out
         }
+        // Shift/Ctrl+Enter have no legacy encoding, so they go out as CSI u,
+        // which tmux (`extended-keys on`) parses and hands to the agent as the
+        // newline key. Plain `\r` would submit the prompt instead.
+        KeyCode::Enter if mods.intersects(KeyModifiers::SHIFT | KeyModifiers::CONTROL) => {
+            format!("\x1b[13;{}u", modifier(mods)).into_bytes()
+        }
         KeyCode::Enter => {
             if alt { vec![0x1b, b'\r'] } else { vec![b'\r'] }
         }
@@ -414,6 +420,9 @@ mod tests {
         assert_eq!(encode_key(&k(KeyCode::Delete, KeyModifiers::SHIFT), false), Some(b"\x1b[3;2~".to_vec()));
         assert_eq!(encode_key(&k(KeyCode::F(5), none), false), Some(b"\x1b[15~".to_vec()));
         assert_eq!(encode_key(&k(KeyCode::Enter, none), false), Some(b"\r".to_vec()));
+        assert_eq!(encode_key(&k(KeyCode::Enter, KeyModifiers::ALT), false), Some(b"\x1b\r".to_vec()));
+        assert_eq!(encode_key(&k(KeyCode::Enter, KeyModifiers::SHIFT), false), Some(b"\x1b[13;2u".to_vec()));
+        assert_eq!(encode_key(&k(KeyCode::Enter, KeyModifiers::CONTROL), false), Some(b"\x1b[13;5u".to_vec()));
     }
 
     #[test]

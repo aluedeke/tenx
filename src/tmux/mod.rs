@@ -74,6 +74,12 @@ pub const WINDOW_ID_FILE: &str = ".tenx-window-id";
 /// this, not on the name.
 pub const TASK_DIR_OPTION: &str = "@tenx_task_dir";
 
+/// What the last `tenx` client learned about its terminal's keyboard, as
+/// `kitty` or `legacy`, then the terminal's name (`legacy WezTerm`). Only the
+/// client can ask: `tenx doctor` runs inside a pane, where the terminal it
+/// sees is tmux.
+pub const KEYBOARD_OPTION: &str = "@tenx_keyboard";
+
 /// One tmux window as `list-windows` reports it.
 #[derive(Debug, Clone)]
 pub struct Window {
