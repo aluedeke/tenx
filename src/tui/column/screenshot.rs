@@ -8,6 +8,7 @@
 
 use super::*;
 use ratatui::backend::TestBackend;
+use ratatui::Terminal;
 use ratatui::buffer::Buffer;
 use ratatui::style::Color;
 use std::fmt::Write as _;

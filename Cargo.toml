@@ -39,8 +39,7 @@ libc = "0.2.189"
 # table ratatui's own Buffer rendering does — a mismatched table is exactly
 # the off-by-one-column bug `tenx-statusbar`'s CLAUDE.md notes already hit.
 unicode-width = "=0.2.0"
-tui-term = "0.2"
-vt100 = "0.15"
+alacritty_terminal = "0.26"
 portable-pty = "0.9"
 
 [dev-dependencies]

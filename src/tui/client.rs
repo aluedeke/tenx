@@ -32,7 +32,12 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use super::column::{self, ClientRequest, Column};
+use super::hyperlink::LinkBackend;
 use super::term::{EmbeddedTerminal, TaskScreen};
+
+/// The real terminal as the client draws it: links in the embedded screen
+/// go out as OSC 8 ([`super::hyperlink`]).
+pub(super) type ClientTerminal = Terminal<LinkBackend<CrosstermBackend<io::Stdout>>>;
 
 /// How often the column's rows refresh.
 const REFRESH: Duration = Duration::from_millis(500);
@@ -437,7 +442,7 @@ pub fn run() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableFocusChange, EnableBracketedPaste)?;
-    let backend = CrosstermBackend::new(stdout);
+    let backend = LinkBackend::new(CrosstermBackend::new(stdout));
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_client(&mut terminal);
@@ -448,7 +453,7 @@ pub fn run() -> Result<()> {
     result
 }
 
-fn run_client(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+fn run_client(terminal: &mut ClientTerminal) -> Result<()> {
     let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
 
     // The inner tmux must not think it is nested: `$TMUX` is this client's

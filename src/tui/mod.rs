@@ -1,8 +1,10 @@
 pub mod client;
 mod column;
+mod hyperlink;
 mod job;
 mod mouse;
 mod term;
+mod vt;
 
 /// `tenx task list --json`: dump every task across all registered workspaces
 /// as JSON, sorted by last agent activity (newest first) — the column's

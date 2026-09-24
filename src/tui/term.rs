@@ -3,8 +3,8 @@
 //! This is how `tenx client` shows the tmux session beside its own task
 //! list — the same trick arta and Tattoy use.
 //!
-//! The emulator (`vt100`, via `tui-term`'s widget) is the one thing here
-//! that could be swapped: every other piece — the pty, the reader thread,
+//! The emulator (`alacritty_terminal`, painted by [`super::vt`]) is the one
+//! thing here that could be swapped: every other piece — the pty, the reader thread,
 //! key and mouse encoding, the scanner that forwards bells and OSC 52
 //! clipboard writes to the real terminal — is emulator-agnostic.
 //!
@@ -20,6 +20,8 @@ use ratatui::layout::Rect;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+
+use super::vt::Vt;
 
 /// What the client needs from the task side: something that paints a
 /// screen, takes the keyboard and the mouse, and says when it is gone.
@@ -44,21 +46,8 @@ pub trait TaskScreen {
     }
 }
 
-/// Paint a `vt100` screen into `area` with `tui-term`'s widget, cursor
-/// left to the caller: where it belongs (absolute cell) if shown.
-pub fn render_screen(screen: &vt100::Screen, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
-    let mut cursor = tui_term::widget::Cursor::default();
-    cursor.hide();
-    ratatui::widgets::Widget::render(tui_term::widget::PseudoTerminal::new(screen).cursor(cursor), area, buf);
-    if screen.hide_cursor() {
-        return None;
-    }
-    let (row, col) = screen.cursor_position();
-    (row < area.height && col < area.width).then_some((area.x + col, area.y + row))
-}
-
 pub struct EmbeddedTerminal {
-    parser: Arc<Mutex<vt100::Parser>>,
+    vt: Arc<Mutex<Vt>>,
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
@@ -94,15 +83,15 @@ impl EmbeddedTerminal {
         let reader = pair.master.try_clone_reader().context("pty reader")?;
         let writer = pair.master.take_writer().context("pty writer")?;
 
-        let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
+        let vt = Arc::new(Mutex::new(Vt::new(rows, cols)));
         let alive = Arc::new(AtomicBool::new(true));
         let bell = Arc::new(AtomicBool::new(false));
         let clipboard = Arc::new(Mutex::new(Vec::new()));
         {
-            let (parser, alive, bell, clipboard) = (parser.clone(), alive.clone(), bell.clone(), clipboard.clone());
-            std::thread::spawn(move || reader_loop(reader, parser, alive, bell, clipboard));
+            let (vt, alive, bell, clipboard) = (vt.clone(), alive.clone(), bell.clone(), clipboard.clone());
+            std::thread::spawn(move || reader_loop(reader, vt, alive, bell, clipboard));
         }
-        Ok(EmbeddedTerminal { parser, writer, master: pair.master, child, alive, bell, clipboard })
+        Ok(EmbeddedTerminal { vt, writer, master: pair.master, child, alive, bell, clipboard })
     }
 
 }
@@ -119,34 +108,32 @@ impl TaskScreen for EmbeddedTerminal {
 
     fn resize(&mut self, rows: u16, cols: u16) {
         let _ = self.master.resize(size(rows, cols));
-        if let Ok(mut p) = self.parser.lock() {
-            p.set_size(rows, cols);
+        if let Ok(mut vt) = self.vt.lock() {
+            vt.resize(rows, cols);
         }
     }
 
     fn render(&self, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
-        let parser = self.parser.lock().ok()?;
-        render_screen(parser.screen(), area, buf)
+        self.vt.lock().ok()?.render(area, buf)
     }
 
     /// Honours the program's cursor-key mode.
     fn key_bytes(&self, key: &KeyEvent) -> Option<Vec<u8>> {
-        let app_cursor = self.parser.lock().map(|p| p.screen().application_cursor()).unwrap_or(false);
+        let app_cursor = self.vt.lock().map(|vt| vt.app_cursor()).unwrap_or(false);
         encode_key(key, app_cursor)
     }
 
     /// SGR (1006) — what tmux asks for — or `None` if the program has not
     /// asked for mouse reports.
     fn mouse_bytes(&self, m: &MouseEvent, col: u16, row: u16) -> Option<Vec<u8>> {
-        let mode = self.parser.lock().map(|p| p.screen().mouse_protocol_mode()).ok()?;
-        if mode == vt100::MouseProtocolMode::None {
+        if !self.vt.lock().ok()?.mouse_reporting() {
             return None;
         }
         encode_mouse(m, col, row)
     }
 
     fn paste(&mut self, text: &str) {
-        let bracketed = self.parser.lock().map(|p| p.screen().bracketed_paste()).unwrap_or(false);
+        let bracketed = self.vt.lock().map(|vt| vt.bracketed_paste()).unwrap_or(false);
         if bracketed {
             self.write(b"\x1b[200~");
             self.write(text.as_bytes());
@@ -179,7 +166,7 @@ fn size(rows: u16, cols: u16) -> PtySize {
 
 fn reader_loop(
     mut reader: Box<dyn Read + Send>,
-    parser: Arc<Mutex<vt100::Parser>>,
+    vt: Arc<Mutex<Vt>>,
     alive: Arc<AtomicBool>,
     bell: Arc<AtomicBool>,
     clipboard: Arc<Mutex<Vec<String>>>,
@@ -202,8 +189,8 @@ fn reader_loop(
                 {
                     c.extend(seen.clipboard);
                 }
-                if let Ok(mut p) = parser.lock() {
-                    p.process(&buf[..n]);
+                if let Ok(mut vt) = vt.lock() {
+                    vt.process(&buf[..n]);
                 }
             }
         }

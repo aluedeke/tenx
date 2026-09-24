@@ -1,7 +1,7 @@
 //! The README demo, generated rather than recorded: a scripted client
 //! session — the column beside a task — played through the real client
 //! (`Client::draw`, `Client::handle_key`), with the task side a scripted
-//! screen (`Script`: a `vt100` parser fed fixture transcripts) and the column
+//! screen (`Script`: the client's own emulator fed fixture transcripts) and the column
 //! offline (no tmux, no registry: a switch or an answer only updates it).
 //! Every step is rendered through ratatui's `TestBackend`, and the frames are
 //! written out twice — as an animated SVG (one `<g>` per frame, stepped CSS
@@ -13,8 +13,10 @@
 use super::screenshot::{fixture_column, hex, plain_text, svg_body, svg_size};
 use super::*;
 use crate::tui::client::{Client, Focus};
-use crate::tui::term::{TaskScreen, encode_key, render_screen};
+use crate::tui::term::{TaskScreen, encode_key};
+use crate::tui::vt::Vt;
 use ratatui::backend::TestBackend;
+use ratatui::Terminal;
 use ratatui::buffer::Buffer;
 use std::cell::RefCell;
 use std::fmt::Write as _;
@@ -27,18 +29,18 @@ const ROWS: u16 = 40;
 /// The task side: a screen the scene writes to. Keys typed into it echo,
 /// so typing shows; nothing else happens.
 struct Script {
-    parser: Rc<RefCell<vt100::Parser>>,
+    vt: Rc<RefCell<Vt>>,
 }
 
 impl TaskScreen for Script {
     fn render(&self, area: Rect, buf: &mut Buffer) -> Option<(u16, u16)> {
-        render_screen(self.parser.borrow().screen(), area, buf)
+        self.vt.borrow_mut().render(area, buf)
     }
     fn resize(&mut self, rows: u16, cols: u16) {
-        self.parser.borrow_mut().set_size(rows, cols);
+        self.vt.borrow_mut().resize(rows, cols);
     }
     fn write(&mut self, bytes: &[u8]) {
-        self.parser.borrow_mut().process(bytes);
+        self.vt.borrow_mut().process(bytes);
     }
     fn key_bytes(&self, key: &KeyEvent) -> Option<Vec<u8>> {
         encode_key(key, false)
@@ -68,7 +70,7 @@ struct Frame {
 
 struct Scene {
     client: Client,
-    screen: Rc<RefCell<vt100::Parser>>,
+    screen: Rc<RefCell<Vt>>,
     /// The task the screen currently shows, so a switch is noticed.
     shown: Option<String>,
     /// The waiting agent was answered from the column: its screen moves on.
@@ -101,8 +103,8 @@ impl Scene {
         column.current = Some("onboarding-emails".into());
         column.focus_search();
         column.selected = 0;
-        let screen = Rc::new(RefCell::new(vt100::Parser::new(ROWS, COLS, 0)));
-        let client = Client::new(column, Box::new(Script { parser: screen.clone() }), COLS, ROWS, 0);
+        let screen = Rc::new(RefCell::new(Vt::new(ROWS, COLS)));
+        let client = Client::new(column, Box::new(Script { vt: screen.clone() }), COLS, ROWS, 0);
         let term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
         let mut s = Scene { client, screen, shown: None, answered: false, term, frames: Vec::new() };
         s.sync_screen();
@@ -148,7 +150,7 @@ impl Scene {
         if self.shown.as_deref() == Some(key.as_str()) {
             return;
         }
-        let (rows, cols) = self.screen.borrow().screen().size();
+        let (rows, cols) = self.screen.borrow().size();
         // One row less than the terminal: tmux's status line takes the last.
         let text = pane_text(&slug, row.status, self.answered, rows - 1, cols);
         let mut out = format!("\x1b[2J\x1b[H{text}");

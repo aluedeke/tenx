@@ -354,6 +354,26 @@ fn client_column_beside_the_embedded_session() {
     h.keys(&["Enter"]);
     h.wait_screen("insert mode after the jump", 3, |s| s.contains(" INSERT "));
 
+    // An OSC 8 link printed in a pane reaches the real terminal as a link:
+    // through tmux (the `hyperlinks` feature) and the client's emulator.
+    // Written to the pane's tty, as its program would print it.
+    let tty = h.tmux_out(&["display", "-p", "-t", "tenx", "#{pane_tty}"]);
+    fs::write(&tty, "\x1b]8;;https://example.com/e2e\x1b\\LINKED\x1b]8;;\x1b\\\r\n").unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let s = h.outer_out(&["capture-pane", "-p", "-e", "-t", "o"]);
+        // Opened before the text and closed after it; tmux may put SGR in
+        // between.
+        if let Some((_, rest)) = s.split_once("\x1b]8;;https://example.com/e2e\x1b\\LINKED")
+            && rest.split("\x1b]8;;\x1b\\").next().is_some_and(|between| !between.contains(' '))
+            && rest.contains("\x1b]8;;\x1b\\")
+        {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "the link never reached the outer terminal:\n{s}");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
     // A workspace registered while the client runs (what `tenx init` does)
     // is listed without a restart, its tasks included. The column is the
     // only place the *title* can appear above the embedded status line:

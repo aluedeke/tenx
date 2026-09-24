@@ -338,6 +338,10 @@ set -g focus-events on
 set -s extended-keys on
 set -as terminal-features "xterm*:extkeys"
 set -g allow-passthrough on
+# OSC 8 hyperlinks: tmux keeps them per cell but only sends them to a client
+# whose terminal claims the feature, and it infers that for none — without
+# this a link printed in a pane reaches the client as plain text.
+set -as terminal-features ",*:hyperlinks"
 set -g mouse on
 set -g history-limit 50000
 set -g renumber-windows on
@@ -915,6 +919,7 @@ mod tests {
         // warns without it) and passthrough so agent OSC escapes reach outside.
         assert!(c.contains("set -s extended-keys on"));
         assert!(c.contains("set -g allow-passthrough on"));
+        assert!(c.contains(",*:hyperlinks"));
         assert!(c.contains("#{?#{@tenx_status},#{E:@tenx_status},"));
         assert!(c.contains(",*:dim@"));
         assert!(c.contains("set -g window-style \"fg="));

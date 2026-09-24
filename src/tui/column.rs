@@ -22,12 +22,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
-    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph},
-    Terminal,
 };
 use std::io;
 use std::path::{Path, PathBuf};
@@ -2554,7 +2552,7 @@ fn subseq_match(needle: &str, haystack: &str) -> bool {
 /// passphrase — is `cli::secrets::fulfill_in`, the same as
 /// `tenx secrets fulfill` from a shell.
 pub(super) fn run_unlock(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut super::client::ClientTerminal,
     column: &mut Column,
     ws_idx: usize,
     slug: &str,
