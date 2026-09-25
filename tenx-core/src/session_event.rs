@@ -41,6 +41,12 @@ fn waiting(reason: impl Into<String>) -> SessionAction {
 /// the general permission dialog; these two are tools that *are* the question.)
 const CLAUDE_DIALOG_TOOLS: &[&str] = &["AskUserQuestion", "ExitPlanMode"];
 
+/// Whether a Claude Code tool is one of those dialogs — shared with the
+/// subagent mapping (`crate::subagent::claude_subagent_action`).
+pub fn is_claude_dialog_tool(tool: &str) -> bool {
+    CLAUDE_DIALOG_TOOLS.contains(&tool)
+}
+
 /// Map a Claude Code hook event to a session action.
 ///
 /// - `event` is `hook_event_name`.
@@ -49,7 +55,8 @@ const CLAUDE_DIALOG_TOOLS: &[&str] = &["AskUserQuestion", "ExitPlanMode"];
 /// - `message` is the `Notification`/`Elicitation` human text, used as the
 ///   waiting reason when present.
 /// - `is_subagent` is true when the payload carries an `agent_id` — a subagent's
-///   events must never move the top-level session's record.
+///   events must never move the top-level session's record (they move the
+///   subagent's own, `crate::subagent::claude_subagent_action`).
 ///
 /// Most dialog outcomes are followed by an event that sets a non-waiting
 /// status — approve → `PostToolUse`, an auto-mode denial → `PermissionDenied`,
@@ -73,7 +80,7 @@ pub fn claude_action(
         "SessionStart" => idle(),
         "UserPromptSubmit" => busy(),
         "PreToolUse" => {
-            if tool_name.is_some_and(|t| CLAUDE_DIALOG_TOOLS.contains(&t)) {
+            if tool_name.is_some_and(is_claude_dialog_tool) {
                 waiting("input needed")
             } else {
                 busy()
@@ -188,6 +195,18 @@ pub fn has_command_hook(root: &serde_json::Value, command: &str) -> bool {
         .is_some_and(|events| events.values().any(|arr| arr.as_array().is_some_and(|groups| groups.iter().any(|g| group_has_command(g, command)))))
 }
 
+/// Whether *every* event in `events` already runs `command` — how an install
+/// made before tenx subscribed to more events is recognised as incomplete.
+pub fn has_command_hooks_for(root: &serde_json::Value, events: &[&str], command: &str) -> bool {
+    let Some(hooks) = root.get("hooks").and_then(|h| h.as_object()) else { return events.is_empty() };
+    events.iter().all(|e| {
+        hooks
+            .get(*e)
+            .and_then(|arr| arr.as_array())
+            .is_some_and(|groups| groups.iter().any(|g| group_has_command(g, command)))
+    })
+}
+
 fn group_has_command(group: &serde_json::Value, command: &str) -> bool {
     group
         .get("hooks")
@@ -211,6 +230,9 @@ mod tests {
         // Second run changes nothing.
         assert!(!ensure_command_hooks(&mut root, &["SessionStart", "Stop"], cmd, 5));
         assert!(has_command_hook(&root, cmd));
+        assert!(has_command_hooks_for(&root, &["SessionStart", "Stop"], cmd));
+        // An install from before a new event was subscribed is incomplete.
+        assert!(!has_command_hooks_for(&root, &["SessionStart", "Stop", "SubagentStart"], cmd));
         // Foreign keys and the user's own Stop hook survive.
         assert_eq!(root["model"], json!("x"));
         let stop = root["hooks"]["Stop"].as_array().unwrap();

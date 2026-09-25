@@ -100,6 +100,11 @@ impl Scene {
                 agents: std::collections::HashMap::new(),
             },
         }];
+        // The script walks rows with ↑; subagent lines are the static
+        // screenshot's to show, not steps in this one.
+        for r in column.rows.iter_mut() {
+            r.subagents.clear();
+        }
         column.current = Some("onboarding-emails".into());
         column.focus_search();
         column.selected = 0;

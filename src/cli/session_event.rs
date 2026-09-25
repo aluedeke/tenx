@@ -4,6 +4,11 @@
 //! `tenx_core::session_event`, and writes/deletes the session record
 //! (`workspace::sessions`). It is the one writer of that registry.
 //!
+//! A Claude Code event from inside a subagent (it carries an `agent_id`) never
+//! touches the session's record; it rewrites that subagent's own record
+//! instead (`tenx_core::subagent`). The session's `Stop` settles the subagents
+//! its turn left behind, and `SessionStart`/`SessionEnd` forget them.
+//!
 //! Invariants: it prints **nothing** to stdout (Claude's `PermissionRequest`
 //! reads a hook's stdout as a decision, and Codex the same), and it exits 0 no
 //! matter what — a hook that errors or hangs must never disturb the agent.
@@ -34,7 +39,16 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
     let message = payload.get("message").and_then(|v| v.as_str());
     let command = payload.get("tool_input").and_then(|t| t.get("command")).and_then(|v| v.as_str());
     // Subagent events carry an agent_id; they must not move the session record.
-    let is_subagent = payload.get("agent_id").is_some();
+    let agent_id = payload.get("agent_id").and_then(|v| v.as_str());
+    let is_subagent = agent_id.is_some();
+
+    if matches!(agent, AgentKind::Claude | AgentKind::Codex)
+        && let Some(id) = agent_id
+    {
+        let pid = pid_override.unwrap_or_else(|| resolve_agent_pid(agent));
+        record_subagent(agent, pid, id, event, tool_name, command, &payload);
+        return Some(());
+    }
 
     let action = match agent {
         AgentKind::Claude => claude_action(event, tool_name, notification_type, message, is_subagent),
@@ -50,8 +64,19 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
     let pid = pid_override.unwrap_or_else(|| resolve_agent_pid(agent));
 
     match action {
-        SessionAction::Delete => sessions::delete_record(pid),
+        SessionAction::Delete => {
+            sessions::delete_record(pid);
+            sessions::delete_subagents(pid);
+        }
         SessionAction::Set { status, waiting_for } => {
+            match (agent, event) {
+                // A new conversation in the same process (`/clear`,
+                // `--resume`): the old one's subagents aren't this one's.
+                (AgentKind::Claude | AgentKind::Codex, "SessionStart") => sessions::delete_subagents(pid),
+                // Only Claude's `Stop` says which subagents outlive the turn.
+                (AgentKind::Claude, "Stop" | "StopFailure") => settle_subagents(pid, &payload),
+                _ => {}
+            }
             let mut record = sessions::read_record(pid).unwrap_or_default();
             record.pid = Some(pid);
             record.agent = Some(agent.as_str().to_string());
@@ -71,6 +96,12 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
             if let Some(mode) = payload.get("permission_mode").and_then(|v| v.as_str()) {
                 record.permission_mode = Some(mode.to_string());
             }
+            // The first prompt names the session if it is a subagent (pi).
+            if record.prompt.is_none()
+                && let Some(p) = payload.get("prompt").and_then(|v| v.as_str())
+            {
+                record.prompt = tenx_core::subagent::prompt_label(p, 80);
+            }
             if let Ok(pane) = std::env::var("TMUX_PANE") {
                 // The hook runs in the agent's pane; keep it for the overlay's
                 // approve-in-place preview. Stored as a bare pane id.
@@ -83,6 +114,110 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
         SessionAction::Ignore => {}
     }
     Some(())
+}
+
+/// Apply one event from inside a subagent (Claude Code or Codex) to its
+/// record, creating it on the first event seen (a subagent whose
+/// `SubagentStart` predates the hook install still shows up on its next tool
+/// call).
+fn record_subagent(
+    agent: AgentKind,
+    pid: u32,
+    id: &str,
+    event: &str,
+    tool_name: Option<&str>,
+    command: Option<&str>,
+    payload: &Value,
+) {
+    use tenx_core::subagent::{self as sub, SubagentAction};
+    let action = match agent {
+        AgentKind::Codex => sub::codex_subagent_action(event, command),
+        _ => sub::claude_subagent_action(event, tool_name),
+    };
+    let SubagentAction::Set { status, waiting_for } = action else { return };
+    let now = sessions::now_millis();
+    let mut record = sessions::read_subagent(pid, id).unwrap_or_else(|| sessions::SubagentRecord {
+        id: id.to_string(),
+        started_at: Some(now),
+        ..Default::default()
+    });
+    record.agent = Some(agent.as_str().to_string());
+    if let Some(ty) = payload.get("agent_type").and_then(|v| v.as_str()) {
+        // Codex calls every plain subagent "default"; its nickname (below)
+        // says more, so don't let a later event put "default" back.
+        if !(agent == AgentKind::Codex && ty == "default" && !record.agent_type.is_empty()) {
+            record.agent_type = ty.to_string();
+        }
+    }
+    record.status = status.token().to_string();
+    record.waiting_for = waiting_for;
+    record.status_updated_at = Some(now);
+    let transcript = payload.get("transcript_path").and_then(|v| v.as_str());
+    if let Some(tp) = payload.get("agent_transcript_path").and_then(|v| v.as_str()) {
+        // SubagentStop names it outright, for both agents.
+        record.transcript_path = Some(tp.to_string());
+    } else if record.transcript_path.is_none()
+        && let Some(tp) = transcript
+    {
+        record.transcript_path = match agent {
+            // A Codex subagent's events carry its own rollout.
+            AgentKind::Codex => Some(tp.to_string()),
+            // A Claude Code subagent's carry the session's; its own sits beside it.
+            _ => sub::claude_transcript_path(std::path::Path::new(tp), id).map(|p| p.to_string_lossy().into_owned()),
+        };
+    }
+    if record.description.is_none()
+        && let Some(t) = record.transcript_path.clone()
+    {
+        match agent {
+            // The rollout's first line names it (`agent_path`, nickname).
+            AgentKind::Codex => {
+                if let Some(first) = first_line(std::path::Path::new(&t)) {
+                    let (description, nickname) = sub::codex_subagent_meta(&first);
+                    record.description = description;
+                    if let Some(n) = nickname {
+                        record.agent_type = n;
+                    }
+                }
+            }
+            // The spawn's description and shape live in a meta file beside
+            // the transcript, written as the subagent starts.
+            _ => {
+                if let Some(meta) = sub::claude_meta_path(std::path::Path::new(&t))
+                    && let Ok(text) = std::fs::read_to_string(meta)
+                {
+                    let (description, background) = sub::parse_meta(&text);
+                    record.description = description;
+                    record.background |= background;
+                }
+            }
+        }
+    }
+    let _ = sessions::write_subagent(pid, &record);
+}
+
+/// A file's first line (a Codex rollout's `session_meta`, which can run to
+/// tens of KB of instructions — read whole, but only that line).
+fn first_line(path: &std::path::Path) -> Option<String> {
+    use std::io::BufRead;
+    let mut line = String::new();
+    std::io::BufReader::new(std::fs::File::open(path).ok()?).read_line(&mut line).ok()?;
+    (!line.trim().is_empty()).then_some(line)
+}
+
+/// The session's turn ended: close the subagents it didn't leave running in
+/// the background (`tenx_core::subagent::settle_on_stop`).
+fn settle_subagents(pid: u32, payload: &Value) {
+    let subagents = sessions::read_subagents(pid);
+    if subagents.is_empty() {
+        return;
+    }
+    let still = tenx_core::subagent::background_tasks(payload);
+    let now = std::time::SystemTime::now();
+    for mut s in tenx_core::subagent::settle_on_stop(&subagents, &still) {
+        s.updated_at = Some(now);
+        let _ = sessions::write_subagent(pid, &sessions::SubagentRecord::from_subagent(&s));
+    }
 }
 
 /// The pid to key this session's record by: climb from the hook's parent to the
@@ -126,15 +261,19 @@ const HOOK_TIMEOUT_SECS: u64 = 5;
 
 /// Claude Code hook events tenx subscribes to — chosen so every status
 /// transition and every dialog outcome is reported (`session_event::claude_action`).
+/// `SubagentStart`/`SubagentStop` bracket a subagent (`tenx_core::subagent`).
 const CLAUDE_EVENTS: &[&str] = &[
     "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
     "PostToolUseFailure", "PermissionDenied", "Notification", "Elicitation", "ElicitationResult",
-    "Stop", "StopFailure", "SessionEnd",
+    "Stop", "StopFailure", "SessionEnd", "SubagentStart", "SubagentStop",
 ];
 
-/// Codex CLI hook events tenx subscribes to (`session_event::codex_action`).
-const CODEX_EVENTS: &[&str] =
-    &["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Interrupt", "SessionEnd"];
+/// Codex CLI hook events tenx subscribes to (`session_event::codex_action`;
+/// the subagent ones, `tenx_core::subagent::codex_subagent_action`).
+const CODEX_EVENTS: &[&str] = &[
+    "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Interrupt",
+    "SessionEnd", "SubagentStart", "SubagentStop",
+];
 
 /// The pi extension source, embedded so `tenx` is self-contained.
 const PI_EXTENSION: &str = include_str!("../agent/pi/tenx.ts");
@@ -196,9 +335,9 @@ pub fn is_installed(kind: AgentKind) -> anyhow::Result<bool> {
     let home = home()?;
     Ok(match kind {
         AgentKind::Claude => read_json(&home.join(".claude/settings.json"))
-            .is_some_and(|root| tenx_core::session_event::has_command_hook(&root, &claude_command())),
+            .is_some_and(|root| tenx_core::session_event::has_command_hooks_for(&root, CLAUDE_EVENTS, &claude_command())),
         AgentKind::Codex => read_json(&home.join(".codex/hooks.json"))
-            .is_some_and(|root| tenx_core::session_event::has_command_hook(&root, &codex_command())),
+            .is_some_and(|root| tenx_core::session_event::has_command_hooks_for(&root, CODEX_EVENTS, &codex_command())),
         AgentKind::Pi => {
             let path = home.join(".pi/agent/extensions/tenx.ts");
             std::fs::read_to_string(&path).ok().and_then(|c| integration_version(&c)) == integration_version(PI_EXTENSION)
@@ -268,6 +407,7 @@ fn integration_version(source: &str) -> Option<u32> {
 /// and quiet: a failure here must not disturb launching the session.
 pub fn auto_setup() {
     let Ok(home) = home() else { return };
+    top_up(&home);
     let sentinel = home.join(".config/tenx/.agent-setup-done");
     if sentinel.exists() {
         return;
@@ -285,6 +425,32 @@ pub fn auto_setup() {
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = std::fs::write(&sentinel, "");
+}
+
+/// Bring an older install up to date: Claude/Codex hooks that predate an
+/// event tenx now subscribes to (the subagent events) get the missing events,
+/// and an older pi extension is replaced. Runs on every launch, unlike the
+/// sentinel-guarded first install — a user who removed an integration has no
+/// tenx hook or extension left, so there is nothing to top up and nothing is
+/// fought. (Codex asks you to trust a new hook once, via `/hooks`.)
+fn top_up(home: &std::path::Path) {
+    for (path, events, cmd) in [
+        (home.join(".claude/settings.json"), CLAUDE_EVENTS, claude_command()),
+        (home.join(".codex/hooks.json"), CODEX_EVENTS, codex_command()),
+    ] {
+        let Some(root) = read_json(&path) else { continue };
+        if tenx_core::session_event::has_command_hook(&root, &cmd)
+            && !tenx_core::session_event::has_command_hooks_for(&root, events, &cmd)
+        {
+            let _ = merge_hook_file(&path, events, &cmd);
+        }
+    }
+    let pi = home.join(".pi/agent/extensions/tenx.ts");
+    if let Some(installed) = std::fs::read_to_string(&pi).ok().and_then(|c| integration_version(&c))
+        && integration_version(PI_EXTENSION).is_some_and(|ours| installed < ours)
+    {
+        let _ = install_pi();
+    }
 }
 
 /// Whether an agent's binary is on `$PATH` — for `tenx init`'s setup prompt.

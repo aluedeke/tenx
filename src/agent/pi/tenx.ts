@@ -1,4 +1,4 @@
-// TENX_INTEGRATION_VERSION=1
+// TENX_INTEGRATION_VERSION=2
 //
 // Installed by `tenx agent setup pi`. Reports pi's session state to tenx so a
 // pi task shows the right status in the tenx overlay and status bar. Managed by
@@ -9,10 +9,19 @@
 // payload to `tenx internal session-event --agent pi --pid <pid>`, the same sink
 // Claude Code's and Codex's hooks use. Everything is best-effort and never
 // throws: a reporting failure must not disturb pi.
+//
+// A subagent in pi is a child `pi` process an extension spawns; it loads this
+// file too and reports like any pi. tenx lists it under the session it runs
+// beneath, labelled with the prompt it was given — which is why `agent_start`
+// carries the prompt that started the run.
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-function report(event: string, message: string | undefined, ctx: any): void {
+// The prompt of the run about to start (`before_agent_start`), sent with
+// `agent_start`.
+let pendingPrompt: string | undefined;
+
+function report(event: string, message: string | undefined, ctx: any, prompt?: string): void {
   try {
     let session_id: string | undefined;
     let transcript_path: string | undefined;
@@ -29,6 +38,7 @@ function report(event: string, message: string | undefined, ctx: any): void {
       session_id,
       transcript_path,
       message,
+      prompt,
     });
     const child = spawn(
       "tenx",
@@ -43,7 +53,13 @@ function report(event: string, message: string | undefined, ctx: any): void {
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_e: any, ctx: any) => report("session_start", undefined, ctx));
-  pi.on("agent_start", async (_e: any, ctx: any) => report("agent_start", undefined, ctx));
+  pi.on("before_agent_start", async (e: any) => {
+    pendingPrompt = typeof e?.prompt === "string" ? e.prompt.slice(0, 400) : undefined;
+  });
+  pi.on("agent_start", async (_e: any, ctx: any) => {
+    report("agent_start", undefined, ctx, pendingPrompt);
+    pendingPrompt = undefined;
+  });
   // The only "waiting on the user" signal pi exposes: it brackets a blocking
   // ui.confirm/select/input prompt.
   pi.on("ui_prompt_start", async (e: any, ctx: any) => report("ui_prompt_start", e?.title || e?.kind, ctx));

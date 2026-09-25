@@ -620,6 +620,25 @@ pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, ses
     run(&["split-window", "-d", "-v", "-l", "12", "-t", window_id, "-c", cwd, &command]).map(drop)
 }
 
+/// The `tenx internal agent-log` arguments that follow one subagent's
+/// transcript as a popup (`--popup`: q/Esc closes it).
+pub fn subagent_log_args(cwd: &str, session_pid: u32, agent: &str, transcript: &str, title: &str) -> String {
+    format!(
+        "internal agent-log {} {session_pid} --agent {} --transcript {} --title {} --popup",
+        shell_quote(cwd),
+        shell_quote(agent),
+        shell_quote(transcript),
+        shell_quote(title.trim())
+    )
+}
+
+/// Where no popup can be aimed (no tmux client found for the embedded
+/// terminal): the same viewer as a pane split into the task's window, focused.
+pub fn open_subagent_pane(window_id: &str, tenx_bin: &str, cwd: &str, args: &str) -> Result<()> {
+    let command = format!("{} {args}", tenx_cmd(tenx_bin));
+    run(&["split-window", "-v", "-l", "40%", "-t", window_id, "-c", cwd, &command]).map(drop)
+}
+
 // ── Popups ────────────────────────────────────────────────────────────────────
 
 /// The name of the tmux client whose process is `pid` — the tenx client's

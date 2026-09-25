@@ -1,12 +1,13 @@
-//! A task's activity state, derived from Claude Code's own session registry.
+//! A task's activity state, derived from tenx's session registry.
 //!
-//! The registry (`~/.claude/sessions/<pid>.json`, one file per live session,
-//! rewritten by Claude Code on every status change) is read by the binary and
-//! handed in here as a plain list of [`Session`]s; this module only decides
-//! what those sessions *mean* for a task. tenx installs no hooks and writes no
-//! state of its own — every variant below is a fact about live sessions in the
-//! task's directory tree.
+//! The registry (`~/.config/tenx/sessions/<pid>.json`, one file per live agent
+//! process, rewritten by every agent's hooks through `tenx internal
+//! session-event`) is read by the binary and handed in here as a plain list of
+//! [`Session`]s, each carrying its own subagents; this module only decides what
+//! those sessions *mean* for a task. Every variant below is a fact about live
+//! sessions in the task's directory tree.
 
+use crate::subagent::{Subagent, SubagentStatus};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -81,6 +82,80 @@ pub struct Session {
     /// `auto`, `acceptEdits`, …). `None` for other agents and old records.
     /// Only `auto` matters: see [`confirm_permission_waits`].
     pub permission_mode: Option<String>,
+    /// The subagents this session has spawned that are still worth listing
+    /// (`crate::subagent::visible`), in display order.
+    pub subagents: Vec<Subagent>,
+    /// What the session was asked — its first prompt, as the agent reported
+    /// it (pi's extension does). The label it gets when it turns out to be
+    /// another session's subagent ([`nest_child_sessions`]).
+    pub label: Option<String>,
+}
+
+/// Turn every session that runs *under* another session's process into that
+/// session's subagent — the shape of a pi subagent, which an extension runs as
+/// a child `pi` process that reports to the registry like any other.
+///
+/// `tree` is `(pid, ppid)` pairs; `nestable` says which sessions may be
+/// nested (the binary passes pi's: Claude Code's and Codex's subagents are
+/// reported by their hooks, and a `claude --bg` a session started is a
+/// background agent of the task, not of that session). A nested session is
+/// removed from the list and added to its nearest ancestor session's
+/// `subagents`: busy → running, waiting → waiting (with its reason), idle →
+/// finished. Its id is `pid-<pid>`, so a view keeps it across ticks.
+pub fn nest_child_sessions(sessions: Vec<Session>, tree: &[(u32, u32)], nestable: &dyn Fn(&Session) -> bool) -> Vec<Session> {
+    let pids: Vec<u32> = sessions.iter().map(|s| s.pid).collect();
+    let parent_of = |pid: u32| tree.iter().find(|(p, _)| *p == pid).map(|(_, pp)| *pp);
+    let owner_of = |s: &Session| -> Option<u32> {
+        let mut pid = s.pid;
+        for _ in 0..16 {
+            pid = parent_of(pid).filter(|pp| *pp > 1 && *pp != pid)?;
+            if pids.contains(&pid) {
+                return Some(pid);
+            }
+        }
+        None
+    };
+    let mut children: Vec<(u32, Session)> = Vec::new();
+    let mut kept: Vec<Session> = Vec::new();
+    for s in sessions {
+        match owner_of(&s).filter(|_| nestable(&s)) {
+            Some(owner) => children.push((owner, s)),
+            None => kept.push(s),
+        }
+    }
+    for (owner, c) in children {
+        // A grandchild whose parent was itself nested goes to the outermost
+        // session still listed; with no such session, it stays a session.
+        let mut owner = owner;
+        while !kept.iter().any(|k| k.pid == owner) {
+            match parent_of(owner).filter(|pp| *pp > 1 && *pp != owner) {
+                Some(pp) => owner = pp,
+                None => break,
+            }
+        }
+        let Some(parent) = kept.iter_mut().find(|k| k.pid == owner) else {
+            kept.push(c);
+            continue;
+        };
+        parent.subagents.push(Subagent {
+            id: format!("pid-{}", c.pid),
+            session_pid: owner,
+            agent: c.agent.clone(),
+            agent_type: c.agent.clone(),
+            description: c.label.clone(),
+            status: match c.status {
+                SessionStatus::Busy => SubagentStatus::Running,
+                SessionStatus::Waiting => SubagentStatus::Waiting,
+                SessionStatus::Idle => SubagentStatus::Finished,
+            },
+            waiting_for: c.waiting_for.clone(),
+            started_at: c.status_updated_at,
+            updated_at: c.status_updated_at,
+            transcript_path: None,
+            background: false,
+        });
+    }
+    kept
 }
 
 /// Second-guess a `waiting` on a permission dialog against the screen.
@@ -101,9 +176,34 @@ pub struct Session {
 /// is over (denied) → idle. Sessions on any other reason or without a pane,
 /// and a failed capture (`None`), are left alone — fail closed, so a real
 /// prompt is never hidden.
+///
+/// A subagent's permission wait is drawn in its session's pane and is checked
+/// against the same capture: dialog → still waiting; otherwise it went on
+/// (allowed or denied, the subagent carries on) → running — except that a
+/// quiet pane means the turn is over, which a foreground subagent cannot
+/// outlive → finished.
 pub fn confirm_permission_waits(sessions: &mut [Session], activity: &dyn Fn(&str) -> Option<crate::dialog::PaneActivity>) {
     use crate::dialog::PaneActivity;
     for s in sessions.iter_mut() {
+        let sub_waits = s
+            .subagents
+            .iter()
+            .any(|a| a.status == SubagentStatus::Waiting && a.waiting_for.as_deref().is_some_and(crate::dialog::is_permission_reason));
+        if sub_waits && let Some(pane) = s.pane.as_deref() {
+            let seen = activity(pane);
+            for a in s.subagents.iter_mut() {
+                if a.status != SubagentStatus::Waiting || !a.waiting_for.as_deref().is_some_and(crate::dialog::is_permission_reason) {
+                    continue;
+                }
+                match seen {
+                    Some(PaneActivity::Running) => a.status = SubagentStatus::Running,
+                    Some(PaneActivity::Idle) if a.background => a.status = SubagentStatus::Running,
+                    Some(PaneActivity::Idle) => a.status = SubagentStatus::Finished,
+                    Some(PaneActivity::Dialog) | None => continue,
+                }
+                a.waiting_for = None;
+            }
+        }
         if s.status != SessionStatus::Waiting {
             continue;
         }
@@ -379,18 +479,25 @@ pub struct TaskState {
     /// The pane to look at for this task: the waiting session's when
     /// `Blocked`, else the interactive session's, else any session's.
     pub pane: Option<String>,
+    /// Every listed subagent of the task's sessions, waiting ones first — the
+    /// task's child items. `TaskState::subagents[i].session_pid` names the
+    /// session it belongs to.
+    pub subagents: Vec<Subagent>,
 }
 
 /// Resolve a task's state from the session list plus the window's signal.
 /// Precedence:
 ///
-/// - any session `waiting` → `Blocked`, with Claude Code's own reason. A live
-///   value — it clears itself the moment you answer the prompt.
+/// - any session or subagent `waiting` → `Blocked`, with the agent's own
+///   reason. A live value — it clears
+///   itself the moment you answer the prompt.
 /// - else the window's bell flag → `Signaled`. Also live: tmux clears it when
 ///   the window is visited. Outranks `Working` because a bell from the shell
 ///   pane (tests finished, a build broke) is for you even while an agent is
 ///   mid-turn in the pane next to it.
-/// - else any session `busy` → `Working`.
+/// - else any session `busy` or subagent running → `Working`. A background
+///   subagent keeps its task working after its session's turn has ended: the
+///   session will pick up again when it reports back.
 /// - else a session exists and is quiet → `Done`: the turn is over and it's
 ///   your move; `changed` is the latest busy→idle transition.
 /// - no live session at all → `Idle`. This is the line that matters: `Done`
@@ -405,42 +512,56 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
         .find(|s| s.kind == "interactive")
         .or(live.first())
         .and_then(|s| s.pane.clone());
+    let mut subagents: Vec<Subagent> = live.iter().flat_map(|s| s.subagents.iter().cloned()).collect();
+    subagents.sort_by_key(|a| match a.status {
+        SubagentStatus::Waiting => 0,
+        SubagentStatus::Running => 1,
+        SubagentStatus::Finished => 2,
+    });
+    let state = |status, changed, waiting_for, pane| TaskState {
+        status,
+        changed,
+        waiting_for,
+        sessions: count,
+        agents,
+        pane,
+        subagents: subagents.clone(),
+    };
     if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Waiting) {
-        return TaskState {
-            status: TaskStatus::Blocked,
-            changed: s.status_updated_at,
-            waiting_for: s.waiting_for.clone(),
-            sessions: count,
-            agents,
-            pane: s.pane.clone().or(pane),
-        };
+        return state(TaskStatus::Blocked, s.status_updated_at, s.waiting_for.clone(), s.pane.clone().or(pane));
+    }
+    let owner = |a: &Subagent| live.iter().find(|s| s.pid == a.session_pid);
+    if let Some(a) = subagents.iter().find(|a| a.status == SubagentStatus::Waiting) {
+        // The reason stays the agent's own ("permission: Bash"), so `A`/`D`
+        // recognise a subagent's permission dialog like any other; which
+        // subagent is waiting is its own line's glyph.
+        let reason = a.waiting_for.clone().unwrap_or_else(|| "input needed".to_string());
+        let s_pane = owner(a).and_then(|s| s.pane.clone());
+        return state(TaskStatus::Blocked, a.updated_at, Some(reason), s_pane.or(pane));
     }
     if signal.bell {
         // tmux records that a bell rang, not when; the age column stays blank.
-        return TaskState {
-            status: TaskStatus::Signaled,
-            changed: None,
-            waiting_for: Some("bell".to_string()),
-            sessions: count,
-            agents,
-            pane,
-        };
+        return state(TaskStatus::Signaled, None, Some("bell".to_string()), pane);
     }
     if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Busy) {
-        return TaskState {
-            status: TaskStatus::Working,
-            changed: s.status_updated_at,
-            waiting_for: None,
-            sessions: count,
-            agents,
-            pane,
-        };
+        return state(TaskStatus::Working, s.status_updated_at, None, pane);
+    }
+    if let Some(a) = subagents.iter().find(|a| a.status == SubagentStatus::Running) {
+        return state(TaskStatus::Working, a.updated_at, None, pane);
     }
     if live.is_empty() {
-        return TaskState { status: TaskStatus::Idle, changed: None, waiting_for: None, sessions: 0, agents: 0, pane: None };
+        return TaskState {
+            status: TaskStatus::Idle,
+            changed: None,
+            waiting_for: None,
+            sessions: 0,
+            agents: 0,
+            pane: None,
+            subagents: vec![],
+        };
     }
     let quiet_since = live.iter().filter_map(|s| s.status_updated_at).max();
-    TaskState { status: TaskStatus::Done, changed: quiet_since, waiting_for: None, sessions: count, agents, pane }
+    state(TaskStatus::Done, quiet_since, None, pane)
 }
 
 #[cfg(test)]
@@ -466,7 +587,114 @@ mod tests {
             job_id: None,
             agent: "claude".to_string(),
             permission_mode: None,
+            subagents: vec![],
+            label: None,
         }
+    }
+
+    #[test]
+    fn a_child_pi_process_is_its_sessions_subagent() {
+        // pane 100 runs pi (session 200); its extension spawned pi 300 via a
+        // shell (250), and pi 300 spawned pi 400. A claude session (500) under
+        // the same pane is not nested: only pi is.
+        let pi = |pid: u32, status| {
+            let mut s = session(TASK, status, if pid == 200 { "interactive" } else { "bg" }, 10);
+            s.pid = pid;
+            s.agent = "pi".into();
+            s.label = Some(format!("task {pid}"));
+            s
+        };
+        let mut claude = session(TASK, SessionStatus::Busy, "bg", 10);
+        claude.pid = 500;
+        let tree = vec![(200, 100), (250, 200), (300, 250), (400, 300), (500, 200)];
+        let out = nest_child_sessions(
+            vec![pi(200, SessionStatus::Busy), pi(300, SessionStatus::Waiting), pi(400, SessionStatus::Idle), claude],
+            &tree,
+            &|s| s.agent == "pi",
+        );
+        let pids: Vec<u32> = out.iter().map(|s| s.pid).collect();
+        assert_eq!(pids, vec![200, 500]);
+        let subs: Vec<(String, SubagentStatus, u32)> =
+            out[0].subagents.iter().map(|a| (a.id.clone(), a.status, a.session_pid)).collect();
+        assert_eq!(
+            subs,
+            vec![("pid-300".into(), SubagentStatus::Waiting, 200), ("pid-400".into(), SubagentStatus::Finished, 200)]
+        );
+        assert_eq!(out[0].subagents[0].description.as_deref(), Some("task 300"));
+        assert_eq!(out[0].subagents[0].agent, "pi");
+        // The task reads Blocked on the child's prompt.
+        let st = resolve_task_state(Path::new(TASK), &out, QUIET);
+        assert_eq!(st.status, TaskStatus::Blocked);
+        // A pi with no session above it stays a session.
+        let alone = nest_child_sessions(vec![pi(300, SessionStatus::Busy)], &tree, &|s| s.agent == "pi");
+        assert_eq!(alone.len(), 1);
+    }
+
+    fn subagent(id: &str, pid: u32, status: SubagentStatus, updated: u64) -> Subagent {
+        Subagent {
+            id: id.into(),
+            session_pid: pid,
+            agent: "claude".into(),
+            agent_type: "Explore".into(),
+            description: Some(format!("agent {id}")),
+            status,
+            waiting_for: (status == SubagentStatus::Waiting).then(|| "permission: Bash".to_string()),
+            started_at: Some(at(updated)),
+            updated_at: Some(at(updated)),
+            transcript_path: None,
+            background: false,
+        }
+    }
+
+    #[test]
+    fn a_waiting_subagent_blocks_its_task_on_its_sessions_pane() {
+        let mut s = session(TASK, SessionStatus::Busy, "interactive", 10);
+        s.pid = 7;
+        s.pane = Some("%3".into());
+        s.subagents = vec![subagent("a", 7, SubagentStatus::Running, 11), subagent("b", 7, SubagentStatus::Waiting, 12)];
+        let st = resolve_task_state(Path::new(TASK), &[s], QUIET);
+        assert_eq!(st.status, TaskStatus::Blocked);
+        // The plain reason, so `A`/`D` treat it as the permission dialog it is.
+        assert_eq!(st.waiting_for.as_deref(), Some("permission: Bash"));
+        assert!(crate::dialog::is_permission_reason(st.waiting_for.as_deref().unwrap()));
+        assert_eq!(st.changed, Some(at(12)));
+        assert_eq!(st.pane.as_deref(), Some("%3"));
+        // Listed waiting first.
+        let ids: Vec<&str> = st.subagents.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, vec!["b", "a"]);
+    }
+
+    #[test]
+    fn a_background_subagent_keeps_a_quiet_session_working() {
+        let mut s = session(TASK, SessionStatus::Idle, "interactive", 10);
+        s.subagents = vec![subagent("a", 1, SubagentStatus::Running, 20)];
+        let st = resolve_task_state(Path::new(TASK), &[s.clone()], QUIET);
+        assert_eq!((st.status, st.changed), (TaskStatus::Working, Some(at(20))));
+        // Finished ones are listed but don't change the status.
+        s.subagents = vec![subagent("a", 1, SubagentStatus::Finished, 20)];
+        let st = resolve_task_state(Path::new(TASK), &[s], QUIET);
+        assert_eq!(st.status, TaskStatus::Done);
+        assert_eq!(st.subagents.len(), 1);
+    }
+
+    #[test]
+    fn a_subagents_permission_wait_follows_the_screen() {
+        use crate::dialog::PaneActivity::*;
+        let mut s = session(TASK, SessionStatus::Busy, "interactive", 1);
+        s.pane = Some("%1".into());
+        let mut bg = subagent("bg", 1, SubagentStatus::Waiting, 1);
+        bg.background = true;
+        s.subagents = vec![subagent("fg", 1, SubagentStatus::Waiting, 1), bg];
+        let run = |a: Option<crate::dialog::PaneActivity>| {
+            let mut v = vec![s.clone()];
+            confirm_permission_waits(&mut v, &|_| a);
+            v[0].subagents.iter().map(|a| a.status).collect::<Vec<_>>()
+        };
+        assert_eq!(run(Some(Dialog)), vec![SubagentStatus::Waiting, SubagentStatus::Waiting]);
+        assert_eq!(run(None), vec![SubagentStatus::Waiting, SubagentStatus::Waiting]);
+        assert_eq!(run(Some(Running)), vec![SubagentStatus::Running, SubagentStatus::Running]);
+        // The turn is over: a foreground subagent went with it, a background one runs on.
+        assert_eq!(run(Some(Idle)), vec![SubagentStatus::Finished, SubagentStatus::Running]);
     }
 
     #[test]

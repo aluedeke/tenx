@@ -17,6 +17,7 @@ pub mod session_event;
 pub mod skills;
 pub mod slug;
 pub mod status;
+pub mod subagent;
 pub mod sweep;
 pub mod taskmd;
 pub mod time;

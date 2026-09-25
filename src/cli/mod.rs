@@ -121,6 +121,16 @@ pub enum InternalCommands {
         /// Which agent's transcript format to follow (`claude`, `codex`, `pi`).
         #[arg(long, default_value = "claude")]
         agent: String,
+        /// Follow exactly this transcript file (a subagent's), instead of
+        /// finding the session's under `cwd`.
+        #[arg(long)]
+        transcript: Option<String>,
+        /// Header line to show instead of the directory name.
+        #[arg(long)]
+        title: Option<String>,
+        /// Run as a popup: close on q/Esc, stay open when the process exits.
+        #[arg(long)]
+        popup: bool,
     },
 }
 

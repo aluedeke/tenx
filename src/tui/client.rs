@@ -67,6 +67,9 @@ pub(super) struct Client {
     /// An unlock popup in flight: the task's slug, and where its thread
     /// reports the popup's exit status once it closes (`start_unlock`).
     unlock: Option<(String, mpsc::Receiver<Result<i32, String>>)>,
+    /// A subagent viewer popup in flight (`start_view`): it reports once it
+    /// closes, so the keyboard can come back to the column.
+    view: Option<mpsc::Receiver<Result<i32, String>>>,
 }
 
 impl Client {
@@ -87,6 +90,7 @@ impl Client {
             last_refresh: Instant::now(),
             quit: false,
             unlock: None,
+            view: None,
         };
         let (r, w) = c.term_size();
         term.resize(r, w);
@@ -205,6 +209,60 @@ impl Client {
             Ok(_) => format!("unlock for '{slug}' didn't finish — tenx secrets status"),
             Err(e) => format!("unlock popup failed: {e}"),
         });
+    }
+
+    /// Follow a subagent's transcript (⏎ on its line in the column) in a
+    /// popup over this client's own tmux attach, the column live behind it —
+    /// the same arrangement as `start_unlock`, and for the same reasons.
+    /// Without a client to aim a popup at, the viewer is split into the task's
+    /// window instead.
+    fn start_view(&mut self, v: column::AgentView) {
+        if self.view.is_some() {
+            self.column.set_status("an agent view is already open".into());
+            return;
+        }
+        let Ok(bin) = crate::tmux::self_bin() else { return };
+        let bin = bin.to_string_lossy().into_owned();
+        let cwd = v.task_path.to_string_lossy().into_owned();
+        let args = crate::tmux::subagent_log_args(&cwd, v.session_pid, &v.agent, &v.transcript.to_string_lossy(), &v.title);
+        let Some(tmux_client) = self.term.pid().and_then(crate::tmux::client_by_pid) else {
+            match v.window_id.as_deref().map(|w| crate::tmux::open_subagent_pane(w, &bin, &cwd, &args)) {
+                Some(Ok(())) => self.handle_request(ClientRequest::FocusTerminal),
+                Some(Err(e)) => self.column.set_status(format!("couldn't open the agent: {e}")),
+                None => self.column.set_status("open the task first (⏎ on it)".into()),
+            }
+            return;
+        };
+        let (tx, rx) = mpsc::channel();
+        let title = v.title.clone();
+        std::thread::spawn(move || {
+            let result = crate::tmux::popup_tenx(&tmux_client, &cwd, &title, &bin, &args);
+            let _ = tx.send(result.map_err(|e| e.to_string()));
+        });
+        self.view = Some(rx);
+        self.handle_request(ClientRequest::FocusTerminal);
+    }
+
+    /// Once the viewer popup has closed, the keyboard goes back to the column
+    /// where ⏎ was pressed.
+    fn poll_view(&mut self) {
+        let Some(rx) = &self.view else { return };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err("the popup thread went away".into()),
+        };
+        self.view = None;
+        if !self.column_shown {
+            self.column_shown = true;
+            let (r, c) = self.term_size();
+            self.term.resize(r, c);
+        }
+        self.focus = Focus::Column;
+        self.column.refocus_list();
+        if let Err(e) = result {
+            self.column.set_status(format!("agent popup failed: {e}"));
+        }
     }
 
     fn hide_column(&mut self) {
@@ -510,6 +568,10 @@ fn run_client(terminal: &mut ClientTerminal) -> Result<()> {
             column::run_unlock(terminal, &mut client.column, ws_idx, &slug)?;
         }
         client.poll_unlock();
+        if let Some(v) = client.column.take_agent_view() {
+            client.start_view(v);
+        }
+        client.poll_view();
         client.tick();
         if client.term.take_bell() {
             let _ = execute!(io::stdout(), Print("\x07"));

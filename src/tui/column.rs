@@ -39,6 +39,7 @@ mod demo;
 #[cfg(test)]
 mod screenshot;
 use crate::palette;
+use crate::workspace::sessions::{Subagent, SubagentStatus};
 use crate::workspace::{self, TaskStatus, Workspace};
 
 /// One selectable task row, flattened across all workspaces.
@@ -106,6 +107,10 @@ struct Row {
     /// Cleared when the job lands and `rebuild_rows` reads the real thing off
     /// disk. A pending row is not openable — it has no window and no worktree.
     pending: bool,
+    /// The subagents of the task's sessions (`TaskState::subagents`), listed
+    /// under the task as child lines — waiting first, then running, then the
+    /// few that finished recently. Refreshed on the tick with the status.
+    subagents: Vec<Subagent>,
 }
 
 /// Create-task form. `focus`: 0 = workspace picker, 1 = name,
@@ -342,6 +347,23 @@ pub(super) enum ClientRequest {
     Quit,
 }
 
+/// What the client needs to show one subagent's transcript: ⏎ on a subagent
+/// line hands this over (`Column::take_agent_view`).
+#[derive(Debug, Clone)]
+pub(super) struct AgentView {
+    /// The popup's title: the subagent's label and type.
+    pub(super) title: String,
+    pub(super) transcript: PathBuf,
+    /// Its harness (`claude`, `codex`, `pi`), which decides how the transcript reads.
+    pub(super) agent: String,
+    /// The session that spawned it — the viewer notes when it has gone.
+    pub(super) session_pid: u32,
+    /// The task directory, the viewer's working directory.
+    pub(super) task_path: PathBuf,
+    /// The task's window, for the split-pane fallback when no popup can be aimed.
+    pub(super) window_id: Option<String>,
+}
+
 pub(super) struct Column {
     client_request: Option<ClientRequest>,
     /// No tmux, no registry: a switch or an answer only updates this
@@ -364,6 +386,15 @@ pub(super) struct Column {
     filtered: Vec<usize>,
     /// Position within `filtered`.
     selected: usize,
+    /// The subagent under the cursor, by id, when the cursor is on one of the
+    /// selected task's child lines rather than on the task itself. By id, not
+    /// position, so it survives a tick that reorders the task's subagents; an
+    /// id the selected row no longer lists reads as "on the task"
+    /// (`selected_sub`).
+    sub: Option<String>,
+    /// A subagent to show (⏎ on its line), taken by the client, which opens
+    /// the viewer over its own tmux attach (`take_agent_view`).
+    pending_view: Option<AgentView>,
     repo_rows: Vec<RepoRow>,
     repo_filtered: Vec<usize>,
     repo_selected: usize,
@@ -408,6 +439,9 @@ pub(super) struct Column {
     /// half-the-width guess only ever worked for two tabs.
     tab_spans: Vec<(u16, u16)>,
     line_to_pos: Vec<Option<usize>>,
+    /// The subagent each list item is, parallel to `line_to_pos` (`None` for
+    /// task lines, headers and every other tab's items).
+    line_to_sub: Vec<Option<String>>,
     /// Rendered height of each list item, in the same order as
     /// `line_to_pos` — the column's rows are two lines tall, headers one,
     /// so a click's row is walked through these from the scroll offset.
@@ -531,6 +565,10 @@ impl Column {
         matches!(self.mode, Mode::List)
     }
 
+    pub(super) fn take_agent_view(&mut self) -> Option<AgentView> {
+        self.pending_view.take()
+    }
+
     pub(super) fn take_unlock(&mut self) -> Option<(usize, String)> {
         self.pending_unlock.take()
     }
@@ -563,6 +601,8 @@ impl Column {
             filter: String::new(),
             filtered: vec![],
             selected: 0,
+            sub: None,
+            pending_view: None,
             repo_rows: vec![],
             repo_filtered: vec![],
             repo_selected: 0,
@@ -575,6 +615,7 @@ impl Column {
             pending_unlock: None,
             list_state: ListState::default(),
             line_to_pos: Vec::new(),
+            line_to_sub: Vec::new(),
             item_heights: Vec::new(),
             tabs_area: Rect::default(),
             tab_spans: Vec::new(),
@@ -683,6 +724,7 @@ impl Column {
                     secrets_pending,
                     secrets_pending_set,
                     section,
+                    subagents: state.subagents,
                 });
             }
         }
@@ -759,6 +801,7 @@ impl Column {
             r.changed = state.changed;
             r.waiting_for = state.waiting_for;
             r.pane = state.pane;
+            r.subagents = state.subagents;
             r.activity = state.changed.unwrap_or(r.activity);
             if slow {
                 r.window_id = self.window_ids.get(&r.slug).cloned();
@@ -831,7 +874,10 @@ impl Column {
 
     fn set_cur_sel(&mut self, i: usize) {
         match self.tab {
-            Tab::Tasks => self.selected = i,
+            Tab::Tasks => {
+                self.selected = i;
+                self.sub = None;
+            }
             Tab::Repos => self.repo_selected = i,
             Tab::Work => self.work_selected = i,
         }
@@ -879,6 +925,15 @@ impl Column {
         }
     }
 
+    /// Back into the list exactly where the cursor was — after a popup
+    /// opened from a row closes (unlike `select_current`, which moves to the
+    /// task you are in).
+    pub(super) fn refocus_list(&mut self) {
+        if matches!(self.mode, Mode::List) && self.tab == Tab::Tasks && !self.filtered.is_empty() {
+            self.focus_list();
+        }
+    }
+
     /// The keyboard left the column: drop the row highlight so the list
     /// shows no cursor while the task has it. Ctrl+w brings it back on the
     /// current task (`select_current`).
@@ -913,9 +968,20 @@ impl Column {
                 }
             }
             Focus::List => {
+                // Through the selected task's subagents before the next task.
+                if self.tab == Tab::Tasks
+                    && let Some(row) = self.selected_row()
+                {
+                    let next = self.selected_sub().map_or(0, |k| k + 1);
+                    if let Some(a) = row.subagents.get(next) {
+                        self.sub = Some(a.id.clone());
+                        return;
+                    }
+                }
                 let len = self.cur_len();
-                if len > 0 {
-                    self.set_cur_sel((self.cur_sel() + 1).min(len - 1));
+                let next = (self.cur_sel() + 1).min(len.saturating_sub(1));
+                if len > 0 && next != self.cur_sel() {
+                    self.set_cur_sel(next);
                 }
             }
         }
@@ -930,10 +996,16 @@ impl Column {
                 }
             }
             Focus::List => {
-                if self.cur_sel() == 0 {
+                if let Some(k) = self.selected_sub() {
+                    self.sub = k.checked_sub(1).and_then(|p| self.selected_row().map(|r| r.subagents[p].id.clone()));
+                } else if self.cur_sel() == 0 {
                     self.focus_search();
                 } else {
                     self.set_cur_sel(self.cur_sel() - 1);
+                    // Up into a task from below lands on its last subagent.
+                    if self.tab == Tab::Tasks {
+                        self.sub = self.selected_row().and_then(|r| r.subagents.last()).map(|a| a.id.clone());
+                    }
                 }
             }
         }
@@ -1023,6 +1095,54 @@ impl Column {
         self.filtered.get(self.selected).and_then(|&i| self.rows.get(i))
     }
 
+    /// Position of the subagent under the cursor in the selected task's list,
+    /// or `None` when the cursor is on the task itself.
+    fn selected_sub(&self) -> Option<usize> {
+        if self.tab != Tab::Tasks || self.focus != Focus::List {
+            return None;
+        }
+        let id = self.sub.as_deref()?;
+        self.selected_row()?.subagents.iter().position(|a| a.id == id)
+    }
+
+    fn selected_subagent(&self) -> Option<&Subagent> {
+        let k = self.selected_sub()?;
+        self.selected_row()?.subagents.get(k)
+    }
+
+    /// ⏎ on a subagent line: hand the client what it needs to follow that
+    /// subagent's transcript. Says why when there is nothing to show yet.
+    fn view_subagent(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        let Some(a) = self.selected_subagent() else { return };
+        let Some(path) = a.transcript_path.clone() else {
+            // A pi subagent run with `--no-session` writes none.
+            self.status_msg = Some(format!("'{}' keeps no transcript", a.label()));
+            return;
+        };
+        let Some(transcript) = Some(path).filter(|p| self.offline || p.is_file()) else {
+            self.status_msg = Some(format!("no transcript for '{}' yet", a.label()));
+            return;
+        };
+        if self.offline {
+            self.status_msg = Some(format!("following '{}'", a.label()));
+            return;
+        }
+        let title = if a.description.is_some() {
+            format!(" {} · {} ", a.label(), a.agent_type)
+        } else {
+            format!(" {} ", a.label())
+        };
+        self.pending_view = Some(AgentView {
+            title,
+            transcript,
+            agent: a.agent.clone(),
+            session_pid: a.session_pid,
+            task_path: row.path.clone(),
+            window_id: row.window_id.clone(),
+        });
+    }
+
     // ── Mouse dispatch ────────────────────────────────────────────────────────
 
     /// Scroll the list by `delta` items without touching the selection.
@@ -1075,6 +1195,9 @@ impl Column {
                 {
                     self.focus_list();
                     self.set_cur_sel(pos);
+                    if self.tab == Tab::Tasks {
+                        self.sub = self.line_to_sub.get(line).cloned().flatten();
+                    }
                     self.follow_selection();
                 }
             }
@@ -1242,6 +1365,10 @@ impl Column {
             }
             KeyCode::Enter | KeyCode::Char('o') | KeyCode::Char('l') => {
                 if self.tab == Tab::Tasks {
+                    if self.selected_sub().is_some() {
+                        self.view_subagent();
+                        return Ok(false);
+                    }
                     return self.jump();
                 }
             }
@@ -1838,6 +1965,7 @@ impl Column {
                 secrets_pending: vec![],
                 secrets_pending_set: vec![],
                 section: TaskStatus::Working.group(),
+                subagents: vec![],
             });
             self.filter.clear();
             self.sort_rows();
@@ -1946,6 +2074,7 @@ impl Column {
             secrets_pending: vec![],
             secrets_pending_set: vec![],
             section: TaskStatus::Working.group(),
+            subagents: vec![],
         }
     }
 
@@ -2871,12 +3000,13 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
 
     // ── Body list (tasks or repos) ────────────────────────────────────────────
     let list_width = list_area.width.saturating_sub(2) as usize;
-    let (items, line_of_selected, line_to_pos) = match column.tab {
+    let (items, line_of_selected, line_to_pos, line_to_sub) = match column.tab {
         Tab::Tasks => column_items(column, list_width),
-        Tab::Repos => repo_items(column, list_width),
-        Tab::Work => work_items(column, list_width),
+        Tab::Repos => no_subs(repo_items(column, list_width)),
+        Tab::Work => no_subs(work_items(column, list_width)),
     };
     column.line_to_pos = line_to_pos;
+    column.line_to_sub = line_to_sub;
     column.item_heights = items.iter().map(|i| i.height() as u16).collect();
 
     // Highlight a row only when the cursor is in the list (not the search field).
@@ -2931,6 +3061,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
             let (tag, tag_style) = mode_tag(column.input_mode);
             let hint = match (column.input_mode, column.tab) {
                 (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
+                (InputMode::Normal, Tab::Tasks) if column.selected_sub().is_some() => " ⏎ follow agent · ↓↑ move",
                 (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.pending) => {
                     " setting up · esc detach"
                 }
@@ -2979,7 +3110,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("j k ↓ ↑", "move"),
             ("gg G", "top / bottom"),
-            ("⏎ o l", "open task"),
+            ("⏎ o l", "open task / follow agent"),
             ("n", "next task that needs you"),
             ("A D", "approve / deny permission"),
             ("u", "unlock pending secrets"),
@@ -3174,13 +3305,12 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
 /// The current task's title takes the "current" chip's colour instead of a
 /// chip. No spacer between tasks: the headers already separate the groups,
 /// and a column has less height to spare than width.
-fn column_items(
-    column: &Column,
-    list_width: usize,
-) -> (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>) {
+fn column_items(column: &Column, list_width: usize) -> ListParts {
     const INDENT: usize = 2 + 3; // indent + glyph column
     let mut items = Vec::new();
     let mut line_to_pos: Vec<Option<usize>> = Vec::new();
+    let mut line_to_sub: Vec<Option<String>> = Vec::new();
+    let on_sub = column.selected_sub();
     let mut selected_line = None;
 
     let mut group_counts: [usize; 4] = [0; 4];
@@ -3197,6 +3327,7 @@ fn column_items(
             if last_group.is_some() {
                 items.push(ListItem::new(Line::from("")));
                 line_to_pos.push(None);
+                line_to_sub.push(None);
             }
             let count = group_counts[group.rank() as usize];
             items.push(ListItem::new(Line::from(vec![
@@ -3204,13 +3335,14 @@ fn column_items(
                 Span::styled(format!("  {count}"), dim),
             ])));
             line_to_pos.push(None);
+            line_to_sub.push(None);
             last_group = Some(group);
         }
-        if pos == column.selected {
+        if pos == column.selected && on_sub.is_none() {
             selected_line = Some(items.len());
         }
 
-        let selected = pos == column.selected && column.focus == Focus::List;
+        let selected = pos == column.selected && column.focus == Focus::List && on_sub.is_none();
         let is_current = column.current.as_deref() == Some(row.slug.as_str());
         // Closed tasks (no window) read dimmer; ⏎ opens them.
         let title_fg = if selected {
@@ -3290,15 +3422,85 @@ fn column_items(
         }
         items.push(ListItem::new(vec![first, Line::from(second)]));
         line_to_pos.push(Some(pos));
+        line_to_sub.push(None);
+
+        // The task's subagents, one line each, under its title.
+        for (k, a) in row.subagents.iter().enumerate() {
+            let on = pos == column.selected && on_sub == Some(k);
+            if on {
+                selected_line = Some(items.len());
+            }
+            items.push(ListItem::new(subagent_line(a, list_width, on && column.focus == Focus::List)));
+            line_to_pos.push(Some(pos));
+            line_to_sub.push(Some(a.id.clone()));
+        }
     }
 
     if items.is_empty() {
         for line in empty_state_lines() {
             items.push(ListItem::new(line));
             line_to_pos.push(None);
+            line_to_sub.push(None);
         }
     }
-    (items, selected_line, line_to_pos)
+    (items, selected_line, line_to_pos, line_to_sub)
+}
+
+/// A rendered list: its items, the item to highlight, and per item the
+/// filtered position it selects (`line_to_pos`) and the subagent it is
+/// (`line_to_sub`).
+type ListParts = (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>, Vec<Option<String>>);
+
+/// A list's items with no subagent lines — the Repos and Work tabs.
+fn no_subs((items, selected, line_to_pos): (Vec<ListItem<'static>>, Option<usize>, Vec<Option<usize>>)) -> ListParts {
+    let subs = vec![None; line_to_pos.len()];
+    (items, selected, line_to_pos, subs)
+}
+
+/// One subagent as a child line of its task: indented under the task's
+/// title, its status glyph (the task glyph table, `SubagentStatus::as_task_status`),
+/// its description, then its type and — once finished — how long ago, as far
+/// as they fit.
+fn subagent_line(a: &Subagent, width: usize, selected: bool) -> Line<'static> {
+    const SUB_INDENT: usize = 5; // under the task's title
+    let dim = Style::default().fg(palette::MUTED.color());
+    let status = a.status.as_task_status();
+    let label_fg = if selected {
+        palette::SEL_TEXT.color()
+    } else if a.status == SubagentStatus::Finished {
+        palette::MUTED.color()
+    } else {
+        palette::TEXT.color()
+    };
+    // After the label, in priority order, each kept only if it fits whole:
+    // when it finished (or that it runs in the background), then its type.
+    let mut extras: Vec<String> = Vec::new();
+    if a.status == SubagentStatus::Finished
+        && let Some(t) = a.updated_at
+    {
+        extras.push(workspace::format_age(t));
+    } else if a.background {
+        extras.push("bg".to_string());
+    }
+    if a.description.is_some() {
+        extras.push(a.agent_type.clone());
+    }
+    let room = width.saturating_sub(SUB_INDENT + 2).max(1);
+    let label = truncate(a.label(), room);
+    let mut used = label.width();
+    let mut spans = vec![
+        Span::raw(" ".repeat(SUB_INDENT)),
+        Span::styled(format!("{} ", status.glyph()), Style::default().fg(palette::status_color(status).color())),
+        Span::styled(label, Style::default().fg(label_fg)),
+    ];
+    for extra in extras {
+        let piece = format!(" · {extra}");
+        if used + piece.width() <= room {
+            used += piece.width();
+            spans.push(Span::styled(piece, dim));
+        }
+    }
+    Line::from(spans)
 }
 
 /// The first-run screen: the mark (`docs/logo/tenx-mark.svg`) drawn in text
@@ -3707,6 +3909,45 @@ mod tests {
     /// bell, the secrets request — skipping done, working and idle rows,
     /// and the column shows the task it lands on. `:next` does the same
     /// from the search field, starting at the top.
+    #[test]
+    fn arrows_walk_through_a_tasks_subagents() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        let down = || KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let up = || KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        let task = c.filtered.iter().position(|&i| c.rows[i].slug == "column-screenshot").unwrap();
+        c.set_cur_sel(task);
+        assert_eq!(c.selected_sub(), None);
+
+        // Down enters the task's subagents in their listed order, then leaves.
+        c.handle_key(down()).unwrap();
+        assert_eq!((c.selected, c.sub.as_deref()), (task, Some("a1")));
+        c.handle_key(down()).unwrap();
+        assert_eq!((c.selected, c.sub.as_deref()), (task, Some("a2")));
+        c.handle_key(down()).unwrap();
+        assert_eq!((c.selected, c.selected_sub()), (task + 1, None));
+
+        // Up from the next task lands on the last subagent, then climbs.
+        c.handle_key(up()).unwrap();
+        assert_eq!((c.selected, c.sub.as_deref()), (task, Some("a2")));
+        c.handle_key(up()).unwrap();
+        c.handle_key(up()).unwrap();
+        assert_eq!((c.selected, c.selected_sub()), (task, None));
+
+        // ⏎ on a subagent follows it, and doesn't open the task.
+        c.handle_key(down()).unwrap();
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert_eq!(c.status_msg.as_deref(), Some("following 'Map the session registry'"));
+        assert_eq!(c.take_request(), None);
+
+        // The rendered list: the selected line is the subagent's own.
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 60)).unwrap();
+        term.draw(|f| render_in(f, &mut c, f.area())).unwrap();
+        let item = c.list_state.selected().unwrap();
+        assert_eq!(c.line_to_sub[item].as_deref(), Some("a1"));
+        assert_eq!(c.line_to_pos[item], Some(task));
+    }
+
     #[test]
     fn n_cycles_through_tasks_that_need_you() {
         let mut c = screenshot::fixture_column();

@@ -37,6 +37,8 @@ A task's state is derived live, never recorded:
 | Done | Claude finished its turn and nothing has happened since. |
 | Idle | No live Claude session in the task. |
 
+A session's subagents are listed under their task, one line each — Claude Code's (what its `Agent` tool spawns, in the foreground or the background), Codex's (`spawn_agent`), and pi's (the child `pi` process a subagent extension runs): `●` waiting on you, `◐` running, `✔` finished (the last few, for ten minutes). A subagent waiting on a permission prompt makes its task Blocked, and a background subagent still running keeps its task Working after the session's own turn has ended. Put the cursor on one and press `Enter` to follow its transcript in a popup; `q` closes it. (A pi subagent run with `--no-session`, as pi's example extension does, keeps no transcript to follow.) Codex asks you to trust tenx's two new subagent hooks once, via `/hooks`.
+
 The state comes from tenx's own session registry plus tmux's bell flag. Every supported agent — Claude Code, Codex CLI, and pi — feeds that registry the same way, through its own hooks or extension, so the state model is identical whichever agent a task runs. `tenx agent setup <agent>` installs the integration (Claude Code and pi need no trust step; Codex asks you to trust its hook once via `/hooks`), and `tenx` does it for you on first launch.
 
 ## Requirements
@@ -116,9 +118,9 @@ The column lists every task from every registered workspace, sectioned by attent
 | Key | Action |
 |---|---|
 | `Ctrl+w` | Into the column, on the task you are in; from the column, hide it |
-| `↓`, `↑`, `j`, `k`, `gg`, `G` | Move; an open task shows as you land on it |
+| `↓`, `↑`, `j`, `k`, `gg`, `G` | Move; an open task shows as you land on it; a task's subagents are stepped through too |
 | `n` | Next task that needs you (blocked, rang the bell, or secrets pending), cycling |
-| `Enter`, `o`, `l` | Open the task, creating its window if needed, and put the cursor in it |
+| `Enter`, `o`, `l` | Open the task, creating its window if needed, and put the cursor in it; on a subagent, follow its transcript in a popup |
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |

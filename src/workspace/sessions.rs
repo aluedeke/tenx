@@ -19,11 +19,20 @@
 //! plain terminal in the same task directory, would otherwise report for a pane
 //! nobody can see.
 //!
+//! A session's *subagents* (Claude Code's `Agent` tool) are not processes and
+//! get no record of their own there: each has a small file under
+//! `~/.config/tenx/subagents/<pid>/<agent_id>.json`, written by the same hook
+//! sink, and is attached to its session when the registry is read. One file per
+//! subagent, not a list inside the session's record, because parallel
+//! subagents fire their hooks concurrently and a shared file would lose writes.
+//!
 //! This module is the impure half (filesystem + pid checks); the types and the
-//! meaning of a session list live in `tenx_core::status`, and what an event
-//! means for a record lives in `tenx_core::session_event`.
+//! meaning of a session list live in `tenx_core::status`, what an event means
+//! for a record lives in `tenx_core::session_event`, and for a subagent in
+//! `tenx_core::subagent`.
 
 pub use tenx_core::status::{Session, SessionStatus, fold_parked, in_panes};
+pub use tenx_core::subagent::{Subagent, SubagentStatus};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -73,6 +82,10 @@ pub struct Record {
     /// Claude Code's `permission_mode` from the last hook payload.
     #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<String>,
+    /// The session's first prompt, shortened, when the agent reports it (pi's
+    /// extension does) — its label if it is another session's subagent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 /// Directory holding tenx's session records.
@@ -159,6 +172,8 @@ pub fn sessions() -> Vec<Session> {
             parked_job_id: raw.parked_job_id,
             job_id: raw.job_id,
             permission_mode: raw.permission_mode,
+            subagents: tenx_core::subagent::visible(&read_subagents(pid), SystemTime::now()),
+            label: raw.prompt,
         });
     }
     if out.is_empty() {
@@ -166,6 +181,9 @@ pub fn sessions() -> Vec<Session> {
     }
     let scope = pane_scope();
     let mut out = fold_parked(in_panes(out, &scope.pane_pids, &scope.tree));
+    // A pi subagent is a child `pi` process reporting as a session of its
+    // own: list it under the session it runs beneath.
+    out = tenx_core::status::nest_child_sessions(out, &scope.tree, &|s| s.agent == "pi");
     // A permission wait may be stale — allowed by auto mode's classifier and
     // running, or denied in the pane with no hook to say so
     // (`tenx_core::status::confirm_permission_waits`): look at the pane. One
@@ -179,7 +197,10 @@ pub fn sessions() -> Vec<Session> {
 
 /// Prune records whose pid is no longer alive — the watcher's housekeeping so a
 /// crashed agent's file can't pin a task forever. Returns how many were removed.
+/// Subagent records go with their session, and finished ones once they are
+/// long past being listed (`tenx_core::subagent::prunable`).
 pub fn prune_dead() -> usize {
+    prune_subagents();
     let Some(dir) = registry_dir() else { return 0 };
     let Ok(entries) = fs::read_dir(&dir) else { return 0 };
     let mut removed = 0;
@@ -195,6 +216,148 @@ pub fn prune_dead() -> usize {
         }
     }
     removed
+}
+
+// ── Subagent records ──────────────────────────────────────────────────────────
+
+/// Directory holding every session's subagent records, one subdirectory per
+/// session pid.
+pub fn subagents_root() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join(".config/tenx/subagents"))
+}
+
+fn subagent_dir(pid: u32) -> Option<PathBuf> {
+    Some(subagents_root()?.join(pid.to_string()))
+}
+
+/// The on-disk subagent record (`tenx_core::subagent::Subagent`, minus the
+/// session pid, which is the directory it sits in).
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct SubagentRecord {
+    pub id: String,
+    /// The harness (`claude`, `codex`); absent in records from before it was
+    /// kept, which were all Claude Code's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    #[serde(rename = "agentType", default)]
+    pub agent_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(rename = "waitingFor", skip_serializing_if = "Option::is_none")]
+    pub waiting_for: Option<String>,
+    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
+    #[serde(rename = "statusUpdatedAt", skip_serializing_if = "Option::is_none")]
+    pub status_updated_at: Option<u64>,
+    #[serde(rename = "transcriptPath", skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub background: bool,
+}
+
+impl SubagentRecord {
+    pub fn to_subagent(&self, session_pid: u32) -> Subagent {
+        let at = |ms: u64| UNIX_EPOCH + Duration::from_millis(ms);
+        Subagent {
+            id: self.id.clone(),
+            session_pid,
+            agent: self.agent.clone().unwrap_or_else(|| DEFAULT_AGENT.to_string()),
+            agent_type: self.agent_type.clone(),
+            description: self.description.clone(),
+            status: SubagentStatus::from_token(&self.status),
+            waiting_for: self.waiting_for.clone(),
+            started_at: self.started_at.map(at),
+            updated_at: self.status_updated_at.map(at),
+            transcript_path: self.transcript_path.as_ref().map(PathBuf::from),
+            background: self.background,
+        }
+    }
+
+    pub fn from_subagent(s: &Subagent) -> SubagentRecord {
+        let ms = |t: SystemTime| t.duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        SubagentRecord {
+            id: s.id.clone(),
+            agent: Some(s.agent.clone()),
+            agent_type: s.agent_type.clone(),
+            description: s.description.clone(),
+            status: s.status.token().to_string(),
+            waiting_for: s.waiting_for.clone(),
+            started_at: s.started_at.map(ms),
+            status_updated_at: s.updated_at.map(ms),
+            transcript_path: s.transcript_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            background: s.background,
+        }
+    }
+}
+
+/// An agent id as a file name — ids are hex today; anything else is refused
+/// rather than trusted into a path.
+fn subagent_file(pid: u32, id: &str) -> Option<PathBuf> {
+    let safe = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    safe.then(|| subagent_dir(pid).map(|d| d.join(format!("{id}.json"))))?
+}
+
+/// One subagent's record, if present.
+pub fn read_subagent(pid: u32, id: &str) -> Option<SubagentRecord> {
+    serde_json::from_str(&fs::read_to_string(subagent_file(pid, id)?).ok()?).ok()
+}
+
+/// Write (atomically) one subagent's record.
+pub fn write_subagent(pid: u32, record: &SubagentRecord) -> Result<()> {
+    let path = subagent_file(pid, &record.id).context("unusable agent id")?;
+    let dir = path.parent().context("no parent")?;
+    fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    let tmp = dir.join(format!("{}.json.tmp.{}", record.id, std::process::id()));
+    fs::write(&tmp, serde_json::to_string(record).context("serialize subagent record")?)
+        .with_context(|| format!("write {}", tmp.display()))?;
+    fs::rename(&tmp, &path).with_context(|| format!("rename to {}", path.display()))?;
+    Ok(())
+}
+
+/// Every subagent record of session `pid`, unordered.
+pub fn read_subagents(pid: u32) -> Vec<Subagent> {
+    let Some(dir) = subagent_dir(pid) else { return vec![] };
+    let Ok(entries) = fs::read_dir(&dir) else { return vec![] };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .filter_map(|p| serde_json::from_str::<SubagentRecord>(&fs::read_to_string(&p).ok()?).ok())
+        .map(|r| r.to_subagent(pid))
+        .collect()
+}
+
+/// Forget every subagent of session `pid` (the session ended or started over).
+pub fn delete_subagents(pid: u32) {
+    if let Some(dir) = subagent_dir(pid) {
+        let _ = fs::remove_dir_all(dir);
+    }
+}
+
+/// Drop the subagent directories of dead sessions, and finished records long
+/// past their listing.
+fn prune_subagents() {
+    let Some(root) = subagents_root() else { return };
+    let Ok(entries) = fs::read_dir(&root) else { return };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(pid) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.parse::<u32>().ok()) else { continue };
+        if !pid_alive(pid) {
+            let _ = fs::remove_dir_all(&path);
+            continue;
+        }
+        for s in read_subagents(pid) {
+            if tenx_core::subagent::prunable(&s, now)
+                && let Some(file) = subagent_file(pid, &s.id)
+            {
+                let _ = fs::remove_file(file);
+            }
+        }
+    }
 }
 
 /// Snapshot of what `in_panes` needs: the server's pane pids and the process
@@ -353,6 +516,34 @@ mod tests {
         assert_eq!(find_agent_pid(300, &["codex"], 6, &comm2, &ppid2), Some(300));
         // No match within the hop budget → None (caller falls back to getppid).
         assert_eq!(find_agent_pid(500, &["nope"], 6, &comm, &ppid), None);
+    }
+
+    #[test]
+    fn subagent_record_round_trips() {
+        let s = Subagent {
+            id: "a67".into(),
+            session_pid: 42,
+            agent: "codex".into(),
+            agent_type: "Explore".into(),
+            description: Some("Map hooks".into()),
+            status: SubagentStatus::Waiting,
+            waiting_for: Some("permission: Bash".into()),
+            started_at: Some(UNIX_EPOCH + Duration::from_millis(1_000)),
+            updated_at: Some(UNIX_EPOCH + Duration::from_millis(2_000)),
+            transcript_path: Some(PathBuf::from("/t/agent-a67.jsonl")),
+            background: true,
+        };
+        let text = serde_json::to_string(&SubagentRecord::from_subagent(&s)).unwrap();
+        let back: SubagentRecord = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.to_subagent(42), s);
+    }
+
+    #[test]
+    fn subagent_ids_never_escape_their_directory() {
+        assert!(subagent_file(1, "../x").is_none());
+        assert!(subagent_file(1, "").is_none());
+        assert!(subagent_file(1, "a/b").is_none());
+        assert!(subagent_file(1, "a6712ef7a0900f96f").is_some_and(|p| p.ends_with("1/a6712ef7a0900f96f.json")));
     }
 
     #[test]

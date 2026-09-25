@@ -90,12 +90,30 @@ fn row(f: Fx) -> Row {
         secrets_pending: f.secrets.iter().map(|s| s.to_string()).collect(),
         secrets_pending_set: vec![],
         section,
+        subagents: vec![],
     }
 }
 
 /// Every section and every kind of chip, on invented tasks. Rows are listed
 /// in display order (section, then status rank, then recency), as
 /// `rebuild_rows` would sort them.
+fn subagent(id: &str, ty: &str, description: &str, status: SubagentStatus, age: u64) -> Subagent {
+    let at = SystemTime::now() - Duration::from_secs(age);
+    Subagent {
+        id: id.into(),
+        session_pid: 1,
+        agent: "claude".into(),
+        agent_type: ty.into(),
+        description: Some(description.into()),
+        status,
+        waiting_for: None,
+        started_at: Some(at),
+        updated_at: Some(at),
+        transcript_path: Some(PathBuf::from(format!("/home/you/.claude/projects/x/s/subagents/agent-{id}.jsonl"))),
+        background: false,
+    }
+}
+
 pub(super) fn fixture_column() -> Column {
     use TaskStatus::*;
     let m = 60;
@@ -174,6 +192,13 @@ pub(super) fn fixture_column() -> Column {
     ];
     let mut o = Column::empty();
     o.rows = rows.into_iter().map(row).collect();
+    // The task you're in has fanned out: one subagent at work, one done.
+    if let Some(r) = o.rows.iter_mut().find(|r| r.slug == "column-screenshot") {
+        r.subagents = vec![
+            subagent("a1", "Explore", "Map the session registry", SubagentStatus::Running, 40),
+            subagent("a2", "general-purpose", "Check hook payloads", SubagentStatus::Finished, 3 * m),
+        ];
+    }
     o.apply_filter();
     o.current = Some("column-screenshot".into());
     o.input_mode = InputMode::Normal;
@@ -313,6 +338,8 @@ fn column_renders_narrow() {
         "     acme-api · 54m · :8080",
         "     ledger · 23h · #31 ✓",
         "wants STRIPE_WEBHOOK_SECRET",
+        "     ◐ Map the session registry", // a subagent, under its task
+        "     ✔ Check hook payloads · 3m",
         " NORMAL ",
         "⏎ open",
     ] {

@@ -8,6 +8,13 @@
 //!
 //! Transcript location differs by agent (`transcript_path`); the line format
 //! differs too, and both are handled by `tenx_core::transcript`.
+//!
+//! The column opens the same view for a *subagent* (⏎ on its line), in a popup
+//! over the client's own tmux attach: `--transcript` names the exact file (a
+//! subagent's transcript sits beside its session's, not where `locate_transcript`
+//! looks), and `--popup` makes it wait for `q`/Esc rather than exit with the
+//! process — the subagent is not a process, and a popup that vanished the
+//! moment its session ended would take what you were reading with it.
 
 use anyhow::{Context, Result};
 use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
@@ -24,10 +31,30 @@ const TAIL_LINES: usize = 40;
 /// `TAIL_LINES`, and parsing from byte 0 would stall the pane on open.
 const HISTORY_BYTES: u64 = 512 * 1024;
 
-pub fn run(cwd: &str, pid: u32, session: Option<&str>, agent: &str) -> Result<()> {
+/// What to follow and how: the defaults are the watcher's pane for a `--bg`
+/// agent; `transcript`/`title`/`popup` are the column's subagent viewer.
+pub struct Follow<'a> {
+    pub cwd: &'a str,
+    pub pid: u32,
+    pub session: Option<&'a str>,
+    pub agent: &'a str,
+    pub transcript: Option<&'a str>,
+    pub title: Option<&'a str>,
+    pub popup: bool,
+}
+
+pub fn run(f: Follow) -> Result<()> {
+    let Follow { cwd, pid, session, agent, transcript, title, popup } = f;
     let mut out = std::io::stdout();
     let name = Path::new(cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    writeln!(out, "\x1b[1magent · {name}\x1b[0m  \x1b[2m({agent}; pid {pid}; this pane closes when it exits)\x1b[0m")?;
+    if popup {
+        let title = title.unwrap_or(&name);
+        writeln!(out, "\x1b[1m{}\x1b[0m  \x1b[2m(q or esc closes)\x1b[0m", title.trim())?;
+    } else {
+        writeln!(out, "\x1b[1magent · {name}\x1b[0m  \x1b[2m({agent}; pid {pid}; this pane closes when it exits)\x1b[0m")?;
+    }
+    let quit = if popup { keys::watch_for_close() } else { std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)) };
+    let mut exited = false;
 
     let mut file: Option<(PathBuf, BufReader<std::fs::File>)> = None;
     // `None` = never scanned; not `Instant::now() - 60s`, which can underflow
@@ -40,7 +67,11 @@ pub fn run(cwd: &str, pid: u32, session: Option<&str>, agent: &str) -> Result<()
         // we do shows up here.
         if last_scan.is_none_or(|t| t.elapsed() > Duration::from_secs(3)) {
             last_scan = Some(Instant::now());
-            if let Some(newest) = locate_transcript(agent, cwd, session)
+            let found = match transcript {
+                Some(t) => Some(PathBuf::from(t)).filter(|p| p.is_file()),
+                None => locate_transcript(agent, cwd, session),
+            };
+            if let Some(newest) = found
                 && file.as_ref().is_none_or(|(p, _)| *p != newest)
             {
                 let f = std::fs::File::open(&newest).with_context(|| format!("open {}", newest.display()))?;
@@ -92,11 +123,21 @@ pub fn run(cwd: &str, pid: u32, session: Option<&str>, agent: &str) -> Result<()
         }
         out.flush()?;
 
-        if !crate::workspace::sessions::pid_alive(pid) {
-            writeln!(out, "\x1b[2m— agent exited —\x1b[0m")?;
-            out.flush()?;
-            std::thread::sleep(Duration::from_secs(2));
+        if quit.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
+        }
+        if !exited && !crate::workspace::sessions::pid_alive(pid) {
+            if popup {
+                // Keep what's on screen; the reader decides when to close.
+                writeln!(out, "\x1b[2m— session exited —\x1b[0m")?;
+                out.flush()?;
+                exited = true;
+            } else {
+                writeln!(out, "\x1b[2m— agent exited —\x1b[0m")?;
+                out.flush()?;
+                std::thread::sleep(Duration::from_secs(2));
+                return Ok(());
+            }
         }
         if !got {
             std::thread::sleep(POLL);
@@ -176,6 +217,41 @@ fn render_line(agent: &str, line: &str) -> Option<String> {
             (!parts.is_empty()).then(|| format!("\x1b[2m{time}\x1b[0m {}", parts.join("  ")))
         }
         _ => None,
+    }
+}
+
+/// The popup's close keys. The terminal is put in non-canonical, no-echo mode
+/// so a single `q` or Esc arrives without Enter; output processing is left on
+/// (unlike a full raw mode), so the follower's `\n` still returns the carriage.
+/// Ctrl+C keeps its signal and ends the process the ordinary way.
+mod keys {
+    use std::io::Read;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    pub fn watch_for_close() -> Arc<AtomicBool> {
+        let quit = Arc::new(AtomicBool::new(false));
+        unsafe {
+            let mut t: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(0, &mut t) == 0 {
+                t.c_lflag &= !(libc::ICANON | libc::ECHO);
+                t.c_cc[libc::VMIN] = 1;
+                t.c_cc[libc::VTIME] = 0;
+                libc::tcsetattr(0, libc::TCSANOW, &t);
+            }
+        }
+        let flag = quit.clone();
+        std::thread::spawn(move || {
+            let mut stdin = std::io::stdin();
+            let mut b = [0u8; 1];
+            while let Ok(1) = stdin.read(&mut b) {
+                if matches!(b[0], b'q' | b'Q' | 0x1b) {
+                    flag.store(true, Ordering::Relaxed);
+                    return;
+                }
+            }
+        });
+        quit
     }
 }
 
