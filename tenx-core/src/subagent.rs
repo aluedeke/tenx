@@ -206,6 +206,7 @@ pub fn background_tasks(payload: &serde_json::Value) -> Vec<BackgroundTask> {
             tasks
                 .iter()
                 .filter(|t| t.get("type").and_then(|v| v.as_str()).is_none_or(|ty| ty == "subagent"))
+                .filter(|t| t.get("status").and_then(|v| v.as_str()).is_none_or(|st| st == "running"))
                 .filter_map(|t| {
                     Some(BackgroundTask {
                         id: t.get("id")?.as_str()?.to_string(),
@@ -235,16 +236,28 @@ pub fn waits_on_background(payload: &serde_json::Value, agent_id: &str) -> bool 
 }
 
 /// What a session's `Stop` changes about its subagents: every one not finished
-/// and not among `still_running` is over; those that are get their description
-/// filled in if it was missing. Returns the records to rewrite.
+/// and not among `still_running` is over. One that is among them is still at
+/// work — whatever its record says: a background subagent that ends its turn
+/// to wait on its own background work fires a `SubagentStop` that doesn't
+/// always say so (`waits_on_background`), and Claude Code wakes the session
+/// on that pause, so this `Stop` is what puts it back to running. Those get
+/// their description filled in, too, if it was missing. Returns the records
+/// to rewrite.
 pub fn settle_on_stop(subagents: &[Subagent], still_running: &[BackgroundTask]) -> Vec<Subagent> {
     let mut out = Vec::new();
     for s in subagents {
         match still_running.iter().find(|t| t.id == s.id) {
             Some(t) => {
-                if s.description.is_none() && t.description.is_some() {
+                let revive = s.status == SubagentStatus::Finished;
+                let describe = s.description.is_none() && t.description.is_some();
+                if revive || describe {
                     let mut s = s.clone();
-                    s.description = t.description.clone();
+                    if revive {
+                        s.status = SubagentStatus::Running;
+                    }
+                    if describe {
+                        s.description = t.description.clone();
+                    }
                     s.background = true;
                     out.push(s);
                 }
@@ -427,6 +440,26 @@ mod tests {
         let root = r#"{"type":"session_meta","payload":{"agent_path":"/root"}}"#;
         assert_eq!(codex_subagent_meta(root), (None, None));
         assert_eq!(codex_subagent_meta("{"), (None, None));
+    }
+
+    #[test]
+    fn a_paused_subagent_the_session_still_lists_runs_again() {
+        // Marked finished at its pause; the session's Stop still lists it.
+        let paused = sub("bg", SubagentStatus::Finished, 1, 2);
+        let still = [BackgroundTask { id: "bg".into(), description: Some("Retest agent".into()) }];
+        let changed = settle_on_stop(std::slice::from_ref(&paused), &still);
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].status, SubagentStatus::Running);
+        assert_eq!(changed[0].description.as_deref(), Some("Retest agent"));
+        // Once it has reported back the Stop no longer lists it: finished stays.
+        assert!(settle_on_stop(&[paused], &[]).is_empty());
+        // Only entries still running count.
+        let payload = serde_json::json!({ "background_tasks": [
+            { "id": "a", "type": "subagent", "status": "running" },
+            { "id": "b", "type": "subagent", "status": "completed" },
+        ]});
+        let ids: Vec<String> = background_tasks(&payload).into_iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec!["a"]);
     }
 
     #[test]
