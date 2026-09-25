@@ -46,7 +46,7 @@ jobs:
         with:
           tool: git-cliff@2.14.1
       # scripts/release.sh re-renders the README demo; agg turns the generated
-      # asciinema cast into docs/overlay-demo.gif, in JetBrains Mono.
+      # asciinema cast into docs/demo.gif, in JetBrains Mono.
       - name: Install agg and fonts
         env:
           AGG_VERSION: 1.9.0
