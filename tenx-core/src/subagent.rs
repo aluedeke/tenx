@@ -217,6 +217,23 @@ pub fn background_tasks(payload: &serde_json::Value) -> Vec<BackgroundTask> {
         .unwrap_or_default()
 }
 
+/// Whether a subagent's `SubagentStop` is only a pause: Claude Code fires it
+/// when the subagent ends its turn to wait on background work of its own (a
+/// `run_in_background` shell), and the payload's `background_tasks` then lists
+/// that work as running — anything but the subagent itself, which the list
+/// carries until it has reported back. Measured on Claude Code 2.1.282.
+pub fn waits_on_background(payload: &serde_json::Value, agent_id: &str) -> bool {
+    payload
+        .get("background_tasks")
+        .and_then(|v| v.as_array())
+        .is_some_and(|tasks| {
+            tasks.iter().any(|t| {
+                t.get("id").and_then(|v| v.as_str()) != Some(agent_id)
+                    && t.get("status").and_then(|v| v.as_str()) == Some("running")
+            })
+        })
+}
+
 /// What a session's `Stop` changes about its subagents: every one not finished
 /// and not among `still_running` is over; those that are get their description
 /// filled in if it was missing. Returns the records to rewrite.
@@ -409,6 +426,20 @@ mod tests {
         let root = r#"{"type":"session_meta","payload":{"agent_path":"/root"}}"#;
         assert_eq!(codex_subagent_meta(root), (None, None));
         assert_eq!(codex_subagent_meta("{"), (None, None));
+    }
+
+    #[test]
+    fn a_stop_while_its_own_shell_runs_is_a_pause() {
+        // Paused on its background `sleep`: still at work.
+        let pause = json!({ "hook_event_name": "SubagentStop", "background_tasks": [
+            { "id": "b5bi0cfm3", "type": "shell", "status": "running", "command": "sleep 20; echo ok" }
+        ]});
+        assert!(waits_on_background(&pause, "a82"));
+        // Lists only itself (what it carries until it reports): done.
+        let done = json!({ "background_tasks": [{ "id": "a82", "type": "subagent", "status": "running" }] });
+        assert!(!waits_on_background(&done, "a82"));
+        assert!(!waits_on_background(&json!({ "background_tasks": [] }), "a82"));
+        assert!(!waits_on_background(&json!({}), "a82"));
     }
 
     #[test]

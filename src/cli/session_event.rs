@@ -134,7 +134,11 @@ fn record_subagent(
         AgentKind::Codex => sub::codex_subagent_action(event, command),
         _ => sub::claude_subagent_action(event, tool_name),
     };
-    let SubagentAction::Set { status, waiting_for } = action else { return };
+    let SubagentAction::Set { mut status, waiting_for } = action else { return };
+    // A stop while its own background work runs is a pause, not the end.
+    if event == "SubagentStop" && agent == AgentKind::Claude && sub::waits_on_background(payload, id) {
+        status = sub::SubagentStatus::Running;
+    }
     let now = sessions::now_millis();
     let agent_type = payload.get("agent_type").and_then(|v| v.as_str());
     let mut record = match sessions::read_subagent(pid, id) {
