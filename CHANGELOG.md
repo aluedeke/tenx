@@ -29,10 +29,50 @@ First public release.
 - Desktop notifications carry the mark as their icon (`terminal-notifier` and `notify-send`), and the column's first-run screen draws it in text next to the wordmark.
 - Releases via cargo-dist: static binaries for macOS and Linux (Intel and ARM), a shell installer, and a Homebrew formula in `aluedeke/homebrew-tap` that depends on tmux. `make release auto` cuts one, with the version and this changelog derived from the commits.
 - `tenx` says when the running session was started by an older tenx and needs a restart to pick up the new binary.
+- **task:** Pre-approve Claude Code's trust dialog for new tasks
+- **core:** Agent-agnostic session events, transcripts, and codex parsing
+- **agents:** Uniform session registry fed by each agent's hooks/extension
+- **standup:** Include Codex and pi activity
+- **init:** Portable skills and AGENTS.md for Codex and pi
+- **agents:** Global default agent and column :agent, with full docs
+- **tui:** Pick the agent in the new-task form
+- **column:** N jumps to the next task that needs you, A/D answer (breaking)
+- **column:** Create a workspace from the column with W or :init
+- **column:** Pick the workspace in the new-task form
+- **column:** Live clone progress, off the UI thread, on a Work tab
+- **column:** A new task opens without taking over your terminal
+- **column:** List every key with ? or :help
+- **secrets:** Ask with `need --why`, answer all at once, one passphrase
+- **init:** Keep installed skills current in every workspace
+- **column:** Answer secrets in a popup that keeps the column live
+- **column:** Draw the secrets popup in the column's colours
+- **client:** Make OSC 8 hyperlinks in task panes clickable
+- **doctor:** Report whether the terminal sends Shift+Enter
+- **column:** Color each workspace's name to tell projects apart
 
 ### Changed
 
 - The package is `tenx-cli` (the crates.io name `tenx` belongs to an unrelated project). The binary is still `tenx`.
 - The path embedded in the generated tmux config is the one tenx was invoked by, not the resolved executable, so a package manager's `bin/tenx` symlink survives upgrades on Linux too.
+
+### Fixed
+
+- **status:** Detect permission prompts from a parked turn's worker
+- **status:** Read a parked turn's status from its worker, not the pane
+- **watch:** A killed watcher no longer blocks the next one as a zombie
+- Adapt multi-agent support to the client-column refactor
+- **status:** Answer and status follow the real permission dialog
+- **column:** List workspaces registered while the client runs
+- **sweep:** A task's window is the task's, not whatever shares its name (breaking)
+- **git:** Serialise bare-repo writes and recover interrupted clones
+- **secrets:** Store pasted secret values without terminal escape codes
+- **client:** Make Shift+Enter insert a newline in agents
+
+### Documentation
+
+- **demo:** Play a whole client session in the README demo
+- **demo:** Claude Code sessions on the right, a task created on camera
+- Describe multi-agent support
+- Document every column key, command and form
 
 [0.1.0]: https://github.com/aluedeke/tenx/releases/tag/v0.1.0

@@ -92,8 +92,16 @@ rm -f Cargo.toml.bak tenx-core/Cargo.toml.bak
 # The new section, from the commits since the last tag, inserted above the
 # previous version's heading (or appended when there is none).
 # A section written ahead of time (the first release, whose history predates
-# Conventional Commits) is kept as it is rather than duplicated.
+# Conventional Commits) is kept as it is rather than duplicated, but only if
+# no changelog-worthy commit landed after it was last edited: those would
+# end up in no section at all (as happened with 0.1.0).
 if grep -q "^## \[$version\]" CHANGELOG.md; then
+    edited=$(git log -1 --format=%H -- CHANGELOG.md)
+    if git cliff "$edited..HEAD" --strip all 2>/dev/null | grep -q '^- '; then
+        echo "release: CHANGELOG.md has a hand-written $version section, but commits since its last edit (${edited:0:7}) aren't in it." >&2
+        echo "  Add them (git cliff $edited..HEAD --strip all), commit, and run again." >&2
+        exit 1
+    fi
     echo "  ✓ CHANGELOG.md already has a $version section, keeping it"
 else
     section=$(git cliff --unreleased --tag "$tag" --strip all 2>/dev/null)
