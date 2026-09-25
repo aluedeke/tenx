@@ -9,10 +9,12 @@ cargo-dist-version = "0.32.0"
 ci = "github"
 # The installers to generate for each app
 installers = ["shell", "homebrew"]
-# The tap, aluedeke/homebrew-tap, is named in publish-homebrew.yml, not here:
-# dist's `tap` key only feeds its built-in publish job, which we don't use.
 # Homebrew formula name: `brew install aluedeke/tap/tenx`, not tenx-cli
 formula = "tenx"
+# The tap publish-homebrew.yml pushes to. dist's built-in publish job, the
+# other reader, is off, so `dist plan` warns about it; it's here so the
+# release notes print `brew install aluedeke/tap/tenx`, not `brew install tenx`.
+tap = "aluedeke/homebrew-tap"
 # Publish jobs to run in CI. Not dist's built-in "homebrew" job: that one
 # reads a tap token from a GitHub secret. Ours (publish-homebrew.yml) pushes
 # with a deploy key decrypted from secrets/ci.enc.env with sops, so the repo
