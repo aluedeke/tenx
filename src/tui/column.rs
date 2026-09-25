@@ -360,9 +360,16 @@ pub(super) struct AgentView {
     /// ⏎: once it's showing, hand the keyboard to it. Landing on a line only
     /// switches the view; the cursor stays in the column.
     pub(super) focus: bool,
-    /// What its row in Claude Code's agent panel shows: its description, else
-    /// its type.
+    /// What its row in Claude Code's agent panel shows at first: its
+    /// description, else its type.
     pub(super) label: String,
+    /// Its type, and its place among its session's running subagents of that
+    /// type in launch order (`nth` of `peers`) — how its row is found once
+    /// Claude shows a live summary there instead of the description
+    /// (`tenx_core::agent_panel::AgentRef`).
+    pub(super) agent_type: String,
+    pub(super) nth: Option<usize>,
+    pub(super) peers: usize,
     /// The viewer's header: the subagent's label and type.
     pub(super) title: String,
     /// Its transcript, when there is one to follow (`t`, and the fallback
@@ -1130,6 +1137,9 @@ impl Column {
                 main: true,
                 focus: false,
                 label: "main".into(),
+                agent_type: String::new(),
+                nth: None,
+                peers: 0,
                 title: String::new(),
                 transcript: None,
                 agent: a.agent.clone(),
@@ -1148,11 +1158,23 @@ impl Column {
     fn agent_view(&self, a: &Subagent, in_claude: bool, focus: bool) -> AgentView {
         let title =
             if a.description.is_some() { format!(" {} · {} ", a.label(), a.agent_type) } else { format!(" {} ", a.label()) };
+        // Its running peers of the same type in the same session, by launch.
+        let mut peers: Vec<&Subagent> = self
+            .selected_row()
+            .map(|r| r.subagents.iter().collect())
+            .unwrap_or_default();
+        peers.retain(|p| {
+            p.session_pid == a.session_pid && p.agent_type == a.agent_type && p.status != SubagentStatus::Finished
+        });
+        peers.sort_by_key(|p| p.started_at);
         AgentView {
             in_claude,
             main: false,
             focus,
             label: a.label().to_string(),
+            agent_type: a.agent_type.clone(),
+            nth: peers.iter().position(|p| p.id == a.id),
+            peers: peers.len(),
             title,
             transcript: a.transcript_path.clone().filter(|p| self.offline || p.is_file()),
             agent: a.agent.clone(),

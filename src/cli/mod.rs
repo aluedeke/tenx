@@ -142,6 +142,16 @@ pub enum InternalCommands {
         /// What its row in Claude's agent panel shows (its description);
         /// omitted, the session's main view.
         label: Option<String>,
+        /// Its type, to find its row once Claude shows a live summary there.
+        #[arg(long = "type")]
+        agent_type: Option<String>,
+        /// Its place (0-based) among the session's running subagents of that
+        /// type, in launch order...
+        #[arg(long)]
+        nth: Option<usize>,
+        /// ...and how many there are.
+        #[arg(long)]
+        peers: Option<usize>,
     },
 }
 

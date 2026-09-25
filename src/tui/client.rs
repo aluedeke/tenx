@@ -231,10 +231,12 @@ impl Client {
             return;
         }
         let (tx, rx) = mpsc::channel();
-        let (pid, main, label) = (v.session_pid, v.main, v.label.clone());
+        let (pid, main, label, agent_type, nth, peers) =
+            (v.session_pid, v.main, v.label.clone(), v.agent_type.clone(), v.nth, v.peers);
         std::thread::spawn(move || {
-            use crate::cli::agentview::{open_in_claude, Target};
-            let target = if main { Target::Main } else { Target::Agent(&label) };
+            use crate::cli::agentview::{open_in_claude, AgentRef, Target};
+            let target =
+                if main { Target::Main } else { Target::Agent(AgentRef { label: &label, agent_type: &agent_type, nth, peers }) };
             let _ = tx.send(open_in_claude(pid, target));
         });
         self.claude_view = Some((v, rx));

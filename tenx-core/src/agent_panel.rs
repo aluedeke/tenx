@@ -28,19 +28,55 @@
 //! around this: after that Claude Code has no view of the subagent at all, and
 //! the caller follows its transcript instead.)
 
-/// Which view to put in the pane: the session's own conversation, or the
-/// subagent whose row shows this label (its description, else its type).
+/// Which view to put in the pane: the session's own conversation, or one of
+/// its subagents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target<'a> {
     Main,
-    Agent(&'a str),
+    Agent(AgentRef<'a>),
 }
 
-impl Target<'_> {
-    fn matches(self, row: &str) -> bool {
+/// How to find a subagent's row. A row reads `<type>  <text>`, and the text
+/// is the spawn's description only at first: once the subagent has been at
+/// it a while, Claude shows a live summary there instead (`general-purpose
+/// Running third background sleep call`). So a row that still shows the
+/// description is taken; failing that, rows are listed in launch order, and
+/// the subagent is the `nth` of the `peers` running subagents of its type —
+/// used only when the panel lists exactly that many rows of the type, so a
+/// hidden or extra row makes it give up rather than open the wrong agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AgentRef<'a> {
+    pub label: &'a str,
+    pub agent_type: &'a str,
+    /// Its place among the session's running subagents of `agent_type`, in
+    /// launch order; `None` for one that isn't running (only its label can
+    /// find it).
+    pub nth: Option<usize>,
+    pub peers: usize,
+}
+
+impl<'a> Target<'a> {
+    /// A subagent known by its label alone.
+    pub fn label(label: &'a str) -> Target<'a> {
+        Target::Agent(AgentRef { label, agent_type: "", nth: None, peers: 0 })
+    }
+
+    /// Which of `rows` is this target's.
+    fn index(self, rows: &[PanelRow]) -> Option<usize> {
+        let is_main = |r: &PanelRow| r.text == "main" || r.text.starts_with("main ");
         match self {
-            Target::Main => row == "main" || row.starts_with("main "),
-            Target::Agent(label) => row_matches(row, label),
+            Target::Main => rows.iter().position(is_main),
+            Target::Agent(a) => rows.iter().position(|r| row_matches(&r.text, a.label)).or_else(|| {
+                let nth = a.nth?;
+                let prefix = format!("{} ", a.agent_type);
+                let typed: Vec<usize> = rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| !a.agent_type.is_empty() && !is_main(r) && r.text.starts_with(&prefix))
+                    .map(|(i, _)| i)
+                    .collect();
+                (typed.len() == a.peers).then(|| typed.get(nth).copied()).flatten()
+            }),
         }
     }
 }
@@ -77,15 +113,15 @@ pub fn next_step(capture: &str, target: Target, previous: Option<&str>, presses:
         // Not in the panel yet: `↓` walks in (past a status-line pill, maybe).
         return if presses >= PRESSES_TO_ENTER { PanelStep::GiveUp { clear: false } } else { PanelStep::Down };
     };
-    let here = &rows[at].text;
-    if target.matches(here) {
+    let to = target.index(&rows);
+    if to == Some(at) {
         return PanelStep::Open;
     }
     // The last press moved nothing, or the walk has gone on too long.
-    if previous == Some(here.as_str()) || presses >= MAX_PRESSES {
+    if previous == Some(rows[at].text.as_str()) || presses >= MAX_PRESSES {
         return PanelStep::GiveUp { clear: true };
     }
-    match rows.iter().position(|r| target.matches(&r.text)) {
+    match to {
         Some(to) if to > at => PanelStep::Down,
         Some(_) => PanelStep::Up,
         None => PanelStep::GiveUp { clear: true },
@@ -146,10 +182,11 @@ pub fn viewed_row(capture: &str) -> Option<String> {
 /// Whether the pane already shows `target`, so nothing needs pressing. Main
 /// is showing unless the panel marks a subagent's row as the viewed one.
 pub fn showing(capture: &str, target: Target) -> bool {
-    match (viewed_row(capture), target) {
-        (Some(row), t) => t.matches(&row),
+    let rows = panel_rows(capture);
+    match (rows.iter().position(|r| r.viewed), target) {
+        (Some(at), t) => t.index(&rows) == Some(at),
         (None, Target::Main) => true,
-        (None, Target::Agent(label)) => view_open(capture, label),
+        (None, Target::Agent(a)) => view_open(capture, a.label),
     }
 }
 
@@ -163,11 +200,14 @@ pub fn view_open(capture: &str, label: &str) -> bool {
     })
 }
 
-/// A row shows the subagent when it contains the start of its label — the
-/// panel truncates long descriptions, and a row never reads just `main`.
+/// A row shows the subagent when the text after its type starts with the
+/// start of its label — the panel truncates long descriptions — and it is
+/// never the `main` row.
 fn row_matches(row: &str, label: &str) -> bool {
     let key = match_key(label);
-    !key.is_empty() && row != "main" && flat(row).contains(&key)
+    let row = flat(row);
+    let body = row.split_once(' ').map_or(row.as_str(), |(_, b)| b);
+    !key.is_empty() && row != "main" && body.starts_with(&key)
 }
 
 /// The part of a label to look for: its first words, up to what a narrow
@@ -208,44 +248,72 @@ mod tests {
         let idle = pane("❯ ", &["  ⏵⏵ bypass permissions on · ← 3 agents · ↓ to manage", "  ⏺ main", ALPHA, BETA]);
         assert_eq!(selected_row(&idle), None);
         // The echoed prompt above the rules is not a row.
-        assert_eq!(next_step(&idle, Target::Agent("Alpha sleeper"), None, 0), PanelStep::Down);
+        assert_eq!(next_step(&idle, Target::label("Alpha sleeper"), None, 0), PanelStep::Down);
         // The first ↓ lands on a status-line pill: still no row.
         let pill = pane("❯ ", &["  ⏵⏵ bypass permissions on · 2 shells · Enter to view tasks", "", "  ⏺ main", ALPHA]);
-        assert_eq!(next_step(&pill, Target::Agent("Alpha sleeper"), None, 1), PanelStep::Down);
+        assert_eq!(next_step(&pill, Target::label("Alpha sleeper"), None, 1), PanelStep::Down);
         // No panel ever shows up (text in the prompt, say): give up, keep hands off.
-        assert_eq!(next_step(&idle, Target::Agent("Alpha sleeper"), None, 3), PanelStep::GiveUp { clear: false });
+        assert_eq!(next_step(&idle, Target::label("Alpha sleeper"), None, 3), PanelStep::GiveUp { clear: false });
     }
 
     #[test]
     fn walks_down_to_the_row_and_opens_it() {
         let on_main = pane("❯ ", &["  ↑/↓ to select", "", "❯ ⏺ main", ALPHA, BETA]);
         assert_eq!(selected_row(&on_main).as_deref(), Some("main"));
-        assert_eq!(next_step(&on_main, Target::Agent("Alpha sleeper"), None, 2), PanelStep::Down);
+        assert_eq!(next_step(&on_main, Target::label("Alpha sleeper"), None, 2), PanelStep::Down);
         assert_eq!(next_step(&on_main, Target::Main, None, 2), PanelStep::Open);
         let on_alpha = pane("❯ ", &["  ⏺ main", "❯ ◯ general-purpose  Alpha sleeper    5s · ↓ 30.4k tokens", BETA]);
         assert_eq!(selected_row(&on_alpha).as_deref(), Some("general-purpose Alpha sleeper 5s · ↓ 30.4k tokens"));
-        assert_eq!(next_step(&on_alpha, Target::Agent("Alpha sleeper"), Some("main"), 3), PanelStep::Open);
+        assert_eq!(next_step(&on_alpha, Target::label("Alpha sleeper"), Some("main"), 3), PanelStep::Open);
         // Beta is further down.
-        assert_eq!(next_step(&on_alpha, Target::Agent("Beta sleeper"), Some("main"), 3), PanelStep::Down);
+        assert_eq!(next_step(&on_alpha, Target::label("Beta sleeper"), Some("main"), 3), PanelStep::Down);
     }
 
     #[test]
     fn walks_up_to_a_row_above_the_selection() {
         // The selection stays on the last row opened (Eta); Zeta and main are above.
         let on_eta = pane("❯ Message @general-purpose…", &["  ◯ main", ALPHA, "❯ ⏺ general-purpose  Eta sleeper   6s"]);
-        assert_eq!(next_step(&on_eta, Target::Agent("Alpha sleeper"), None, 0), PanelStep::Up);
+        assert_eq!(next_step(&on_eta, Target::label("Alpha sleeper"), None, 0), PanelStep::Up);
         assert_eq!(next_step(&on_eta, Target::Main, None, 0), PanelStep::Up);
-        assert_eq!(next_step(&on_eta, Target::Agent("Eta sleeper"), None, 0), PanelStep::Open);
+        assert_eq!(next_step(&on_eta, Target::label("Eta sleeper"), None, 0), PanelStep::Open);
         // A target the panel doesn't list: give up without walking.
-        assert_eq!(next_step(&on_eta, Target::Agent("Gamma"), None, 0), PanelStep::GiveUp { clear: true });
+        assert_eq!(next_step(&on_eta, Target::label("Gamma"), None, 0), PanelStep::GiveUp { clear: true });
+    }
+
+    #[test]
+    fn finds_a_row_showing_a_live_summary_by_type_and_order() {
+        // Claude has replaced both descriptions with what the agents are doing.
+        let panel = pane("❯ ", &[
+            "❯ ⏺ main",
+            "  ◯ general-purpose  Running third background sleep call   1m 35s",
+            "  ◯ Explore  Reading src/tui/column.rs                      40s",
+            "  ◯ general-purpose  Waiting on the build                   20s",
+        ]);
+        let second_gp = Target::Agent(AgentRef { label: "Test agent for switching views", agent_type: "general-purpose", nth: Some(1), peers: 2 });
+        assert_eq!(next_step(&panel, second_gp, None, 0), PanelStep::Down);
+        let rows = panel_rows(&panel);
+        assert_eq!(second_gp.index(&rows), Some(3));
+        let explore = Target::Agent(AgentRef { label: "Map the hooks", agent_type: "Explore", nth: Some(0), peers: 1 });
+        assert_eq!(explore.index(&rows), Some(2));
+        // A count that doesn't add up (a row hidden, one we don't know): no guess.
+        let unsure = Target::Agent(AgentRef { label: "Unknown one", agent_type: "general-purpose", nth: Some(0), peers: 3 });
+        assert_eq!(unsure.index(&rows), None);
+        // A description still on its row wins over the order.
+        let described = pane("❯ ", &["  ⏺ main", "  ◯ general-purpose  Alpha sleeper   5s", "  ◯ general-purpose  Beta sleeper   5s"]);
+        let beta = Target::Agent(AgentRef { label: "Beta sleeper", agent_type: "general-purpose", nth: Some(0), peers: 2 });
+        assert_eq!(beta.index(&panel_rows(&described)), Some(2));
+        // And the view already up is recognised the same way.
+        let viewing = pane("❯ Message @general-purpose…", &["  ◯ main", "  ⏺ general-purpose  Running third background sleep call   1m 35s"]);
+        let first = Target::Agent(AgentRef { label: "Test agent for switching views", agent_type: "general-purpose", nth: Some(0), peers: 1 });
+        assert!(showing(&viewing, first));
     }
 
     #[test]
     fn gives_up_at_the_bottom_and_clears() {
         let on_beta = pane("❯ ", &["  ⏺ main", ALPHA, "❯ ◯ general-purpose  Beta sleeper   5s"]);
         let row = selected_row(&on_beta).unwrap();
-        assert_eq!(next_step(&on_beta, Target::Agent("Gamma"), Some(&row), 5), PanelStep::GiveUp { clear: true });
-        assert_eq!(next_step(&on_beta, Target::Agent("Gamma"), Some("main"), MAX_PRESSES), PanelStep::GiveUp { clear: true });
+        assert_eq!(next_step(&on_beta, Target::label("Gamma"), Some(&row), 5), PanelStep::GiveUp { clear: true });
+        assert_eq!(next_step(&on_beta, Target::label("Gamma"), Some("main"), MAX_PRESSES), PanelStep::GiveUp { clear: true });
     }
 
     #[test]
@@ -262,7 +330,7 @@ mod tests {
         let main_idle = pane("❯ ", &["  ⏵⏵ auto mode on · ← 3 agents"]);
         assert_eq!(viewed_row(&main_idle), None);
         assert!(showing(&main_idle, Target::Main));
-        assert!(!showing(&main_idle, Target::Agent("Alpha sleeper")));
+        assert!(!showing(&main_idle, Target::label("Alpha sleeper")));
         // Main view with rows listed: `⏺ main`.
         let main_rows = pane("❯ ", &["  ⏺ main", ALPHA]);
         assert_eq!(viewed_row(&main_rows).as_deref(), Some("main"));
@@ -270,9 +338,9 @@ mod tests {
         // Viewing Alpha, its row selected or not.
         for alpha in ["  ⏺ general-purpose  Alpha sleeper   5s", "❯ ⏺ general-purpose  Alpha sleeper   5s"] {
             let viewing = pane("❯ Message @general-purpose…", &["  ◯ main", alpha, BETA]);
-            assert!(showing(&viewing, Target::Agent("Alpha sleeper")));
+            assert!(showing(&viewing, Target::label("Alpha sleeper")));
             assert!(!showing(&viewing, Target::Main));
-            assert!(!showing(&viewing, Target::Agent("Beta sleeper")));
+            assert!(!showing(&viewing, Target::label("Beta sleeper")));
         }
         // The transcript's own `⏺` lines above the rules don't count.
         assert_eq!(viewed_row(&format!("⏺ Agent(Alpha)\n{RULE}\n❯ \n{RULE}\n  ⏵⏵ auto\n")), None);

@@ -16,13 +16,13 @@
 /// Returns the pane. Refuses while a permission dialog is up — `↓` would move
 /// its choice — and leaves the panel as it found it when the row isn't listed
 /// (Claude drops a finished subagent after about 30 s).
-pub use tenx_core::agent_panel::Target;
+pub use tenx_core::agent_panel::{AgentRef, Target};
 
 pub fn open_in_claude(session_pid: u32, target: Target) -> Result<String, String> {
     use tenx_core::agent_panel::{next_step, selected_row, showing, view_open, PanelStep, MAX_PRESSES};
     let name = match target {
         Target::Main => "main".to_string(),
-        Target::Agent(label) => label.to_string(),
+        Target::Agent(a) => a.label.to_string(),
     };
     let pane = crate::workspace::sessions::sessions()
         .into_iter()
@@ -61,7 +61,7 @@ pub fn open_in_claude(session_pid: u32, target: Target) -> Result<String, String
             PanelStep::Open => {
                 key("Enter")?;
                 now = settle(&now)?;
-                let opened = showing(&now, target) || matches!(target, Target::Agent(l) if view_open(&now, l));
+                let opened = showing(&now, target) || matches!(target, Target::Agent(a) if view_open(&now, a.label));
                 return if opened { Ok(pane) } else { Err(format!("'{name}' didn't open in Claude")) };
             }
             PanelStep::GiveUp { clear } => {
@@ -76,9 +76,21 @@ pub fn open_in_claude(session_pid: u32, target: Target) -> Result<String, String
 }
 
 /// The command: prints the pane on success, the reason on failure (exit 1).
-/// No label means the session's main view.
-pub fn run(session_pid: u32, label: Option<&str>) -> anyhow::Result<()> {
-    let target = label.map_or(Target::Main, Target::Agent);
+/// No label means the session's main view; `agent_type`/`nth`/`peers` find a
+/// row that no longer shows the label (`AgentRef`).
+pub fn run(
+    session_pid: u32,
+    label: Option<&str>,
+    agent_type: Option<&str>,
+    nth: Option<usize>,
+    peers: Option<usize>,
+) -> anyhow::Result<()> {
+    let target = match label {
+        None => Target::Main,
+        Some(label) => {
+            Target::Agent(AgentRef { label, agent_type: agent_type.unwrap_or(""), nth, peers: peers.unwrap_or(0) })
+        }
+    };
     match open_in_claude(session_pid, target) {
         Ok(pane) => {
             println!("{pane}");
