@@ -261,10 +261,11 @@ pub fn settle_on_stop(subagents: &[Subagent], still_running: &[BackgroundTask]) 
     out
 }
 
-/// How long a finished subagent stays listed under its task: long enough to
-/// see that it finished and to open what it did, short enough that a session
-/// which fanned out a dozen agents an hour ago isn't still a dozen lines tall.
-pub const FINISHED_LINGER: Duration = Duration::from_secs(10 * 60);
+/// How long a finished subagent stays listed under its task: as long as
+/// Claude Code keeps it in its own agent panel (about 30 s, measured on
+/// 2.1.282), so the column lists what Claude lists — and switching to a line
+/// still works for as long as the line is there.
+pub const FINISHED_LINGER: Duration = Duration::from_secs(30);
 
 /// At most this many finished subagents per task are listed; running and
 /// waiting ones are always shown.
@@ -474,7 +475,7 @@ mod tests {
         let waiting = sub("w", SubagentStatus::Waiting, 100, 9_000);
         let old_run = sub("r1", SubagentStatus::Running, 100, 100); // running never expires
         let new_run = sub("r2", SubagentStatus::Running, 200, 200);
-        let recent = sub("f1", SubagentStatus::Finished, 300, 9_900);
+        let recent = sub("f1", SubagentStatus::Finished, 300, 9_980);
         let stale = sub("f2", SubagentStatus::Finished, 50, 1_000);
         let ids: Vec<String> =
             visible(&[stale, recent, old_run, waiting, new_run], now).into_iter().map(|s| s.id).collect();
@@ -484,7 +485,7 @@ mod tests {
     #[test]
     fn visible_caps_finished() {
         let now = at(10_000);
-        let subs: Vec<Subagent> = (0..6).map(|i| sub(&format!("f{i}"), SubagentStatus::Finished, 9_000 + i, 9_500)).collect();
+        let subs: Vec<Subagent> = (0..6).map(|i| sub(&format!("f{i}"), SubagentStatus::Finished, 9_000 + i, 9_990)).collect();
         let ids: Vec<String> = visible(&subs, now).into_iter().map(|s| s.id).collect();
         assert_eq!(ids, vec!["f5", "f4", "f3"]);
     }
@@ -493,7 +494,7 @@ mod tests {
     fn prunes_only_long_finished() {
         let now = at(100_000);
         assert!(prunable(&sub("a", SubagentStatus::Finished, 1, 1), now));
-        assert!(!prunable(&sub("b", SubagentStatus::Finished, 1, 99_000), now));
+        assert!(!prunable(&sub("b", SubagentStatus::Finished, 1, 99_950), now));
         assert!(!prunable(&sub("c", SubagentStatus::Running, 1, 1), now));
     }
 

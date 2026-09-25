@@ -3545,8 +3545,8 @@ fn no_subs((items, selected, line_to_pos): (Vec<ListItem<'static>>, Option<usize
 
 /// One subagent as a child line of its task: indented under the task's
 /// title, its status glyph (the task glyph table, `SubagentStatus::as_task_status`),
-/// its description, then its type and — once finished — how long ago, as far
-/// as they fit.
+/// its description, then whether it runs in the background and its type, as
+/// far as they fit.
 fn subagent_line(a: &Subagent, width: usize, selected: bool) -> Line<'static> {
     const SUB_INDENT: usize = 5; // under the task's title
     let dim = Style::default().fg(palette::MUTED.color());
@@ -3559,13 +3559,10 @@ fn subagent_line(a: &Subagent, width: usize, selected: bool) -> Line<'static> {
         palette::TEXT.color()
     };
     // After the label, in priority order, each kept only if it fits whole:
-    // when it finished (or that it runs in the background), then its type.
+    // that it runs in the background, then its type. (A finished one is
+    // listed for half a minute at most — no age worth showing.)
     let mut extras: Vec<String> = Vec::new();
-    if a.status == SubagentStatus::Finished
-        && let Some(t) = a.updated_at
-    {
-        extras.push(workspace::format_age(t));
-    } else if a.background {
+    if a.background && a.status != SubagentStatus::Finished {
         extras.push("bg".to_string());
     }
     if a.description.is_some() {

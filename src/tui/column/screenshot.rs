@@ -196,7 +196,7 @@ pub(super) fn fixture_column() -> Column {
     if let Some(r) = o.rows.iter_mut().find(|r| r.slug == "column-screenshot") {
         r.subagents = vec![
             subagent("a1", "Explore", "Map the session registry", SubagentStatus::Running, 40),
-            subagent("a2", "general-purpose", "Check hook payloads", SubagentStatus::Finished, 3 * m),
+            subagent("a2", "general-purpose", "Check hook payloads", SubagentStatus::Finished, 20),
         ];
     }
     o.apply_filter();
@@ -339,7 +339,7 @@ fn column_renders_narrow() {
         "     ledger · 23h · #31 ✓",
         "wants STRIPE_WEBHOOK_SECRET",
         "     ◐ Map the session registry", // a subagent, under its task
-        "     ✔ Check hook payloads · 3m",
+        "     ✔ Check hook payloads",
         " NORMAL ",
         "⏎ open",
     ] {
