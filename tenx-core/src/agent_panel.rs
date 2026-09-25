@@ -23,8 +23,10 @@
 //!
 //! Idle agents' rows are hidden after a while and surplus idle ones collapse
 //! into one row, so a finished subagent may not be there to select: the walk
-//! then gives up, clears its selection, and the caller shows the transcript
-//! another way.
+//! then gives up and clears its selection. (`/tasks` drops a finished
+//! subagent on the same schedule, about 30 s after it ends, so it is no way
+//! around this: after that Claude Code has no view of the subagent at all, and
+//! the caller follows its transcript instead.)
 
 /// What to do next while walking the panel.
 #[derive(Debug, Clone, PartialEq, Eq)]

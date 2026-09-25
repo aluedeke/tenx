@@ -352,15 +352,15 @@ pub(super) enum ClientRequest {
 #[derive(Debug, Clone)]
 pub(super) struct AgentView {
     /// Open it in Claude Code's own agent view, in its session's pane
-    /// (`tenx_core::agent_panel`), rather than tenx's transcript popup.
+    /// (`tenx_core::agent_panel`), rather than tenx's transcript window.
     pub(super) in_claude: bool,
     /// What its row in Claude Code's agent panel shows: its description, else
     /// its type.
     pub(super) label: String,
-    /// The popup's title: the subagent's label and type.
+    /// The viewer's header: the subagent's label and type.
     pub(super) title: String,
-    /// Its transcript, when there is one to follow (the popup, and the
-    /// fallback when the agent view can't be reached).
+    /// Its transcript, when there is one to follow (`t`, and the fallback
+    /// when the agent view can't be reached).
     pub(super) transcript: Option<PathBuf>,
     /// Its harness (`claude`, `codex`, `pi`), which decides how the transcript reads.
     pub(super) agent: String,
@@ -368,8 +368,6 @@ pub(super) struct AgentView {
     pub(super) session_pid: u32,
     /// The task directory, the viewer's working directory.
     pub(super) task_path: PathBuf,
-    /// The task's window, for the split-pane fallback when no popup can be aimed.
-    pub(super) window_id: Option<String>,
 }
 
 pub(super) struct Column {
@@ -933,15 +931,6 @@ impl Column {
         }
     }
 
-    /// Back into the list exactly where the cursor was — after a popup
-    /// opened from a row closes (unlike `select_current`, which moves to the
-    /// task you are in).
-    pub(super) fn refocus_list(&mut self) {
-        if matches!(self.mode, Mode::List) && self.tab == Tab::Tasks && !self.filtered.is_empty() {
-            self.focus_list();
-        }
-    }
-
     /// The keyboard left the column: drop the row highlight so the list
     /// shows no cursor while the task has it. Ctrl+w brings it back on the
     /// current task (`select_current`).
@@ -1121,7 +1110,7 @@ impl Column {
     /// ⏎ on a subagent line (`in_claude`): open it in Claude Code's own
     /// agent view in its session's pane — a Claude Code subagent in an open
     /// window; anything else falls back to the transcript. `t`: follow its
-    /// transcript in tenx's popup. Says why when there is nothing to show.
+    /// transcript in a tmux window of its own. Says why when there is nothing to show.
     fn view_subagent(&mut self, in_claude: bool) {
         let Some(row) = self.selected_row() else { return };
         let Some(a) = self.selected_subagent() else { return };
@@ -1152,7 +1141,6 @@ impl Column {
             agent: a.agent.clone(),
             session_pid: a.session_pid,
             task_path: row.path.clone(),
-            window_id: row.window_id.clone(),
         });
     }
 

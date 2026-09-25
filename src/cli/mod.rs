@@ -129,9 +129,10 @@ pub enum InternalCommands {
         /// Header line to show instead of the directory name.
         #[arg(long)]
         title: Option<String>,
-        /// Run as a popup: close on q/Esc, stay open when the process exits.
+        /// Run as an interactive viewer: close on q/Esc, stay open when the
+        /// process exits.
         #[arg(long)]
-        popup: bool,
+        viewer: bool,
     },
     /// Open a Claude Code subagent in Claude's own agent view, in its
     /// session's pane (what ⏎ on a subagent line in the column does).

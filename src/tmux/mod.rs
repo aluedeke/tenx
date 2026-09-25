@@ -628,10 +628,10 @@ pub fn open_agent_pane(window_id: &str, tenx_bin: &str, cwd: &str, pid: u32, ses
 }
 
 /// The `tenx internal agent-log` arguments that follow one subagent's
-/// transcript as a popup (`--popup`: q/Esc closes it).
+/// transcript in a window of its own (`--viewer`: q/Esc closes it).
 pub fn subagent_log_args(cwd: &str, session_pid: u32, agent: &str, transcript: &str, title: &str) -> String {
     format!(
-        "internal agent-log {} {session_pid} --agent {} --transcript {} --title {} --popup",
+        "internal agent-log {} {session_pid} --agent {} --transcript {} --title {} --viewer",
         shell_quote(cwd),
         shell_quote(agent),
         shell_quote(transcript),
@@ -639,11 +639,17 @@ pub fn subagent_log_args(cwd: &str, session_pid: u32, agent: &str, transcript: &
     )
 }
 
-/// Where no popup can be aimed (no tmux client found for the embedded
-/// terminal): the same viewer as a pane split into the task's window, focused.
-pub fn open_subagent_pane(window_id: &str, tenx_bin: &str, cwd: &str, args: &str) -> Result<()> {
+/// Show a subagent's transcript viewer in a window of its own, named `name`
+/// (`↳ <label>`), and make it the session's current window — or select the
+/// one already showing it. The name never equals a slug, so no task lookup
+/// (`find_task_window` narrows by slug) mistakes it for a task's window; the
+/// viewer's `q` ends it, and tmux goes back to the window before it.
+pub fn open_agent_window(tenx_bin: &str, cwd: &str, name: &str, args: &str) -> Result<()> {
+    if let Some(w) = list_windows()?.into_iter().find(|w| w.name == name) {
+        return select_window(&w.id);
+    }
     let command = format!("{} {args}", tenx_cmd(tenx_bin));
-    run(&["split-window", "-v", "-l", "40%", "-t", window_id, "-c", cwd, &command]).map(drop)
+    run(&["new-window", "-t", SESSION, "-n", name, "-c", cwd, &command]).map(drop)
 }
 
 // ── Popups ────────────────────────────────────────────────────────────────────

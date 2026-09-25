@@ -4,14 +4,15 @@
 //! against a tmux server of one's own (`TENX_TMUX_SOCKET`).
 //!
 //! Claude Code offers no way to name an agent from outside, so this presses
-//! keys in the pane the way a finger would; `tenx_core::agent_panel` has the
-//! panel's shape and decides each key.
+//! keys in the pane the way a finger would, through the agent panel under the
+//! prompt; `tenx_core::agent_panel` has the panel's shape and decides each key.
 
-/// Walk Claude Code's agent panel in the pane of session `session_pid` to the
-/// row showing `label`, and open it (`tenx_core::agent_panel` decides each
-/// key from a fresh capture). Returns the pane on success. Refuses while a
-/// permission dialog is up — `↓` would move its choice — and leaves the panel
-/// as it found it when the row isn't there.
+/// Open the subagent showing `label` in Claude Code's agent view, in the pane
+/// of session `session_pid`, by walking the agent panel to its row
+/// (`tenx_core::agent_panel` decides each key from a fresh capture). Returns
+/// the pane on success. Refuses while a permission dialog is up — `↓` would
+/// move its choice — and leaves the panel as it found it when the subagent
+/// isn't listed (Claude drops a finished one after about 30 s).
 pub fn open_in_claude(session_pid: u32, label: &str) -> Result<String, String> {
     use tenx_core::agent_panel::{next_step, selected_row, view_open, PanelStep, MAX_PRESSES};
     let pane = crate::workspace::sessions::sessions()
@@ -33,10 +34,12 @@ pub fn open_in_claude(session_pid: u32, label: &str) -> Result<String, String> {
         }
         capture(&pane)
     };
+    let opened = |now: &str| if view_open(now, label) { Ok(pane.clone()) } else { Err(format!("'{label}' didn't open in Claude")) };
     let mut now = capture(&pane)?;
     if tenx_core::dialog::permission_dialog_visible(&now) {
         return Err("a dialog is open in its pane".into());
     }
+
     let mut previous: Option<String> = None;
     for presses in 0..=MAX_PRESSES {
         match next_step(&now, label, previous.as_deref(), presses) {
@@ -47,18 +50,17 @@ pub fn open_in_claude(session_pid: u32, label: &str) -> Result<String, String> {
             }
             PanelStep::Open => {
                 key("Enter")?;
-                now = settle(&now)?;
-                return if view_open(&now, label) { Ok(pane) } else { Err(format!("'{label}' didn't open in Claude")) };
+                return opened(&settle(&now)?);
             }
             PanelStep::GiveUp { clear } => {
                 if clear {
                     key("Escape")?;
                 }
-                return Err(format!("'{label}' isn't in Claude's agent panel"));
+                break;
             }
         }
     }
-    Err(format!("'{label}' isn't in Claude's agent panel"))
+    Err(format!("Claude no longer lists '{label}'"))
 }
 
 /// The command: prints the pane on success, the reason on failure (exit 1).

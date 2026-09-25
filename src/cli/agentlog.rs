@@ -9,12 +9,13 @@
 //! Transcript location differs by agent (`transcript_path`); the line format
 //! differs too, and both are handled by `tenx_core::transcript`.
 //!
-//! The column opens the same view for a *subagent* (⏎ on its line), in a popup
-//! over the client's own tmux attach: `--transcript` names the exact file (a
-//! subagent's transcript sits beside its session's, not where `locate_transcript`
-//! looks), and `--popup` makes it wait for `q`/Esc rather than exit with the
-//! process — the subagent is not a process, and a popup that vanished the
-//! moment its session ended would take what you were reading with it.
+//! The column opens the same view for a *subagent* (`t` on its line, or ⏎ when
+//! Claude's own agent view can't be reached), in a tmux window of its own:
+//! `--transcript` names the exact file (a subagent's transcript sits beside its
+//! session's, not where `locate_transcript` looks), and `--viewer` makes it
+//! wait for `q`/Esc rather than exit with the process — the subagent is not a
+//! process, and a window that vanished the moment its session ended would take
+//! what you were reading with it.
 
 use anyhow::{Context, Result};
 use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
@@ -32,7 +33,7 @@ const TAIL_LINES: usize = 40;
 const HISTORY_BYTES: u64 = 512 * 1024;
 
 /// What to follow and how: the defaults are the watcher's pane for a `--bg`
-/// agent; `transcript`/`title`/`popup` are the column's subagent viewer.
+/// agent; `transcript`/`title`/`viewer` are the column's subagent viewer.
 pub struct Follow<'a> {
     pub cwd: &'a str,
     pub pid: u32,
@@ -40,20 +41,20 @@ pub struct Follow<'a> {
     pub agent: &'a str,
     pub transcript: Option<&'a str>,
     pub title: Option<&'a str>,
-    pub popup: bool,
+    pub viewer: bool,
 }
 
 pub fn run(f: Follow) -> Result<()> {
-    let Follow { cwd, pid, session, agent, transcript, title, popup } = f;
+    let Follow { cwd, pid, session, agent, transcript, title, viewer } = f;
     let mut out = std::io::stdout();
     let name = Path::new(cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    if popup {
+    if viewer {
         let title = title.unwrap_or(&name);
         writeln!(out, "\x1b[1m{}\x1b[0m  \x1b[2m(q or esc closes)\x1b[0m", title.trim())?;
     } else {
         writeln!(out, "\x1b[1magent · {name}\x1b[0m  \x1b[2m({agent}; pid {pid}; this pane closes when it exits)\x1b[0m")?;
     }
-    let quit = if popup { keys::watch_for_close() } else { std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)) };
+    let quit = if viewer { keys::watch_for_close() } else { std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)) };
     let mut exited = false;
 
     let mut file: Option<(PathBuf, BufReader<std::fs::File>)> = None;
@@ -127,7 +128,7 @@ pub fn run(f: Follow) -> Result<()> {
             return Ok(());
         }
         if !exited && !crate::workspace::sessions::pid_alive(pid) {
-            if popup {
+            if viewer {
                 // Keep what's on screen; the reader decides when to close.
                 writeln!(out, "\x1b[2m— session exited —\x1b[0m")?;
                 out.flush()?;
@@ -220,7 +221,7 @@ fn render_line(agent: &str, line: &str) -> Option<String> {
     }
 }
 
-/// The popup's close keys. The terminal is put in non-canonical, no-echo mode
+/// The viewer's close keys. The terminal is put in non-canonical, no-echo mode
 /// so a single `q` or Esc arrives without Enter; output processing is left on
 /// (unlike a full raw mode), so the follower's `\n` still returns the carriage.
 /// Ctrl+C keeps its signal and ends the process the ordinary way.

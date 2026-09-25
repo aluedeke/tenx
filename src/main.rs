@@ -70,7 +70,7 @@ fn run() -> Result<()> {
             }
             InternalCommands::SessionEvent { agent, pid } => cli::session_event::run(&agent, pid),
             InternalCommands::OpenAgent { pid, label } => cli::agentview::run(pid, &label)?,
-            InternalCommands::AgentLog { cwd, pid, session, agent, transcript, title, popup } => {
+            InternalCommands::AgentLog { cwd, pid, session, agent, transcript, title, viewer } => {
                 cli::agentlog::run(cli::agentlog::Follow {
                     cwd: &cwd,
                     pid,
@@ -78,7 +78,7 @@ fn run() -> Result<()> {
                     agent: &agent,
                     transcript: transcript.as_deref(),
                     title: title.as_deref(),
-                    popup,
+                    viewer,
                 })?
             }
         },

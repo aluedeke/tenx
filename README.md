@@ -37,7 +37,7 @@ A task's state is derived live, never recorded:
 | Done | Claude finished its turn and nothing has happened since. |
 | Idle | No live Claude session in the task. |
 
-A session's subagents are listed under their task, one line each — Claude Code's (what its `Agent` tool spawns, in the foreground or the background), Codex's (`spawn_agent`), and pi's (the child `pi` process a subagent extension runs): `●` waiting on you, `◐` running, `✔` finished (the last few, for ten minutes). A subagent waiting on a permission prompt makes its task Blocked, and a background subagent still running keeps its task Working after the session's own turn has ended. Put the cursor on one and press `Enter`: a Claude Code subagent opens in Claude's own agent view, in its session's pane (tenx walks Claude's agent panel to its row); anything else, or a subagent Claude no longer lists, is followed in a transcript popup instead, which `t` opens directly and `q` closes. (A pi subagent run with `--no-session`, as pi's example extension does, keeps no transcript to follow.) Codex asks you to trust tenx's two new subagent hooks once, via `/hooks`.
+A session's subagents are listed under their task, one line each — Claude Code's (what its `Agent` tool spawns, in the foreground or the background), Codex's (`spawn_agent`), and pi's (the child `pi` process a subagent extension runs): `●` waiting on you, `◐` running, `✔` finished (the last few, for ten minutes). A subagent waiting on a permission prompt makes its task Blocked, and a background subagent still running keeps its task Working after the session's own turn has ended. Put the cursor on one and press `Enter`: a Claude Code subagent opens in Claude's own agent view, in its session's pane (tenx walks Claude's agent panel to its row); Claude stops listing a finished subagent about 30 seconds after it ends, so that one — like a Codex or pi subagent — opens as its transcript in a tmux window of its own (`↳ <description>`), which `t` opens directly and `q` closes. (A pi subagent run with `--no-session`, as pi's example extension does, keeps no transcript to follow.) Codex asks you to trust tenx's two new subagent hooks once, via `/hooks`.
 
 The state comes from tenx's own session registry plus tmux's bell flag. Every supported agent — Claude Code, Codex CLI, and pi — feeds that registry the same way, through its own hooks or extension, so the state model is identical whichever agent a task runs. `tenx agent setup <agent>` installs the integration (Claude Code and pi need no trust step; Codex asks you to trust its hook once via `/hooks`), and `tenx` does it for you on first launch.
 
@@ -121,7 +121,7 @@ The column lists every task from every registered workspace, sectioned by attent
 | `↓`, `↑`, `j`, `k`, `gg`, `G` | Move; an open task shows as you land on it; a task's subagents are stepped through too |
 | `n` | Next task that needs you (blocked, rang the bell, or secrets pending), cycling |
 | `Enter`, `o`, `l` | Open the task, creating its window if needed, and put the cursor in it; on a Claude Code subagent, open it in Claude's agent view |
-| `t` | On a subagent: follow its transcript in a popup |
+| `t` | On a subagent: follow its transcript in a tmux window |
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |
