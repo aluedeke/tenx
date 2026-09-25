@@ -14,9 +14,9 @@ installers = ["shell", "homebrew"]
 # Homebrew formula name: `brew install aluedeke/tap/tenx`, not tenx-cli
 formula = "tenx"
 # Publish jobs to run in CI. Not dist's built-in "homebrew" job: that one
-# reads the tap token from a GitHub secret. Ours (publish-homebrew.yml)
-# decrypts it from secrets/ci.enc.env with sops, so the repo stays the only
-# place the token lives and the single GitHub secret is the CI age key.
+# reads a tap token from a GitHub secret. Ours (publish-homebrew.yml) pushes
+# with a deploy key decrypted from secrets/ci.enc.env with sops, so the repo
+# stays the only place it lives and the single GitHub secret is the CI age key.
 publish-jobs = ["./publish-homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl"]
