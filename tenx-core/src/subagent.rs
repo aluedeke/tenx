@@ -120,6 +120,16 @@ pub enum SubagentAction {
     Ignore,
 }
 
+/// Whether an event may *create* a subagent's record, for an id tenx has no
+/// record of yet. `SubagentStart` does; a tool event does when it names its
+/// `agent_type` (the subagent started before tenx's hooks were installed).
+/// Nothing else: Claude Code also fires `SubagentStop` — with an `agent_id`,
+/// no `agent_type`, no transcript and no `SubagentStart` before it — for its
+/// own internal helper runs, and those are not agents anyone spawned.
+pub fn opens_record(event: &str, agent_type: Option<&str>) -> bool {
+    event == "SubagentStart" || (event != "SubagentStop" && agent_type.is_some_and(|t| !t.is_empty()))
+}
+
 /// Map a Claude Code hook event that carries an `agent_id` to what it means for
 /// that subagent. The same reading as `session_event::claude_action`, minus the
 /// session-only events, plus the subagent's own start and stop.
@@ -367,6 +377,17 @@ mod tests {
         // Session-only events say nothing about a subagent.
         assert_eq!(claude_subagent_action("Notification", None), SubagentAction::Ignore);
         assert_eq!(claude_subagent_action("SessionEnd", None), SubagentAction::Ignore);
+    }
+
+    #[test]
+    fn only_a_real_start_opens_a_record() {
+        assert!(opens_record("SubagentStart", None));
+        assert!(opens_record("PreToolUse", Some("Explore")));
+        // Claude Code's internal helpers: a bare stop, no type.
+        assert!(!opens_record("SubagentStop", None));
+        assert!(!opens_record("SubagentStop", Some("Explore")));
+        assert!(!opens_record("PostToolUse", None));
+        assert!(!opens_record("PostToolUse", Some("")));
     }
 
     #[test]

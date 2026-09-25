@@ -117,9 +117,9 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
 }
 
 /// Apply one event from inside a subagent (Claude Code or Codex) to its
-/// record, creating it on the first event seen (a subagent whose
-/// `SubagentStart` predates the hook install still shows up on its next tool
-/// call).
+/// record, creating it on its `SubagentStart` — or on the first tool event
+/// that names its type, so a subagent that predates the hook install still
+/// shows up (`tenx_core::subagent::opens_record`).
 fn record_subagent(
     agent: AgentKind,
     pid: u32,
@@ -136,13 +136,17 @@ fn record_subagent(
     };
     let SubagentAction::Set { status, waiting_for } = action else { return };
     let now = sessions::now_millis();
-    let mut record = sessions::read_subagent(pid, id).unwrap_or_else(|| sessions::SubagentRecord {
-        id: id.to_string(),
-        started_at: Some(now),
-        ..Default::default()
-    });
+    let agent_type = payload.get("agent_type").and_then(|v| v.as_str());
+    let mut record = match sessions::read_subagent(pid, id) {
+        Some(r) => r,
+        None if sub::opens_record(event, agent_type) => {
+            sessions::SubagentRecord { id: id.to_string(), started_at: Some(now), ..Default::default() }
+        }
+        // Not a subagent anyone spawned (see `opens_record`).
+        None => return,
+    };
     record.agent = Some(agent.as_str().to_string());
-    if let Some(ty) = payload.get("agent_type").and_then(|v| v.as_str()) {
+    if let Some(ty) = agent_type.filter(|t| !t.is_empty()) {
         // Codex calls every plain subagent "default"; its nickname (below)
         // says more, so don't let a later event put "default" back.
         if !(agent == AgentKind::Codex && ty == "default" && !record.agent_type.is_empty()) {
