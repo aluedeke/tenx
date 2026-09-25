@@ -560,7 +560,7 @@ fn has_secrets_pending(t: &serde_json::Value) -> bool {
 }
 
 /// One window's `status-left` text from its snapshot row: glyph, title,
-/// workspace (muted, like the column's row), Claude's waiting reason, then
+/// workspace (in its own colour, like the column's row), Claude's waiting reason, then
 /// the PR and port chips the row carries.
 fn status_line(t: &serde_json::Value, slug: &str) -> String {
     let status = TaskStatus::from_token(t["status"].as_str().unwrap_or(""));
@@ -568,7 +568,7 @@ fn status_line(t: &serde_json::Value, slug: &str) -> String {
     // The workspace name, so two same-named tasks in different workspaces
     // (and any task you land on cold) read unambiguously.
     let ws = match t["ws"].as_str().filter(|w| !w.is_empty()) {
-        Some(w) => format!("#[fg={},nobold] {w}", crate::palette::MUTED.hex()),
+        Some(w) => format!("#[fg={},nobold] {w}", crate::palette::workspace_color(w).hex()),
         None => String::new(),
     };
     // Which agent, when it isn't the default — so a Codex or pi task reads as
@@ -736,8 +736,8 @@ mod tests {
         let t = json!({"status": "working", "title": "Fix login", "ws": "acme"});
         let line = status_line(&t, "fix-login");
         assert_eq!(plain(&line), format!("{} Fix login acme", TaskStatus::Working.glyph()));
-        // The workspace is muted and not bold, the title bold.
-        let ws_style = format!("#[fg={},nobold] acme", crate::palette::MUTED.hex());
+        // The workspace is in its colour and not bold, the title bold.
+        let ws_style = format!("#[fg={},nobold] acme", crate::palette::workspace_color("acme").hex());
         assert!(line.contains(&ws_style), "{line}");
         assert!(line.find(",bold] Fix login").unwrap() < line.find(&ws_style).unwrap());
     }

@@ -73,3 +73,44 @@ pub fn status_color(status: tenx_core::status::TaskStatus) -> &'static Rgb {
         Idle => &IDLE,
     }
 }
+
+/// Workspace name colours — a set of their own, softer than the status hues
+/// above so a workspace name tells projects apart without reading as a
+/// status (an amber workspace would look like it needs input).
+pub const WORKSPACE: [Rgb; 8] = [
+    Rgb(94, 180, 170),  // teal
+    Rgb(206, 134, 168), // rose
+    Rgb(170, 176, 100), // olive
+    Rgb(196, 168, 130), // sand
+    Rgb(120, 180, 206), // sky
+    Rgb(186, 146, 206), // orchid
+    Rgb(214, 142, 116), // coral
+    Rgb(140, 176, 138), // sage
+];
+
+/// The colour a workspace's name is drawn in, picked from its name so it is
+/// the same in the column, the tmux status line, and across restarts.
+/// FNV-1a rather than `std`'s hasher, whose output isn't promised stable.
+pub fn workspace_color(name: &str) -> &'static Rgb {
+    let hash = name.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193));
+    &WORKSPACE[hash as usize % WORKSPACE.len()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_color_is_stable_per_name() {
+        assert_eq!(workspace_color("acme").hex(), workspace_color("acme").hex());
+        // Pinned, so a hasher change that would recolour everyone's workspaces fails here.
+        assert_eq!(workspace_color("").hex(), WORKSPACE[0x811c_9dc5usize % WORKSPACE.len()].hex());
+    }
+
+    #[test]
+    fn workspace_colors_spread_across_names() {
+        let names = ["tenx", "acme", "infra", "web", "api", "mobile"];
+        let distinct: std::collections::HashSet<String> = names.iter().map(|n| workspace_color(n).hex()).collect();
+        assert!(distinct.len() >= 3, "{distinct:?}");
+    }
+}

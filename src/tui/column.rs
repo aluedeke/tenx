@@ -3243,7 +3243,7 @@ fn column_items(
                 Style::default().fg(fg.color()).bg(bg.color()).add_modifier(Modifier::BOLD),
             ));
         }
-        pieces.push(Span::styled(row.ws_name.clone(), dim));
+        pieces.push(Span::styled(row.ws_name.clone(), Style::default().fg(palette::workspace_color(&row.ws_name).color())));
         // Name the agent when it isn't the default — a Codex or pi task reads as
         // such; Claude rows stay unadorned.
         if row.agent != crate::agent::AgentKind::Claude {
@@ -3350,7 +3350,7 @@ fn repo_items(
             }
             items.push(ListItem::new(Line::from(Span::styled(
                 r.ws_name.clone(),
-                Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD),
+                Style::default().fg(palette::workspace_color(&r.ws_name).color()).add_modifier(Modifier::BOLD),
             ))));
             line_to_pos.push(None);
             last_ws = Some(r.ws_idx);
@@ -3424,7 +3424,7 @@ fn render_addrepo(f: &mut ratatui::Frame, column: &Column, area: Rect) {
     let lines = vec![
         Line::from(vec![
             Span::styled("  workspace  ", Style::default().fg(palette::MUTED.color())),
-            Span::styled(ws_name, Style::default().fg(palette::WARN.color()).add_modifier(Modifier::BOLD)),
+            Span::styled(ws_name.clone(), Style::default().fg(palette::workspace_color(&ws_name).color()).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         field_line(form.focus == 0, "git URL", &format!("{}{}", form.url, cursor(form.focus == 0))),
@@ -3577,13 +3577,23 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
     // Workspace picker (the first field): ← / → cycle through the
     // registered workspaces when there is more than one.
     let ws_count = column.workspaces.len();
-    let ws_value = if ws_count > 1 {
-        format!("‹ {ws_name} ›  ({} of {ws_count})", form.ws_idx + 1)
+    let ws_focused = form.focus == CreateForm::WORKSPACE;
+    // The name in its workspace colour; the arrows keep the field's value style.
+    let mut ws_line = field_line(ws_focused, "workspace", "");
+    let frame = ws_line.spans.pop().map(|s| s.style).unwrap_or_default();
+    let mut ws_style = Style::default().fg(palette::workspace_color(&ws_name).color());
+    if ws_focused {
+        ws_style = ws_style.add_modifier(Modifier::BOLD);
+    }
+    if ws_count > 1 {
+        ws_line.spans.push(Span::styled("‹ ", frame));
+        ws_line.spans.push(Span::styled(ws_name, ws_style));
+        ws_line.spans.push(Span::styled(format!(" ›  ({} of {ws_count})", form.ws_idx + 1), frame));
     } else {
-        ws_name
-    };
+        ws_line.spans.push(Span::styled(ws_name, ws_style));
+    }
     let mut lines = vec![
-        field_line(form.focus == CreateForm::WORKSPACE, "workspace", &ws_value),
+        ws_line,
         Line::from(""),
         field_line(form.focus == CreateForm::NAME, "name", &format!("{}▏", form.name)),
         Line::from(""),
