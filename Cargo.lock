@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "tenx-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -939,7 +939,7 @@ dependencies = [
 
 [[package]]
 name = "tenx-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
