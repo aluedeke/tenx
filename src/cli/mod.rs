@@ -1,4 +1,5 @@
 pub mod agentlog;
+pub mod agentview;
 pub mod doctor;
 pub mod hooks;
 pub mod init;
@@ -131,6 +132,14 @@ pub enum InternalCommands {
         /// Run as a popup: close on q/Esc, stay open when the process exits.
         #[arg(long)]
         popup: bool,
+    },
+    /// Open a Claude Code subagent in Claude's own agent view, in its
+    /// session's pane (what ⏎ on a subagent line in the column does).
+    OpenAgent {
+        /// The pid of the Claude Code session that spawned it.
+        pid: u32,
+        /// What its row in Claude's agent panel shows (its description).
+        label: String,
     },
 }
 

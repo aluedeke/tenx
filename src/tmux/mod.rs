@@ -567,6 +567,13 @@ pub fn select_window(id: &str) -> Result<()> {
     run(&["select-window", "-t", id]).map(drop)
 }
 
+/// Make `pane` the one on screen: its window the session's current, and the
+/// pane that window's active one.
+pub fn focus_pane(pane: &str) -> Result<()> {
+    run(&["select-window", "-t", pane])?;
+    run(&["select-pane", "-t", pane]).map(drop)
+}
+
 /// The visible contents of a pane, with its colours (`-e` keeps the SGR
 /// sequences) — what `A`/`D` check before answering a permission prompt.
 pub fn capture_pane(target: &str) -> Result<String> {

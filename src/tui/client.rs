@@ -70,6 +70,9 @@ pub(super) struct Client {
     /// A subagent viewer popup in flight (`start_view`): it reports once it
     /// closes, so the keyboard can come back to the column.
     view: Option<mpsc::Receiver<Result<i32, String>>>,
+    /// A walk of Claude Code's agent panel in flight (`start_view`): the pane
+    /// it opened the subagent in, or why it couldn't.
+    claude_view: Option<(column::AgentView, mpsc::Receiver<Result<String, String>>)>,
 }
 
 impl Client {
@@ -91,6 +94,7 @@ impl Client {
             quit: false,
             unlock: None,
             view: None,
+            claude_view: None,
         };
         let (r, w) = c.term_size();
         term.resize(r, w);
@@ -211,12 +215,60 @@ impl Client {
         });
     }
 
-    /// Follow a subagent's transcript (⏎ on its line in the column) in a
-    /// popup over this client's own tmux attach, the column live behind it —
-    /// the same arrangement as `start_unlock`, and for the same reasons.
-    /// Without a client to aim a popup at, the viewer is split into the task's
-    /// window instead.
+    /// Show a subagent (⏎ or `t` on its line in the column). ⏎ on a Claude
+    /// Code subagent opens it in Claude's own agent view, in its session's
+    /// pane: the keystrokes that walk the panel take a second or so, so they
+    /// run on a thread (`cli::agentview::open_in_claude`) and `poll_claude_view` picks up the
+    /// outcome. Everything else — and a subagent the panel no longer lists —
+    /// is followed in tenx's transcript popup (`start_popup`).
     fn start_view(&mut self, v: column::AgentView) {
+        if v.in_claude {
+            if self.claude_view.is_some() {
+                self.column.set_status("already opening an agent".into());
+                return;
+            }
+            let (tx, rx) = mpsc::channel();
+            let (pid, label) = (v.session_pid, v.label.clone());
+            std::thread::spawn(move || {
+                let _ = tx.send(crate::cli::agentview::open_in_claude(pid, &label));
+            });
+            self.claude_view = Some((v, rx));
+            return;
+        }
+        self.start_popup(v);
+    }
+
+    /// Once the panel walk is over: on success the keyboard goes to the pane
+    /// now showing the subagent; otherwise the footer says why and the
+    /// transcript opens instead, when there is one.
+    fn poll_claude_view(&mut self) {
+        let Some((_, rx)) = &self.claude_view else { return };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err("the agent view thread went away".into()),
+        };
+        let Some((v, _)) = self.claude_view.take() else { return };
+        match result {
+            Ok(pane) => {
+                let _ = crate::tmux::focus_pane(&pane);
+                self.column.set_status(format!("'{}' open in Claude", v.label));
+                self.handle_request(ClientRequest::FocusTerminal);
+            }
+            Err(e) if v.transcript.is_some() => {
+                self.column.set_status(format!("{e} — showing its transcript"));
+                self.start_popup(v);
+            }
+            Err(e) => self.column.set_status(e),
+        }
+    }
+
+    /// Follow a subagent's transcript in a popup over this client's own tmux
+    /// attach, the column live behind it — the same arrangement as
+    /// `start_unlock`, and for the same reasons. Without a client to aim a
+    /// popup at, the viewer is split into the task's window instead.
+    fn start_popup(&mut self, v: column::AgentView) {
+        let Some(transcript) = v.transcript.clone() else { return };
         if self.view.is_some() {
             self.column.set_status("an agent view is already open".into());
             return;
@@ -224,7 +276,7 @@ impl Client {
         let Ok(bin) = crate::tmux::self_bin() else { return };
         let bin = bin.to_string_lossy().into_owned();
         let cwd = v.task_path.to_string_lossy().into_owned();
-        let args = crate::tmux::subagent_log_args(&cwd, v.session_pid, &v.agent, &v.transcript.to_string_lossy(), &v.title);
+        let args = crate::tmux::subagent_log_args(&cwd, v.session_pid, &v.agent, &transcript.to_string_lossy(), &v.title);
         let Some(tmux_client) = self.term.pid().and_then(crate::tmux::client_by_pid) else {
             match v.window_id.as_deref().map(|w| crate::tmux::open_subagent_pane(w, &bin, &cwd, &args)) {
                 Some(Ok(())) => self.handle_request(ClientRequest::FocusTerminal),
@@ -572,6 +624,7 @@ fn run_client(terminal: &mut ClientTerminal) -> Result<()> {
             client.start_view(v);
         }
         client.poll_view();
+        client.poll_claude_view();
         client.tick();
         if client.term.take_bell() {
             let _ = execute!(io::stdout(), Print("\x07"));

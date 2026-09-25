@@ -11,6 +11,7 @@ pub mod dialog;
 pub mod keyboard;
 pub mod live;
 pub mod progress;
+pub mod agent_panel;
 pub mod column;
 pub mod secrets;
 pub mod session_event;

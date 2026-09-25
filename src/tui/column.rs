@@ -347,13 +347,21 @@ pub(super) enum ClientRequest {
     Quit,
 }
 
-/// What the client needs to show one subagent's transcript: ⏎ on a subagent
-/// line hands this over (`Column::take_agent_view`).
+/// What the client needs to show one subagent: ⏎ on a subagent line hands
+/// this over (`Column::take_agent_view`).
 #[derive(Debug, Clone)]
 pub(super) struct AgentView {
+    /// Open it in Claude Code's own agent view, in its session's pane
+    /// (`tenx_core::agent_panel`), rather than tenx's transcript popup.
+    pub(super) in_claude: bool,
+    /// What its row in Claude Code's agent panel shows: its description, else
+    /// its type.
+    pub(super) label: String,
     /// The popup's title: the subagent's label and type.
     pub(super) title: String,
-    pub(super) transcript: PathBuf,
+    /// Its transcript, when there is one to follow (the popup, and the
+    /// fallback when the agent view can't be reached).
+    pub(super) transcript: Option<PathBuf>,
     /// Its harness (`claude`, `codex`, `pi`), which decides how the transcript reads.
     pub(super) agent: String,
     /// The session that spawned it — the viewer notes when it has gone.
@@ -1110,20 +1118,23 @@ impl Column {
         self.selected_row()?.subagents.get(k)
     }
 
-    /// ⏎ on a subagent line: hand the client what it needs to follow that
-    /// subagent's transcript. Says why when there is nothing to show yet.
-    fn view_subagent(&mut self) {
+    /// ⏎ on a subagent line (`in_claude`): open it in Claude Code's own
+    /// agent view in its session's pane — a Claude Code subagent in an open
+    /// window; anything else falls back to the transcript. `t`: follow its
+    /// transcript in tenx's popup. Says why when there is nothing to show.
+    fn view_subagent(&mut self, in_claude: bool) {
         let Some(row) = self.selected_row() else { return };
         let Some(a) = self.selected_subagent() else { return };
-        let Some(path) = a.transcript_path.clone() else {
-            // A pi subagent run with `--no-session` writes none.
-            self.status_msg = Some(format!("'{}' keeps no transcript", a.label()));
+        let in_claude = in_claude && a.agent == "claude" && row.window_id.is_some();
+        let transcript = a.transcript_path.clone().filter(|p| self.offline || p.is_file());
+        if !in_claude && transcript.is_none() {
+            self.status_msg = Some(match a.transcript_path {
+                // A pi subagent run with `--no-session` writes none.
+                None => format!("'{}' keeps no transcript", a.label()),
+                Some(_) => format!("no transcript for '{}' yet", a.label()),
+            });
             return;
-        };
-        let Some(transcript) = Some(path).filter(|p| self.offline || p.is_file()) else {
-            self.status_msg = Some(format!("no transcript for '{}' yet", a.label()));
-            return;
-        };
+        }
         if self.offline {
             self.status_msg = Some(format!("following '{}'", a.label()));
             return;
@@ -1134,6 +1145,8 @@ impl Column {
             format!(" {} ", a.label())
         };
         self.pending_view = Some(AgentView {
+            in_claude,
+            label: a.label().to_string(),
             title,
             transcript,
             agent: a.agent.clone(),
@@ -1358,6 +1371,7 @@ impl Column {
             }
             KeyCode::Char('A') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
             KeyCode::Char('D') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::No),
+            KeyCode::Char('t') if self.selected_sub().is_some() => self.view_subagent(false),
             KeyCode::Char('u') => {
                 if self.require_tasks() {
                     self.start_unlock();
@@ -1366,7 +1380,7 @@ impl Column {
             KeyCode::Enter | KeyCode::Char('o') | KeyCode::Char('l') => {
                 if self.tab == Tab::Tasks {
                     if self.selected_sub().is_some() {
-                        self.view_subagent();
+                        self.view_subagent(true);
                         return Ok(false);
                     }
                     return self.jump();
@@ -3061,7 +3075,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
             let (tag, tag_style) = mode_tag(column.input_mode);
             let hint = match (column.input_mode, column.tab) {
                 (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) if column.selected_sub().is_some() => " ⏎ follow agent · ↓↑ move",
+                (InputMode::Normal, Tab::Tasks) if column.selected_sub().is_some() => " ⏎ open agent · t transcript",
                 (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.pending) => {
                     " setting up · esc detach"
                 }
@@ -3110,7 +3124,8 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("j k ↓ ↑", "move"),
             ("gg G", "top / bottom"),
-            ("⏎ o l", "open task / follow agent"),
+            ("⏎ o l", "open task / agent"),
+            ("t", "agent transcript"),
             ("n", "next task that needs you"),
             ("A D", "approve / deny permission"),
             ("u", "unlock pending secrets"),
