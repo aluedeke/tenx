@@ -347,13 +347,19 @@ pub(super) enum ClientRequest {
     Quit,
 }
 
-/// What the client needs to show one subagent: ⏎ on a subagent line hands
-/// this over (`Column::take_agent_view`).
+/// What the client needs to put a view in front of you: landing on a subagent
+/// line (its agent view) or on a task line (back to main), ⏎ on either, `t`
+/// on a subagent (`Column::take_agent_view`).
 #[derive(Debug, Clone)]
 pub(super) struct AgentView {
-    /// Open it in Claude Code's own agent view, in its session's pane
-    /// (`tenx_core::agent_panel`), rather than tenx's transcript window.
+    /// Switch Claude Code's own view in the session's pane
+    /// (`tenx_core::agent_panel`), rather than open tenx's transcript window.
     pub(super) in_claude: bool,
+    /// The session's main view rather than a subagent's.
+    pub(super) main: bool,
+    /// ⏎: once it's showing, hand the keyboard to it. Landing on a line only
+    /// switches the view; the cursor stays in the column.
+    pub(super) focus: bool,
     /// What its row in Claude Code's agent panel shows: its description, else
     /// its type.
     pub(super) label: String,
@@ -398,9 +404,13 @@ pub(super) struct Column {
     /// id the selected row no longer lists reads as "on the task"
     /// (`selected_sub`).
     sub: Option<String>,
-    /// A subagent to show (⏎ on its line), taken by the client, which opens
-    /// the viewer over its own tmux attach (`take_agent_view`).
+    /// A view to put in front of you, taken by the client
+    /// (`take_agent_view`); the latest request wins.
     pending_view: Option<AgentView>,
+    /// The selection (task slug, subagent id) the last view switch was asked
+    /// for, so moving within it — or a no-op arrow at the bottom — asks for
+    /// nothing again.
+    last_follow: Option<(String, Option<String>)>,
     repo_rows: Vec<RepoRow>,
     repo_filtered: Vec<usize>,
     repo_selected: usize,
@@ -609,6 +619,7 @@ impl Column {
             selected: 0,
             sub: None,
             pending_view: None,
+            last_follow: None,
             repo_rows: vec![],
             repo_filtered: vec![],
             repo_selected: 0,
@@ -1068,23 +1079,85 @@ impl Column {
     /// simply carries on. A task with no window is only selected (the
     /// client shows an empty screen for it; ⏎ opens it). Never fires from
     /// the search field or off the Tasks tab.
+    ///
+    /// Within a task it follows the agents too: landing on a Claude Code
+    /// subagent's line puts that subagent's view in the task's pane, landing
+    /// on the task's own line puts the session's main view back
+    /// (`follow_agent`). The cursor stays here either way; ⏎ moves it over.
     fn follow_selection(&mut self) {
         if self.tab != Tab::Tasks || self.focus != Focus::List {
             return;
         }
         let Some(row) = self.selected_row() else { return };
-        if row.window_id.is_none() || Some(row.slug.as_str()) == self.current.as_deref() {
+        if row.window_id.is_none() {
             return;
         }
-        let slug = row.slug.clone();
-        let path = row.path.clone();
-        if self.offline {
-            self.current = Some(slug);
+        if Some(row.slug.as_str()) != self.current.as_deref() {
+            let slug = row.slug.clone();
+            let path = row.path.clone();
+            if self.offline {
+                self.current = Some(slug);
+            } else {
+                let Some(w) = crate::tmux::find_task_window(&slug, &path).ok().flatten() else { return };
+                if crate::tmux::select_window(&w.id).is_err() {
+                    return;
+                }
+                self.current = Some(slug);
+            }
+        }
+        self.follow_agent();
+    }
+
+    /// Ask the client to switch the task's Claude pane to what the cursor is
+    /// on: a Claude Code subagent's view, or — on the task's own line — the
+    /// session's main view (which presses nothing when main is already up).
+    /// Codex and pi subagents have no view to switch to; ⏎ or `t` open their
+    /// transcript.
+    fn follow_agent(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        let key = (row.slug.clone(), self.selected_subagent().map(|a| a.id.clone()));
+        if self.last_follow.as_ref() == Some(&key) {
             return;
         }
-        let Some(w) = crate::tmux::find_task_window(&slug, &path).ok().flatten() else { return };
-        if crate::tmux::select_window(&w.id).is_ok() {
-            self.current = Some(slug);
+        let view = if self.offline {
+            None
+        } else {
+            match self.selected_subagent() {
+            Some(a) if a.agent == "claude" => Some(self.agent_view(a, true, false)),
+            Some(_) => None,
+            None => row.subagents.iter().find(|a| a.agent == "claude").map(|a| AgentView {
+                in_claude: true,
+                main: true,
+                focus: false,
+                label: "main".into(),
+                title: String::new(),
+                transcript: None,
+                agent: a.agent.clone(),
+                session_pid: a.session_pid,
+                task_path: row.path.clone(),
+            }),
+            }
+        };
+        self.last_follow = Some(key);
+        if view.is_some() {
+            self.pending_view = view;
+        }
+    }
+
+    /// The view request for subagent `a` of the selected task.
+    fn agent_view(&self, a: &Subagent, in_claude: bool, focus: bool) -> AgentView {
+        let title =
+            if a.description.is_some() { format!(" {} · {} ", a.label(), a.agent_type) } else { format!(" {} ", a.label()) };
+        AgentView {
+            in_claude,
+            main: false,
+            focus,
+            label: a.label().to_string(),
+            title,
+            transcript: a.transcript_path.clone().filter(|p| self.offline || p.is_file()),
+            agent: a.agent.clone(),
+            session_pid: a.session_pid,
+            task_path: self.selected_row().map(|r| r.path.clone()).unwrap_or_default(),
         }
     }
 
@@ -1107,16 +1180,17 @@ impl Column {
         self.selected_row()?.subagents.get(k)
     }
 
-    /// ⏎ on a subagent line (`in_claude`): open it in Claude Code's own
-    /// agent view in its session's pane — a Claude Code subagent in an open
-    /// window; anything else falls back to the transcript. `t`: follow its
-    /// transcript in a tmux window of its own. Says why when there is nothing to show.
+    /// ⏎ on a subagent line (`in_claude`): put it on screen in Claude Code's
+    /// own agent view and hand the keyboard to that pane — a Claude Code
+    /// subagent in an open window; anything else, or one Claude no longer
+    /// lists, opens as its transcript. `t`: its transcript in a tmux window of
+    /// its own. Says why when there is nothing to show.
     fn view_subagent(&mut self, in_claude: bool) {
         let Some(row) = self.selected_row() else { return };
         let Some(a) = self.selected_subagent() else { return };
         let in_claude = in_claude && a.agent == "claude" && row.window_id.is_some();
-        let transcript = a.transcript_path.clone().filter(|p| self.offline || p.is_file());
-        if !in_claude && transcript.is_none() {
+        let view = self.agent_view(a, in_claude, true);
+        if !in_claude && view.transcript.is_none() {
             self.status_msg = Some(match a.transcript_path {
                 // A pi subagent run with `--no-session` writes none.
                 None => format!("'{}' keeps no transcript", a.label()),
@@ -1128,20 +1202,7 @@ impl Column {
             self.status_msg = Some(format!("following '{}'", a.label()));
             return;
         }
-        let title = if a.description.is_some() {
-            format!(" {} · {} ", a.label(), a.agent_type)
-        } else {
-            format!(" {} ", a.label())
-        };
-        self.pending_view = Some(AgentView {
-            in_claude,
-            label: a.label().to_string(),
-            title,
-            transcript,
-            agent: a.agent.clone(),
-            session_pid: a.session_pid,
-            task_path: row.path.clone(),
-        });
+        self.pending_view = Some(view);
     }
 
     // ── Mouse dispatch ────────────────────────────────────────────────────────

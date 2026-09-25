@@ -28,11 +28,31 @@
 //! around this: after that Claude Code has no view of the subagent at all, and
 //! the caller follows its transcript instead.)
 
+/// Which view to put in the pane: the session's own conversation, or the
+/// subagent whose row shows this label (its description, else its type).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target<'a> {
+    Main,
+    Agent(&'a str),
+}
+
+impl Target<'_> {
+    fn matches(self, row: &str) -> bool {
+        match self {
+            Target::Main => row == "main" || row.starts_with("main "),
+            Target::Agent(label) => row_matches(row, label),
+        }
+    }
+}
+
 /// What to do next while walking the panel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelStep {
-    /// Press `↓` again.
+    /// Press `↓`: into the panel, or toward a row further down.
     Down,
+    /// Press `↑`: toward a row further up (the selection stays on the last
+    /// row opened, so the next target is as often above it as below).
+    Up,
     /// The subagent's row is selected: press `Enter`.
     Open,
     /// It isn't there. `clear`: a row is selected, press `Escape` to leave
@@ -48,19 +68,64 @@ pub const MAX_PRESSES: u32 = 16;
 /// land on a status-line pill.
 const PRESSES_TO_ENTER: u32 = 3;
 
-/// Decide the next key from the pane as it is now. `label` is what the
-/// subagent's row shows (its description, else its type); `previous` the
-/// selected row before the last press; `presses` how many `↓` were sent.
-pub fn next_step(capture: &str, label: &str, previous: Option<&str>, presses: u32) -> PanelStep {
-    let selected = selected_row(capture);
-    match selected.as_deref() {
-        Some(row) if row_matches(row, label) => PanelStep::Open,
-        // The last press moved nothing: the bottom of the panel.
-        Some(row) if previous == Some(row) => PanelStep::GiveUp { clear: true },
-        Some(_) if presses >= MAX_PRESSES => PanelStep::GiveUp { clear: true },
-        None if presses >= PRESSES_TO_ENTER => PanelStep::GiveUp { clear: false },
-        _ => PanelStep::Down,
+/// Decide the next key from the pane as it is now: `target` is the row to
+/// reach; `previous` the selected row before the last press; `presses` how
+/// many `↓` were sent.
+pub fn next_step(capture: &str, target: Target, previous: Option<&str>, presses: u32) -> PanelStep {
+    let rows = panel_rows(capture);
+    let Some(at) = rows.iter().position(|r| r.selected) else {
+        // Not in the panel yet: `↓` walks in (past a status-line pill, maybe).
+        return if presses >= PRESSES_TO_ENTER { PanelStep::GiveUp { clear: false } } else { PanelStep::Down };
+    };
+    let here = &rows[at].text;
+    if target.matches(here) {
+        return PanelStep::Open;
     }
+    // The last press moved nothing, or the walk has gone on too long.
+    if previous == Some(here.as_str()) || presses >= MAX_PRESSES {
+        return PanelStep::GiveUp { clear: true };
+    }
+    match rows.iter().position(|r| target.matches(&r.text)) {
+        Some(to) if to > at => PanelStep::Down,
+        Some(_) => PanelStep::Up,
+        None => PanelStep::GiveUp { clear: true },
+    }
+}
+
+/// One row of the agent panel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PanelRow {
+    /// Under the cursor (`❯`).
+    selected: bool,
+    /// The view the pane shows (`⏺`).
+    viewed: bool,
+    /// Its text, whitespace collapsed, without the markers.
+    text: String,
+}
+
+/// The agent panel's rows, top to bottom: the lines below the pane's last
+/// rule that read `[❯ ]<glyph> <text>`. The prompt echoes in the transcript
+/// above also start with `❯`, and the status line's `⏵⏵` is no row.
+fn panel_rows(capture: &str) -> Vec<PanelRow> {
+    let lines: Vec<String> = capture.lines().map(crate::dialog::strip_ansi).collect();
+    let start = lines.iter().rposition(|l| is_rule(l)).map_or(0, |i| i + 1);
+    lines[start..]
+        .iter()
+        .filter_map(|l| {
+            let t = l.trim_start();
+            let (selected, t) = match t.strip_prefix("❯ ") {
+                Some(rest) => (true, rest),
+                None => (false, t),
+            };
+            let mut chars = t.chars();
+            let glyph = chars.next()?;
+            if glyph.is_alphanumeric() || glyph.is_ascii_punctuation() || chars.next() != Some(' ') {
+                return None;
+            }
+            let text = flat(chars.as_str());
+            (!text.is_empty()).then_some(PanelRow { selected, viewed: glyph == '⏺', text })
+        })
+        .collect()
 }
 
 /// The selected row of the agent panel, whitespace collapsed, without its
@@ -68,19 +133,24 @@ pub fn next_step(capture: &str, label: &str, previous: Option<&str>, presses: u3
 /// the last rule of the pane count: the prompt echoes in the transcript above
 /// also start with `❯`.
 pub fn selected_row(capture: &str) -> Option<String> {
-    let lines: Vec<String> = capture.lines().map(crate::dialog::strip_ansi).collect();
-    let start = lines.iter().rposition(|l| is_rule(l)).map_or(0, |i| i + 1);
-    lines[start..].iter().find_map(|l| {
-        let rest = l.trim_start().strip_prefix("❯ ")?;
-        let mut chars = rest.chars();
-        let glyph = chars.next()?;
-        // A panel row: a status glyph and a space, not typed text.
-        if glyph.is_alphanumeric() || glyph.is_ascii_punctuation() || chars.next() != Some(' ') {
-            return None;
-        }
-        let text: String = chars.as_str().split_whitespace().collect::<Vec<_>>().join(" ");
-        (!text.is_empty()).then_some(text)
-    })
+    panel_rows(capture).into_iter().find(|r| r.selected).map(|r| r.text)
+}
+
+/// The panel row of the view the pane shows — Claude marks it `⏺` (`⏺ main`,
+/// `❯ ⏺ general-purpose  Alpha sleeper`) — or `None` when the panel lists no
+/// such row (no subagents listed: the pane shows its main view).
+pub fn viewed_row(capture: &str) -> Option<String> {
+    panel_rows(capture).into_iter().find(|r| r.viewed).map(|r| r.text)
+}
+
+/// Whether the pane already shows `target`, so nothing needs pressing. Main
+/// is showing unless the panel marks a subagent's row as the viewed one.
+pub fn showing(capture: &str, target: Target) -> bool {
+    match (viewed_row(capture), target) {
+        (Some(row), t) => t.matches(&row),
+        (None, Target::Main) => true,
+        (None, Target::Agent(label)) => view_open(capture, label),
+    }
 }
 
 /// Whether the agent view of `label` is showing: its title sits in a rule,
@@ -138,32 +208,44 @@ mod tests {
         let idle = pane("❯ ", &["  ⏵⏵ bypass permissions on · ← 3 agents · ↓ to manage", "  ⏺ main", ALPHA, BETA]);
         assert_eq!(selected_row(&idle), None);
         // The echoed prompt above the rules is not a row.
-        assert_eq!(next_step(&idle, "Alpha sleeper", None, 0), PanelStep::Down);
+        assert_eq!(next_step(&idle, Target::Agent("Alpha sleeper"), None, 0), PanelStep::Down);
         // The first ↓ lands on a status-line pill: still no row.
         let pill = pane("❯ ", &["  ⏵⏵ bypass permissions on · 2 shells · Enter to view tasks", "", "  ⏺ main", ALPHA]);
-        assert_eq!(next_step(&pill, "Alpha sleeper", None, 1), PanelStep::Down);
+        assert_eq!(next_step(&pill, Target::Agent("Alpha sleeper"), None, 1), PanelStep::Down);
         // No panel ever shows up (text in the prompt, say): give up, keep hands off.
-        assert_eq!(next_step(&idle, "Alpha sleeper", None, 3), PanelStep::GiveUp { clear: false });
+        assert_eq!(next_step(&idle, Target::Agent("Alpha sleeper"), None, 3), PanelStep::GiveUp { clear: false });
     }
 
     #[test]
     fn walks_down_to_the_row_and_opens_it() {
         let on_main = pane("❯ ", &["  ↑/↓ to select", "", "❯ ⏺ main", ALPHA, BETA]);
         assert_eq!(selected_row(&on_main).as_deref(), Some("main"));
-        assert_eq!(next_step(&on_main, "Alpha sleeper", None, 2), PanelStep::Down);
+        assert_eq!(next_step(&on_main, Target::Agent("Alpha sleeper"), None, 2), PanelStep::Down);
+        assert_eq!(next_step(&on_main, Target::Main, None, 2), PanelStep::Open);
         let on_alpha = pane("❯ ", &["  ⏺ main", "❯ ◯ general-purpose  Alpha sleeper    5s · ↓ 30.4k tokens", BETA]);
         assert_eq!(selected_row(&on_alpha).as_deref(), Some("general-purpose Alpha sleeper 5s · ↓ 30.4k tokens"));
-        assert_eq!(next_step(&on_alpha, "Alpha sleeper", Some("main"), 3), PanelStep::Open);
+        assert_eq!(next_step(&on_alpha, Target::Agent("Alpha sleeper"), Some("main"), 3), PanelStep::Open);
         // Beta is further down.
-        assert_eq!(next_step(&on_alpha, "Beta sleeper", Some("main"), 3), PanelStep::Down);
+        assert_eq!(next_step(&on_alpha, Target::Agent("Beta sleeper"), Some("main"), 3), PanelStep::Down);
+    }
+
+    #[test]
+    fn walks_up_to_a_row_above_the_selection() {
+        // The selection stays on the last row opened (Eta); Zeta and main are above.
+        let on_eta = pane("❯ Message @general-purpose…", &["  ◯ main", ALPHA, "❯ ⏺ general-purpose  Eta sleeper   6s"]);
+        assert_eq!(next_step(&on_eta, Target::Agent("Alpha sleeper"), None, 0), PanelStep::Up);
+        assert_eq!(next_step(&on_eta, Target::Main, None, 0), PanelStep::Up);
+        assert_eq!(next_step(&on_eta, Target::Agent("Eta sleeper"), None, 0), PanelStep::Open);
+        // A target the panel doesn't list: give up without walking.
+        assert_eq!(next_step(&on_eta, Target::Agent("Gamma"), None, 0), PanelStep::GiveUp { clear: true });
     }
 
     #[test]
     fn gives_up_at_the_bottom_and_clears() {
         let on_beta = pane("❯ ", &["  ⏺ main", ALPHA, "❯ ◯ general-purpose  Beta sleeper   5s"]);
         let row = selected_row(&on_beta).unwrap();
-        assert_eq!(next_step(&on_beta, "Gamma", Some(&row), 5), PanelStep::GiveUp { clear: true });
-        assert_eq!(next_step(&on_beta, "Gamma", Some("main"), MAX_PRESSES), PanelStep::GiveUp { clear: true });
+        assert_eq!(next_step(&on_beta, Target::Agent("Gamma"), Some(&row), 5), PanelStep::GiveUp { clear: true });
+        assert_eq!(next_step(&on_beta, Target::Agent("Gamma"), Some("main"), MAX_PRESSES), PanelStep::GiveUp { clear: true });
     }
 
     #[test]
@@ -172,6 +254,28 @@ mod tests {
         assert!(row_matches(row, "Map the tenx session registry and hooks in detail"));
         assert!(!row_matches("main", "main"));
         assert!(!row_matches(row, ""));
+    }
+
+    #[test]
+    fn knows_which_view_the_pane_shows() {
+        // Main view, rows hidden (idle agents): main is showing.
+        let main_idle = pane("❯ ", &["  ⏵⏵ auto mode on · ← 3 agents"]);
+        assert_eq!(viewed_row(&main_idle), None);
+        assert!(showing(&main_idle, Target::Main));
+        assert!(!showing(&main_idle, Target::Agent("Alpha sleeper")));
+        // Main view with rows listed: `⏺ main`.
+        let main_rows = pane("❯ ", &["  ⏺ main", ALPHA]);
+        assert_eq!(viewed_row(&main_rows).as_deref(), Some("main"));
+        assert!(showing(&main_rows, Target::Main));
+        // Viewing Alpha, its row selected or not.
+        for alpha in ["  ⏺ general-purpose  Alpha sleeper   5s", "❯ ⏺ general-purpose  Alpha sleeper   5s"] {
+            let viewing = pane("❯ Message @general-purpose…", &["  ◯ main", alpha, BETA]);
+            assert!(showing(&viewing, Target::Agent("Alpha sleeper")));
+            assert!(!showing(&viewing, Target::Main));
+            assert!(!showing(&viewing, Target::Agent("Beta sleeper")));
+        }
+        // The transcript's own `⏺` lines above the rules don't count.
+        assert_eq!(viewed_row(&format!("⏺ Agent(Alpha)\n{RULE}\n❯ \n{RULE}\n  ⏵⏵ auto\n")), None);
     }
 
     #[test]

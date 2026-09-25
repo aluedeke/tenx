@@ -1,20 +1,29 @@
-//! `tenx internal open-agent <session-pid> <label>`: open a subagent in Claude
-//! Code's own agent view, in its session's pane — what ⏎ on a subagent line in
-//! the column does (`tui::client`), as a command for scripts and for testing
-//! against a tmux server of one's own (`TENX_TMUX_SOCKET`).
+//! `tenx internal open-agent <session-pid> [label]`: show a subagent in Claude
+//! Code's own agent view in its session's pane, or with no label the session's
+//! main view — what landing on a subagent or task line in the column does
+//! (`tui::client`), as a command for scripts and for testing against a tmux
+//! server of one's own (`TENX_TMUX_SOCKET`).
 //!
 //! Claude Code offers no way to name an agent from outside, so this presses
 //! keys in the pane the way a finger would, through the agent panel under the
 //! prompt; `tenx_core::agent_panel` has the panel's shape and decides each key.
 
-/// Open the subagent showing `label` in Claude Code's agent view, in the pane
-/// of session `session_pid`, by walking the agent panel to its row
-/// (`tenx_core::agent_panel` decides each key from a fresh capture). Returns
-/// the pane on success. Refuses while a permission dialog is up — `↓` would
-/// move its choice — and leaves the panel as it found it when the subagent
-/// isn't listed (Claude drops a finished one after about 30 s).
-pub fn open_in_claude(session_pid: u32, label: &str) -> Result<String, String> {
-    use tenx_core::agent_panel::{next_step, selected_row, view_open, PanelStep, MAX_PRESSES};
+/// Put `target` — a subagent, by the label its row shows, or the session's
+/// main view — on screen in the pane of session `session_pid`, by walking
+/// Claude Code's agent panel to its row, up or down from wherever its
+/// selection is (`tenx_core::agent_panel` decides each key from a fresh
+/// capture). Presses nothing when the pane already shows it.
+/// Returns the pane. Refuses while a permission dialog is up — `↓` would move
+/// its choice — and leaves the panel as it found it when the row isn't listed
+/// (Claude drops a finished subagent after about 30 s).
+pub use tenx_core::agent_panel::Target;
+
+pub fn open_in_claude(session_pid: u32, target: Target) -> Result<String, String> {
+    use tenx_core::agent_panel::{next_step, selected_row, showing, view_open, PanelStep, MAX_PRESSES};
+    let name = match target {
+        Target::Main => "main".to_string(),
+        Target::Agent(label) => label.to_string(),
+    };
     let pane = crate::workspace::sessions::sessions()
         .into_iter()
         .find(|s| s.pid == session_pid)
@@ -34,23 +43,26 @@ pub fn open_in_claude(session_pid: u32, label: &str) -> Result<String, String> {
         }
         capture(&pane)
     };
-    let opened = |now: &str| if view_open(now, label) { Ok(pane.clone()) } else { Err(format!("'{label}' didn't open in Claude")) };
     let mut now = capture(&pane)?;
+    if showing(&now, target) {
+        return Ok(pane);
+    }
     if tenx_core::dialog::permission_dialog_visible(&now) {
         return Err("a dialog is open in its pane".into());
     }
-
     let mut previous: Option<String> = None;
     for presses in 0..=MAX_PRESSES {
-        match next_step(&now, label, previous.as_deref(), presses) {
-            PanelStep::Down => {
+        match next_step(&now, target, previous.as_deref(), presses) {
+            step @ (PanelStep::Down | PanelStep::Up) => {
                 previous = selected_row(&now);
-                key("Down")?;
+                key(if step == PanelStep::Down { "Down" } else { "Up" })?;
                 now = settle(&now)?;
             }
             PanelStep::Open => {
                 key("Enter")?;
-                return opened(&settle(&now)?);
+                now = settle(&now)?;
+                let opened = showing(&now, target) || matches!(target, Target::Agent(l) if view_open(&now, l));
+                return if opened { Ok(pane) } else { Err(format!("'{name}' didn't open in Claude")) };
             }
             PanelStep::GiveUp { clear } => {
                 if clear {
@@ -60,12 +72,14 @@ pub fn open_in_claude(session_pid: u32, label: &str) -> Result<String, String> {
             }
         }
     }
-    Err(format!("Claude no longer lists '{label}'"))
+    Err(format!("Claude no longer lists '{name}'"))
 }
 
 /// The command: prints the pane on success, the reason on failure (exit 1).
-pub fn run(session_pid: u32, label: &str) -> anyhow::Result<()> {
-    match open_in_claude(session_pid, label) {
+/// No label means the session's main view.
+pub fn run(session_pid: u32, label: Option<&str>) -> anyhow::Result<()> {
+    let target = label.map_or(Target::Main, Target::Agent);
+    match open_in_claude(session_pid, target) {
         Ok(pane) => {
             println!("{pane}");
             Ok(())

@@ -70,6 +70,8 @@ pub(super) struct Client {
     /// A walk of Claude Code's agent panel in flight (`start_view`): the pane
     /// it opened the subagent in, or why it couldn't.
     claude_view: Option<(column::AgentView, mpsc::Receiver<Result<String, String>>)>,
+    /// The request to run once the one in flight is done (the latest wins).
+    queued_view: Option<column::AgentView>,
 }
 
 impl Client {
@@ -91,6 +93,7 @@ impl Client {
             quit: false,
             unlock: None,
             claude_view: None,
+            queued_view: None,
         };
         let (r, w) = c.term_size();
         term.resize(r, w);
@@ -211,32 +214,36 @@ impl Client {
         });
     }
 
-    /// Show a subagent (⏎ or `t` on its line in the column). ⏎ on a Claude
-    /// Code subagent opens it in Claude's own agent view, in its session's
-    /// pane: the keystrokes that walk the panel take a second or so, so they
-    /// run on a thread (`cli::agentview::open_in_claude`) and `poll_claude_view` picks up the
-    /// outcome. Everything else — and a subagent Claude can't be walked to —
-    /// is followed in a transcript window (`start_transcript`).
+    /// Put a view in front of you (`column::AgentView`): switch Claude Code's
+    /// own view in a task's pane — a subagent's, or main — or open a
+    /// subagent's transcript window. The keystrokes that switch Claude's view
+    /// take a moment, so they run on a thread (`cli::agentview::open_in_claude`)
+    /// and `poll_claude_view` picks up the outcome; one runs at a time, and a
+    /// request made meanwhile waits, replaced by any later one — arrowing past
+    /// five agents switches to the one you stop on, not through all five.
     fn start_view(&mut self, v: column::AgentView) {
-        if v.in_claude {
-            if self.claude_view.is_some() {
-                self.column.set_status("already opening an agent".into());
-                return;
-            }
-            let (tx, rx) = mpsc::channel();
-            let (pid, label) = (v.session_pid, v.label.clone());
-            std::thread::spawn(move || {
-                let _ = tx.send(crate::cli::agentview::open_in_claude(pid, &label));
-            });
-            self.claude_view = Some((v, rx));
+        if !v.in_claude {
+            self.start_transcript(v);
             return;
         }
-        self.start_transcript(v);
+        if self.claude_view.is_some() {
+            self.queued_view = Some(v);
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        let (pid, main, label) = (v.session_pid, v.main, v.label.clone());
+        std::thread::spawn(move || {
+            use crate::cli::agentview::{open_in_claude, Target};
+            let target = if main { Target::Main } else { Target::Agent(&label) };
+            let _ = tx.send(open_in_claude(pid, target));
+        });
+        self.claude_view = Some((v, rx));
     }
 
-    /// Once the panel walk is over: on success the keyboard goes to the pane
-    /// now showing the subagent; otherwise the footer says why and the
-    /// transcript opens instead, when there is one.
+    /// Once a view switch is over: a waiting request goes next; ⏎'s gets the
+    /// keyboard handed to the pane; a subagent Claude can't be switched to is
+    /// opened as its transcript on ⏎, and only named in the footer when the
+    /// cursor merely landed on it.
     fn poll_claude_view(&mut self) {
         let Some((_, rx)) = &self.claude_view else { return };
         let result = match rx.try_recv() {
@@ -245,15 +252,22 @@ impl Client {
             Err(mpsc::TryRecvError::Disconnected) => Err("the agent view thread went away".into()),
         };
         let Some((v, _)) = self.claude_view.take() else { return };
+        if let Some(next) = self.queued_view.take() {
+            self.start_view(next);
+            return;
+        }
         match result {
-            Ok(pane) => {
+            Ok(pane) if v.focus => {
                 let _ = crate::tmux::focus_pane(&pane);
-                self.column.set_status(format!("'{}' open in Claude", v.label));
                 self.handle_request(ClientRequest::FocusTerminal);
             }
-            Err(e) if v.transcript.is_some() => {
+            Ok(_) => {}
+            Err(e) if v.focus && v.transcript.is_some() => {
                 self.column.set_status(format!("{e} — showing its transcript"));
                 self.start_transcript(v);
+            }
+            Err(e) if !v.focus && !v.main && v.transcript.is_some() => {
+                self.column.set_status(format!("{e} · t for its transcript"));
             }
             Err(e) => self.column.set_status(e),
         }

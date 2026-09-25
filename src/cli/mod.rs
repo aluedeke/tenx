@@ -139,8 +139,9 @@ pub enum InternalCommands {
     OpenAgent {
         /// The pid of the Claude Code session that spawned it.
         pid: u32,
-        /// What its row in Claude's agent panel shows (its description).
-        label: String,
+        /// What its row in Claude's agent panel shows (its description);
+        /// omitted, the session's main view.
+        label: Option<String>,
     },
 }
 

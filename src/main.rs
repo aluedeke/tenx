@@ -69,7 +69,7 @@ fn run() -> Result<()> {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
             InternalCommands::SessionEvent { agent, pid } => cli::session_event::run(&agent, pid),
-            InternalCommands::OpenAgent { pid, label } => cli::agentview::run(pid, &label)?,
+            InternalCommands::OpenAgent { pid, label } => cli::agentview::run(pid, label.as_deref())?,
             InternalCommands::AgentLog { cwd, pid, session, agent, transcript, title, viewer } => {
                 cli::agentlog::run(cli::agentlog::Follow {
                     cwd: &cwd,
