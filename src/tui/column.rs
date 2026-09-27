@@ -375,8 +375,15 @@ pub(crate) struct Column {
     ///
     /// Several may run at once: `git::lock_repo` serialises whatever actually
     /// collides, so two jobs on different repos have no reason to queue behind
-    /// each other. See `tui::job`.
-    jobs: Vec<super::job::Job>,
+    /// each other. See `tui::job`. Shared with other columns under `tenx web`
+    /// (`with_jobs`), so every browser tab lists every job.
+    jobs: super::job::Jobs,
+    /// This column's id: the `owner` of the jobs it starts, the only column
+    /// that runs their follow-up.
+    id: u64,
+    /// Jobs whose landing this column has already acted on (its own) or
+    /// rebuilt its rows for (another column's).
+    seen_landed: std::collections::HashSet<u64>,
     /// Position within the Work tab's list.
     work_selected: usize,
     /// Advances on `progress::TICK`, for anything that animates without new
@@ -461,6 +468,20 @@ impl Column {
         o.reload_workspaces();
         o.rebuild_rows();
         o
+    }
+
+    /// List (and start) jobs in `jobs` instead of a list of its own — how
+    /// every `tenx web` tab shows the same Work tab.
+    pub(crate) fn with_jobs(mut self, jobs: super::job::Jobs) -> Self {
+        self.jobs = jobs;
+        self
+    }
+
+    /// Put a job on the list as this column's own, as `start_job` does.
+    #[cfg(test)]
+    fn push_job(&mut self, mut job: super::job::Job) {
+        job.owner = self.id;
+        self.jobs.lock().push(job);
     }
 
     /// Re-read the workspace registry and remember what it listed. Rows are
@@ -581,7 +602,9 @@ impl Column {
             repo_filtered: vec![],
             repo_selected: 0,
             status_msg: None,
-            jobs: Vec::new(),
+            jobs: super::job::Jobs::default(),
+            id: super::job::next_id(),
+            seen_landed: std::collections::HashSet::new(),
             work_selected: 0,
             frame: 0,
             last_frame: None,
@@ -621,8 +644,9 @@ impl Column {
     }
 
     fn clamp_work_selection(&mut self) {
-        if self.work_selected >= self.jobs.len() {
-            self.work_selected = self.jobs.len().saturating_sub(1);
+        let n = self.jobs.lock().len();
+        if self.work_selected >= n {
+            self.work_selected = n.saturating_sub(1);
         }
     }
 
@@ -770,7 +794,7 @@ impl Column {
         match self.tab {
             Tab::Tasks => self.filtered.len(),
             Tab::Repos => self.repo_filtered.len(),
-            Tab::Work => self.jobs.len(),
+            Tab::Work => self.jobs.lock().len(),
         }
     }
 
@@ -1451,14 +1475,11 @@ impl Column {
             // detected and re-cloned), but losing ten minutes of download
             // without being told is not something to do silently.
             "q" | "quit" => {
-                match self.jobs.iter().find(|j| !j.landed()) {
-                    Some(job) => {
+                let first = self.jobs.lock().iter().find(|j| !j.landed()).map(|j| j.plan.title.clone());
+                match first {
+                    Some(title) => {
                         let n = self.active_jobs();
-                        let what = if n > 1 {
-                            format!("{n} jobs still running")
-                        } else {
-                            job.plan.title.clone()
-                        };
+                        let what = if n > 1 { format!("{n} jobs still running") } else { title };
                         self.status_msg = Some(format!("{what} — :q! quits anyway"));
                     }
                     None => self.client_request = Some(ClientRequest::Quit),
@@ -1767,7 +1788,7 @@ impl Column {
 
     /// How many jobs are still going. This is the `[n]` on the Work tab.
     fn active_jobs(&self) -> usize {
-        self.jobs.iter().filter(|j| !j.landed()).count()
+        self.jobs.lock().iter().filter(|j| !j.landed()).count()
     }
 
     /// True while any long operation is running.
@@ -1793,18 +1814,21 @@ impl Column {
         self.status_msg = None;
         // Drop the oldest settled jobs so the list stays bounded, keeping
         // every running one regardless.
-        let settled = self.jobs.iter().filter(|j| j.landed()).count();
-        if settled >= Self::JOB_HISTORY {
-            let mut drop = settled - Self::JOB_HISTORY + 1;
-            self.jobs.retain(|j| {
-                if j.landed() && drop > 0 {
-                    drop -= 1;
-                    return false;
-                }
-                true
-            });
+        {
+            let mut jobs = self.jobs.lock();
+            let settled = jobs.iter().filter(|j| j.landed()).count();
+            if settled >= Self::JOB_HISTORY {
+                let mut drop = settled - Self::JOB_HISTORY + 1;
+                jobs.retain(|j| {
+                    if j.landed() && drop > 0 {
+                        drop -= 1;
+                        return false;
+                    }
+                    true
+                });
+            }
+            jobs.push(super::job::Job::spawn(plan, then, self.id, work));
         }
-        self.jobs.push(super::job::Job::spawn(plan, then, work));
         self.clamp_work_selection();
     }
 
@@ -1820,24 +1844,41 @@ impl Column {
             self.last_frame = Some(Instant::now());
             self.frame = self.frame.wrapping_add(1);
         }
-        if self.jobs.is_empty() {
-            return false;
-        }
         // Collect what landed on this tick before touching the column: the
         // follow-ups rebuild rows, which must not happen mid-iteration.
         let mut settled: Vec<(super::job::Then, Result<String, String>)> = Vec::new();
         let mut running = false;
-        for job in self.jobs.iter_mut() {
-            if job.landed() {
-                continue;
+        // Another column's job landed: nothing of ours to finish, but its
+        // task or repo is on disk now and our rows should show it.
+        let mut elsewhere = false;
+        {
+            let mut jobs = self.jobs.lock();
+            if jobs.is_empty() {
+                return false;
             }
-            job.drain();
-            match job.take_landing() {
-                Some(outcome) => settled.push((job.then.clone(), outcome)),
-                None => running = true,
+            for job in jobs.iter_mut() {
+                // Whichever column drains first folds the events in; a shared
+                // job's plan is the same for all of them.
+                if !job.landed() {
+                    job.drain();
+                }
+                if !job.landed() {
+                    running = true;
+                    continue;
+                }
+                if !self.seen_landed.insert(job.id) {
+                    continue;
+                }
+                if job.owner == self.id {
+                    if let Some(outcome) = job.take_landing() {
+                        settled.push((job.then.clone(), outcome));
+                    }
+                } else {
+                    elsewhere = true;
+                }
             }
         }
-        if settled.is_empty() {
+        if settled.is_empty() && !elsewhere {
             // Redraw while anything runs even when nothing arrived: the
             // spinners and the marquee animate off `frame`.
             return running;
@@ -1912,12 +1953,13 @@ impl Column {
     /// Forget a settled job from the Work tab. Running ones stay: there is
     /// nothing to dismiss until they finish.
     fn dismiss_job(&mut self) {
-        match self.jobs.get(self.work_selected) {
-            Some(job) if job.landed() => {
-                self.jobs.remove(self.work_selected);
+        let landed = self.jobs.lock().get(self.work_selected).map(|j| j.landed());
+        match landed {
+            Some(true) => {
+                self.jobs.lock().remove(self.work_selected);
                 self.clamp_work_selection();
             }
-            Some(_) => self.status_msg = Some("still running — it clears when it finishes".into()),
+            Some(false) => self.status_msg = Some("still running — it clears when it finishes".into()),
             None => {}
         }
     }
@@ -2986,7 +3028,7 @@ fn work_items(column: &Column, width: usize) -> (Vec<ListItem<'static>>, Option<
     let mut items = Vec::new();
     let mut line_to_pos = Vec::new();
     let mut selected_line = None;
-    for (i, job) in column.jobs.iter().enumerate() {
+    for (i, job) in column.jobs.lock().iter().enumerate() {
         if i == column.work_selected && column.focus == Focus::List {
             selected_line = Some(items.len());
         }

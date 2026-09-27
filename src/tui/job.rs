@@ -19,8 +19,16 @@
 //! happens. So there is no cancel — a job started is a job finished, watched
 //! from the Work tab or not. Several run at once; whatever would actually
 //! collide is serialised by `git::lock_repo`, not by queueing them here.
+//!
+//! The list of jobs is [`Jobs`]: the TUI client's column has one of its own,
+//! and every column `tenx web` serves shares one, so a job started in one
+//! browser tab is listed — and watched to the end — in every other. A job's
+//! follow-up ([`Then`]) belongs to the column that started it (its `owner`);
+//! the others only rebuild their rows when it lands.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 
 use tenx_core::progress::{Plan, Snapshot, StepState};
@@ -70,6 +78,11 @@ impl Reporter for ChannelReporter {
 
 /// A long operation the column started, and what is known about it so far.
 pub(super) struct Job {
+    /// Unique in this process, so a column can remember which landings it
+    /// has already seen.
+    pub(super) id: u64,
+    /// The column that started it ([`next_id`]), which alone runs `then`.
+    pub(super) owner: u64,
     /// The steps and their states, updated from the channel. This is what the
     /// panel draws.
     pub(super) plan: Plan,
@@ -92,7 +105,7 @@ impl Job {
     /// returns the line the footer shows when it lands. It runs on the worker,
     /// so it must own its inputs: capture owned copies (`String`, `PathBuf`,
     /// a cloned `Workspace`) rather than borrowing the column.
-    pub(super) fn spawn<F>(plan: Plan, then: Then, work: F) -> Job
+    pub(super) fn spawn<F>(plan: Plan, then: Then, owner: u64, work: F) -> Job
     where
         F: FnOnce(&dyn Reporter) -> Result<String, String> + Send + 'static,
     {
@@ -103,7 +116,7 @@ impl Job {
             let result = work(&reporter);
             let _ = done.send(Message::Done(result));
         });
-        Job { plan, outcome: None, landing_taken: false, then, rx }
+        Job { id: next_id(), owner, plan, outcome: None, landing_taken: false, then, rx }
     }
 
     /// Fold everything the worker has sent since the last call into the plan.
@@ -196,12 +209,33 @@ impl Job {
     }
 }
 
+/// A fresh id for a job or a column, unique in this process.
+pub(super) fn next_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// The jobs a column lists on its Work tab — its own, or (cloned) a list
+/// shared with other columns. Held only briefly, never across a job's work:
+/// the workers never touch it, only the columns draining their channels.
+#[derive(Clone, Default)]
+pub(crate) struct Jobs(Arc<Mutex<Vec<Job>>>);
+
+impl Jobs {
+    /// The list. A column that panicked while holding it can't have left a
+    /// job half-edited in a way that matters to the next reader, so a
+    /// poisoned lock is taken as it is.
+    pub(super) fn lock(&self) -> MutexGuard<'_, Vec<Job>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 /// A job in a state a test can set up by hand, with the sending end returned
 /// so the channel stays connected (a dropped sender reads as a dead worker).
 #[cfg(test)]
 pub(super) fn fixture(plan: Plan) -> (Job, Sender<Message>) {
     let (tx, rx) = std::sync::mpsc::channel();
-    (Job { plan, outcome: None, landing_taken: false, then: Then::Nothing, rx }, tx)
+    (Job { id: next_id(), owner: 0, plan, outcome: None, landing_taken: false, then: Then::Nothing, rx }, tx)
 }
 
 #[cfg(test)]
@@ -227,7 +261,7 @@ mod tests {
     #[test]
     fn events_land_in_the_plan_in_order() {
         let plan = Plan::new("creating 'x'", ["a".to_string(), "b".to_string()]);
-        let mut job = Job::spawn(plan, Then::Nothing, |rep| {
+        let mut job = Job::spawn(plan, Then::Nothing, 0, |rep| {
             for (step, label) in ["a", "b"].iter().enumerate() {
                 rep.emit(Event::Start { step, label: (*label).into(), verb: "cloning" });
                 rep.emit(Event::Update {
@@ -248,7 +282,7 @@ mod tests {
     #[test]
     fn a_failure_reaches_both_the_step_and_the_outcome() {
         let plan = Plan::new("creating 'x'", ["a".to_string()]);
-        let mut job = Job::spawn(plan, Then::Nothing, |rep| {
+        let mut job = Job::spawn(plan, Then::Nothing, 0, |rep| {
             rep.emit(Event::Start { step: 0, label: "a".into(), verb: "cloning" });
             rep.emit(Event::Failed { step: 0, err: "no such repo".into() });
             Err("no such repo".into())
@@ -264,7 +298,7 @@ mod tests {
         // The plan is built from the same list the work walks, but it must not
         // be possible for a stale index to take the client down.
         let plan = Plan::new("creating 'x'", ["a".to_string()]);
-        let mut job = Job::spawn(plan, Then::Nothing, |rep| {
+        let mut job = Job::spawn(plan, Then::Nothing, 0, |rep| {
             rep.emit(Event::Done { step: 7, note: "cloned".into() });
             Ok("done".into())
         });
@@ -275,7 +309,7 @@ mod tests {
     #[test]
     fn a_panicking_worker_lands_as_an_error_rather_than_hanging() {
         let plan = Plan::new("creating 'x'", ["a".to_string()]);
-        let mut job = Job::spawn(plan, Then::Nothing, |_| panic!("boom"));
+        let mut job = Job::spawn(plan, Then::Nothing, 0, |_| panic!("boom"));
         settle(&mut job, |j| j.landed());
         assert!(job.outcome.as_ref().unwrap().is_err());
     }
@@ -285,7 +319,7 @@ mod tests {
         let plan = Plan::new("creating 'x'", ["a".to_string(), "b".to_string()]);
         let (tx, rx) = std::sync::mpsc::channel();
         // Drive the plan by hand: `spawn`'s worker would race the assertions.
-        let mut job = Job { plan, outcome: None, landing_taken: false, then: Then::Nothing, rx };
+        let mut job = Job { id: next_id(), owner: 0, plan, outcome: None, landing_taken: false, then: Then::Nothing, rx };
         tx.send(Message::Step(Event::Start { step: 0, label: "a".into(), verb: "cloning" })).unwrap();
         job.drain();
         assert_eq!(job.active_snapshot(), None, "running, but git hasn't spoken");
@@ -304,7 +338,7 @@ mod tests {
     fn drain_reports_whether_anything_moved() {
         let plan = Plan::new("x", ["a".to_string()]);
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut job = Job { plan, outcome: None, landing_taken: false, then: Then::Nothing, rx };
+        let mut job = Job { id: next_id(), owner: 0, plan, outcome: None, landing_taken: false, then: Then::Nothing, rx };
         assert!(!job.drain(), "an empty channel is not a redraw");
         tx.send(Message::Step(Event::Start { step: 0, label: "a".into(), verb: "cloning" })).unwrap();
         assert!(job.drain());

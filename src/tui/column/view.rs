@@ -342,7 +342,7 @@ fn list_hint(column: &Column) -> &'static str {
         (InputMode::Normal, Tab::Tasks) if column.another_needs_you() => "n needs you · ⏎ open · ^n new",
         (InputMode::Normal, Tab::Tasks) => "↓↑ switch · ⏎ open · ^n new · ? keys",
         (InputMode::Normal, Tab::Repos) => "a add-repo · gt tab · ? keys",
-        (InputMode::Normal, Tab::Work) if column.jobs.is_empty() => "gt tab · ? keys",
+        (InputMode::Normal, Tab::Work) if column.jobs.lock().is_empty() => "gt tab · ? keys",
         (InputMode::Normal, Tab::Work) => "dd dismiss · gt tab",
     }
 }
@@ -491,6 +491,7 @@ impl Column {
         use tenx_core::progress::StepState;
         let mut items: Vec<Item> = self
             .jobs
+            .lock()
             .iter()
             .enumerate()
             .map(|(pos, job)| {

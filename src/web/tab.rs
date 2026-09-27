@@ -72,12 +72,15 @@ pub(super) struct Tab {
 /// Every tab this server has, by id.
 pub(super) struct Tabs {
     map: Mutex<HashMap<String, Arc<Tab>>>,
+    /// One Work tab for every tab: a job started in one browser tab is listed
+    /// in all of them, and outlives the tab that started it.
+    jobs: crate::tui::Jobs,
     pub(super) grace: Duration,
 }
 
 impl Tabs {
     pub(super) fn new(grace: Duration) -> Tabs {
-        Tabs { map: Mutex::new(HashMap::new()), grace }
+        Tabs { map: Mutex::new(HashMap::new()), jobs: crate::tui::Jobs::default(), grace }
     }
 
     /// The tab `want` names, if it is still here and free, else a new one;
@@ -96,7 +99,7 @@ impl Tabs {
                 return Ok((tab, guard));
             }
         }
-        let tab = Arc::new(Tab::spawn(&super::token::random_hex(8)?)?);
+        let tab = Arc::new(Tab::spawn(&super::token::random_hex(8)?, self.jobs.clone())?);
         let guard = tab.output.clone().try_lock_owned().expect("a new tab's output is free");
         self.map.lock().unwrap().insert(tab.id.clone(), tab.clone());
         Ok((tab, guard))
@@ -130,7 +133,7 @@ impl Tabs {
 impl Tab {
     /// A new tab `id`: its grouped session, and the driver thread that will
     /// attach to it once the page says how big its terminal is.
-    fn spawn(id: &str) -> Result<Tab> {
+    fn spawn(id: &str, jobs: crate::tui::Jobs) -> Result<Tab> {
         let session = tenx_core::web::session_name(id);
         if !crate::tmux::has_session(&session) {
             crate::tmux::new_grouped_session(&session).context("create the tab's tmux session")?;
@@ -139,7 +142,7 @@ impl Tab {
         let (out, output) = unbounded_channel();
         let dead = Arc::new(AtomicBool::new(false));
         let driver = Driver {
-            column: Column::in_session(&session),
+            column: Column::in_session(&session).with_jobs(jobs),
             session,
             views: Views::default(),
             unlock: Unlock::default(),

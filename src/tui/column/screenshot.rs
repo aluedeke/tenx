@@ -446,7 +446,7 @@ mod work_tab {
     fn column_with_jobs(n: usize) -> Column {
         let mut c = fixture_column();
         for _ in 0..n {
-            c.jobs.push(running_job());
+            c.push_job(running_job());
         }
         c
     }
@@ -470,7 +470,7 @@ mod work_tab {
         // A settled job is listed but is not "running", so it adds no count.
         let mut job = running_job();
         job.outcome = Some(Ok("created 'x'".into()));
-        c.jobs.push(job);
+        c.push_job(job);
         let bar = render(&mut c, 24).into_iter().next().unwrap();
         assert!(!bar.contains('['), "a finished job must not be counted: {bar}");
     }
@@ -514,7 +514,7 @@ mod work_tab {
         let mut c = fixture_column();
         let mut job = running_job();
         job.outcome = Some(Err("repository 'x' does not exist".into()));
-        c.jobs.push(job);
+        c.push_job(job);
         c.tab = Tab::Work;
         let screen = render(&mut c, 24).join("\n");
         assert!(screen.contains('✗'), "a failure needs its own glyph:\n{screen}");
@@ -538,7 +538,7 @@ mod work_tab {
         plan.steps[0].state = StepState::Running(None);
         let (job, tx) = crate::tui::job::fixture(plan);
         std::mem::forget(tx);
-        c.jobs.push(job);
+        c.push_job(job);
         c.tab = Tab::Work;
 
         let a = render(&mut c, 24).join("\n");
@@ -569,12 +569,12 @@ mod work_tab {
         c.tab = Tab::Work;
         c.work_selected = 0;
         c.dismiss_job();
-        assert_eq!(c.jobs.len(), 1, "a running job must not be dismissed");
+        assert_eq!(c.jobs.lock().len(), 1, "a running job must not be dismissed");
         assert!(c.status_msg.as_deref().unwrap_or("").contains("still running"));
 
-        c.jobs[0].outcome = Some(Ok("created".into()));
+        c.jobs.lock()[0].outcome = Some(Ok("created".into()));
         c.dismiss_job();
-        assert!(c.jobs.is_empty(), "a settled job clears");
+        assert!(c.jobs.lock().is_empty(), "a settled job clears");
     }
 
     #[test]
@@ -613,7 +613,7 @@ mod quit_guard {
         plan.steps[0].state = StepState::Running(None);
         let (job, tx) = crate::tui::job::fixture(plan);
         std::mem::forget(tx);
-        c.jobs.push(job);
+        c.push_job(job);
         c
     }
 
@@ -651,8 +651,40 @@ mod quit_guard {
         // The job finished but its outcome hasn't been folded in yet; there
         // is nothing left to interrupt, so quit must not be held up.
         let mut c = column_mid_job();
-        c.jobs[0].outcome = Some(Ok("created".into()));
+        c.jobs.lock()[0].outcome = Some(Ok("created".into()));
         run(&mut c, "q");
         assert_eq!(c.take_request(), Some(ClientRequest::Quit));
+    }
+}
+
+#[cfg(test)]
+mod shared_jobs {
+    use super::*;
+    use tenx_core::progress::{Plan, StepState};
+
+    #[test]
+    fn columns_sharing_a_list_see_each_others_jobs() {
+        // Two `tenx web` tabs: a job one of them starts is on both Work tabs.
+        let jobs = crate::tui::job::Jobs::default();
+        let mut a = fixture_column().with_jobs(jobs.clone());
+        let b = fixture_column().with_jobs(jobs);
+        let mut plan = Plan::new("creating 'checkout flow'", ["tenx".to_string()]);
+        plan.steps[0].state = StepState::Running(None);
+        let (job, tx) = crate::tui::job::fixture(plan);
+        std::mem::forget(tx);
+        a.push_job(job);
+        assert_eq!(b.active_jobs(), 1);
+        assert_eq!(b.view().tabs[2].running, 1, "the other tab's bar counts it");
+        assert_ne!(a.jobs.lock()[0].owner, b.id, "only the column that started it finishes it");
+    }
+
+    #[test]
+    fn a_column_of_its_own_does_not_share() {
+        let mut a = fixture_column();
+        let b = fixture_column();
+        let (job, tx) = crate::tui::job::fixture(Plan::new("x", ["tenx".to_string()]));
+        std::mem::forget(tx);
+        a.push_job(job);
+        assert_eq!(b.active_jobs(), 0);
     }
 }

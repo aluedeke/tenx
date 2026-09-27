@@ -7,6 +7,8 @@ mod mouse;
 mod term;
 mod vt;
 
+pub(crate) use job::Jobs;
+
 /// `tenx task list --json`: dump every task across all registered workspaces
 /// as JSON, sorted by last agent activity (newest first) — the column's
 /// ordering. For scripts and other front ends (the future native client reads the
