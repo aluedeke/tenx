@@ -72,6 +72,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Type-check
         run: pnpm lint
+      - name: Unit tests
+        run: pnpm test:unit
       - name: Build
         run: pnpm build
       - name: Install Playwright's Chromium

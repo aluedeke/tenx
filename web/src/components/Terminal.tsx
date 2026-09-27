@@ -7,6 +7,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { Terminal as XTerm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
+import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 
 export interface TerminalHandle {
   write(bytes: Uint8Array): void;
@@ -146,6 +147,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.onResize(({ cols, rows }) => propsRef.current.onResize(cols, rows));
       xterm.onBell(() => propsRef.current.onBell());
       xterm.textarea?.addEventListener('focus', () => propsRef.current.onFocus());
+      tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d));
       term.current = xterm;
       fitRef.current = fit;
       for (const b of pending.current) xterm.write(b);
@@ -171,3 +173,81 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
 
   return <div className="xterm-host" ref={host} data-testid="terminal" />;
 });
+
+/** A tap — or an Alt/Option-click — in the text being edited walks the
+ * cursor there with arrow keys (lib/tapcursor). The click still goes on to
+ * tmux, which only selects the pane it is already in. */
+function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) => void) {
+  let down: { x: number; y: number; t: number } | null = null;
+  let moving = false;
+  // Capture: xterm handles these itself on the way down.
+  el.addEventListener(
+    'pointerdown',
+    (ev) => {
+      down = { x: ev.clientX, y: ev.clientY, t: performance.now() };
+    },
+    true,
+  );
+  el.addEventListener('pointerup', (ev) => {
+    const start = down;
+    down = null;
+    if (!start || moving) return;
+    const isTap = ev.pointerType === 'touch' || ev.pointerType === 'pen' || ev.altKey;
+    const still = Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 10 && performance.now() - start.t < 500;
+    if (!isTap || !still) return;
+    const screen = el.querySelector('.xterm-screen');
+    if (!screen) return;
+    const r = screen.getBoundingClientRect();
+    const tap: Cell = {
+      x: Math.floor(((ev.clientX - r.left) / r.width) * xterm.cols),
+      y: Math.floor(((ev.clientY - r.top) / r.height) * xterm.rows),
+    };
+    if (tap.x < 0 || tap.y < 0 || tap.x >= xterm.cols || tap.y >= xterm.rows) return;
+    const plan = planTap(screenRows(xterm), cursorOf(xterm), tap);
+    if (!plan) return;
+    moving = true;
+    walk(xterm, plan.target, plan.vertical, send).finally(() => {
+      moving = false;
+    });
+  }, true);
+}
+
+function screenRows(xterm: XTerm): string[] {
+  const buf = xterm.buffer.active;
+  const rows: string[] = [];
+  for (let y = 0; y < xterm.rows; y++) rows.push(buf.getLine(buf.viewportY + y)?.translateToString(false) ?? '');
+  return rows;
+}
+
+function cursorOf(xterm: XTerm): Cell {
+  const buf = xterm.buffer.active;
+  return { x: buf.cursorX, y: buf.cursorY + buf.baseY - buf.viewportY };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 70));
+
+/** Step toward `target`, re-reading the cursor after each move: the program
+ * decides where an arrow lands (wide characters, wrapped lines, a line too
+ * short to reach the tapped column), so this converges rather than computing
+ * the whole path up front. Rows move one at a time and stop the moment an
+ * arrow doesn't move the cursor — at the top of Claude's input another ↑
+ * would recall history. */
+async function walk(xterm: XTerm, target: Cell, vertical: boolean, send: (data: string) => void) {
+  const app = () => xterm.modes.applicationCursorKeysMode;
+  for (let step = 0; step < 40; step++) {
+    const at = cursorOf(xterm);
+    if (vertical && at.y !== target.y) {
+      send(arrow(target.y < at.y ? 'up' : 'down', app()));
+      await settle();
+      if (cursorOf(xterm).y === at.y) return;
+      continue;
+    }
+    const dx = target.x - at.x;
+    if (dx === 0) return;
+    send(arrow(dx < 0 ? 'left' : 'right', app()).repeat(Math.abs(dx)));
+    await settle();
+    const now = cursorOf(xterm);
+    // Stuck (end of the line) or overshot back and forth: stop.
+    if (now.x === at.x || Math.sign(target.x - now.x) === -Math.sign(dx)) return;
+  }
+}

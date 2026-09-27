@@ -21,7 +21,7 @@ web-dev:
 # in a headless browser. Not part of `make test` — it needs Node and a
 # Playwright browser (`pnpm exec playwright install chromium`).
 web-test: web
-	cd web && pnpm lint && pnpm test:smoke
+	cd web && pnpm lint && pnpm test:unit && pnpm test:smoke
 
 # Point git at the versioned hooks (.githooks/): commit-msg rejects messages
 # that are not Conventional Commits, since they become the changelog and

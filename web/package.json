@@ -15,6 +15,7 @@
     "build": "next build",
     "lint": "tsc --noEmit",
     "mock": "node tests/mock-server.mjs",
+    "test:unit": "node --test tests/*.test.ts",
     "test:smoke": "playwright test"
   },
   "dependencies": {
