@@ -52,3 +52,29 @@ jobs:
         run: cargo test --workspace
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # The page `tenx web` serves (web/): type-check, build the static export,
+  # and run its smoke test against the mock server in a headless browser.
+  # Separate from `test` so the Rust jobs never need Node.
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: web/.nvmrc
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Type-check
+        run: pnpm lint
+      - name: Build
+        run: pnpm build
+      - name: Install Playwright's Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Smoke test
+        run: pnpm test:smoke

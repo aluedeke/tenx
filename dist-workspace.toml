@@ -33,6 +33,9 @@ pr-run-mode = "plan"
 # the release workflow creates the tag itself, so a version can never be
 # tagged without its binaries.
 dispatch-releases = true
+# Build the web page before the binaries, so `tenx web` ships it
+# (.github/build-setup.yml; build.rs embeds web/out).
+github-build-setup = "../build-setup.yml"
 # Whether to enable GitHub Attestations
 github-attestations = true
 # Custom message to display on successful install

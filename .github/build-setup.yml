@@ -1,0 +1,14 @@
+# Steps cargo-dist runs before building the release binaries
+# (dist-workspace.toml `github-build-setup`): build the web page, so build.rs
+# embeds web/out instead of the "run make web" stub.
+- name: Install Node
+  uses: actions/setup-node@v5
+  with:
+    node-version-file: web/.nvmrc
+- name: Build the web page
+  shell: bash
+  run: |
+    corepack enable
+    cd web
+    pnpm install --frozen-lockfile
+    pnpm build
