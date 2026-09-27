@@ -39,83 +39,9 @@ mod demo;
 #[cfg(test)]
 mod screenshot;
 use crate::palette;
+use crate::snapshot::{self, Row};
 use crate::workspace::sessions::{Subagent, SubagentStatus};
 use crate::workspace::{self, TaskStatus, Workspace};
-
-/// One selectable task row, flattened across all workspaces.
-struct Row {
-    ws_idx: usize,
-    ws_name: String,
-    slug: String,
-    title: String,
-    path: PathBuf,
-    status: TaskStatus,
-    /// The status group this row was filed under, fixed at `rebuild_rows` time.
-    /// `status` keeps updating on the idle tick (the glyph stays honest) but the
-    /// row never migrates to another section while the list is open — sections
-    /// would tear in two and rows would jump out from under the cursor.
-    group: TaskStatus,
-    changed: Option<SystemTime>,
-    /// Claude Code's own reason for waiting, shown next to a blocked row.
-    waiting_for: Option<String>,
-    /// Sort key within a status group: last status change, or creation time for
-    /// a task Claude has never touched.
-    activity: SystemTime,
-    /// The task's tmux window id (`@12`) if its window is open — from the
-    /// per-task cache, refreshed on the tick.
-    window_id: Option<String>,
-    /// The pane its Claude session runs in (`%40`), from the session registry
-    /// — what `A`/`D` answer. Refreshed on the
-    /// tick with the status.
-    pane: Option<String>,
-    /// PR chips and listening ports from `.tenx-live.json` (written by
-    /// `tenx watch`), refreshed on the tick.
-    live: crate::live::Live,
-    /// Repos this task currently has worktrees for (what the repo editor diffs
-    /// against). Refreshed on `rebuild_rows`, not on the idle tick.
-    repos: Vec<String>,
-    /// Secret names pending decrypt (`cli::secrets::enqueue_pending`,
-    /// `decrypt`'s non-interactive fallback) — release something already
-    /// sealed. Like `group`, fixed at `rebuild_rows` time and NOT touched by
-    /// `refresh_statuses` — `section` below is derived from it once, and
-    /// letting it drift on the idle tick would desync a row's section from
-    /// its actual (frozen) position in `rows`, producing a stray header in
-    /// the wrong place.
-    secrets_pending: Vec<String>,
-    /// Secret names a human needs to supply a value for
-    /// (`cli::secrets::enqueue_pending_set`, `set`'s non-interactive
-    /// fallback) — distinct from `secrets_pending` above: nothing sealed to
-    /// release yet, someone has to type a value in first. Same
-    /// frozen-at-`rebuild_rows` treatment.
-    secrets_pending_set: Vec<String>,
-    /// `(name, why)` the agent gave with `need --why`, for the pending names
-    /// above (`workspace::secrets_why`); read only when something is pending.
-    /// For front ends that show why before you answer (the web view).
-    secrets_why: Vec<(String, String)>,
-    /// The task's coding agent (`.tenx-agent` override, else workspace default,
-    /// else claude). Shown as a tag when it isn't the default; set at
-    /// `rebuild_rows` time (an agent change is rare and needs a reopen anyway).
-    agent: crate::agent::AgentKind,
-    /// The section this row is grouped under — normally `status.group()`, but
-    /// a pending secrets request (either kind) forces `TaskGroup::SecretsPending`
-    /// regardless of Claude session state, since it needs a specific action
-    /// from you (unlocking, or supplying a value) even when the task is
-    /// otherwise idle. Separate from `group: TaskStatus` (which stays a pure
-    /// fact about Claude session state, used for its glyph/rank) so this
-    /// override doesn't have to invent a fake `TaskStatus` variant to express
-    /// "wants you but idle".
-    section: workspace::TaskGroup,
-    /// A task a running job is still building: its directory and worktrees do
-    /// not exist yet. Listed from the moment you hit ⏎ so the task is visibly
-    /// *there* while its repos clone, rather than appearing minutes later.
-    /// Cleared when the job lands and `rebuild_rows` reads the real thing off
-    /// disk. A pending row is not openable — it has no window and no worktree.
-    pending: bool,
-    /// The subagents of the task's sessions (`TaskState::subagents`), listed
-    /// under the task as child lines — waiting first, then running, then the
-    /// few that finished recently. Refreshed on the tick with the status.
-    subagents: Vec<Subagent>,
-}
 
 /// Create-task form. `focus`: 0 = workspace picker, 1 = name,
 /// 2.. = repo checkboxes, last = agent picker. The workspace starts as the
@@ -493,15 +419,9 @@ pub(super) struct Column {
     /// it more than once per `SWEEP_INTERVAL`. `None` until the first one.
     last_swept: Option<Instant>,
 
-    /// Window signals as of the last slow refresh (see `refresh_statuses`).
-    signals: workspace::Signals,
-    /// Open windows, from the same `list-windows` as `signals`, with the
-    /// panes' paths when an untagged window needs them — what
-    /// `window_of` matches a task against. The per-task cache file is *not*
-    /// used here: it outlives a closed window and a restarted server, and a
-    /// row that only looks open makes the arrows stop on it for nothing.
-    windows: Vec<crate::tmux::Window>,
-    pane_paths: std::collections::HashMap<String, Vec<PathBuf>>,
+    /// Window signals and open windows as of the last slow refresh (see
+    /// `refresh_statuses`) — what `window_of` matches a task against.
+    windows: snapshot::Windows,
     /// Directory of the task in the session's current window, if it's a
     /// task — drawn with the "current" marker. A directory, not a slug: two
     /// workspaces can each have a task with the same slug.
@@ -546,14 +466,7 @@ impl Column {
     /// A row whose status moved it to another section since the rows were
     /// last built — the list's grouping is stale.
     pub(super) fn sections_stale(&self) -> bool {
-        self.rows.iter().any(|r| {
-            let now = if r.secrets_pending.is_empty() && r.secrets_pending_set.is_empty() {
-                r.status.group()
-            } else {
-                workspace::TaskGroup::SecretsPending
-            };
-            now != r.section
-        })
+        self.rows.iter().any(|r| r.live_section() != r.section)
     }
 
     /// Rebuild (re-group and re-sort) while keeping the selection on the
@@ -664,9 +577,7 @@ impl Column {
             search_area: Rect::default(),
             list_area: Rect::default(),
             last_swept: None,
-            signals: workspace::Signals::new(),
-            windows: Vec::new(),
-            pane_paths: std::collections::HashMap::new(),
+            windows: snapshot::Windows::default(),
             current: None,
             slow_refreshed: None,
         }
@@ -729,51 +640,11 @@ impl Column {
     /// resolves against (`workspace::resolve_task_state`).
     pub(super) fn rebuild_rows(&mut self) {
         // One flat list across all workspaces, grouped by agent status
-        // (`TaskStatus::rank` — needs-input first, idle last) and, within a
-        // group, by last status change newest first. Tasks with no agent
-        // activity yet fall back to creation time.
+        // (needs-input first, idle last) and, within a group, by last status
+        // change newest first (`tenx_core::column::compare`).
         let sessions = workspace::sessions::sessions();
         self.refresh_windows();
-        let signals = &self.signals;
-        let mut rows: Vec<Row> = Vec::new();
-        for (ws_idx, ws) in self.workspaces.iter().enumerate() {
-            for task in ws.tasks().unwrap_or_default() {
-                let state = workspace::resolve_task_state(&task.path, &sessions, signals);
-                let window_id = self.window_of(&task.name, &task.path);
-                let secrets_pending = workspace::secrets_pending(&task.path);
-                let secrets_pending_set = workspace::secrets_pending_set(&task.path);
-                let any_secrets = !secrets_pending.is_empty() || !secrets_pending_set.is_empty();
-                let secrets_why = if any_secrets { workspace::secrets_why(&task.path) } else { Vec::new() };
-                let section = if any_secrets {
-                    workspace::TaskGroup::SecretsPending
-                } else {
-                    state.status.group()
-                };
-                rows.push(Row {
-                    pending: false,
-                    ws_idx,
-                    ws_name: ws.config.name.clone(),
-                    slug: task.name.clone(),
-                    title: task.display_name.clone(),
-                    path: task.path.clone(),
-                    status: state.status,
-                    group: state.status,
-                    changed: state.changed,
-                    waiting_for: state.waiting_for,
-                    activity: state.changed.unwrap_or(task.created_at),
-                    window_id,
-                    pane: state.pane,
-                    live: crate::live::read(&task.path),
-                    repos: task.repos.clone(),
-                    agent: crate::agent::agent_for(ws, &task.path),
-                    secrets_pending,
-                    secrets_pending_set,
-                    secrets_why,
-                    section,
-                    subagents: state.subagents,
-                });
-            }
-        }
+        let rows = snapshot::rows(&self.workspaces, &sessions, &self.windows);
         // A task a job is still building has a directory only once the worker
         // gets that far, so carry its ghost row across the rebuild — but only
         // while the real row is absent, or the two would both be listed.
@@ -781,6 +652,7 @@ impl Column {
             .into_iter()
             .filter(|g| g.pending && !rows.iter().any(|r| r.ws_idx == g.ws_idx && r.slug == g.slug))
             .collect();
+        let mut rows = rows;
         rows.extend(ghosts);
         self.rows = rows;
         self.sort_rows();
@@ -789,13 +661,7 @@ impl Column {
     }
 
     fn sort_rows(&mut self) {
-        self.rows.sort_by(|a, b| {
-            a.section
-                .rank()
-                .cmp(&b.section.rank())
-                .then(a.group.rank().cmp(&b.group.rank()))
-                .then(b.activity.cmp(&a.activity))
-        });
+        snapshot::sort(&mut self.rows);
     }
 
     /// Idle-tick refresh: re-read each row's status/age/tab-id in place,
@@ -834,27 +700,10 @@ impl Column {
                 return;
             }
         }
-        let signals = &self.signals;
-        let mut rows = std::mem::take(&mut self.rows);
-        for r in rows.iter_mut() {
-            // Nothing to resolve for a task that isn't on disk yet: its
-            // status is "a job is building it", which the job owns.
-            if r.pending {
-                continue;
-            }
-            let state = workspace::resolve_task_state(&r.path, &sessions, signals);
-            r.status = state.status;
-            r.changed = state.changed;
-            r.waiting_for = state.waiting_for;
-            r.pane = state.pane;
-            r.subagents = state.subagents;
-            r.activity = state.changed.unwrap_or(r.activity);
-            if slow {
-                r.window_id = self.window_of(&r.slug, &r.path);
-                r.live = crate::live::read(&r.path);
-            }
+        let windows = slow.then_some(&self.windows);
+        for r in self.rows.iter_mut() {
+            r.refresh(&sessions, &self.windows.signals, windows);
         }
-        self.rows = rows;
         // Fresher than the slow refresh's window list: the task beside the
         // column is what ↓/↑ start from.
         self.current = self.current_from(crate::tmux::current_window_id());
@@ -862,30 +711,8 @@ impl Column {
 
     /// One `list-windows` for both the bell signals and the open windows.
     fn refresh_windows(&mut self) {
-        let windows = crate::tmux::list_windows().unwrap_or_default();
-        self.signals = crate::tmux::signals_from(&windows);
-        // Only a window opened before `TASK_DIR_OPTION` needs its panes'
-        // paths to say whose it is; after one reopen, none do.
-        self.pane_paths = if windows.iter().any(|w| w.task_dir.is_none()) {
-            crate::tmux::pane_paths_by_window().unwrap_or_default()
-        } else {
-            std::collections::HashMap::new()
-        };
-        self.windows = windows;
+        self.windows = snapshot::Windows::read();
         self.slow_refreshed = Some(Instant::now());
-    }
-
-    /// The id of the open window that belongs to the task at `path` —
-    /// narrowed by name (a task's window is named by its slug), settled by
-    /// directory (`tmux::window_owned_by`), the same rule as
-    /// `tmux::find_task_window`. Never by name alone: a slug is unique only
-    /// within a workspace, so a namesake in another workspace would read as
-    /// open, and as current.
-    fn window_of(&self, slug: &str, path: &std::path::Path) -> Option<String> {
-        self.windows
-            .iter()
-            .find(|w| w.name == slug && crate::tmux::window_owned_by(w, &self.pane_paths, path))
-            .map(|w| w.id.clone())
     }
 
     /// The directory of the task whose window is `window_id`, if any row
@@ -901,24 +728,14 @@ impl Column {
     }
 
     fn apply_filter(&mut self) {
-        let needle = self.filter.to_lowercase();
-        self.filtered = self
-            .rows
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| {
-                needle.is_empty()
-                    || subseq_match(&needle, &format!("{} {}", r.ws_name, r.title).to_lowercase())
-            })
-            .map(|(i, _)| i)
-            .collect();
+        let needle = self.filter.as_str();
+        self.filtered = self.rows.iter().enumerate().filter(|(_, r)| r.matches(needle)).map(|(i, _)| i).collect();
         self.repo_filtered = self
             .repo_rows
             .iter()
             .enumerate()
             .filter(|(_, r)| {
-                needle.is_empty()
-                    || subseq_match(&needle, &format!("{} {}", r.ws_name, r.name).to_lowercase())
+                needle.is_empty() || tenx_core::column::filter_matches(needle, &format!("{} {}", r.ws_name, r.name))
             })
             .map(|(i, _)| i)
             .collect();
@@ -1105,14 +922,6 @@ impl Column {
         self.follow_selection();
     }
 
-    /// Whether a row wants something from you right now: a pending secrets
-    /// request, or an agent that is blocked or has rung the bell. Reads the
-    /// live `status`, not the frozen `group`, so a task that got stuck since
-    /// the list was built still counts.
-    fn row_needs_you(r: &Row) -> bool {
-        r.section == workspace::TaskGroup::SecretsPending || r.status.needs_you()
-    }
-
     /// `n`: put the cursor on the next task that needs you, cycling through
     /// the filtered list, and show it — the same follow as ↓/↑, so `A`/`D`
     /// or ⏎ can act on it at once. From the search field (`:next`) the
@@ -1122,7 +931,7 @@ impl Column {
         if !self.require_tasks() {
             return;
         }
-        let needs: Vec<bool> = self.filtered.iter().map(|&i| Self::row_needs_you(&self.rows[i])).collect();
+        let needs: Vec<bool> = self.filtered.iter().map(|&i| self.rows[i].needs_you()).collect();
         let from = match self.focus {
             Focus::List => Some(self.selected),
             Focus::Search => None,
@@ -1738,7 +1547,7 @@ impl Column {
         }
         let (title, path) = (row.title.clone(), row.path.clone());
         let sessions = workspace::sessions::sessions();
-        let state = workspace::resolve_task_state(&path, &sessions, &self.signals);
+        let state = workspace::resolve_task_state(&path, &sessions, &self.windows.signals);
         if state.status != TaskStatus::Blocked {
             self.status_msg = Some(format!("'{title}' is not waiting on a prompt"));
             return;
@@ -1794,7 +1603,7 @@ impl Column {
         self.filtered
             .iter()
             .enumerate()
-            .any(|(pos, &i)| pos != self.selected && Self::row_needs_you(&self.rows[i]))
+            .any(|(pos, &i)| pos != self.selected && self.rows[i].needs_you())
     }
 
     // ── Jump ──────────────────────────────────────────────────────────────────
@@ -2944,25 +2753,6 @@ impl Column {
         self.mode = Mode::Rename(form);
         Ok(false)
     }
-}
-
-/// Case-insensitive subsequence match (fuzzy): are all chars of `needle` found
-/// in `haystack` in order? Both are expected pre-lowercased.
-fn subseq_match(needle: &str, haystack: &str) -> bool {
-    let mut hay = haystack.chars();
-    for nc in needle.chars() {
-        if nc == ' ' {
-            continue;
-        }
-        loop {
-            match hay.next() {
-                Some(hc) if hc == nc => break,
-                Some(_) => continue,
-                None => return false,
-            }
-        }
-    }
-    true
 }
 
 /// The fallback unlock, for when the client can't aim a tmux popup at its
@@ -4288,7 +4078,7 @@ mod tests {
         c.rows[twin].slug = "column-screenshot".into();
         c.rows[twin].ws_name = "other".into();
         c.rows[twin].path = PathBuf::from("/home/you/other/tasks/column-screenshot");
-        c.windows = vec![crate::tmux::Window {
+        c.windows.windows = vec![crate::tmux::Window {
             id: "@7".into(),
             name: "column-screenshot".into(),
             active: true,
@@ -4298,7 +4088,7 @@ mod tests {
             task_dir: Some(c.rows[mine].path.clone()),
         }];
         for i in [mine, twin] {
-            c.rows[i].window_id = c.window_of(&c.rows[i].slug, &c.rows[i].path);
+            c.rows[i].window_id = c.windows.window_of(&c.rows[i].slug, &c.rows[i].path);
         }
         assert_eq!(c.rows[mine].window_id.as_deref(), Some("@7"));
         assert_eq!(c.rows[twin].window_id, None, "the namesake has no window");

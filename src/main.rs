@@ -4,6 +4,7 @@ mod git;
 mod live;
 mod palette;
 mod progress;
+mod snapshot;
 mod tmux;
 mod tui;
 mod workspace;
