@@ -689,5 +689,6 @@ a:hover {
   border: 1px solid var(--border-active);
   background: var(--sel-bg);
   color: var(--bright);
-  white-space: nowrap;
+  max-width: calc(100% - 28px);
+  text-align: center;
 }

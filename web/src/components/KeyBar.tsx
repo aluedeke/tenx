@@ -12,6 +12,8 @@ interface Props {
   onKey(key: string, shift: boolean): void;
   /** Images picked from the photo library or the camera. */
   onImages(files: File[]): void;
+  /** Paste what's on the clipboard — an image or text. */
+  onPaste(): void;
 }
 
 const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
@@ -24,7 +26,7 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste }: Props) {
   // Pointer-down, not click, and no default: a tap mustn't take focus from
   // the terminal (and with it the on-screen keyboard).
   const press = (fn: () => void) => (ev: React.PointerEvent) => {
@@ -54,6 +56,13 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages }: Props) {
       {column && (
         <button type="button" className="key" onPointerDown={press(() => onKey('?', true))}>
           ?
+        </button>
+      )}
+      {!column && (
+        // A click, not a pointer-down: reading the clipboard needs the
+        // gesture to have completed (iOS then shows its own Paste bubble).
+        <button type="button" className="key" aria-label="paste" data-testid="paste" onClick={onPaste}>
+          📋
         </button>
       )}
       {!column && (

@@ -304,6 +304,41 @@ export function App() {
     }
   }, []);
 
+  const notice = useCallback((text: string) => {
+    setPasting(text);
+    setTimeout(() => setPasting(null), 4000);
+  }, []);
+
+  /** The 📋 key: whatever is on the phone's clipboard — an image goes up
+   * like a picked one, text is pasted as typed. The Clipboard API only
+   * exists on HTTPS (or localhost), so over plain http this can only say so. */
+  const pasteClipboard = useCallback(async () => {
+    if (!navigator.clipboard?.read) {
+      notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
+      return;
+    }
+    try {
+      const images: File[] = [];
+      let text = '';
+      for (const item of await navigator.clipboard.read()) {
+        const image = item.types.find((t) => t.startsWith('image/'));
+        if (image) {
+          const blob = await item.getType(image);
+          images.push(new File([blob], 'clipboard', { type: image }));
+        } else if (item.types.includes('text/plain')) {
+          text += await (await item.getType('text/plain')).text();
+        }
+      }
+      if (images.length) await pasteImages(images);
+      else if (text) {
+        setFocus('terminal');
+        term.current?.paste(text);
+      } else notice('the clipboard is empty');
+    } catch (e) {
+      notice(`couldn't read the clipboard: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [notice, pasteImages]);
+
   const hide = useCallback(() => {
     setVisible(false);
     setFocus('terminal');
@@ -403,6 +438,7 @@ export function App() {
           ctrlSticky={ctrlSticky}
           onCtrl={() => setCtrlSticky((s) => !s)}
           onImages={pasteImages}
+          onPaste={pasteClipboard}
           onKey={(key, shift) => {
             if (columnHasKeys) {
               sendKey({ key, ctrl: state.current.ctrlSticky, alt: false, shift });
