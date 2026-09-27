@@ -332,6 +332,10 @@ pub(super) struct Column {
     /// No tmux, no registry: a switch or an answer only updates this
     /// struct. The README demo's mode; never set by the client.
     pub(super) offline: bool,
+    /// The tmux session whose current window this column follows and
+    /// switches: `tenx` for the terminal client, a grouped session of its
+    /// own for each browser tab of `tenx web` (`in_session`).
+    session: String,
     workspaces: Vec<Workspace>,
     /// The registry's entry names as of the last `reload_workspaces` — the
     /// slow refresh compares them with `workspace::registry_keys()` and
@@ -447,7 +451,15 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(300);
 
 impl Column {
     pub(super) fn new() -> Self {
+        Self::in_session(crate::tmux::SESSION)
+    }
+
+    /// A column that follows and switches `session`'s current window — a
+    /// session grouped with `tenx` (`tmux::new_grouped_session`), so moving
+    /// through it leaves every other client where it is.
+    pub(crate) fn in_session(session: &str) -> Self {
         let mut o = Self::empty();
+        o.session = session.to_string();
         o.reload_workspaces();
         o.rebuild_rows();
         o
@@ -548,6 +560,7 @@ impl Column {
         Column {
             client_request: None,
             offline: false,
+            session: crate::tmux::SESSION.to_string(),
             workspaces: vec![],
             registry: vec![],
             tab: Tab::Tasks,
@@ -660,7 +673,7 @@ impl Column {
         self.rows = rows;
         self.sort_rows();
         self.apply_filter();
-        self.current = self.current_from(crate::tmux::current_window_id());
+        self.current = self.current_from(crate::tmux::current_window_id_in(&self.session));
     }
 
     fn sort_rows(&mut self) {
@@ -709,12 +722,12 @@ impl Column {
         }
         // Fresher than the slow refresh's window list: the task beside the
         // column is what ↓/↑ start from.
-        self.current = self.current_from(crate::tmux::current_window_id());
+        self.current = self.current_from(crate::tmux::current_window_id_in(&self.session));
     }
 
     /// One `list-windows` for both the bell signals and the open windows.
     fn refresh_windows(&mut self) {
-        self.windows = snapshot::Windows::read();
+        self.windows = snapshot::Windows::read_in(&self.session);
         self.slow_refreshed = Some(Instant::now());
     }
 
@@ -983,7 +996,7 @@ impl Column {
             let path = row.path.clone();
             if !self.offline {
                 let Some(w) = crate::tmux::find_task_window(&slug, &path).ok().flatten() else { return };
-                if crate::tmux::select_window(&w.id).is_err() {
+                if crate::tmux::select_window_in(&self.session, &w.id).is_err() {
                     return;
                 }
             }
@@ -1632,7 +1645,7 @@ impl Column {
         let path = row.path.clone();
         if !self.offline {
             let ws = &self.workspaces[ws_idx];
-            if let Err(e) = crate::cli::task::open_in(ws, &slug) {
+            if let Err(e) = crate::cli::task::open_in_session(ws, &slug, &self.session) {
                 self.status_msg = Some(e.to_string());
                 return Ok(false);
             }

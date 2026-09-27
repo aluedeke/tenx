@@ -435,7 +435,55 @@ pub fn ensure_session() -> Result<()> {
 
 /// The `tmux -L <socket> attach-session -t tenx` a client runs in its pty.
 pub fn attach_command() -> (PathBuf, Vec<String>) {
-    (find_bin(), vec!["-L".into(), socket(), "attach-session".into(), "-t".into(), SESSION.into()])
+    attach_command_to(SESSION)
+}
+
+/// The `attach-session` for `session` — the tenx session, or a grouped one.
+pub fn attach_command_to(session: &str) -> (PathBuf, Vec<String>) {
+    (find_bin(), vec!["-L".into(), socket(), "attach-session".into(), "-t".into(), session.into()])
+}
+
+// ── Grouped sessions ──────────────────────────────────────────────────────────
+//
+// The session's current window is what every client attached to it shows,
+// so a client that should switch tasks on its own — a browser tab of
+// `tenx web` — attaches to a session of its own *grouped* with `tenx`: the
+// same windows (a task opened or closed in one is opened or closed in all),
+// but its own current window. Everything that selects a window or asks for
+// the current one then names that session (`*_in`).
+
+/// Create `name` grouped with the tenx session, detached, on the tenx
+/// session's current window — tmux would start it on the group's first
+/// window (`home`), not where you are.
+#[allow(dead_code)] // for `tenx web`, which lands next
+pub fn new_grouped_session(name: &str) -> Result<()> {
+    run(&["new-session", "-d", "-t", SESSION, "-s", name])?;
+    let current = run(&["display-message", "-p", "-t", SESSION, "#{window_id}"])?;
+    select_window_in(name, current.trim())
+}
+
+/// Whether a session called `name` exists (exactly that name: `=` stops
+/// tmux matching a prefix).
+#[allow(dead_code)] // for `tenx web`, which lands next
+pub fn has_session(name: &str) -> bool {
+    cmd()
+        .args(["has-session", "-t", &format!("={name}")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Kill a grouped session. Its windows live on in the tenx session — only
+/// the last session holding a window takes it with it, and `tenx` is never
+/// killed here.
+#[allow(dead_code)] // for `tenx web`, which lands next
+pub fn kill_session(name: &str) -> Result<()> {
+    if name == SESSION {
+        bail!("refusing to kill the '{SESSION}' session");
+    }
+    run(&["kill-session", "-t", &format!("={name}")]).map(drop)
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
@@ -446,8 +494,14 @@ const WINDOW_FORMAT: &str = "#{window_id}\t#{window_index}\t#{window_name}\t#{wi
 /// — one subprocess either way: a failed `list-windows` *is* the liveness
 /// check, so there's no separate `has-session` round trip on a poll path.
 pub fn list_windows() -> Result<Vec<Window>> {
+    list_windows_in(SESSION)
+}
+
+/// [`list_windows`] as `session` sees them: the same windows in a grouped
+/// session, but `active` is that session's current window.
+pub fn list_windows_in(session: &str) -> Result<Vec<Window>> {
     let out = cmd()
-        .args(["list-windows", "-t", SESSION, "-F", WINDOW_FORMAT])
+        .args(["list-windows", "-t", session, "-F", WINDOW_FORMAT])
         .stdin(Stdio::null())
         .output()
         .context("run tmux list-windows")?;
@@ -567,10 +621,26 @@ pub fn select_window(id: &str) -> Result<()> {
     run(&["select-window", "-t", id]).map(drop)
 }
 
+/// Make window `id` (`@12`) the current one of `session` only — in a grouped
+/// session, the others keep theirs.
+pub fn select_window_in(session: &str, id: &str) -> Result<()> {
+    run(&["select-window", "-t", &format!("{session}:{id}")]).map(drop)
+}
+
 /// Make `pane` the one on screen: its window the session's current, and the
 /// pane that window's active one.
 pub fn focus_pane(pane: &str) -> Result<()> {
     run(&["select-window", "-t", pane])?;
+    run(&["select-pane", "-t", pane]).map(drop)
+}
+
+/// [`focus_pane`] for `session`: its window becomes that session's current.
+/// The active pane is the window's, so every session showing it sees the
+/// change.
+#[allow(dead_code)] // for `tenx web`, which lands next
+pub fn focus_pane_in(session: &str, pane: &str) -> Result<()> {
+    let window = run(&["display-message", "-p", "-t", pane, "#{window_id}"])?;
+    select_window_in(session, window.trim())?;
     run(&["select-pane", "-t", pane]).map(drop)
 }
 
@@ -711,14 +781,15 @@ pub fn popup_tenx(client: &str, cwd: &str, title: &str, tenx_bin: &str, args: &s
 
 // ── Current window ────────────────────────────────────────────────────────────
 
-/// The id (`@12`) of the session's current window (`None` when the server
-/// is down) — the window a client is looking at, asked live rather than read
+/// The id (`@12`) of `session`'s current window (`None` when the server is
+/// down) — the window a client is looking at, asked live rather than read
 /// from the watcher's snapshot, which can lag a switch by a couple of
 /// seconds. An id, not the name: a name is a slug, and a slug is only unique
 /// within a workspace, so which *task* this is gets settled by the caller
-/// against windows it already matched to task directories.
-pub fn current_window_id() -> Option<String> {
-    let id = run(&["display-message", "-p", "-t", SESSION, "#{window_id}"]).ok()?.trim().to_string();
+/// against windows it already matched to task directories. A session, since
+/// a `tenx web` tab's grouped session has a current window of its own.
+pub fn current_window_id_in(session: &str) -> Option<String> {
+    let id = run(&["display-message", "-p", "-t", session, "#{window_id}"]).ok()?.trim().to_string();
     (!id.is_empty()).then_some(id)
 }
 

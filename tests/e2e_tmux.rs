@@ -748,3 +748,45 @@ fn repo_less_and_detached_sessions_are_tasks_that_can_be_driven() {
     assert!(out.status.success(), "output: {}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "After 15 minutes.");
 }
+
+/// What `tenx web` builds on (`tmux::new_grouped_session`,
+/// `select_window_in`, `kill_session`): a session grouped with `tenx` has the
+/// same windows but a current window of its own, so a browser tab switching
+/// tasks leaves the terminal client where it is — and killing the tab's
+/// session closes no task window.
+#[test]
+fn a_grouped_session_switches_windows_on_its_own() {
+    let Some(h) = Harness::named("-grouped") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Grouped", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let home = h.tmux_out(&["display-message", "-p", "-t", "tenx:home", "#{window_id}"]);
+    let task = h.tmux_out(&["display-message", "-p", "-t", "tenx:grouped", "#{window_id}"]);
+    let current = |session: &str| h.tmux_out(&["display-message", "-p", "-t", session, "#{window_id}"]);
+    h.tmux_out(&["select-window", "-t", &format!("tenx:{task}")]);
+    assert_eq!(current("tenx"), task);
+
+    // The calls `new_grouped_session` makes. tmux starts a grouped session
+    // on the group's first window, so it has to be moved to tenx's current.
+    h.tmux_out(&["new-session", "-d", "-t", "tenx", "-s", "tenx-web-1"]);
+    assert_eq!(current("tenx-web-1"), home, "tmux starts it on the first window");
+    h.tmux_out(&["select-window", "-t", &format!("tenx-web-1:{}", current("tenx"))]);
+    assert_eq!(current("tenx-web-1"), task);
+
+    // `select_window_in`: only the grouped session moves.
+    h.tmux_out(&["select-window", "-t", &format!("tenx-web-1:{home}")]);
+    assert_eq!(current("tenx-web-1"), home);
+    assert_eq!(current("tenx"), task, "the tenx session keeps its window");
+
+    // A window opened in one is in both.
+    let names = |session: &str| h.tmux_out(&["list-windows", "-t", session, "-F", "#{window_name}"]);
+    h.tmux_out(&["new-window", "-d", "-t", "tenx", "-n", "later"]);
+    assert_eq!(names("tenx"), names("tenx-web-1"));
+
+    // `kill_session`: the windows stay.
+    h.tmux_out(&["kill-session", "-t", "=tenx-web-1"]);
+    assert!(names("tenx").contains("grouped"));
+    assert!(names("tenx").contains("later"));
+}

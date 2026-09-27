@@ -460,6 +460,22 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
     open_window(ws, slug, false)
 }
 
+/// [`open_in`] for `session`: a grouped session (`tmux::new_grouped_session`)
+/// gets the task's window as *its* current one; the tenx session — and every
+/// terminal attached to it — stays where it is, even when the window has to
+/// be created.
+pub fn open_in_session(ws: &crate::workspace::Workspace, slug: &str, session: &str) -> Result<()> {
+    if session == crate::tmux::SESSION {
+        return open_in(ws, slug);
+    }
+    open_window(ws, slug, true)?;
+    let task = ws.find_task(slug)?;
+    match crate::tmux::find_task_window(slug, &task.path)? {
+        Some(w) => crate::tmux::select_window_in(session, &w.id),
+        None => bail!("'{slug}' has no window after opening it"),
+    }
+}
+
 /// Find-or-create a task's window. `detached` keeps the session's current
 /// window where it is, both when the window already exists and when it is
 /// created here.

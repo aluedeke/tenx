@@ -145,10 +145,10 @@ pub(crate) struct Windows {
 }
 
 impl Windows {
-    /// The tenx session's windows, as of now. An unreachable server reads as
-    /// no windows.
-    pub(crate) fn read() -> Self {
-        Self::from_windows(&crate::tmux::list_windows().unwrap_or_default())
+    /// `session`'s windows, as of now — a grouped session has its own
+    /// current window. An unreachable server reads as no windows.
+    pub(crate) fn read_in(session: &str) -> Self {
+        Self::from_windows(&crate::tmux::list_windows_in(session).unwrap_or_default())
     }
 
     pub(crate) fn from_windows(windows: &[crate::tmux::Window]) -> Self {
