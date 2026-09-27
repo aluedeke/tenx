@@ -61,7 +61,7 @@ async fn page(State(app): State<Arc<App>>, uri: Uri, headers: HeaderMap) -> Resp
             .body(axum::body::Body::empty())
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
-    if !web::cookie_ok(header_str(&headers, header::COOKIE), &app.token) {
+    if !web::public_path(uri.path()) && !web::cookie_ok(header_str(&headers, header::COOKIE), &app.token) {
         return unauthorized("Open the address <code>tenx web</code> printed (the one with <code>?token=</code>).");
     }
     let mut response = super::assets::get(uri.path()).unwrap_or_else(|| StatusCode::NOT_FOUND.into_response());

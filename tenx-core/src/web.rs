@@ -28,6 +28,14 @@ pub fn cookie_value<'a>(header: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
+/// Paths served without the cookie: the web app manifest and the icons it
+/// names. Browsers fetch a manifest without credentials (unless the page asks
+/// otherwise), and an installed PWA's icons the same way, so gating them only
+/// breaks installing the page; they are the same bytes as the public logo.
+pub fn public_path(path: &str) -> bool {
+    matches!(path, "/manifest.webmanifest" | "/favicon.svg" | "/favicon-16.png" | "/favicon-32.png" | "/tenx-mark-256.png")
+}
+
 /// Whether a request's cookie header carries the token.
 pub fn cookie_ok(cookie_header: Option<&str>, token: &str) -> bool {
     cookie_header.and_then(|h| cookie_value(h, COOKIE)).is_some_and(|v| token_matches(v, token))
@@ -175,5 +183,15 @@ mod tests {
         assert!(!valid_session_id("tenx:1.0"));
         assert_eq!(session_name("0123abcd"), "tenx-web-0123abcd");
         assert_eq!(hex(&[0, 15, 255]), "000fff");
+    }
+
+    #[test]
+    fn only_the_install_bits_skip_the_cookie() {
+        assert!(public_path("/manifest.webmanifest"));
+        assert!(public_path("/tenx-mark-256.png"));
+        assert!(!public_path("/"));
+        assert!(!public_path("/index.html"));
+        assert!(!public_path("/_next/static/chunks/main.js"));
+        assert!(!public_path("/manifest.webmanifest/../index.html"));
     }
 }
