@@ -1,7 +1,27 @@
-.PHONY: build install test clean try try-stop screenshot demo demo-gif release auto patch minor major hooks
+.PHONY: build install test clean try try-stop screenshot demo demo-gif release auto patch minor major hooks web web-dev web-test
 
 build:
 	cargo build --release
+
+# The page `tenx web` serves: web/ is a Next.js static export (web/out) that
+# build.rs embeds in the binary; without it the binary serves a stub that
+# says to run this. Needs Node 22+ and pnpm (corepack enable). Touching
+# build.rs makes cargo notice the export on the next build.
+web:
+	cd web && pnpm install --frozen-lockfile && pnpm build
+	touch build.rs
+
+# The page with hot reload against a running `tenx web --dev-origin
+# http://localhost:3000` (its token in NEXT_PUBLIC_TENX_TOKEN, or ?token= on
+# the page's URL).
+web-dev:
+	cd web && pnpm install --frozen-lockfile && NEXT_PUBLIC_TENX_URL=$${NEXT_PUBLIC_TENX_URL:-http://127.0.0.1:7070} pnpm dev
+
+# The page's smoke test: the built export against web/tests/mock-server.mjs,
+# in a headless browser. Not part of `make test` — it needs Node and a
+# Playwright browser (`pnpm exec playwright install chromium`).
+web-test: web
+	cd web && pnpm lint && pnpm test:smoke
 
 # Point git at the versioned hooks (.githooks/): commit-msg rejects messages
 # that are not Conventional Commits, since they become the changelog and

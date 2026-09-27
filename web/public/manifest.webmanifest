@@ -1,0 +1,13 @@
+{
+  "name": "tenx",
+  "short_name": "tenx",
+  "description": "Every task, its agent, and which one needs you.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#171820",
+  "theme_color": "#171820",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/tenx-mark-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
+  ]
+}
