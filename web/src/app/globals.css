@@ -72,10 +72,18 @@ a:hover {
 /* ── Page ─────────────────────────────────────────────────────────────── */
 
 .app {
+  /* Pinned to the visual viewport (App): what's left above a phone's
+     keyboard, wherever Safari has scrolled the page to. */
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--vv-top, 0px);
   height: 100vh;
-  height: 100dvh;
+  height: var(--vv-h, 100dvh);
   display: flex;
   flex-direction: column;
+  /* Under a translucent status bar or beside a notch in landscape. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
 .main {
@@ -660,4 +668,26 @@ a:hover {
 }
 .app:not(.touch):not(.narrow) .fab .muted {
   writing-mode: vertical-rl;
+}
+
+/* With the keyboard up there is no home indicator to clear. */
+.kb-open .keybar {
+  padding-bottom: 6px;
+}
+.keybar label.key {
+  cursor: pointer;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 9;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-active);
+  background: var(--sel-bg);
+  color: var(--bright);
+  white-space: nowrap;
 }

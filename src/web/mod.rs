@@ -11,6 +11,7 @@
 //! bytes: the column and the pty stay synchronous on a thread per tab.
 
 mod assets;
+mod paste;
 mod server;
 mod tab;
 mod token;

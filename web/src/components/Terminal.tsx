@@ -8,6 +8,7 @@ import type { Terminal as XTerm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
+import { imagesIn } from '@/lib/paste';
 
 export interface TerminalHandle {
   write(bytes: Uint8Array): void;
@@ -16,6 +17,8 @@ export interface TerminalHandle {
   blur(): void;
   fit(): void;
   size(): { cols: number; rows: number } | null;
+  /** Paste text as the terminal would (bracketed when the program asked). */
+  paste(text: string): void;
 }
 
 interface Props {
@@ -27,6 +30,8 @@ interface Props {
   /** A key the page keeps (^w) — xterm must not see it. */
   intercept(ev: KeyboardEvent): boolean;
   onFocus(): void;
+  /** Images pasted or dropped on the terminal. */
+  onImages(files: File[]): void;
 }
 
 // The ANSI colours agg renders the demo with (Makefile `demo-gif`): the
@@ -89,6 +94,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
     size() {
       return term.current ? { cols: term.current.cols, rows: term.current.rows } : null;
     },
+    paste(text) {
+      term.current?.paste(text);
+    },
   }));
 
   useEffect(() => {
@@ -148,6 +156,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.onBell(() => propsRef.current.onBell());
       xterm.textarea?.addEventListener('focus', () => propsRef.current.onFocus());
       tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d));
+      catchImages(host.current, (files) => propsRef.current.onImages(files));
       term.current = xterm;
       fitRef.current = fit;
       for (const b of pending.current) xterm.write(b);
@@ -250,4 +259,30 @@ async function walk(xterm: XTerm, target: Cell, vertical: boolean, send: (data: 
     // Stuck (end of the line) or overshot back and forth: stop.
     if (now.x === at.x || Math.sign(target.x - now.x) === -Math.sign(dx)) return;
   }
+}
+
+/** A paste or a drop that carries an image goes to `onImages` instead of
+ * xterm (which would paste nothing, or the file's name). Text pastes are
+ * left alone. Capture phase, ahead of xterm's own paste handler. */
+function catchImages(el: HTMLElement, onImages: (files: File[]) => void) {
+  el.addEventListener(
+    'paste',
+    (ev) => {
+      const files = imagesIn(ev.clipboardData);
+      if (files.length === 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      onImages(files);
+    },
+    true,
+  );
+  el.addEventListener('dragover', (ev) => {
+    if (Array.from(ev.dataTransfer?.items ?? []).some((i) => i.kind === 'file')) ev.preventDefault();
+  });
+  el.addEventListener('drop', (ev) => {
+    const files = imagesIn(ev.dataTransfer);
+    if (files.length === 0) return;
+    ev.preventDefault();
+    onImages(files);
+  });
 }

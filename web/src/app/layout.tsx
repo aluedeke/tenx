@@ -27,6 +27,9 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   interactiveWidget: 'resizes-content',
+  // Draw under the notch and the home indicator; the page pads itself with
+  // the safe-area insets.
+  viewportFit: 'cover',
   themeColor: palette.GROUND,
 };
 

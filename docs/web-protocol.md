@@ -13,6 +13,7 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 | `GET /?token=<t>` | token | Sets the `tenx_web` cookie (HttpOnly, SameSite=Strict, Path=/) and redirects `303` to `/` without the query. A wrong token gets `401`. |
 | `GET /<asset>` | cookie | The embedded static export of `web/` (`web/out`), `index.html` for `/`. Without the cookie: `401` with a short page telling you to open the URL `tenx web` printed. |
 | `GET /ws` | cookie + Origin | Upgrades to the WebSocket below. The `Origin` header must equal `http(s)://<Host>` or an origin passed with `--dev-origin`. |
+| `POST /paste` | cookie + Origin | An image (`Content-Type` PNG, JPEG, GIF or WebP; at most 25 MB) saved to `~/.config/tenx/web-paste/` (600, swept after a day). Answers `{"path": …}`; the page pastes that path into the terminal, which Claude Code attaches as an image. `415` for anything else. |
 
 The token lives in `~/.config/tenx/web-token` (mode 600), created on first
 start, replaced by `tenx web --rotate-token`. `--dev-origin

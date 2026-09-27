@@ -36,6 +36,28 @@ pub fn public_path(path: &str) -> bool {
     matches!(path, "/manifest.webmanifest" | "/favicon.svg" | "/favicon-16.png" | "/favicon-32.png" | "/tenx-mark-256.png")
 }
 
+/// The largest image `/paste` takes: a phone camera's full-size JPEG fits;
+/// anything bigger is refused before it is written.
+pub const PASTE_MAX_BYTES: usize = 25 * 1024 * 1024;
+
+/// How long a pasted image is kept. It only has to outlive the agent reading
+/// it; older ones are swept on the next paste.
+pub const PASTE_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// The file extension a pasted image is saved under, by its `Content-Type` —
+/// only the formats an agent can read (PNG, JPEG, GIF, WebP); anything else
+/// is refused.
+pub fn paste_ext(content_type: &str) -> Option<&'static str> {
+    let mime = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    match mime.as_str() {
+        "image/png" => Some("png"),
+        "image/jpeg" | "image/jpg" => Some("jpg"),
+        "image/gif" => Some("gif"),
+        "image/webp" => Some("webp"),
+        _ => None,
+    }
+}
+
 /// Whether a request's cookie header carries the token.
 pub fn cookie_ok(cookie_header: Option<&str>, token: &str) -> bool {
     cookie_header.and_then(|h| cookie_value(h, COOKIE)).is_some_and(|v| token_matches(v, token))
@@ -193,5 +215,15 @@ mod tests {
         assert!(!public_path("/index.html"));
         assert!(!public_path("/_next/static/chunks/main.js"));
         assert!(!public_path("/manifest.webmanifest/../index.html"));
+    }
+
+    #[test]
+    fn only_images_an_agent_reads_can_be_pasted() {
+        assert_eq!(paste_ext("image/png"), Some("png"));
+        assert_eq!(paste_ext("image/JPEG; charset=binary"), Some("jpg"));
+        assert_eq!(paste_ext("image/webp"), Some("webp"));
+        assert_eq!(paste_ext("image/svg+xml"), None, "a script can hide in an SVG");
+        assert_eq!(paste_ext("text/plain"), None);
+        assert_eq!(paste_ext(""), None);
     }
 }

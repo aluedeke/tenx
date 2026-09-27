@@ -13,6 +13,7 @@ import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
 import { bell } from '@/lib/bell';
+import { asTyped, upload } from '@/lib/paste';
 import type { Action, Click, ColumnView, KeyMessage, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
@@ -43,6 +44,11 @@ export function App() {
   const [touch, setTouch] = useState(false);
   const [ctrlSticky, setCtrlSticky] = useState(false);
   const [cell, setCell] = useState(7.8);
+  /** The on-screen keyboard is up: the key bar sits on it, not above the
+   * home indicator's inset. */
+  const [kbOpen, setKbOpen] = useState(false);
+  /** A paste on its way up, or why it failed. */
+  const [pasting, setPasting] = useState<string | null>(null);
 
   const conn = useRef<Connection | null>(null);
   /** Off-screen: focusing it is what raises a phone's keyboard for the column. */
@@ -157,6 +163,29 @@ export function App() {
     }
   }, [columnHasKeys, send]);
 
+  // ── The visible area ────────────────────────────────────────────────────
+  // A phone's keyboard covers the page rather than shrinking it (iOS ignores
+  // `interactive-widget`), and Safari scrolls the page to keep the focused
+  // input in view. Pin the page to the visual viewport instead, so the
+  // terminal ends — and the key bar sits — right on top of the keyboard.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const apply = () => {
+      const root = document.documentElement.style;
+      root.setProperty('--vv-h', `${vv.height}px`);
+      root.setProperty('--vv-top', `${vv.offsetTop}px`);
+      setKbOpen(window.innerHeight - vv.height > 120);
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    return () => {
+      vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+    };
+  }, []);
+
   // ── Width, visibility ───────────────────────────────────────────────────
   useEffect(() => {
     const onResize = () => sendViewport();
@@ -259,6 +288,22 @@ export function App() {
     [sendKey],
   );
 
+  /** Images for the agent: uploaded, then their paths pasted where the
+   * cursor is. */
+  const pasteImages = useCallback(async (files: File[]) => {
+    setFocus('terminal');
+    setPasting(files.length > 1 ? `uploading ${files.length} images…` : 'uploading image…');
+    try {
+      const paths: string[] = [];
+      for (const f of files) paths.push(asTyped(await upload(f)));
+      term.current?.paste(paths.join(' ') + ' ');
+      setPasting(null);
+    } catch (e) {
+      setPasting(`paste failed: ${e instanceof Error ? e.message : String(e)}`);
+      setTimeout(() => setPasting(null), 4000);
+    }
+  }, []);
+
   const hide = useCallback(() => {
     setVisible(false);
     setFocus('terminal');
@@ -295,7 +340,7 @@ export function App() {
   const showFab = !visible || (touch && !overlay);
 
   return (
-    <div className={`app${overlay ? ' narrow' : ''}${touch ? ' touch' : ''}`}>
+    <div className={`app${overlay ? ' narrow' : ''}${touch ? ' touch' : ''}${kbOpen ? ' kb-open' : ''}`}>
       <div className="main">
         {visible && (
           <div className={overlay ? 'column-wrap overlay' : 'column-wrap'} style={columnStyle}>
@@ -325,7 +370,13 @@ export function App() {
             onFocus={() => {
               if (!state.current.narrow || !state.current.visible) setFocus('terminal');
             }}
+            onImages={pasteImages}
           />
+          {pasting && (
+            <div className="toast" role="status">
+              {pasting}
+            </div>
+          )}
           {showFab && (
             <button type="button" className="fab" data-testid="fab" onClick={cycle}>
               {waiting > 0 && <span className="warn">●</span>}
@@ -351,6 +402,7 @@ export function App() {
           column={columnHasKeys}
           ctrlSticky={ctrlSticky}
           onCtrl={() => setCtrlSticky((s) => !s)}
+          onImages={pasteImages}
           onKey={(key, shift) => {
             if (columnHasKeys) {
               sendKey({ key, ctrl: state.current.ctrlSticky, alt: false, shift });

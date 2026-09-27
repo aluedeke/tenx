@@ -11,7 +11,8 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::extract::DefaultBodyLimit;
+use axum::routing::{get, post};
 use axum::Router;
 use serde::Deserialize;
 use tenx_core::web;
@@ -26,7 +27,11 @@ pub(super) struct App {
 
 pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Result<()> {
     let tabs = app.tabs.clone();
-    let router = Router::new().route("/ws", get(ws)).fallback(get(page)).with_state(app);
+    let router = Router::new()
+        .route("/ws", get(ws))
+        .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
+        .fallback(get(page))
+        .with_state(app);
     let listener = tokio::net::TcpListener::from_std(listener)?;
     // Not axum's graceful shutdown: it would wait for every open WebSocket,
     // and a browser tab never closes its own.
@@ -97,6 +102,29 @@ async fn ws(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: Head
         return if allowed { StatusCode::UNAUTHORIZED } else { StatusCode::FORBIDDEN }.into_response();
     }
     upgrade.on_upgrade(move |socket| connection(app, socket, q.session))
+}
+
+/// `POST /paste[?token=]`: an image for the agent (`paste.rs`). Guarded like
+/// `/ws` — the cookie (or a dev origin's token) and an allowed `Origin` — so
+/// another site can't write files here. Answers `{"path": …}`.
+async fn paste(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    let origin = header_str(&headers, header::ORIGIN);
+    let allowed = web::origin_allowed(origin, header_str(&headers, header::HOST), &app.dev_origins);
+    let dev = web::is_dev_origin(origin, &app.dev_origins);
+    let cookie = web::cookie_ok(header_str(&headers, header::COOKIE), &app.token);
+    let query_token = q.token.as_deref().is_some_and(|t| web::token_matches(t, &app.token));
+    if !web::ws_authorized(cookie, query_token, allowed, dev) {
+        return if allowed { StatusCode::UNAUTHORIZED } else { StatusCode::FORBIDDEN }.into_response();
+    }
+    let content_type = header_str(&headers, header::CONTENT_TYPE).unwrap_or("").to_string();
+    let saved = tokio::task::spawn_blocking(move || super::paste::save(&content_type, &body)).await;
+    match saved {
+        Ok(Ok(path)) => {
+            ([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "path": path }).to_string()).into_response()
+        }
+        Ok(Err(e)) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 /// One socket, for as long as it lasts: attach to the tab it asks for (or a

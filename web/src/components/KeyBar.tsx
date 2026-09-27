@@ -10,6 +10,8 @@ interface Props {
   ctrlSticky: boolean;
   onCtrl(): void;
   onKey(key: string, shift: boolean): void;
+  /** Images picked from the photo library or the camera. */
+  onImages(files: File[]): void;
 }
 
 const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
@@ -22,7 +24,7 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages }: Props) {
   // Pointer-down, not click, and no default: a tap mustn't take focus from
   // the terminal (and with it the on-screen keyboard).
   const press = (fn: () => void) => (ev: React.PointerEvent) => {
@@ -53,6 +55,24 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey }: Props) {
         <button type="button" className="key" onPointerDown={press(() => onKey('?', true))}>
           ?
         </button>
+      )}
+      {!column && (
+        // A label, not a pointer-down button: the file picker only opens from
+        // a real click on its input.
+        <label className="key" aria-label="attach an image" data-testid="attach">
+          📎
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = Array.from(e.currentTarget.files ?? []);
+              e.currentTarget.value = '';
+              if (files.length) onImages(files);
+            }}
+          />
+        </label>
       )}
     </div>
   );

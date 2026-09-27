@@ -804,6 +804,24 @@ fn http_get(port: u16, path: &str, cookie: Option<&str>) -> (String, String) {
     (head.to_string(), body.to_string())
 }
 
+/// `POST path` with a body, an `Origin` and maybe the cookie; the head and body.
+fn http_post(port: u16, path: &str, origin: &str, cookie: Option<&str>, content_type: &str, body: &[u8]) -> (String, String) {
+    use std::io::{Read, Write};
+    let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let cookie = cookie.map(|c| format!("Cookie: tenx_web={c}\r\n")).unwrap_or_default();
+    write!(
+        s,
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: {origin}\r\n{cookie}Content-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    )
+    .unwrap();
+    s.write_all(body).unwrap();
+    let mut out = String::new();
+    s.read_to_string(&mut out).unwrap();
+    let (head, body) = out.split_once("\r\n\r\n").unwrap_or((&out, ""));
+    (head.to_string(), body.to_string())
+}
+
 /// `tenx web` end to end: the token becomes a cookie, the page and the
 /// socket refuse whoever lacks it or comes from another origin, and a
 /// socket gets a grouped session of its own, a column that answers its keys,
@@ -857,6 +875,25 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
     let (head, body) = http_get(port, "/", Some(&token));
     assert!(head.starts_with("HTTP/1.1 200"), "{head}");
     assert!(body.contains("<html") || body.contains("<!DOCTYPE") || body.contains("<!doctype"));
+
+    // A pasted image: saved for the agent, 600, under the config dir — and
+    // refused without the cookie, from another origin, or when not an image.
+    let page_origin = format!("http://127.0.0.1:{port}");
+    let png = b"\x89PNG\r\n\x1a\nfake";
+    assert!(http_post(port, "/paste", &page_origin, None, "image/png", png).0.starts_with("HTTP/1.1 401"));
+    assert!(http_post(port, "/paste", "http://evil.example", Some(&token), "image/png", png).0.starts_with("HTTP/1.1 403"));
+    assert!(http_post(port, "/paste", &page_origin, Some(&token), "text/html", b"<script>").0.starts_with("HTTP/1.1 415"));
+    let (head, body) = http_post(port, "/paste", &page_origin, Some(&token), "image/png", png);
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    let saved: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+    let saved = std::path::PathBuf::from(saved["path"].as_str().unwrap());
+    assert!(saved.starts_with(h.root.join("home/.config/tenx/web-paste")), "{}", saved.display());
+    assert_eq!(fs::read(&saved).unwrap(), png);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(&saved).unwrap().permissions().mode() & 0o777, 0o600);
+    }
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let request = |origin: &str, cookie: Option<&str>, session: Option<&str>| {
