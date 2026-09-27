@@ -25,3 +25,11 @@ serde = { version = "1", features = ["derive"] }
 # ~/.claude.json, and the rewrite must be a one-entry diff — same key order,
 # every float parsed exactly so it prints back as it was.
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+# `webpush`: Web Push message encryption (RFC 8291) and VAPID (RFC 8292),
+# pure Rust so the musl builds need no OpenSSL. Randomness comes from the
+# caller, so everything here stays deterministic and testable.
+p256 = { version = "0.13", default-features = false, features = ["ecdh", "ecdsa", "arithmetic", "std"] }
+hkdf = "0.12"
+sha2 = "0.10"
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+base64 = "0.22"
