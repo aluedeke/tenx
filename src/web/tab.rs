@@ -33,6 +33,7 @@ const FRAME: Duration = Duration::from_millis(33);
 pub(super) enum PageMsg {
     Key(WebKey),
     Click(Click),
+    Action { name: crate::tui::column::view::Action },
     Resize { cols: u16, rows: u16 },
     Viewport { cols: u16 },
     Focus { column: bool },
@@ -300,6 +301,11 @@ impl Driver {
                 }
             }
             PageMsg::Click(click) => self.column.handle_click(&click),
+            PageMsg::Action { name } => {
+                if let Err(e) = self.column.handle_action(name) {
+                    self.column.set_status(e.to_string());
+                }
+            }
             PageMsg::Focus { column: true } => self.column.select_current(),
             PageMsg::Focus { column: false } => self.column.blur(),
             PageMsg::Visible => self.column.maybe_sweep(),

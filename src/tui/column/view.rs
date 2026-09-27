@@ -85,6 +85,10 @@ pub(crate) struct TaskItem {
     pub(crate) pending: bool,
     /// What it wants from you, first on its second line.
     pub(crate) reason: Option<Chip>,
+    /// Waiting on a permission prompt `A`/`D` can answer.
+    pub(crate) answerable: bool,
+    /// Has secrets waiting to be unlocked (`u`).
+    pub(crate) locked: bool,
     /// Its agent, when it isn't the default (Claude).
     pub(crate) agent: Option<String>,
     /// How long it has rested (blocked, signaled and done rows only).
@@ -427,6 +431,9 @@ impl Column {
                 closed: row.window_id.is_none(),
                 pending: row.pending,
                 reason: row_reason(row).map(|(label, fg, bg)| Chip { label, fg: fg.hex(), bg: Some(bg.hex()) }),
+                answerable: row.status == TaskStatus::Blocked
+                    && row.waiting_for.as_deref().is_some_and(tenx_core::dialog::is_permission_reason),
+                locked: !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty(),
                 agent: (row.agent != crate::agent::AgentKind::Claude).then(|| row.agent.as_str().to_string()),
                 age: row.changed.filter(|_| rested).map(workspace::format_age),
                 prs: row.live.prs.iter().map(|pr| Chip { label: pr.chip(), fg: pr_rgb(&pr.checks).hex(), bg: None }).collect(),
@@ -624,6 +631,10 @@ impl Column {
     /// of its subagents, a repo or a job. Only in the list, like the mouse;
     /// selecting follows the selection, and nothing opens on a click.
     pub(crate) fn handle_click(&mut self, click: &Click) {
+        if let Click::Field { index } = click {
+            self.focus_field(*index);
+            return;
+        }
         if !matches!(self.mode, Mode::List) {
             return;
         }
@@ -651,7 +662,37 @@ impl Column {
                 self.focus_list();
                 self.set_cur_sel(*pos);
             }
+            // Only the forms have fields; handled above.
+            Click::Field { .. } => {}
         }
+    }
+
+    /// A form field was clicked: give it the focus. Out-of-range indexes and
+    /// clicks outside a form are ignored.
+    fn focus_field(&mut self, index: usize) {
+        match &mut self.mode {
+            Mode::Create(form) if index < form.field_count() => form.focus = index,
+            Mode::AddRepo(form) if index < 2 => form.focus = index,
+            Mode::NewWorkspace(form) if index < NewWorkspaceForm::FIELDS => form.focus = index,
+            Mode::EditRepos(form) if !form.confirm && index < form.picks.len() => form.focus = index,
+            _ => {}
+        }
+    }
+
+    /// An action-bar button: its key(s), from the list. Nothing outside list
+    /// mode — a form or a prompt has its own buttons.
+    pub(crate) fn handle_action(&mut self, action: Action) -> anyhow::Result<()> {
+        if !matches!(self.mode, Mode::List) {
+            return Ok(());
+        }
+        // `^n` works from either place; everything else is a list key.
+        if action != Action::New {
+            self.focus_list();
+        }
+        for &(key, ctrl) in action.keys() {
+            self.handle_web_key(&WebKey { key: key.into(), ctrl, ..Default::default() })?;
+        }
+        Ok(())
     }
 }
 
@@ -726,6 +767,53 @@ pub(crate) enum Click {
     },
     /// A repo or a job, by its `pos`.
     Item { pos: usize },
+    /// A form's field, by its place in the form (the order ⇥ walks): the
+    /// field takes the focus, as if ⇥ had been pressed until it had it.
+    Field { index: usize },
+}
+
+/// What a button in a front end's action bar does: the list-mode key it
+/// stands for, pressed with the list (not the search field) in focus — so a
+/// tap on "rename" renames the selection rather than typing `r` into the
+/// filter.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Action {
+    Open,
+    Approve,
+    Deny,
+    Rename,
+    EditRepos,
+    Close,
+    Delete,
+    Unlock,
+    Transcript,
+    Next,
+    New,
+    AddRepo,
+    NewWorkspace,
+    Help,
+}
+
+impl Action {
+    fn keys(self) -> &'static [(&'static str, bool)] {
+        match self {
+            Action::Open => &[("Enter", false)],
+            Action::Approve => &[("A", false)],
+            Action::Deny => &[("D", false)],
+            Action::Rename => &[("r", false)],
+            Action::EditRepos => &[("e", false)],
+            Action::Close => &[("x", false)],
+            Action::Delete => &[("d", false), ("d", false)],
+            Action::Unlock => &[("u", false)],
+            Action::Transcript => &[("t", false)],
+            Action::Next => &[("n", false)],
+            Action::New => &[("n", true)],
+            Action::AddRepo => &[("a", false)],
+            Action::NewWorkspace => &[("W", false)],
+            Action::Help => &[("?", false)],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -781,6 +869,37 @@ mod tests {
         let ModeView::Create { focus, .. } = web.view().mode else { panic!("create form") };
         assert_eq!(focus, "name");
         assert_eq!(web.view().footer.text, CREATE_HINT);
+    }
+
+    /// A button presses its key from the list, even while the search field
+    /// has the cursor — it never types into the filter.
+    #[test]
+    fn an_action_acts_on_the_selection_not_the_filter() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.handle_click(&Click::Search);
+        assert_eq!(c.view().focus, "search");
+        c.handle_action(Action::Rename).unwrap();
+        assert!(c.view().filter.is_empty(), "no `r` in the filter");
+        assert!(matches!(c.view().mode, ModeView::Rename { .. }));
+        // In a form the bar does nothing; the form has its own buttons.
+        c.handle_action(Action::Help).unwrap();
+        assert!(matches!(c.view().mode, ModeView::Rename { .. }));
+    }
+
+    #[test]
+    fn a_field_click_moves_the_forms_focus() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.handle_action(Action::New).unwrap();
+        let ModeView::Create { focus, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(focus, "name");
+        c.handle_click(&Click::Field { index: 0 });
+        let ModeView::Create { focus, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(focus, "workspace");
+        c.handle_click(&Click::Field { index: 999 });
+        let ModeView::Create { focus, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(focus, "workspace", "an index past the last field is ignored");
     }
 
     #[test]

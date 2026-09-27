@@ -13,7 +13,7 @@ import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
 import { bell } from '@/lib/bell';
-import type { Click, ColumnView, KeyMessage, ServerMessage } from '@/protocol';
+import type { Action, Click, ColumnView, KeyMessage, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
 
@@ -45,13 +45,15 @@ export function App() {
   const [cell, setCell] = useState(7.8);
 
   const conn = useRef<Connection | null>(null);
+  /** Off-screen: focusing it is what raises a phone's keyboard for the column. */
+  const kbd = useRef<HTMLInputElement>(null);
   const term = useRef<TerminalHandle>(null);
   const mac = useRef(false);
   const fontSize = touch && narrow ? 12 : 13;
 
   // Latest state for the listeners registered once.
-  const state = useRef({ focus, visible, narrow, ctrlSticky });
-  state.current = { focus, visible, narrow, ctrlSticky };
+  const state = useRef({ focus, visible, narrow, ctrlSticky, touch });
+  state.current = { focus, visible, narrow, ctrlSticky, touch };
 
   const send = useCallback((msg: Parameters<Connection['send']>[0]) => conn.current?.send(msg), []);
   const sendKey = useCallback((k: Omit<KeyMessage, 'type'>) => send({ type: 'key', ...k }), [send]);
@@ -149,7 +151,10 @@ export function App() {
   useEffect(() => {
     send({ type: 'focus', column: columnHasKeys });
     if (columnHasKeys) term.current?.blur();
-    else term.current?.focus();
+    else {
+      kbd.current?.blur();
+      term.current?.focus();
+    }
   }, [columnHasKeys, send]);
 
   // ── Width, visibility ───────────────────────────────────────────────────
@@ -200,6 +205,10 @@ export function App() {
       const { focus, visible, ctrlSticky } = state.current;
       if (focus !== 'column' || !visible) return; // xterm has it
       if (ev.metaKey) return; // the browser's own: Cmd+R, Cmd+C, …
+      // A soft keyboard that doesn't name its keys (Android: 229 /
+      // "Unidentified", or mid-composition): let the text reach the hidden
+      // input, whose `input` event sends it.
+      if (ev.isComposing || ev.key === 'Unidentified' || ev.keyCode === 229) return;
       ev.preventDefault();
       ev.stopPropagation();
       if (isNewTaskAlias(ev, mac.current)) {
@@ -234,11 +243,56 @@ export function App() {
     [send],
   );
 
+  const onAction = useCallback(
+    (name: Action) => {
+      setFocus('column');
+      send({ type: 'action', name });
+    },
+    [send],
+  );
+
+  const onColumnKey = useCallback(
+    (key: string, shift = false) => {
+      setFocus('column');
+      sendKey({ key, ctrl: false, alt: false, shift });
+    },
+    [sendKey],
+  );
+
+  const hide = useCallback(() => {
+    setVisible(false);
+    setFocus('terminal');
+  }, []);
+
+  // Called from the tap itself: a phone only raises its keyboard for a
+  // focus() made inside a user gesture.
+  const wantKeyboard = useCallback(() => {
+    if (state.current.touch) kbd.current?.focus({ preventScroll: true });
+  }, []);
+
+  /** What the soft keyboard typed into the hidden input, as column keys. */
+  const onKbdInput = useCallback(
+    (ev: React.FormEvent<HTMLInputElement>) => {
+      const input = ev.nativeEvent as InputEvent;
+      const el = ev.currentTarget;
+      if (input.inputType === 'deleteContentBackward') {
+        sendKey({ key: 'Backspace', ctrl: false, alt: false, shift: false });
+      } else if (input.inputType === 'insertLineBreak') {
+        sendKey({ key: 'Enter', ctrl: false, alt: false, shift: false });
+      } else {
+        for (const ch of input.data ?? el.value) sendKey({ key: ch, ctrl: false, alt: false, shift: false });
+      }
+      el.value = '';
+    },
+    [sendKey],
+  );
+
   const waiting = view?.items.filter((i) => i.kind === 'task' && (i.status === 'blocked' || i.status === 'signaled')).length ?? 0;
 
   const overlay = narrow;
   const columnStyle = overlay ? undefined : { width: `${Math.ceil(columnCols * cell + 20)}px` };
-  const showFab = (touch || narrow) && !(visible && overlay);
+  // Whenever the column is hidden, and on touch screens beside it too.
+  const showFab = !visible || (touch && !overlay);
 
   return (
     <div className={`app${overlay ? ' narrow' : ''}${touch ? ' touch' : ''}`}>
@@ -253,6 +307,10 @@ export function App() {
               host={host}
               onClick={onClick}
               onFocus={() => setFocus('column')}
+              onAction={onAction}
+              onKey={onColumnKey}
+              onWantKeyboard={wantKeyboard}
+              onHide={hide}
             />
           </div>
         )}
@@ -277,6 +335,17 @@ export function App() {
           )}
         </div>
       </div>
+      <input
+        ref={kbd}
+        className="kbd-sink"
+        aria-hidden="true"
+        tabIndex={-1}
+        autoCapitalize="off"
+        autoCorrect="off"
+        autoComplete="off"
+        spellCheck={false}
+        onInput={onKbdInput}
+      />
       {touch && (
         <KeyBar
           column={columnHasKeys}

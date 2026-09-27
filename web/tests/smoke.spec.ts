@@ -41,3 +41,28 @@ test('a click selects a row without opening it', async ({ page, isMobile }) => {
   await expect(page.locator('.row.sel')).toContainText('Mobile fixes');
   await expect(page.getByTestId('column')).toBeVisible();
 });
+
+test('the mouse alone shows and hides the column and drives it', async ({ page, isMobile }) => {
+  await page.goto('/');
+  const tap = async (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
+  if (isMobile) await tap(page.getByTestId('fab'));
+  await expect(page.getByTestId('column')).toBeVisible();
+
+  // The column's own button hides it; the handle brings it back.
+  await tap(page.getByTestId('hide'));
+  await expect(page.getByTestId('column')).toHaveCount(0);
+  await tap(page.getByTestId('fab'));
+  await expect(page.getByTestId('column')).toBeVisible();
+
+  // The action bar follows the selection: a blocked task can be answered.
+  await tap(page.getByText('Fix login timeout'));
+  const actions = page.getByTestId('actions');
+  await expect(actions.getByRole('button', { name: 'approve' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: 'deny' })).toBeVisible();
+
+  // ? opens the keys; a tap closes them.
+  await tap(actions.getByRole('button', { name: '?' }));
+  await expect(page.getByTestId('help')).toBeVisible();
+  await tap(page.getByTestId('help'));
+  await expect(page.getByTestId('help')).toHaveCount(0);
+});

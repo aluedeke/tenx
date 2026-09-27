@@ -140,6 +140,38 @@ a:hover {
   padding: 10px 14px 8px;
 }
 
+.brand-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  color: var(--bright);
+  background: var(--hover-bg);
+  border-color: var(--border);
+}
+.touch .icon-btn {
+  min-width: 36px;
+  height: 36px;
+}
+
 .wordmark {
   font-weight: 700;
   font-size: 14px;
@@ -525,4 +557,107 @@ a:hover {
 }
 .key.warn {
   color: var(--warn);
+}
+
+/* ── Pointer controls ─────────────────────────────────────────────────── */
+
+.actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+.act {
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--ground);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.act:hover {
+  background: var(--hover-bg);
+  border-color: var(--border-active);
+  color: var(--bright);
+}
+.act.primary {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.act.ok {
+  color: var(--success);
+  border-color: var(--success);
+}
+.act.danger {
+  color: var(--danger);
+}
+.act.warn {
+  color: var(--warn);
+}
+.act.accent {
+  color: var(--accent);
+}
+.touch .act {
+  min-height: 40px;
+  padding: 6px 12px;
+}
+
+.field,
+.check,
+.search,
+.row {
+  cursor: pointer;
+}
+.step-btn {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.touch .step-btn {
+  padding: 4px 10px;
+}
+
+.help {
+  cursor: pointer;
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kbd-sink {
+  position: fixed;
+  left: -1000px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  font-size: 16px; /* under 16px iOS zooms the page on focus */
+}
+
+/* A mouse on a wide page: the hidden column's handle is a tab on the left
+   edge, where the column was, instead of a button over the terminal's text. */
+.app:not(.touch):not(.narrow) .fab {
+  left: 0;
+  right: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 5px;
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  cursor: pointer;
+}
+.app:not(.touch):not(.narrow) .fab .muted {
+  writing-mode: vertical-rl;
 }

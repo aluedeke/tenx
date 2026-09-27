@@ -71,6 +71,7 @@ function view(st) {
       title_color: current ? C.cur : t.closed ? C.mut : C.text, glyph: t.glyph, glyph_color: t.glyph_color, status: t.status,
       selected, current, closed: !!t.closed, pending: false, reason: t.reason ?? null, agent: t.agent ?? null, age: t.age ?? null,
       prs: t.prs ?? [], ports: t.ports ?? [],
+      answerable: t.status === 'blocked', locked: t.glyph === '🔒',
     });
     for (const s of t.subs ?? []) {
       items.push({ kind: 'sub', task: t.id, ...s, selected: at.task === t.id && at.sub === s.id && st.focus === 'list' });
@@ -167,6 +168,17 @@ wss.on('connection', (ws) => {
         key(m);
         push();
         return;
+      case 'action': {
+        // The list keys the real server presses for a button.
+        const keys = { help: '?', open: 'Enter', next: 'n' };
+        if (m.name === 'new') key({ key: 'n', ctrl: true });
+        else if (keys[m.name]) {
+          st.focus = 'list';
+          key({ key: keys[m.name] });
+        }
+        push();
+        return;
+      }
     }
   });
   function key(m) {

@@ -63,6 +63,15 @@ Two frame kinds:
 { "type": "click", "kind": "search" }
 { "type": "click", "kind": "task", "id": "acme/fix-login", "sub": "agent-id" }
 { "type": "click", "kind": "item", "pos": 3 }
+// A form field, by its place in ⇥ order: it takes the focus.
+{ "type": "click", "kind": "field", "index": 2 }
+
+// An action-bar button: the list key it names, pressed with the list (not the
+// search field) focused. Ignored outside list mode — forms and prompts get
+// their buttons as plain `key` messages (Enter, Escape, y, space, ←/→).
+// open | approve | deny | rename | edit_repos | close | delete | unlock |
+// transcript | next | new | add_repo | new_workspace | help
+{ "type": "action", "name": "rename" }
 
 // The terminal's size in cells (xterm fit addon) → PTY resize.
 { "type": "resize", "cols": 120, "rows": 40 }
@@ -94,6 +103,14 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
 
 The terminal attaches on the first `resize`, so send one as soon as xterm.js
 is fitted — until then there is no terminal output.
+
+Everything is also reachable by pointer: the column's `⟨` hides it and a
+handle (a tab on the left edge, or the tasks button on touch screens) shows
+it; a click selects a row, a double click opens it; the action bar sends
+`action`s for the selection (`answerable` and `locked` on a task say whether
+approve/deny and unlock apply); form fields send `field` clicks. Tapping
+something that takes typing focuses an off-screen input so a phone raises its
+keyboard; what it types goes over as `key` messages.
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

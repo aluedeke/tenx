@@ -53,6 +53,10 @@ export interface TaskItem {
   closed: boolean;
   pending: boolean;
   reason: Chip | null;
+  /** Waiting on a permission prompt A/D can answer. */
+  answerable: boolean;
+  /** Has secrets waiting to be unlocked (u). */
+  locked: boolean;
   agent: string | null;
   age: string | null;
   prs: Chip[];
@@ -172,11 +176,32 @@ export type Click =
   | { kind: 'tab'; index: number }
   | { kind: 'search' }
   | { kind: 'task'; id: string; sub?: string }
-  | { kind: 'item'; pos: number };
+  | { kind: 'item'; pos: number }
+  /** A form's field, by its place in ⇥ order. */
+  | { kind: 'field'; index: number };
+
+/** An action-bar button: a list key, pressed with the list in focus
+ * (view.rs `Action`). */
+export type Action =
+  | 'open'
+  | 'approve'
+  | 'deny'
+  | 'rename'
+  | 'edit_repos'
+  | 'close'
+  | 'delete'
+  | 'unlock'
+  | 'transcript'
+  | 'next'
+  | 'new'
+  | 'add_repo'
+  | 'new_workspace'
+  | 'help';
 
 export type ClientMessage =
   | KeyMessage
   | ({ type: 'click' } & Click)
+  | { type: 'action'; name: Action }
   | { type: 'resize'; cols: number; rows: number }
   | { type: 'viewport'; cols: number }
   | { type: 'focus'; column: boolean }
