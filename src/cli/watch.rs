@@ -34,7 +34,7 @@
 //! not to poll less often.
 
 use anyhow::{Context, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -77,14 +77,7 @@ pub fn run() -> Result<()> {
     // condition from `blocked` (a task can be idle and still have a pending
     // secrets request left over from an agent that already finished).
     let primed = resolve_all();
-    let mut notified: HashSet<String> = primed.blocked.into_iter().map(|(k, _)| k).collect();
-    let mut pending: HashMap<String, u32> = HashMap::new();
-    let mut notified_secrets: HashSet<String> =
-        primed.secrets_pending.into_iter().map(|(k, _)| k).collect();
-    let mut pending_secrets: HashMap<String, u32> = HashMap::new();
-    let mut notified_secrets_set: HashSet<String> =
-        primed.secrets_pending_set.into_iter().map(|(k, _)| k).collect();
-    let mut pending_secrets_set: HashMap<String, u32> = HashMap::new();
+    let mut attention = Attention::primed(&primed);
     let mut tick: u32 = 0;
     let mut session_misses: u32 = 0;
     // Agents already given a pane. Primed from the current state: agents
@@ -109,72 +102,9 @@ pub fn run() -> Result<()> {
         workspace::sessions::prune_dead();
 
         let snapshot = resolve_all();
-        let blocked = snapshot.blocked;
-        let keys: HashSet<String> = blocked.iter().map(|(k, _)| k.clone()).collect();
-
-        for (key, note) in &blocked {
-            if notified.contains(key) {
-                continue;
-            }
-            let seen = pending.entry(key.clone()).or_insert(0);
-            *seen += 1;
-            if *seen > DEBOUNCE_POLLS {
-                notify(note, "tenx — needs input");
-                notified.insert(key.clone());
-                pending.remove(key);
-            }
+        for (note, title) in attention.step(&snapshot) {
+            notify(note, title);
         }
-
-        // Left the waiting state — forget it, so the next prompt notifies again.
-        pending.retain(|k, _| keys.contains(k));
-        notified.retain(|k| keys.contains(k));
-
-        // Same edge-notify shape, independent condition: a secrets request
-        // outlives the session that made it, so this can fire (and clear)
-        // completely out of step with `blocked` for the same task.
-        let secrets_pending = snapshot.secrets_pending;
-        let secrets_keys: HashSet<String> = secrets_pending.iter().map(|(k, _)| k.clone()).collect();
-
-        for (key, note) in &secrets_pending {
-            if notified_secrets.contains(key) {
-                continue;
-            }
-            let seen = pending_secrets.entry(key.clone()).or_insert(0);
-            *seen += 1;
-            if *seen > DEBOUNCE_POLLS {
-                notify(note, "tenx — secrets pending");
-                notified_secrets.insert(key.clone());
-                pending_secrets.remove(key);
-            }
-        }
-        // Cleared (unlocked, or the marker removed some other way) — forget
-        // it, so a future request for this task notifies again.
-        pending_secrets.retain(|k, _| secrets_keys.contains(k));
-        notified_secrets.retain(|k| secrets_keys.contains(k));
-
-        // Third independent edge, same shape again: `set`'s value-request
-        // queue (see `workspace::SECRETS_PENDING_SET_FILE`) — a human needs
-        // to type in a value for something that doesn't exist yet, distinct
-        // from `secrets_pending` above (which means "release something
-        // already sealed").
-        let secrets_pending_set = snapshot.secrets_pending_set;
-        let secrets_set_keys: HashSet<String> =
-            secrets_pending_set.iter().map(|(k, _)| k.clone()).collect();
-
-        for (key, note) in &secrets_pending_set {
-            if notified_secrets_set.contains(key) {
-                continue;
-            }
-            let seen = pending_secrets_set.entry(key.clone()).or_insert(0);
-            *seen += 1;
-            if *seen > DEBOUNCE_POLLS {
-                notify(note, "tenx — secret value needed");
-                notified_secrets_set.insert(key.clone());
-                pending_secrets_set.remove(key);
-            }
-        }
-        pending_secrets_set.retain(|k, _| secrets_set_keys.contains(k));
-        notified_secrets_set.retain(|k| secrets_set_keys.contains(k));
 
         pane_new_agents(&snapshot.agents, &snapshot.windows, &mut paned);
         let live_changed = refresh_live(&snapshot.live_targets, &mut pr_lookups);
@@ -199,14 +129,64 @@ pub fn run() -> Result<()> {
     }
 }
 
+/// The three "needs you" edges a notification is for, tracked the same way
+/// (`tenx_core::edge`) — shared with `tenx web`'s push notifications, so a
+/// phone buzzes on exactly the prompts the desktop does.
+pub(crate) struct Attention {
+    /// Blocked or signaled: a prompt, or a bell from anything in the window.
+    blocked: tenx_core::edge::Edges,
+    /// A secrets *release* request. Independent of `blocked`: the marker
+    /// outlives the session that wrote it, so this fires and clears out of
+    /// step with it for the same task.
+    secrets: tenx_core::edge::Edges,
+    /// A secrets *value* request (`set`'s queue): a human needs to type in a
+    /// value for something that doesn't exist yet — a different action from
+    /// releasing something already sealed.
+    secrets_set: tenx_core::edge::Edges,
+}
+
+impl Attention {
+    /// Anything already waiting when tracking starts has been waiting since
+    /// before we existed: a burst of notifications for a backlog is noise.
+    pub(crate) fn primed(snapshot: &Snapshot) -> Attention {
+        let keys = |v: &[(String, Note)]| v.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
+        Attention {
+            blocked: tenx_core::edge::Edges::primed(keys(&snapshot.blocked), DEBOUNCE_POLLS),
+            secrets: tenx_core::edge::Edges::primed(keys(&snapshot.secrets_pending), DEBOUNCE_POLLS),
+            secrets_set: tenx_core::edge::Edges::primed(keys(&snapshot.secrets_pending_set), DEBOUNCE_POLLS),
+        }
+    }
+
+    /// One poll: every note to send now, with its notification title.
+    pub(crate) fn step<'s>(&mut self, snapshot: &'s Snapshot) -> Vec<(&'s Note, &'static str)> {
+        let mut out = Vec::new();
+        for (edges, list, title) in [
+            (&mut self.blocked, &snapshot.blocked, "tenx — needs input"),
+            (&mut self.secrets, &snapshot.secrets_pending, "tenx — secrets pending"),
+            (&mut self.secrets_set, &snapshot.secrets_pending_set, "tenx — secret value needed"),
+        ] {
+            let keys: Vec<&str> = list.iter().map(|(k, _)| k.as_str()).collect();
+            for key in edges.step(&keys) {
+                if let Some((_, note)) = list.iter().find(|(k, _)| k == key) {
+                    out.push((note, title));
+                }
+            }
+        }
+        out
+    }
+}
+
 /// What to say about a task that started waiting — for a `blocked` edge,
 /// `reason` is Claude Code's own waiting-for label; for a secrets-pending
 /// edge, it's the joined names of what's pending (`cli::secrets::enqueue_pending`,
 /// `decrypt`'s non-interactive fallback).
-struct Note {
-    task: String,
-    workspace: String,
-    reason: Option<String>,
+pub(crate) struct Note {
+    pub(crate) task: String,
+    pub(crate) workspace: String,
+    pub(crate) reason: Option<String>,
+    /// The task's id as front ends name it: `<workspace name>/<slug>`
+    /// (`column::view::row_id`).
+    pub(crate) id: String,
 }
 
 /// A secrets notification's text: the names, then the distinct reasons the
@@ -228,7 +208,7 @@ fn secrets_reason(names: &[String], why: &[(String, String)]) -> String {
 /// task's current state. Deriving both from a single pass is what keeps them
 /// from ever disagreeing about what a task is doing — and the loop already
 /// walked every task to find the blocked ones, it just threw the rest away.
-struct Snapshot {
+pub(crate) struct Snapshot {
     /// Tasks currently blocked, keyed by workspace dir + slug.
     blocked: Vec<(String, Note)>,
     /// Tasks with a pending secrets *release* request, keyed the same way.
@@ -282,7 +262,7 @@ struct Agent {
     agent: String,
 }
 
-fn resolve_all() -> Snapshot {
+pub(crate) fn resolve_all() -> Snapshot {
     let sessions = workspace::sessions::sessions();
     let windows = crate::tmux::list_windows().unwrap_or_default();
     let signals = crate::tmux::signals_from(&windows);
@@ -322,6 +302,7 @@ fn resolve_all() -> Snapshot {
                     Note {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
+                        id: format!("{}/{}", ws.config.name, task.name),
                         reason: state.waiting_for.clone(),
                     },
                 ));
@@ -334,6 +315,7 @@ fn resolve_all() -> Snapshot {
                     Note {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
+                        id: format!("{}/{}", ws.config.name, task.name),
                         reason: Some(secrets_reason(&pending_names, &why)),
                     },
                 ));
@@ -345,6 +327,7 @@ fn resolve_all() -> Snapshot {
                     Note {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
+                        id: format!("{}/{}", ws.config.name, task.name),
                         reason: Some(format!("{} (needs value)", secrets_reason(&pending_set_names, &why))),
                     },
                 ));
