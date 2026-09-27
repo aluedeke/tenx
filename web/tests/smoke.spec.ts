@@ -66,3 +66,42 @@ test('the mouse alone shows and hides the column and drives it', async ({ page, 
   await tap(page.getByTestId('help'));
   await expect(page.getByTestId('help')).toHaveCount(0);
 });
+
+test('the bell turns notifications on; an iPhone outside the Home Screen is told to install first', async ({ page, browser, isMobile }) => {
+  await page.goto('/');
+  if (isMobile) await page.getByTestId('fab').tap();
+  const bell = page.getByTestId('push');
+  await expect(bell).toBeVisible();
+  // Chromium on http://127.0.0.1 (a secure context) has Web Push: off until
+  // asked — or denied, which headless Chromium answers for every page.
+  await expect(bell).toHaveAttribute('data-state', /^(off|denied)$/);
+
+  // Safari on an iPhone, as a tab: no Push API until it's a Home Screen app.
+  const ios = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  await ios.addInitScript(() => {
+    // @ts-expect-error — Safari outside a Home Screen app has none.
+    delete window.PushManager;
+  });
+  const phone = await ios.newPage();
+  await phone.goto('/');
+  await phone.getByTestId('fab').tap();
+  await expect(phone.getByTestId('push-hint')).toContainText('Add to Home Screen');
+  await expect(phone.getByTestId('push')).toHaveAttribute('data-state', 'needs-install');
+  await ios.close();
+});
+
+test('the manifest and service worker make it installable', async ({ request }) => {
+  const manifest = await (await request.get('/manifest.webmanifest')).json();
+  expect(manifest.display).toBe('standalone');
+  expect(manifest.id).toBe('/');
+  const sizes = manifest.icons.map((i: { sizes: string; purpose?: string }) => `${i.sizes}:${i.purpose ?? 'any'}`);
+  expect(sizes).toEqual(expect.arrayContaining(['192x192:any', '512x512:any', '512x512:maskable']));
+  for (const icon of manifest.icons) expect((await request.get(icon.src)).ok()).toBeTruthy();
+  const sw = await request.get('/sw.js');
+  expect(await sw.text()).toContain("addEventListener('push'");
+});

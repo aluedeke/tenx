@@ -48,3 +48,10 @@ pub fn random_hex(n: usize) -> Result<String> {
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut buf)).context("read /dev/urandom")?;
     Ok(tenx_core::web::hex(&buf))
 }
+
+/// `n` bytes from the system's random source.
+pub fn random_bytes(n: usize) -> Result<Vec<u8>> {
+    let mut buf = vec![0u8; n];
+    std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut buf)).context("read /dev/urandom")?;
+    Ok(buf)
+}

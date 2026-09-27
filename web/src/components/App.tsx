@@ -14,6 +14,7 @@ import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
+import * as push from '@/lib/push';
 import type { Action, Click, ColumnView, KeyMessage, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
@@ -49,6 +50,11 @@ export function App() {
   const [kbOpen, setKbOpen] = useState(false);
   /** A paste on its way up, or why it failed. */
   const [pasting, setPasting] = useState<string | null>(null);
+  const [pushState, setPushState] = useState<push.PushState>('unsupported');
+  /** A task to open once the column has rows: from `?task=` (a notification
+   * opened the page) or the service worker (it focused this page). */
+  const wantTask = useRef<string | null>(null);
+  const lastView = useRef<ColumnView | null>(null);
 
   const conn = useRef<Connection | null>(null);
   /** Off-screen: focusing it is what raises a phone's keyboard for the column. */
@@ -114,6 +120,8 @@ export function App() {
           }
           case 'view':
             setView(msg.view);
+            lastView.current = msg.view;
+            openWanted(msg.view);
             break;
           case 'layout':
             setColumnCols(msg.column_cols);
@@ -162,6 +170,41 @@ export function App() {
       term.current?.focus();
     }
   }, [columnHasKeys, send]);
+
+  // ── Notifications, the badge, and opening a task from one ─────────────
+  // `openWanted` runs from the connection's handler, registered once: it
+  // reads only refs and the connection.
+  const openWanted = (v: ColumnView) => {
+    const id = wantTask.current;
+    if (!id || !v.items.some((i) => i.kind === 'task' && i.id === id)) return;
+    wantTask.current = null;
+    conn.current?.send({ type: 'click', kind: 'task', id });
+    conn.current?.send({ type: 'action', name: 'open' });
+    setFocus('terminal');
+    if (state.current.narrow) setVisible(false);
+  };
+
+  useEffect(() => {
+    const url = new URL(location.href);
+    const task = url.searchParams.get('task');
+    if (task) {
+      wantTask.current = task;
+      url.searchParams.delete('task');
+      history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
+    }
+    push.register().then(() => push.state()).then(setPushState);
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.data?.type === 'open-task' && typeof ev.data.task === 'string') {
+        wantTask.current = ev.data.task;
+        if (lastView.current) openWanted(lastView.current);
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, []);
+
+  const needsYou = view?.items.filter((i) => i.kind === 'task' && (i.status === 'blocked' || i.status === 'signaled')).length ?? 0;
+  useEffect(() => push.badge(needsYou), [needsYou]);
 
   // ── The visible area ────────────────────────────────────────────────────
   // A phone's keyboard covers the page rather than shrinking it (iOS ignores
@@ -339,6 +382,19 @@ export function App() {
     }
   }, [notice, pasteImages]);
 
+  const togglePush = useCallback(() => {
+    // Straight from the click: the permission prompt needs the gesture.
+    const next = pushState === 'on' ? push.disable() : push.enable();
+    next.then(setPushState).catch((e) => notice(`notifications: ${e instanceof Error ? e.message : String(e)}`));
+  }, [pushState, notice]);
+
+  const testPush = useCallback(() => {
+    push
+      .test()
+      .then(({ sent, subscriptions }) => notice(`test sent to ${sent} of ${subscriptions} device${subscriptions === 1 ? '' : 's'}`))
+      .catch((e) => notice(`test failed: ${e instanceof Error ? e.message : String(e)}`));
+  }, [notice]);
+
   const hide = useCallback(() => {
     setVisible(false);
     setFocus('terminal');
@@ -391,6 +447,9 @@ export function App() {
               onKey={onColumnKey}
               onWantKeyboard={wantKeyboard}
               onHide={hide}
+              push={pushState}
+              onPushToggle={togglePush}
+              onPushTest={testPush}
             />
           </div>
         )}

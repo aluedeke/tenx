@@ -13,6 +13,11 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 | `GET /?token=<t>` | token | Sets the `tenx_web` cookie (HttpOnly, SameSite=Strict, Path=/) and redirects `303` to `/` without the query. A wrong token gets `401`. |
 | `GET /<asset>` | cookie | The embedded static export of `web/` (`web/out`), `index.html` for `/`. Without the cookie: `401` with a short page telling you to open the URL `tenx web` printed. |
 | `GET /ws` | cookie + Origin | Upgrades to the WebSocket below. The `Origin` header must equal `http(s)://<Host>` or an origin passed with `--dev-origin`. |
+| `GET /push/key` | cookie | `{"key": …}`: the server's VAPID public key (base64url), the `applicationServerKey` a browser subscribes with. A same-origin GET carries no `Origin`, so only the cookie is checked. |
+| `POST /push/subscribe` | cookie + Origin | A `PushSubscription` as `toJSON()` gives it (`{endpoint, keys: {p256dh, auth}}`). Stored in `~/.config/tenx/web-push-subs.json` (600), one per endpoint. `400` for an endpoint that isn't HTTPS (plain HTTP only to loopback, for tests) or keys that aren't a P-256 point and a secret. |
+| `POST /push/unsubscribe` | cookie + Origin | `{endpoint}`: forget that subscription. |
+| `POST /push/test` | cookie + Origin | Push a test message to every subscription: `{sent, subscriptions}`. |
+| `GET /manifest.webmanifest` | — | Public (browsers fetch it without cookies). With the cookie — the page links it `crossorigin="use-credentials"` — its `start_url` is `/?token=…`, so an app installed to an iOS Home Screen, which has cookies of its own, signs itself in on first launch. |
 | `POST /paste` | cookie + Origin | An image (`Content-Type` PNG, JPEG, GIF or WebP; at most 25 MB) saved to `~/.config/tenx/web-paste/` (600, swept after a day). Answers `{"path": …}`; the page pastes that path into the terminal, which Claude Code attaches as an image. `415` for anything else. |
 
 The token lives in `~/.config/tenx/web-token` (mode 600), created on first
@@ -112,6 +117,16 @@ it; a click selects a row, a double click opens it; the action bar sends
 approve/deny and unlock apply); form fields send `field` clicks. Tapping
 something that takes typing focuses an off-screen input so a phone raises its
 keyboard; what it types goes over as `key` messages.
+
+## Push messages
+
+What the service worker (`web/public/sw.js`) receives, encrypted (RFC 8291 `aes128gcm`, VAPID RFC 8292), and shows as a notification:
+
+```jsonc
+{ "title": "Fix login timeout", "body": "permission: Bash · acme", "tag": "acme/fix-login-timeout", "url": "/?task=acme/fix-login-timeout" }
+```
+
+Sent on the edges the attention watcher notifies on (a task going Blocked or Signaled, a secrets request), once per edge. `tag` replaces an older notification for the same task. A tap focuses an open page and posts it `{type: "open-task", task}`, or opens `url`; either way the page selects the task (`click`) and opens it (`action: open`).
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

@@ -12,6 +12,7 @@
 import { Fragment, useEffect, useRef, type ReactNode } from 'react';
 import type { Action, Click, ColumnView, Footer, Item, JobItem, ModeView, SubItem, TaskItem } from '@/protocol';
 import type { Status } from '@/lib/connection';
+import type { PushState } from '@/lib/push';
 
 interface Props {
   view: ColumnView | null;
@@ -29,6 +30,9 @@ interface Props {
   /** Something that takes typing was tapped: raise the on-screen keyboard. */
   onWantKeyboard(): void;
   onHide(): void;
+  push: PushState;
+  onPushToggle(): void;
+  onPushTest(): void;
 }
 
 /** Keys and clicks, for the pieces below. */
@@ -38,7 +42,8 @@ interface Ctl {
   onWantKeyboard(): void;
 }
 
-export function Column({ view, focused, status, failures, host, onClick, onFocus, onAction, onKey, onWantKeyboard, onHide }: Props) {
+export function Column(props: Props) {
+  const { view, focused, status, failures, host, onClick, onFocus, onAction, onKey, onWantKeyboard, onHide } = props;
   const listRef = useRef<HTMLDivElement>(null);
 
   // Keep the selected row in view as the cursor moves.
@@ -59,7 +64,12 @@ export function Column({ view, focused, status, failures, host, onClick, onFocus
 
   return (
     <aside className="column" data-testid="column" onMouseDown={onFocus}>
-      <Brand status={status} failures={failures} host={host} onHide={onHide} />
+      <Brand status={status} failures={failures} host={host} onHide={onHide} push={props.push} onPushToggle={props.onPushToggle} onPushTest={props.onPushTest} />
+      {props.push === 'needs-install' && (
+        <div className="hint" data-testid="push-hint">
+          Add to Home Screen, then enable notifications
+        </div>
+      )}
       {view && (
         <>
           <div className="tabs">
@@ -100,7 +110,25 @@ export function Column({ view, focused, status, failures, host, onClick, onFocus
   );
 }
 
-function Brand({ status, failures, host, onHide }: { status: Status; failures: number; host: string; onHide(): void }) {
+interface BrandProps {
+  status: Status;
+  failures: number;
+  host: string;
+  onHide(): void;
+  push: PushState;
+  onPushToggle(): void;
+  onPushTest(): void;
+}
+
+const PUSH_TITLE: Record<PushState, string> = {
+  unsupported: 'notifications need HTTPS (tailscale serve) and a browser with Web Push',
+  'needs-install': 'on iPhone and iPad: Share → Add to Home Screen, then enable here',
+  off: 'notify me when a task needs me',
+  on: 'notifications on — click to turn off',
+  denied: 'notifications are blocked in this browser’s settings',
+};
+
+function Brand({ status, failures, host, onHide, push, onPushToggle, onPushTest }: BrandProps) {
   const label =
     status === 'open'
       ? host || (typeof location !== 'undefined' ? location.host : '')
@@ -119,6 +147,26 @@ function Brand({ status, failures, host, onHide }: { status: Status; failures: n
           <span className="dot" />
           {label}
         </span>
+        {push === 'on' && (
+          <button type="button" className="icon-btn small" data-testid="push-test" title="send a test notification" onClick={onPushTest}>
+            test
+          </button>
+        )}
+        <button
+          type="button"
+          className={`icon-btn bell ${push}`}
+          data-testid="push"
+          data-state={push}
+          title={PUSH_TITLE[push]}
+          aria-label={PUSH_TITLE[push]}
+          disabled={push === 'unsupported' || push === 'denied' || push === 'needs-install'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPushToggle();
+          }}
+        >
+          {push === 'on' ? '🔔' : '🔕'}
+        </button>
         <button
           type="button"
           className="icon-btn"

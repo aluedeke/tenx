@@ -12,6 +12,7 @@
 
 mod assets;
 mod paste;
+mod push;
 mod server;
 mod tab;
 mod token;
@@ -86,10 +87,16 @@ pub fn run(o: Options) -> Result<()> {
         let _ = std::process::Command::new(opener).arg(&url).spawn();
     }
 
+    let push = Arc::new(push::Push::load().context("load the Web Push key")?);
+    {
+        let push = push.clone();
+        std::thread::Builder::new().name("push".into()).spawn(move || push::notifier(push)).context("start the push notifier")?;
+    }
     let app = Arc::new(server::App {
         token,
         dev_origins: o.dev_origins,
         tabs: Arc::new(tab::Tabs::new(grace())),
+        push,
     });
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().context("start the async runtime")?;
     runtime.block_on(server::serve(listener, app))

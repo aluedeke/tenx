@@ -32,3 +32,9 @@ pub fn get(path: &str) -> Option<Response> {
             .ok()
     })
 }
+
+/// An embedded file's text, for the few the server rewrites (the manifest).
+pub fn text(path: &str) -> Option<String> {
+    let file = Page::get(path.trim_start_matches('/'))?;
+    String::from_utf8(file.data.into_owned()).ok()
+}

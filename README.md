@@ -227,6 +227,12 @@ Each browser tab switches tasks on its own, without moving your terminal client,
 
 The address carries a token (`~/.config/tenx/web-token`, readable only by you) that the page swaps for a cookie; `tenx web --rotate-token` replaces it and logs every browser out. The page is a shell on this machine, so by default it listens on `127.0.0.1` only. To reach it from a phone, put it behind [`tailscale serve`](https://tailscale.com/kb/1312/serve) rather than `--listen 0.0.0.0`, which serves it over plain HTTP. Building from source, `make web` builds the page (Node and pnpm) before `cargo build`; without it the binary serves a placeholder.
 
+### On a phone or tablet, as an app
+
+Behind `tailscale serve` (HTTPS), the page installs as an app: on an iPhone or iPad, Safari's Share → **Add to Home Screen**; on Android or a desktop Chrome/Edge, the install button in the address bar. The installed app signs itself in on first launch and opens full screen.
+
+Tap the bell (🔕) in the column's top bar to get a notification whenever a task starts needing you — the same prompts `tenx` raises desktop notifications for, and never for a finished turn. Tapping one opens that task. On iPhone and iPad, notifications only work in the Home Screen app (iOS 16.4 or newer), not in a Safari tab, and need HTTPS. The app icon's badge counts the tasks waiting on you. Notifications are Web Push: the browser's push service (Apple, Google, Mozilla) carries them, encrypted end to end with keys only the browser and `tenx web` hold (`~/.config/tenx/web-push-vapid` and `web-push-subs.json`, readable only by you); `tenx web` must be running for them to be sent.
+
 ## Sweep and pin
 
 Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks once they have been quiet for `--idle-after` (default 15m), finished tasks after `--after` (default 8h). A task's window is the one its panes are actually in, never just one that shares its slug — the same task name in two workspaces must not close the wrong session. It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.

@@ -8,13 +8,12 @@ import { palette } from '@/palette';
 export const metadata: Metadata = {
   title: 'tenx',
   description: 'Every task, its agent, and which one needs you.',
-  manifest: '/manifest.webmanifest',
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
       { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
     ],
-    apple: '/tenx-mark-256.png',
+    apple: '/apple-touch-icon.png',
   },
   appleWebApp: { capable: true, title: 'tenx', statusBarStyle: 'black-translucent' },
 };
@@ -36,6 +35,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        {/* With the cookie: a signed-in page gets a manifest whose start URL
+            logs the installed app in (its cookies are its own on iOS). */}
+        <link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
+      </head>
       <body>{children}</body>
     </html>
   );

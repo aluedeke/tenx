@@ -692,3 +692,21 @@ a:hover {
   max-width: calc(100% - 28px);
   text-align: center;
 }
+
+/* ── Notifications ─────────────────────────────────────────────────────── */
+
+.icon-btn.bell:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.icon-btn.bell.on {
+  color: var(--warn);
+}
+.icon-btn.small {
+  font-size: 11px;
+}
+.hint {
+  margin: -2px 14px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+}

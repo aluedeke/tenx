@@ -134,6 +134,20 @@ pub fn endpoint_origin(endpoint: &str) -> Option<String> {
     (!host.is_empty() && (scheme == "https" || scheme == "http")).then(|| format!("{scheme}://{host}"))
 }
 
+/// Whether an endpoint a browser subscribed with may be pushed to: HTTPS, as
+/// every push service is — or plain HTTP to this machine, for a test's fake
+/// push service. Anything else would let a page make `tenx web` send
+/// requests wherever it liked.
+pub fn valid_endpoint(endpoint: &str) -> bool {
+    let Some(origin) = endpoint_origin(endpoint) else { return false };
+    if origin.starts_with("https://") {
+        return true;
+    }
+    let host = origin.trim_start_matches("http://");
+    let host = if host.starts_with('[') { host.split(']').next().map(|h| format!("{h}]")).unwrap_or_default() } else { host.split(':').next().unwrap_or("").to_string() };
+    crate::web::is_loopback(&host)
+}
+
 /// The VAPID token for `aud` (a push service's origin), valid until `exp`
 /// (seconds since the epoch; RFC 8292 caps it at 24 h out), naming `sub`.
 pub fn vapid_jwt(private: &[u8], aud: &str, exp: u64, sub: &str) -> Result<String, String> {
@@ -235,6 +249,15 @@ mod tests {
         assert_eq!(endpoint_origin("http://127.0.0.1:5000/push/abc").as_deref(), Some("http://127.0.0.1:5000"));
         assert_eq!(endpoint_origin("ftp://x/y"), None);
         assert_eq!(endpoint_origin("nonsense"), None);
+    }
+
+    #[test]
+    fn only_push_services_are_endpoints() {
+        assert!(valid_endpoint("https://fcm.googleapis.com/fcm/send/abc"));
+        assert!(valid_endpoint("http://127.0.0.1:5000/push"));
+        assert!(valid_endpoint("http://[::1]:5000/push"));
+        assert!(!valid_endpoint("http://192.168.1.10/push"), "plain HTTP elsewhere");
+        assert!(!valid_endpoint("file:///etc/passwd"));
     }
 
     #[test]

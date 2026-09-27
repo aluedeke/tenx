@@ -999,3 +999,149 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
     let _ = server.wait();
     let _ = h.tmux().args(["kill-server"]).status();
 }
+
+/// A fake push service on a loopback port: every request it gets (head,
+/// body) goes down the channel, and it answers `201 Created`.
+fn fake_push_service() -> (u16, std::sync::mpsc::Receiver<(String, Vec<u8>)>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                head.push_str(&line);
+            }
+            let len = head
+                .lines()
+                .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                .unwrap_or(0);
+            let mut body = vec![0u8; len];
+            reader.read_exact(&mut body).unwrap();
+            let mut s = stream;
+            let _ = s.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            if tx.send((head, body)).is_err() {
+                break;
+            }
+        }
+    });
+    (port, rx)
+}
+
+/// Web Push end to end: a browser's subscription is stored (and refused
+/// without the cookie, from another origin, or to a non-push endpoint), the
+/// test route pushes, and a task going Blocked pushes on its own — each an
+/// RFC 8291 message the subscription's key decrypts, signed with the
+/// server's VAPID key for the push service's origin.
+#[test]
+fn web_pushes_a_blocked_task_to_subscribed_browsers() {
+    use std::io::{BufRead, Write};
+    use tenx_core::webpush;
+
+    let Some(h) = Harness::named("-push") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Push task", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+
+    let (push_port, pushes) = fake_push_service();
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let mut server = h.tenx().args(["web", "--port", &port.to_string()]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+    let mut lines = std::io::BufReader::new(server.stdout.take().unwrap()).lines();
+    let token = lines
+        .by_ref()
+        .map_while(Result::ok)
+        .find_map(|l| l.split_once("?token=").map(|(_, t)| t.trim().to_string()))
+        .expect("tenx web printed its address");
+    let page = format!("http://127.0.0.1:{port}");
+
+    // The server's key, for a page that has the cookie.
+    assert!(http_get(port, "/push/key", None).0.starts_with("HTTP/1.1 401"));
+    let (head, body) = http_get(port, "/push/key", Some(&token));
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    let key: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+    let server_key = webpush::unb64(key["key"].as_str().unwrap()).unwrap();
+    assert_eq!(server_key.len(), 65);
+
+    // The browser's side of a subscription.
+    let ua_private = webpush::unb64("q1dXpw3UpT5VOmu_cf_v6ih07Aems3njxI-JWgLcM94").unwrap();
+    let auth = b"sixteen byte key";
+    let endpoint = format!("http://127.0.0.1:{push_port}/push/e2e");
+    let sub = serde_json::json!({
+        "endpoint": endpoint,
+        "expirationTime": null,
+        "keys": { "p256dh": webpush::b64(&webpush::public_key(&ua_private).unwrap()), "auth": webpush::b64(auth) },
+    })
+    .to_string();
+    let json = "application/json";
+    assert!(http_post(port, "/push/subscribe", &page, None, json, sub.as_bytes()).0.starts_with("HTTP/1.1 401"));
+    assert!(http_post(port, "/push/subscribe", "http://evil.example", Some(&token), json, sub.as_bytes()).0.starts_with("HTTP/1.1 403"));
+    let elsewhere = sub.replace(&endpoint, "http://192.0.2.1/push");
+    assert!(http_post(port, "/push/subscribe", &page, Some(&token), json, elsewhere.as_bytes()).0.starts_with("HTTP/1.1 400"));
+    let (head, _) = http_post(port, "/push/subscribe", &page, Some(&token), json, sub.as_bytes());
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    let subs_file = h.root.join("home/.config/tenx/web-push-subs.json");
+    assert!(fs::read_to_string(&subs_file).unwrap().contains(&endpoint));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(fs::metadata(&subs_file).unwrap().permissions().mode() & 0o777, 0o600);
+        let vapid = h.root.join("home/.config/tenx/web-push-vapid");
+        assert_eq!(fs::metadata(&vapid).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    // What a push looks like to the push service, and to the browser.
+    let receive = |why: &str| -> serde_json::Value {
+        let (head, body) = pushes.recv_timeout(std::time::Duration::from_secs(20)).unwrap_or_else(|_| panic!("no push for {why}"));
+        let lower = head.to_lowercase();
+        assert!(lower.starts_with("post /push/e2e "), "{head}");
+        assert!(lower.contains("content-encoding: aes128gcm"), "{head}");
+        assert!(lower.contains("ttl: "), "{head}");
+        let auth_header = head.lines().find(|l| l.to_lowercase().starts_with("authorization:")).expect("Authorization");
+        let (_, value) = auth_header.split_once(':').unwrap();
+        let value = value.trim();
+        let jwt = value.strip_prefix("vapid t=").unwrap().split(',').next().unwrap();
+        assert!(value.ends_with(&format!("k={}", webpush::b64(&server_key))), "{value}");
+        assert!(webpush::verify_jwt(jwt, &server_key), "signed by the server's key");
+        let claims: serde_json::Value = serde_json::from_slice(&webpush::unb64(jwt.split('.').nth(1).unwrap()).unwrap()).unwrap();
+        assert_eq!(claims["aud"], format!("http://127.0.0.1:{push_port}"));
+        let plain = webpush::decrypt(&body, &ua_private, auth).expect("the subscription's key decrypts it");
+        serde_json::from_slice(&plain).unwrap()
+    };
+
+    let (head, body) = http_post(port, "/push/test", &page, Some(&token), json, b"");
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(body.contains(r#""sent":1"#), "{body}");
+    assert_eq!(receive("the test")["tag"], "tenx-test");
+
+    // A task that starts waiting on you: pushed once, on the edge.
+    let pane_pid = h.tmux_out(&["list-panes", "-t", "tenx:push-task", "-F", "#{pane_pid}"]).lines().next().unwrap().to_string();
+    let task_dir = h.root.join("ws/tasks/push-task");
+    let payload = format!(r#"{{"hook_event_name":"Notification","notification_type":"agent_needs_input","cwd":"{}"}}"#, task_dir.display());
+    let mut child = h.tenx().args(["internal", "session-event", "--agent", "claude", "--pid", &pane_pid]).stdin(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(payload.as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success());
+    let msg = receive("the blocked task");
+    assert_eq!(msg["title"], "Push task");
+    assert_eq!(msg["body"], "input needed · e2e");
+    assert_eq!(msg["tag"], "e2e/push-task");
+    assert_eq!(msg["url"], "/?task=e2e/push-task");
+    assert!(pushes.recv_timeout(std::time::Duration::from_secs(5)).is_err(), "once per edge");
+
+    // Unsubscribed: forgotten.
+    let unsub = serde_json::json!({ "endpoint": endpoint }).to_string();
+    assert!(http_post(port, "/push/unsubscribe", &page, Some(&token), json, unsub.as_bytes()).0.starts_with("HTTP/1.1 200"));
+    assert!(!fs::read_to_string(&subs_file).unwrap().contains(&endpoint));
+
+    let _ = server.kill();
+    let _ = server.wait();
+}

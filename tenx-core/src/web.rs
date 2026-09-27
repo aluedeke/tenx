@@ -33,7 +33,39 @@ pub fn cookie_value<'a>(header: &'a str, name: &str) -> Option<&'a str> {
 /// otherwise), and an installed PWA's icons the same way, so gating them only
 /// breaks installing the page; they are the same bytes as the public logo.
 pub fn public_path(path: &str) -> bool {
-    matches!(path, "/manifest.webmanifest" | "/favicon.svg" | "/favicon-16.png" | "/favicon-32.png" | "/tenx-mark-256.png")
+    matches!(
+        path,
+        "/manifest.webmanifest"
+            | "/favicon.svg"
+            | "/favicon-16.png"
+            | "/favicon-32.png"
+            | "/tenx-mark-256.png"
+            | "/icon-192.png"
+            | "/icon-512.png"
+            | "/icon-maskable-512.png"
+            | "/apple-touch-icon.png"
+            | "/badge-96.png"
+            // The service worker: static code with nothing in it, and an app
+            // installed to an iPhone's Home Screen has a cookie jar of its own
+            // until its first `?token=`.
+            | "/sw.js"
+    )
+}
+
+/// The manifest as a signed-in page gets it: `start_url` carries the token.
+/// An app installed to an iPhone or iPad Home Screen keeps its own cookies,
+/// apart from Safari's, so without this its first launch would land on the
+/// "open the address tenx web printed" page; with it, the launch is the
+/// token swap every browser starts with. Anything that isn't a JSON object
+/// comes back as it was.
+pub fn manifest_with_token(manifest: &str, token: &str) -> String {
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(manifest) else { return manifest.to_string() };
+    let Some(obj) = v.as_object_mut() else { return manifest.to_string() };
+    obj.insert("start_url".into(), serde_json::Value::String(format!("/?token={token}")));
+    // The app's identity stays "/", whatever its start URL: rotating the
+    // token must not make the installed app a different one.
+    obj.entry("id").or_insert_with(|| serde_json::Value::String("/".into()));
+    v.to_string()
 }
 
 /// The largest image `/paste` takes: a phone camera's full-size JPEG fits;
@@ -225,5 +257,16 @@ mod tests {
         assert_eq!(paste_ext("image/svg+xml"), None, "a script can hide in an SVG");
         assert_eq!(paste_ext("text/plain"), None);
         assert_eq!(paste_ext(""), None);
+    }
+
+    #[test]
+    fn a_signed_in_manifest_starts_with_the_token() {
+        let m = manifest_with_token(r#"{"name":"tenx","start_url":"/","id":"/"}"#, "abc");
+        let v: serde_json::Value = serde_json::from_str(&m).unwrap();
+        assert_eq!(v["start_url"], "/?token=abc");
+        assert_eq!(v["id"], "/", "the app's identity doesn't change with the token");
+        assert_eq!(manifest_with_token("not json", "abc"), "not json");
+        assert!(public_path("/sw.js"));
+        assert!(public_path("/icon-maskable-512.png"));
     }
 }

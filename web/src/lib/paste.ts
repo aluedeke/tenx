@@ -3,16 +3,7 @@
 // (POST /paste), saved on its machine, and its path is pasted into the
 // terminal — Claude Code attaches a pasted image path as an image.
 
-/** Where /paste lives: this page's origin, or `NEXT_PUBLIC_TENX_URL` under
- * `next dev` (with the token, as the socket does). */
-function pasteUrl(): string {
-  const dev = process.env.NEXT_PUBLIC_TENX_URL;
-  if (!dev) return '/paste';
-  const url = new URL('/paste', dev);
-  const token = process.env.NEXT_PUBLIC_TENX_TOKEN || new URLSearchParams(location.search).get('token');
-  if (token) url.searchParams.set('token', token);
-  return url.toString();
-}
+import { apiUrl } from './api';
 
 /** The images among a clipboard's or a drop's items. */
 export function imagesIn(data: DataTransfer | null): File[] {
@@ -32,7 +23,7 @@ export function imagesIn(data: DataTransfer | null): File[] {
 
 /** Upload one image; the path it was saved at on the agent's machine. */
 export async function upload(file: Blob): Promise<string> {
-  const res = await fetch(pasteUrl(), {
+  const res = await fetch(apiUrl('/paste'), {
     method: 'POST',
     body: file,
     headers: { 'content-type': file.type || 'application/octet-stream' },

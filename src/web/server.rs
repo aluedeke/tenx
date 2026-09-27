@@ -23,6 +23,7 @@ pub(super) struct App {
     pub(super) token: String,
     pub(super) dev_origins: Vec<String>,
     pub(super) tabs: Arc<Tabs>,
+    pub(super) push: Arc<super::push::Push>,
 }
 
 pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Result<()> {
@@ -30,6 +31,10 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
     let router = Router::new()
         .route("/ws", get(ws))
         .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
+        .route("/push/key", get(push_key))
+        .route("/push/subscribe", post(push_subscribe))
+        .route("/push/unsubscribe", post(push_unsubscribe))
+        .route("/push/test", post(push_test))
         .fallback(get(page))
         .with_state(app);
     let listener = tokio::net::TcpListener::from_std(listener)?;
@@ -69,6 +74,13 @@ async fn page(State(app): State<Arc<App>>, uri: Uri, headers: HeaderMap) -> Resp
     if !web::public_path(uri.path()) && !web::cookie_ok(header_str(&headers, header::COOKIE), &app.token) {
         return unauthorized("Open the address <code>tenx web</code> printed (the one with <code>?token=</code>).");
     }
+    if uri.path() == "/manifest.webmanifest"
+        && web::cookie_ok(header_str(&headers, header::COOKIE), &app.token)
+        && let Some(text) = super::assets::text(uri.path())
+    {
+        let body = web::manifest_with_token(&text, &app.token);
+        return ([(header::CONTENT_TYPE, "application/manifest+json"), (header::CACHE_CONTROL, "no-store")], body).into_response();
+    }
     let mut response = super::assets::get(uri.path()).unwrap_or_else(|| StatusCode::NOT_FOUND.into_response());
     let h = response.headers_mut();
     h.insert(header::X_CONTENT_TYPE_OPTIONS, header::HeaderValue::from_static("nosniff"));
@@ -77,10 +89,16 @@ async fn page(State(app): State<Arc<App>>, uri: Uri, headers: HeaderMap) -> Resp
 }
 
 fn unauthorized(why: &str) -> Response {
+    // A form too: an app on a phone's Home Screen that lost its cookie has no
+    // address bar to paste the `?token=` address into.
     let body = format!(
-        "<!doctype html><meta charset=utf-8><title>tenx</title>\
+        "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>tenx</title>\
          <body style=\"background:#171820;color:#d6dbe3;font:14px/1.6 ui-monospace,Menlo,monospace;padding:2em\">\
-         <p>{why}</p></body>"
+         <p>{why}</p>\
+         <form method=get action=/><p>or paste its token:</p>\
+         <input name=token autocomplete=off autocapitalize=off spellcheck=false \
+         style=\"width:100%;max-width:36em;font:inherit;padding:.5em;background:#101117;color:inherit;border:1px solid #343a46;border-radius:6px\">\
+         <p><button style=\"font:inherit;padding:.4em 1em\">open</button></p></form></body>"
     );
     (StatusCode::UNAUTHORIZED, [(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], body)
         .into_response()
@@ -108,13 +126,8 @@ async fn ws(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: Head
 /// `/ws` — the cookie (or a dev origin's token) and an allowed `Origin` — so
 /// another site can't write files here. Answers `{"path": …}`.
 async fn paste(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
-    let origin = header_str(&headers, header::ORIGIN);
-    let allowed = web::origin_allowed(origin, header_str(&headers, header::HOST), &app.dev_origins);
-    let dev = web::is_dev_origin(origin, &app.dev_origins);
-    let cookie = web::cookie_ok(header_str(&headers, header::COOKIE), &app.token);
-    let query_token = q.token.as_deref().is_some_and(|t| web::token_matches(t, &app.token));
-    if !web::ws_authorized(cookie, query_token, allowed, dev) {
-        return if allowed { StatusCode::UNAUTHORIZED } else { StatusCode::FORBIDDEN }.into_response();
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
     }
     let content_type = header_str(&headers, header::CONTENT_TYPE).unwrap_or("").to_string();
     let saved = tokio::task::spawn_blocking(move || super::paste::save(&content_type, &body)).await;
@@ -123,6 +136,92 @@ async fn paste(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: H
             ([(header::CONTENT_TYPE, "application/json")], serde_json::json!({ "path": path }).to_string()).into_response()
         }
         Ok(Err(e)) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// A request that changes something (`/paste`, `/push/*`): the cookie (or a
+/// dev origin's token) and an allowed `Origin`, as for `/ws` — so another
+/// site can't make this server write files or send pushes.
+fn authorize(app: &App, q: &WsQuery, headers: &HeaderMap) -> Result<(), Box<Response>> {
+    let origin = header_str(headers, header::ORIGIN);
+    let allowed = web::origin_allowed(origin, header_str(headers, header::HOST), &app.dev_origins);
+    let dev = web::is_dev_origin(origin, &app.dev_origins);
+    let cookie = web::cookie_ok(header_str(headers, header::COOKIE), &app.token);
+    let query_token = q.token.as_deref().is_some_and(|t| web::token_matches(t, &app.token));
+    if web::ws_authorized(cookie, query_token, allowed, dev) {
+        Ok(())
+    } else {
+        Err(Box::new(if allowed { StatusCode::UNAUTHORIZED } else { StatusCode::FORBIDDEN }.into_response()))
+    }
+}
+
+fn json(value: serde_json::Value) -> Response {
+    ([(header::CONTENT_TYPE, "application/json")], value.to_string()).into_response()
+}
+
+/// `GET /push/key`: the key a browser subscribes with. Public by nature,
+/// but only for a page that has the cookie; a same-origin GET carries no
+/// `Origin`, so the cookie alone (or a dev token) is checked.
+async fn push_key(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap) -> Response {
+    let cookie = web::cookie_ok(header_str(&headers, header::COOKIE), &app.token);
+    let query_token = q.token.as_deref().is_some_and(|t| web::token_matches(t, &app.token));
+    if !cookie && !query_token {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    json(serde_json::json!({ "key": app.push.public_key() }))
+}
+
+/// `POST /push/subscribe`: a `PushSubscription` as the browser serializes it.
+async fn push_subscribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let sub: super::push::Subscription = match serde_json::from_slice(&body) {
+        Ok(s) => s,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("not a push subscription: {e}")).into_response(),
+    };
+    let push = app.push.clone();
+    match tokio::task::spawn_blocking(move || push.subscribe(sub)).await {
+        Ok(Ok(())) => json(serde_json::json!({ "ok": true })),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /push/unsubscribe`: `{endpoint}`.
+async fn push_unsubscribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    #[derive(Deserialize)]
+    struct Unsub {
+        endpoint: String,
+    }
+    let Ok(u) = serde_json::from_slice::<Unsub>(&body) else { return StatusCode::BAD_REQUEST.into_response() };
+    let push = app.push.clone();
+    match tokio::task::spawn_blocking(move || push.unsubscribe(&u.endpoint)).await {
+        Ok(Ok(())) => json(serde_json::json!({ "ok": true })),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /push/test`: a test notification to every subscription —
+/// `{sent, subscriptions}`.
+async fn push_test(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let push = app.push.clone();
+    let msg = super::push::Message {
+        title: "tenx".into(),
+        body: format!("Notifications from {} work.", host_name()),
+        tag: "tenx-test".into(),
+        url: "/".into(),
+    };
+    match tokio::task::spawn_blocking(move || push.send_all(&msg)).await {
+        Ok((sent, total)) => json(serde_json::json!({ "sent": sent, "subscriptions": total })),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
