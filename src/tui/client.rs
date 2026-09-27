@@ -29,10 +29,10 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
 use std::io;
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::column::{self, ClientRequest, Column};
+use super::host::{Ticker, Unlock, UnlockStart, Views};
 use super::hyperlink::LinkBackend;
 use super::term::{EmbeddedTerminal, TaskScreen};
 
@@ -40,8 +40,6 @@ use super::term::{EmbeddedTerminal, TaskScreen};
 /// go out as OSC 8 ([`super::hyperlink`]).
 pub(super) type ClientTerminal = Terminal<LinkBackend<CrosstermBackend<io::Stdout>>>;
 
-/// How often the column's rows refresh.
-const REFRESH: Duration = Duration::from_millis(500);
 /// Frame pacing: the terminal side changes on its own, so redraw this often
 /// even without input.
 const FRAME: Duration = Duration::from_millis(33);
@@ -62,16 +60,10 @@ pub(super) struct Client {
     /// while shown.
     narrow: bool,
     size: (u16, u16),
-    last_refresh: Instant,
+    ticker: Ticker,
     quit: bool,
-    /// An unlock popup in flight: the task's slug, and where its thread
-    /// reports the popup's exit status once it closes (`start_unlock`).
-    unlock: Option<(String, mpsc::Receiver<Result<i32, String>>)>,
-    /// A walk of Claude Code's agent panel in flight (`start_view`): the pane
-    /// it opened the subagent in, or why it couldn't.
-    claude_view: Option<(column::AgentView, mpsc::Receiver<Result<String, String>>)>,
-    /// The request to run once the one in flight is done (the latest wins).
-    queued_view: Option<column::AgentView>,
+    unlock: Unlock,
+    views: Views,
 }
 
 impl Client {
@@ -89,11 +81,10 @@ impl Client {
             column_width,
             narrow,
             size: (cols, rows),
-            last_refresh: Instant::now(),
+            ticker: Ticker::default(),
             quit: false,
-            unlock: None,
-            claude_view: None,
-            queued_view: None,
+            unlock: Unlock::default(),
+            views: Views::default(),
         };
         let (r, w) = c.term_size();
         term.resize(r, w);
@@ -155,138 +146,47 @@ impl Client {
     }
 
     /// Answer a task's pending secrets in a tmux popup over this client's
-    /// own tmux attach (`cli::secrets::fulfill` with `--hold`), the column
-    /// staying drawn and live behind it. The popup is a terminal of its own —
-    /// none of the modes the client set on the real one (bracketed paste,
-    /// mouse, the alternate screen) reach its prompts. `display-popup` blocks
-    /// until it closes, and it is this loop that forwards keys into it, so it
-    /// runs on a thread; `poll_unlock` picks up the result. `false` when a
-    /// popup can't be aimed (no tmux client found for the embedded
-    /// terminal), so the caller falls back to `column::run_unlock`.
+    /// own tmux attach (`host::Unlock`), the column staying drawn and live
+    /// behind it. The popup is a terminal of its own — none of the modes the
+    /// client set on the real one (bracketed paste, mouse, the alternate
+    /// screen) reach its prompts. `false` when a popup can't be aimed (no
+    /// tmux client found for the embedded terminal), so the caller falls
+    /// back to `column::run_unlock`.
     fn start_unlock(&mut self, ws_idx: usize, slug: &str) -> bool {
-        if self.unlock.is_some() {
-            self.column.set_status("an unlock is already open".into());
-            return true;
+        match self.unlock.start(&mut self.column, ws_idx, slug, self.term.pid()) {
+            UnlockStart::Started(req) => {
+                if let Some(req) = req {
+                    self.handle_request(req);
+                }
+                true
+            }
+            UnlockStart::NoClient => false,
         }
-        let Some(task) = self.column.unlock_task(ws_idx, slug) else { return false };
-        let Some(tmux_client) = self.term.pid().and_then(crate::tmux::client_by_pid) else { return false };
-        let Ok(bin) = crate::tmux::self_bin() else { return false };
-        let (tx, rx) = mpsc::channel();
-        let title = format!(" secrets · {} ", task.display_name);
-        std::thread::spawn(move || {
-            let result = crate::tmux::popup_tenx(
-                &tmux_client,
-                &task.path.to_string_lossy(),
-                &title,
-                &bin.to_string_lossy(),
-                "secrets fulfill --hold",
-            );
-            let _ = tx.send(result.map_err(|e| e.to_string()));
-        });
-        self.unlock = Some((slug.to_string(), rx));
-        // The popup takes keys through the terminal.
-        self.handle_request(ClientRequest::FocusTerminal);
-        true
     }
 
-    /// Once the unlock popup has closed: back to the column, with the rows
-    /// rebuilt so the task leaves SECRETS PENDING, and the outcome in the
-    /// footer.
+    /// Once the unlock popup has closed: back to the column, with the
+    /// outcome in the footer.
     fn poll_unlock(&mut self) {
-        let Some((slug, rx)) = &self.unlock else { return };
-        let result = match rx.try_recv() {
-            Ok(result) => result,
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => Err("the popup thread went away".into()),
-        };
-        let slug = slug.clone();
-        self.unlock = None;
-        self.column.rebuild_rows();
+        if !self.unlock.poll(&mut self.column) {
+            return;
+        }
         if !self.column_shown {
             self.show_column();
         } else {
             self.focus_column();
         }
-        self.column.set_status(match result {
-            Ok(0) => format!("secrets answered for '{slug}'"),
-            Ok(_) => format!("unlock for '{slug}' didn't finish — tenx secrets status"),
-            Err(e) => format!("unlock popup failed: {e}"),
-        });
     }
 
-    /// Put a view in front of you (`column::AgentView`): switch Claude Code's
-    /// own view in a task's pane — a subagent's, or main — or open a
-    /// subagent's transcript window. The keystrokes that switch Claude's view
-    /// take a moment, so they run on a thread (`cli::agentview::open_in_claude`)
-    /// and `poll_claude_view` picks up the outcome; one runs at a time, and a
-    /// request made meanwhile waits, replaced by any later one — arrowing past
-    /// five agents switches to the one you stop on, not through all five.
+    /// Put a view in front of you (`host::Views`).
     fn start_view(&mut self, v: column::AgentView) {
-        if !v.in_claude {
-            self.start_transcript(v);
-            return;
+        if let Some(req) = self.views.start(&mut self.column, v) {
+            self.handle_request(req);
         }
-        if self.claude_view.is_some() {
-            self.queued_view = Some(v);
-            return;
-        }
-        let (tx, rx) = mpsc::channel();
-        let (pid, main, label, agent_type, nth, peers) =
-            (v.session_pid, v.main, v.label.clone(), v.agent_type.clone(), v.nth, v.peers);
-        std::thread::spawn(move || {
-            use crate::cli::agentview::{open_in_claude, AgentRef, Target};
-            let target =
-                if main { Target::Main } else { Target::Agent(AgentRef { label: &label, agent_type: &agent_type, nth, peers }) };
-            let _ = tx.send(open_in_claude(pid, target));
-        });
-        self.claude_view = Some((v, rx));
     }
 
-    /// Once a view switch is over: a waiting request goes next; ⏎'s gets the
-    /// keyboard handed to the pane; a subagent Claude can't be switched to is
-    /// opened as its transcript on ⏎, and only named in the footer when the
-    /// cursor merely landed on it.
     fn poll_claude_view(&mut self) {
-        let Some((_, rx)) = &self.claude_view else { return };
-        let result = match rx.try_recv() {
-            Ok(result) => result,
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => Err("the agent view thread went away".into()),
-        };
-        let Some((v, _)) = self.claude_view.take() else { return };
-        if let Some(next) = self.queued_view.take() {
-            self.start_view(next);
-            return;
-        }
-        match result {
-            Ok(pane) if v.focus => {
-                let _ = crate::tmux::focus_pane(&pane);
-                self.handle_request(ClientRequest::FocusTerminal);
-            }
-            Ok(_) => {}
-            Err(e) if v.focus && v.transcript.is_some() => {
-                self.column.set_status(format!("{e} — showing its transcript"));
-                self.start_transcript(v);
-            }
-            Err(e) if !v.focus && !v.main && v.transcript.is_some() => {
-                self.column.set_status(format!("{e} · t for its transcript"));
-            }
-            Err(e) => self.column.set_status(e),
-        }
-    }
-
-    /// Follow a subagent's transcript in a tmux window of its own
-    /// (`tmux::open_agent_window`, `↳ <label>`), and hand it the keyboard;
-    /// `q` in it closes it and tmux goes back to the window before.
-    fn start_transcript(&mut self, v: column::AgentView) {
-        let Some(transcript) = v.transcript.clone() else { return };
-        let Ok(bin) = crate::tmux::self_bin() else { return };
-        let cwd = v.task_path.to_string_lossy().into_owned();
-        let args = crate::tmux::subagent_log_args(&cwd, v.session_pid, &v.agent, &transcript.to_string_lossy(), &v.title);
-        let name = format!("↳ {}", v.label.chars().take(24).collect::<String>());
-        match crate::tmux::open_agent_window(&bin.to_string_lossy(), &cwd, &name, &args) {
-            Ok(()) => self.handle_request(ClientRequest::FocusTerminal),
-            Err(e) => self.column.set_status(format!("couldn't open the agent: {e}")),
+        if let Some(req) = self.views.poll(&mut self.column) {
+            self.handle_request(req);
         }
     }
 
@@ -391,23 +291,7 @@ impl Client {
     }
 
     fn tick(&mut self) {
-        // Every frame, not on the slow clock: a job's panel animates, and its
-        // events arrive as fast as git writes them. This is also the only
-        // place a finished job's effects reach the column — on this thread,
-        // never on the worker's.
-        self.column.drain_job();
-        if self.last_refresh.elapsed() >= REFRESH {
-            self.last_refresh = Instant::now();
-            if self.column.in_list_mode() {
-                self.column.refresh_statuses();
-                // A status change moves its task to the right section at
-                // once; the selection follows its task, so this is safe
-                // under a moving cursor too.
-                if self.column.sections_stale() {
-                    self.column.tidy();
-                }
-            }
-        }
+        self.ticker.tick(&mut self.column);
     }
 
     pub(super) fn draw(&mut self, f: &mut ratatui::Frame) {

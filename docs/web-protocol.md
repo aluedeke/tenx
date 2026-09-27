@@ -45,8 +45,9 @@ Two frame kinds:
 // The column's layout for the browser's width in cells (reply to `viewport`).
 { "type": "layout", "column_cols": 36, "narrow": false }
 
-// What the TUI client would do with a ClientRequest.
-{ "type": "request", "request": "focus_terminal" | "hide" | "quit" }
+// What the TUI client would do with a ClientRequest — and `focus_column`,
+// when an unlock popup has closed and the column should come back.
+{ "type": "request", "request": "focus_terminal" | "focus_column" | "hide" | "quit" }
 
 { "type": "error", "message": "…" }
 ```
@@ -87,7 +88,12 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
 - Everything else goes to whichever side has focus: the column as `key`
   messages, the terminal as binary input.
 - `request` messages from the server apply `focus_terminal` (and hide the
-  column when narrow), `hide`, and `quit` (= hide; the tab stays open).
+  column when narrow), `focus_column` (show it and focus it), `hide`, and
+  `quit` (= hide; the tab stays open). The server doesn't move the column's
+  focus itself: the page reports every change with a `focus` message.
+
+The terminal attaches on the first `resize`, so send one as soon as xterm.js
+is fitted — until then there is no terminal output.
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

@@ -25,3 +25,4 @@ pub mod taskmd;
 pub mod time;
 pub mod transcript;
 pub mod trust;
+pub mod web;

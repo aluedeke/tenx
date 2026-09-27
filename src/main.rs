@@ -7,6 +7,7 @@ mod progress;
 mod snapshot;
 mod tmux;
 mod tui;
+mod web;
 mod workspace;
 
 use anyhow::Result;
@@ -61,6 +62,10 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Watch) => cli::watch::run()?,
+
+        Some(Commands::Web { listen, port, open, rotate_token, dev_origin }) => {
+            web::run(web::Options { listen, port, open, rotate_token, dev_origins: dev_origin })?
+        }
 
         Some(Commands::Agent { command }) => match command {
             AgentCommands::Setup { kind, check } => {

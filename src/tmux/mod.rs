@@ -455,7 +455,6 @@ pub fn attach_command_to(session: &str) -> (PathBuf, Vec<String>) {
 /// Create `name` grouped with the tenx session, detached, on the tenx
 /// session's current window — tmux would start it on the group's first
 /// window (`home`), not where you are.
-#[allow(dead_code)] // for `tenx web`, which lands next
 pub fn new_grouped_session(name: &str) -> Result<()> {
     run(&["new-session", "-d", "-t", SESSION, "-s", name])?;
     let current = run(&["display-message", "-p", "-t", SESSION, "#{window_id}"])?;
@@ -464,7 +463,6 @@ pub fn new_grouped_session(name: &str) -> Result<()> {
 
 /// Whether a session called `name` exists (exactly that name: `=` stops
 /// tmux matching a prefix).
-#[allow(dead_code)] // for `tenx web`, which lands next
 pub fn has_session(name: &str) -> bool {
     cmd()
         .args(["has-session", "-t", &format!("={name}")])
@@ -478,12 +476,30 @@ pub fn has_session(name: &str) -> bool {
 /// Kill a grouped session. Its windows live on in the tenx session — only
 /// the last session holding a window takes it with it, and `tenx` is never
 /// killed here.
-#[allow(dead_code)] // for `tenx web`, which lands next
 pub fn kill_session(name: &str) -> Result<()> {
     if name == SESSION {
         bail!("refusing to kill the '{SESSION}' session");
     }
     run(&["kill-session", "-t", &format!("={name}")]).map(drop)
+}
+
+/// Every session whose name starts with `prefix`, with whether any client
+/// is attached to it — how `tenx web` finds the grouped sessions a previous
+/// run left behind.
+pub fn sessions_with_prefix(prefix: &str) -> Vec<(String, bool)> {
+    let Ok(out) = run(&["list-sessions", "-F", "#{session_name}\t#{session_attached}"]) else { return Vec::new() };
+    out.lines()
+        .filter_map(|l| {
+            let (name, attached) = l.split_once('\t')?;
+            name.starts_with(prefix).then(|| (name.to_string(), attached != "0"))
+        })
+        .collect()
+}
+
+/// Redraw a client's whole screen — a browser tab that reconnects starts from
+/// an empty terminal, and tmux only sends what changed.
+pub fn refresh_client(client: &str) -> Result<()> {
+    run(&["refresh-client", "-t", client]).map(drop)
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
@@ -627,17 +643,10 @@ pub fn select_window_in(session: &str, id: &str) -> Result<()> {
     run(&["select-window", "-t", &format!("{session}:{id}")]).map(drop)
 }
 
-/// Make `pane` the one on screen: its window the session's current, and the
-/// pane that window's active one.
-pub fn focus_pane(pane: &str) -> Result<()> {
-    run(&["select-window", "-t", pane])?;
-    run(&["select-pane", "-t", pane]).map(drop)
-}
-
-/// [`focus_pane`] for `session`: its window becomes that session's current.
-/// The active pane is the window's, so every session showing it sees the
-/// change.
-#[allow(dead_code)] // for `tenx web`, which lands next
+/// Make `pane` the one on screen for `session`: its window that session's
+/// current (in a grouped session, the others keep theirs), and the pane that
+/// window's active one — the active pane is the window's, so every session
+/// showing it sees that.
 pub fn focus_pane_in(session: &str, pane: &str) -> Result<()> {
     let window = run(&["display-message", "-p", "-t", pane, "#{window_id}"])?;
     select_window_in(session, window.trim())?;

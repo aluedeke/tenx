@@ -65,6 +65,30 @@ pub enum Commands {
     /// tmux server exits. Also pushes each task's status into the tmux status
     /// bar and opens a log pane for background agents.
     Watch,
+    /// Serve the task column and the session to a browser
+    ///
+    /// The column as a web page beside a terminal attached to the tenx
+    /// session — each browser tab switches tasks on its own, with the same
+    /// keys as the terminal client. Prints the address to open, with the
+    /// token that logs the browser in. Runs in the foreground.
+    Web {
+        /// Address to listen on. Anything but loopback serves a shell on this
+        /// machine over plain HTTP — prefer `tailscale serve` in front
+        #[arg(long, default_value = "127.0.0.1")]
+        listen: String,
+        #[arg(long, default_value_t = 7070)]
+        port: u16,
+        /// Open the page in the default browser
+        #[arg(long)]
+        open: bool,
+        /// Replace the login token, logging out every browser
+        #[arg(long)]
+        rotate_token: bool,
+        /// Also accept the page from this origin (`next dev`), e.g.
+        /// http://localhost:3000 — repeatable
+        #[arg(long = "dev-origin", value_name = "URL")]
+        dev_origin: Vec<String>,
+    },
     /// Generate a daily standup from recent activity and task files
     Standup {
         /// Collect activity since this ISO timestamp (default: last standup, or start of yesterday)

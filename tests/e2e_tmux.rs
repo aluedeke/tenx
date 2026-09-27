@@ -790,3 +790,175 @@ fn a_grouped_session_switches_windows_on_its_own() {
     assert!(names("tenx").contains("grouped"));
     assert!(names("tenx").contains("later"));
 }
+
+/// A raw HTTP/1.1 GET against `tenx web`: the status line and headers, and
+/// the body.
+fn http_get(port: u16, path: &str, cookie: Option<&str>) -> (String, String) {
+    use std::io::{Read, Write};
+    let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let cookie = cookie.map(|c| format!("Cookie: tenx_web={c}\r\n")).unwrap_or_default();
+    write!(s, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{cookie}Connection: close\r\n\r\n").unwrap();
+    let mut out = String::new();
+    s.read_to_string(&mut out).unwrap();
+    let (head, body) = out.split_once("\r\n\r\n").unwrap_or((&out, ""));
+    (head.to_string(), body.to_string())
+}
+
+/// `tenx web` end to end: the token becomes a cookie, the page and the
+/// socket refuse whoever lacks it or comes from another origin, and a
+/// socket gets a grouped session of its own, a column that answers its keys,
+/// the same session back when it reconnects in time — and the session is
+/// gone once the grace period passes without one.
+#[test]
+fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
+    use futures_util::{SinkExt, StreamExt};
+    use std::io::BufRead;
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+
+    let Some(h) = Harness::named("-web") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Web task", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let mut server = h
+        .tenx()
+        .args(["web", "--port", &port.to_string()])
+        .env("TENX_WEB_GRACE_MS", "800")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    // The address it prints carries the token.
+    let mut lines = std::io::BufReader::new(server.stdout.take().unwrap()).lines();
+    let token = lines
+        .by_ref()
+        .map_while(Result::ok)
+        .find_map(|l| l.split_once("?token=").map(|(_, t)| t.trim().to_string()))
+        .expect("tenx web printed its address");
+    let token_file = fs::read_to_string(h.root.join("home/.config/tenx/web-token")).unwrap();
+    assert_eq!(token_file.trim(), token);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(h.root.join("home/.config/tenx/web-token")).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "the token is readable by you alone");
+    }
+
+    // The page: nothing without the cookie; the token swapped for it.
+    assert!(http_get(port, "/", None).0.starts_with("HTTP/1.1 401"));
+    assert!(http_get(port, "/?token=nope", None).0.starts_with("HTTP/1.1 401"));
+    let (head, _) = http_get(port, &format!("/?token={token}"), None);
+    assert!(head.starts_with("HTTP/1.1 303"), "{head}");
+    assert!(head.to_lowercase().contains(&format!("set-cookie: tenx_web={token};")), "{head}");
+    let (head, body) = http_get(port, "/", Some(&token));
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(body.contains("<html") || body.contains("<!DOCTYPE") || body.contains("<!doctype"));
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let request = |origin: &str, cookie: Option<&str>, session: Option<&str>| {
+        let url = match session {
+            Some(id) => format!("ws://127.0.0.1:{port}/ws?session={id}"),
+            None => format!("ws://127.0.0.1:{port}/ws"),
+        };
+        let mut req = url.into_client_request().unwrap();
+        req.headers_mut().insert("Origin", origin.parse().unwrap());
+        if let Some(c) = cookie {
+            req.headers_mut().insert("Cookie", format!("tenx_web={c}").parse().unwrap());
+        }
+        req
+    };
+    let page = format!("http://127.0.0.1:{port}");
+
+    rt.block_on(async {
+        // Refused: another origin, even with the cookie; no cookie.
+        let err = tokio_tungstenite::connect_async(request("http://evil.example", Some(&token), None)).await.unwrap_err();
+        assert!(err.to_string().contains("403"), "{err}");
+        let err = tokio_tungstenite::connect_async(request(&page, None, None)).await.unwrap_err();
+        assert!(err.to_string().contains("401"), "{err}");
+
+        // Text frames until one of `kind`.
+        async fn next_of<S>(ws: &mut S, kind: &str) -> serde_json::Value
+        where
+            S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+        {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                let msg = tokio::time::timeout_at(deadline, ws.next()).await.expect("timed out").unwrap().unwrap();
+                if let Message::Text(t) = msg {
+                    let v: serde_json::Value = serde_json::from_str(&t).unwrap();
+                    if v["type"] == kind {
+                        return v;
+                    }
+                }
+            }
+        }
+
+        let (mut ws, _) = tokio_tungstenite::connect_async(request(&page, Some(&token), None)).await.unwrap();
+        let hello = next_of(&mut ws, "hello").await;
+        let id = hello["session"].as_str().unwrap().to_string();
+        let first = next_of(&mut ws, "view").await;
+        assert!(first["view"]["items"].to_string().contains("Web task"), "{first}");
+        assert_eq!(first["view"]["filter"], "");
+
+        // The terminal: attached once the page says its size.
+        ws.send(Message::Text(r#"{"type":"resize","cols":120,"rows":40}"#.into())).await.unwrap();
+        let mut got_bytes = false;
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !got_bytes {
+            if let Message::Binary(_) = tokio::time::timeout_at(deadline, ws.next()).await.expect("no terminal output").unwrap().unwrap() {
+                got_bytes = true;
+            }
+        }
+
+        // A key goes through the column's own handler: typed into the
+        // search field, where the column starts.
+        ws.send(Message::Text(r#"{"type":"key","key":"w","ctrl":false,"alt":false,"shift":false}"#.into())).await.unwrap();
+        let typed = loop {
+            let v = next_of(&mut ws, "view").await;
+            if v["view"]["filter"] == "w" {
+                break v;
+            }
+        };
+        assert!(typed["view"]["items"].to_string().contains("Web task"));
+
+        // The layout rule, for a phone and a desktop.
+        ws.send(Message::Text(r#"{"type":"viewport","cols":60}"#.into())).await.unwrap();
+        assert_eq!(next_of(&mut ws, "layout").await["narrow"], true);
+        ws.send(Message::Text(r#"{"type":"viewport","cols":220}"#.into())).await.unwrap();
+        assert_eq!(next_of(&mut ws, "layout").await["narrow"], false);
+        ws.close(None).await.unwrap();
+        drop(ws);
+
+        // Back within the grace period: the same session, the column as it
+        // was left.
+        let (mut ws, _) = tokio_tungstenite::connect_async(request(&page, Some(&token), Some(&id))).await.unwrap();
+        assert_eq!(next_of(&mut ws, "hello").await["session"], id.as_str());
+        assert_eq!(next_of(&mut ws, "view").await["view"]["filter"], "w");
+        ws.close(None).await.unwrap();
+    });
+
+    let session = format!("tenx-web-{id}", id = {
+        // The id is in the session list: exactly one tab session exists.
+        let list = h.tmux_out(&["list-sessions", "-F", "#{session_name}"]);
+        let names: Vec<&str> = list.lines().filter(|l| l.starts_with("tenx-web-")).collect();
+        assert_eq!(names.len(), 1, "one tab, one session: {list}");
+        names[0].trim_start_matches("tenx-web-").to_string()
+    });
+    assert!(h.tmux_out(&["list-windows", "-t", &session, "-F", "#{window_name}"]).contains("web-task"));
+
+    // Past the grace period: the session is gone, the task window is not.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while h.tmux_out(&["list-sessions", "-F", "#{session_name}"]).contains(&session) {
+        assert!(std::time::Instant::now() < deadline, "{session} outlived its grace period");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_name}"]).contains("web-task"));
+
+    let _ = server.kill();
+    let _ = server.wait();
+    let _ = h.tmux().args(["kill-server"]).status();
+}

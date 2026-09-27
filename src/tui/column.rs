@@ -38,8 +38,6 @@ use super::mouse;
 mod demo;
 #[cfg(test)]
 mod screenshot;
-// Read by `tenx web`, which lands after it; until then only its tests do.
-#[allow(dead_code)]
 pub(crate) mod view;
 use crate::palette;
 use crate::snapshot::{self, Row};
@@ -281,7 +279,7 @@ enum Mode {
 /// What the column asks the client to do, since it cannot move focus or
 /// hide itself: the terminal is in the same process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ClientRequest {
+pub(crate) enum ClientRequest {
     /// Put the keyboard in the embedded terminal (a jump landed, or a quit
     /// key: the column stays).
     FocusTerminal,
@@ -295,7 +293,7 @@ pub(super) enum ClientRequest {
 /// line (its agent view) or on a task line (back to main), ⏎ on either, `t`
 /// on a subagent (`Column::take_agent_view`).
 #[derive(Debug, Clone)]
-pub(super) struct AgentView {
+pub(crate) struct AgentView {
     /// Switch Claude Code's own view in the session's pane
     /// (`tenx_core::agent_panel`), rather than open tenx's transcript window.
     pub(super) in_claude: bool,
@@ -327,7 +325,7 @@ pub(super) struct AgentView {
     pub(super) task_path: PathBuf,
 }
 
-pub(super) struct Column {
+pub(crate) struct Column {
     client_request: Option<ClientRequest>,
     /// No tmux, no registry: a switch or an answer only updates this
     /// struct. The README demo's mode; never set by the client.
@@ -480,14 +478,14 @@ impl Column {
 
     /// A row whose status moved it to another section since the rows were
     /// last built — the list's grouping is stale.
-    pub(super) fn sections_stale(&self) -> bool {
+    pub(crate) fn sections_stale(&self) -> bool {
         self.rows.iter().any(|r| r.live_section() != r.section)
     }
 
     /// Rebuild (re-group and re-sort) while keeping the selection on the
     /// same task. The column calls this while the keyboard is elsewhere,
     /// so rows move only when nobody is moving through them.
-    pub(super) fn tidy(&mut self) {
+    pub(crate) fn tidy(&mut self) {
         let keep = self.selected_row().map(|r| r.slug.clone());
         self.rebuild_rows();
         if let Some(slug) = keep
@@ -524,32 +522,37 @@ impl Column {
     }
 
     /// The client's pending request, if the last event made one.
-    pub(super) fn take_request(&mut self) -> Option<ClientRequest> {
+    pub(crate) fn take_request(&mut self) -> Option<ClientRequest> {
         self.client_request.take()
     }
 
     /// Whether the list (not a form or the command line) is showing — when
     /// the idle tick may refresh rows.
-    pub(super) fn in_list_mode(&self) -> bool {
+    pub(crate) fn in_list_mode(&self) -> bool {
         matches!(self.mode, Mode::List)
     }
 
-    pub(super) fn take_agent_view(&mut self) -> Option<AgentView> {
+    pub(crate) fn take_agent_view(&mut self) -> Option<AgentView> {
         self.pending_view.take()
     }
 
-    pub(super) fn take_unlock(&mut self) -> Option<(usize, String)> {
+    pub(crate) fn take_unlock(&mut self) -> Option<(usize, String)> {
         self.pending_unlock.take()
     }
 
     /// The task a `take_unlock` names, looked up now.
-    pub(super) fn unlock_task(&self, ws_idx: usize, slug: &str) -> Option<workspace::Task> {
+    pub(crate) fn unlock_task(&self, ws_idx: usize, slug: &str) -> Option<workspace::Task> {
         self.workspaces.get(ws_idx)?.find_task(slug).ok()
+    }
+
+    /// The session this column follows and switches (`in_session`).
+    pub(crate) fn session(&self) -> &str {
+        &self.session
     }
 
     /// Say something in the footer — how the client reports an outcome that
     /// arrived from off the key path (an unlock popup closing).
-    pub(super) fn set_status(&mut self, msg: String) {
+    pub(crate) fn set_status(&mut self, msg: String) {
         self.status_msg = Some(msg);
     }
 
@@ -654,7 +657,7 @@ impl Column {
     /// Rescan all workspaces for tasks + status. All file reads: the task tree,
     /// plus one snapshot of Claude Code's session registry that every row
     /// resolves against (`workspace::resolve_task_state`).
-    pub(super) fn rebuild_rows(&mut self) {
+    pub(crate) fn rebuild_rows(&mut self) {
         // One flat list across all workspaces, grouped by agent status
         // (needs-input first, idle last) and, within a group, by last status
         // change newest first (`tenx_core::column::compare`).
@@ -690,7 +693,7 @@ impl Column {
     /// client — a workspace registered or pruned, a task directory created
     /// or removed — which rebuild the rows, keeping the selection on its
     /// task.
-    pub(super) fn refresh_statuses(&mut self) {
+    pub(crate) fn refresh_statuses(&mut self) {
         let sessions = workspace::sessions::sessions();
         let slow = self.slow_refreshed.is_none_or(|t| t.elapsed() >= SLOW_REFRESH);
         if slow {
@@ -825,7 +828,7 @@ impl Column {
     /// Put the cursor on the task you are in (Normal mode, row highlighted):
     /// what Ctrl+w lands on, so the list reads "you are here" and the next
     /// ↓ is the task below. `/` or `i` from there types a filter.
-    pub(super) fn select_current(&mut self) {
+    pub(crate) fn select_current(&mut self) {
         if let Some(p) = self.own_row() {
             self.selected = p;
             self.focus_list();
@@ -835,7 +838,7 @@ impl Column {
     /// The keyboard left the column: drop the row highlight so the list
     /// shows no cursor while the task has it. Ctrl+w brings it back on the
     /// current task (`select_current`).
-    pub(super) fn blur(&mut self) {
+    pub(crate) fn blur(&mut self) {
         if matches!(self.mode, Mode::List) {
             self.focus_search();
             // A message is about what you just did here and has been read
@@ -1812,7 +1815,7 @@ impl Column {
     /// This is where a job's effects reach the column's state — on the UI
     /// thread, from disk, after the work is done. No worker touches `self`, so
     /// there is nothing to lock.
-    pub(super) fn drain_job(&mut self) -> bool {
+    pub(crate) fn drain_job(&mut self) -> bool {
         if self.last_frame.is_none_or(|t| t.elapsed() >= crate::progress::TICK) {
             self.last_frame = Some(Instant::now());
             self.frame = self.frame.wrapping_add(1);
@@ -2579,7 +2582,7 @@ impl Column {
     /// client's terminal regains focus, at most once per `SWEEP_INTERVAL`.
     /// Silent on stdout by design (this runs inside the alternate screen); a
     /// nonzero result gets a status line instead.
-    pub(super) fn maybe_sweep(&mut self) {
+    pub(crate) fn maybe_sweep(&mut self) {
         if self.last_swept.is_some_and(|t| t.elapsed() < SWEEP_INTERVAL) {
             return;
         }

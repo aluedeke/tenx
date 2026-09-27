@@ -41,9 +41,18 @@ libc = "0.2.189"
 unicode-width = "=0.2.0"
 alacritty_terminal = "0.26"
 portable-pty = "0.9"
+# `tenx web` only (src/web/): an async HTTP + WebSocket server. Everything
+# else in tenx stays threads and polling; the web module bridges to it.
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util", "signal"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "ws", "tokio", "query"] }
+# The page (`web/out`, a static Next.js export) baked into the binary; build.rs
+# points it at a stub page when the frontend hasn't been built.
+rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-guess"] }
 
 [dev-dependencies]
+futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 serde_json = "1"
+tokio-tungstenite = "0.30.0"
 
 # The profile that 'dist' will build with
 [profile.dist]

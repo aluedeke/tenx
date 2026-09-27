@@ -1,5 +1,6 @@
 pub mod client;
-mod column;
+pub(crate) mod column;
+pub(crate) mod host;
 mod hyperlink;
 mod job;
 mod mouse;

@@ -214,6 +214,19 @@ ssh devbox -t tenx
 
 On a terminal under 100 columns there is no room for a column beside the task, so the task takes the whole screen and `Ctrl+w` shows the list over it. The rows are the same two lines per task, so titles and status glyphs stay readable on a 40-column phone screen, and a permission prompt can be answered with `A` from the list. Opening a task gives you the agent's whole screen, where you can answer anything else and detach again. The desktop notification goes to the machine running the session, not to the phone.
 
+## Web UI
+
+`tenx web` serves the same column as a web page, beside a terminal attached to the session (xterm.js), for a browser on the desktop or a phone:
+
+```sh
+tenx web              # prints http://127.0.0.1:7070/?token=… — open that once
+tenx web --open       # and opens it
+```
+
+Each browser tab switches tasks on its own, without moving your terminal client, and takes the same keys as the terminal client — `Ctrl+w` for the column, `?` for the rest (`Alt+w`/`Alt+n` where the browser keeps `Ctrl+w`/`Ctrl+n`). A reload or a dropped connection within 30 s comes back to the same place.
+
+The address carries a token (`~/.config/tenx/web-token`, readable only by you) that the page swaps for a cookie; `tenx web --rotate-token` replaces it and logs every browser out. The page is a shell on this machine, so by default it listens on `127.0.0.1` only. To reach it from a phone, put it behind [`tailscale serve`](https://tailscale.com/kb/1312/serve) rather than `--listen 0.0.0.0`, which serves it over plain HTTP. Building from source, `make web` builds the page (Node and pnpm) before `cargo build`; without it the binary serves a placeholder.
+
 ## Sweep and pin
 
 Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks once they have been quiet for `--idle-after` (default 15m), finished tasks after `--after` (default 8h). A task's window is the one its panes are actually in, never just one that shares its slug — the same task name in two workspaces must not close the wrong session. It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
