@@ -38,6 +38,9 @@ use super::mouse;
 mod demo;
 #[cfg(test)]
 mod screenshot;
+// Read by `tenx web`, which lands after it; until then only its tests do.
+#[allow(dead_code)]
+pub(crate) mod view;
 use crate::palette;
 use crate::snapshot::{self, Row};
 use crate::workspace::sessions::{Subagent, SubagentStatus};
@@ -3118,67 +3121,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     f.render_stateful_widget(list, list_area, &mut column.list_state);
 
     // ── Footer / hints ────────────────────────────────────────────────────────
-    let footer = match (&column.mode, &column.status_msg) {
-        (Mode::Command(buf), _) => {
-            let mut spans = vec![
-                Span::styled(":", Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)),
-                Span::raw(buf.clone()),
-                Span::styled("▏", Style::default().fg(palette::MUTED.color())),
-            ];
-            if buf.is_empty() {
-                spans.push(Span::styled(
-                    "  new · open · delete · rename · close · help · quit",
-                    Style::default().fg(palette::MUTED.color()),
-                ));
-            }
-            if buf == "q" && column.job_running() {
-                spans.push(Span::styled(
-                    "  ! to quit anyway",
-                    Style::default().fg(palette::WARN.color()),
-                ));
-            }
-            Line::from(spans)
-        }
-        (Mode::Confirm(c), _) => Line::from(Span::styled(
-            format!(" delete '{}' + worktrees?   y = delete   n/esc = cancel", c.title),
-            Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
-        )),
-        (Mode::Rename(_), _) => Line::from(Span::styled(
-            " ⏎ save   esc cancel",
-            Style::default().fg(palette::MUTED.color()),
-        )),
-        (Mode::Reject(form), _) => Line::from(Span::styled(
-            format!(" ⏎ reject {}   esc cancel", form.names.join(", ")),
-            Style::default().fg(palette::DANGER.color()),
-        )),
-        (_, Some(msg)) => Line::from(Span::styled(
-            format!(" {msg}"),
-            Style::default().fg(palette::SUCCESS.color()),
-        )),
-        _ => {
-            // A column of ~36 cells: the mode tag and the two or three keys
-            // that matter here; the full hint set lives on the wide surfaces.
-            let (tag, tag_style) = mode_tag(column.input_mode);
-            let hint = match (column.input_mode, column.tab) {
-                (InputMode::Insert, _) => " filter · ↓↑ switch · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) if column.selected_sub().is_some() => " ⏎ open agent · t transcript",
-                (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.pending) => {
-                    " setting up · esc detach"
-                }
-                (InputMode::Normal, Tab::Tasks) if column.selected_answerable() => " A/D answer · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) if column.selected_has_secrets() => " u unlock · D reject · ⏎ open",
-                (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.window_id.is_none()) => {
-                    " closed · ⏎ open · ↓↑ move"
-                }
-                (InputMode::Normal, Tab::Tasks) if column.another_needs_you() => " n needs you · ⏎ open · ^n new",
-                (InputMode::Normal, Tab::Tasks) => " ↓↑ switch · ⏎ open · ^n new · ? keys",
-                (InputMode::Normal, Tab::Repos) => " a add-repo · gt tab · ? keys",
-                (InputMode::Normal, Tab::Work) if column.jobs.is_empty() => " gt tab · ? keys",
-                (InputMode::Normal, Tab::Work) => " dd dismiss · gt tab",
-            };
-            Line::from(vec![Span::styled(tag, tag_style), Span::styled(hint, Style::default().fg(palette::MUTED.color()))])
-        }
-    };
+    let footer = footer_line(&view::footer(column));
     f.render_widget(Paragraph::new(footer), chunks[3]);
 }
 
@@ -3320,7 +3263,7 @@ fn render_help(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     let more = if scroll < max { " ↓ more" } else { "" };
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!(" j/k scroll · any key closes{more}"),
+            format!(" {}{more}", view::HELP_HINT),
             Style::default().fg(palette::MUTED.color()),
         ))),
         chunks[1],
@@ -3328,6 +3271,45 @@ fn render_help(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
 }
 
 /// The footer's mode tag: INSERT on green, NORMAL on blue.
+/// The footer as a terminal line: each [`view::FooterKind`] in its voice.
+fn footer_line(footer: &view::Footer) -> Line<'static> {
+    use view::FooterKind;
+    let muted = Style::default().fg(palette::MUTED.color());
+    match footer.kind {
+        FooterKind::Command => {
+            let mut spans = vec![
+                Span::styled(":", Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD)),
+                Span::raw(footer.text.clone()),
+                Span::styled("▏", muted),
+            ];
+            if let Some(hint) = footer.hint {
+                spans.push(Span::styled(format!("  {hint}"), muted));
+            }
+            if let Some(warn) = footer.warn {
+                spans.push(Span::styled(format!("  {warn}"), Style::default().fg(palette::WARN.color())));
+            }
+            Line::from(spans)
+        }
+        FooterKind::Confirm => Line::from(Span::styled(
+            format!(" {}", footer.text),
+            Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
+        )),
+        FooterKind::Error => {
+            Line::from(Span::styled(format!(" {}", footer.text), Style::default().fg(palette::DANGER.color())))
+        }
+        FooterKind::Message => {
+            Line::from(Span::styled(format!(" {}", footer.text), Style::default().fg(palette::SUCCESS.color())))
+        }
+        FooterKind::Hint => match footer.tag {
+            Some(tag) => {
+                let (tag, tag_style) = mode_tag(if tag == "INSERT" { InputMode::Insert } else { InputMode::Normal });
+                Line::from(vec![Span::styled(tag, tag_style), Span::styled(format!(" {}", footer.text), muted)])
+            }
+            None => Line::from(Span::styled(format!(" {}", footer.text), muted)),
+        },
+    }
+}
+
 fn mode_tag(mode: InputMode) -> (&'static str, Style) {
     match mode {
         InputMode::Insert => (
@@ -3356,29 +3338,62 @@ fn pad_cell(s: &str, w: usize) -> String {
 /// Header colour per section: amber for the pile that wants you, blue for
 /// what's running, grey for what isn't.
 fn group_color(group: workspace::TaskGroup) -> ratatui::style::Color {
+    group_rgb(group).color()
+}
+
+fn group_rgb(group: workspace::TaskGroup) -> &'static palette::Rgb {
     match group {
         // Same reasoning as the status bar's glyph priority: a pending
         // secrets request needs a specific action from you, distinct from
         // ordinary waiting — worth its own colour, not folded into WARN.
-        workspace::TaskGroup::SecretsPending => palette::ACCENT.color(),
-        workspace::TaskGroup::Waiting => palette::WARN.color(),
-        workspace::TaskGroup::Working => palette::INFO.color(),
-        workspace::TaskGroup::Inactive => palette::MUTED.color(),
+        workspace::TaskGroup::SecretsPending => &palette::ACCENT,
+        workspace::TaskGroup::Waiting => &palette::WARN,
+        workspace::TaskGroup::Working => &palette::INFO,
+        workspace::TaskGroup::Inactive => &palette::MUTED,
     }
 }
 
 /// status colour, plus a gap. Shared by both list shapes.
 fn row_glyph(row: &Row, frame: usize) -> (String, Style) {
+    let (glyph, rgb) = row_glyph_rgb(row, frame);
+    let gap = if glyph == "🔒" { " " } else { "  " };
+    (format!("{glyph}{gap}"), Style::default().fg(rgb.color()))
+}
+
+/// The row's glyph (no gap) and its colour.
+fn row_glyph_rgb(row: &Row, frame: usize) -> (&'static str, &'static palette::Rgb) {
     if row.pending {
         // Still being built: the same spinner the panel shows, so the row and
         // the panel below read as one thing.
-        let f = crate::progress::FRAMES[frame % crate::progress::FRAMES.len()];
-        return (format!("{f}  "), Style::default().fg(palette::ACCENT.color()));
+        return (crate::progress::FRAMES[frame % crate::progress::FRAMES.len()], &palette::ACCENT);
     }
     if !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty() {
-        ("🔒 ".to_string(), Style::default().fg(palette::ACCENT.color()))
+        ("🔒", &palette::ACCENT)
     } else {
-        (format!("{}  ", row.status.glyph()), Style::default().fg(palette::status_color(row.status).color()))
+        (row.status.glyph(), palette::status_color(row.status))
+    }
+}
+
+/// A task title's colour: selected, the current task, closed (no window,
+/// dimmer — ⏎ opens it), or plain.
+fn title_rgb(row: &Row, selected: bool, is_current: bool) -> &'static palette::Rgb {
+    if selected {
+        &palette::SEL_TEXT
+    } else if is_current {
+        &palette::CURRENT
+    } else if row.window_id.is_none() {
+        &palette::MUTED
+    } else {
+        &palette::TEXT
+    }
+}
+
+/// A PR chip's colour, by its checks.
+fn pr_rgb(checks: &str) -> &'static palette::Rgb {
+    match checks {
+        "failure" => &palette::DANGER,
+        "success" => &palette::SUCCESS,
+        _ => &palette::INFO,
     }
 }
 
@@ -3451,15 +3466,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         let selected = pos == column.selected && column.focus == Focus::List && on_sub.is_none();
         let is_current = column.is_shown(row);
         // Closed tasks (no window) read dimmer; ⏎ opens them.
-        let title_fg = if selected {
-            palette::SEL_TEXT.color()
-        } else if is_current {
-            palette::CURRENT.color()
-        } else if row.window_id.is_none() {
-            palette::MUTED.color()
-        } else {
-            palette::TEXT.color()
-        };
+        let title_fg = title_rgb(row, selected, is_current).color();
         let (glyph, glyph_style) = row_glyph(row, column.frame);
         // Sized per row, not per list: a column has no other columns to line
         // up with, so every title gets the whole width.
@@ -3503,12 +3510,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
             pieces.push(Span::styled(workspace::format_age(changed), dim));
         }
         for pr in &row.live.prs {
-            let color = match pr.checks.as_str() {
-                "failure" => palette::DANGER.color(),
-                "success" => palette::SUCCESS.color(),
-                _ => palette::INFO.color(),
-            };
-            pieces.push(Span::styled(pr.chip(), Style::default().fg(color)));
+            pieces.push(Span::styled(pr.chip(), Style::default().fg(pr_rgb(&pr.checks).color())));
         }
         if !row.live.ports.is_empty() {
             let ports: Vec<String> = row.live.ports.iter().map(|p| format!(":{p}")).collect();
@@ -3755,14 +3757,7 @@ fn render_addrepo(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" add repo "));
     f.render_widget(body, chunks[0]);
 
-    let footer = if let Some(msg) = &column.status_msg {
-        Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
-    } else {
-        Line::from(Span::styled(
-            " ⏎ clone & add   esc cancel   ⇥ next field",
-            Style::default().fg(palette::MUTED.color()),
-        ))
-    };
+    let footer = footer_line(&view::footer(column));
     f.render_widget(Paragraph::new(footer), chunks[1]);
 }
 
@@ -3790,14 +3785,7 @@ fn render_newws(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" new workspace "));
     f.render_widget(body, chunks[0]);
 
-    let footer = if let Some(msg) = &column.status_msg {
-        Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
-    } else {
-        Line::from(Span::styled(
-            " ⏎ create   esc cancel   ⇥ next field   space toggle skills",
-            Style::default().fg(palette::MUTED.color()),
-        ))
-    };
+    let footer = footer_line(&view::footer(column));
     f.render_widget(Paragraph::new(footer), chunks[1]);
 }
 
@@ -3856,23 +3844,7 @@ fn render_editrepos(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         Paragraph::new(lines).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" task repos "));
     f.render_widget(body, chunks[0]);
 
-    let footer = if form.confirm {
-        Line::from(Span::styled(
-            format!(
-                " detach {} — removes the worktree AND its '{}' branch.   y = apply   esc = back",
-                form.removed().join(", "),
-                form.slug
-            ),
-            Style::default().fg(palette::DANGER.color()).add_modifier(Modifier::BOLD),
-        ))
-    } else if let Some(msg) = &column.status_msg {
-        Line::from(Span::styled(format!(" {msg}"), Style::default().fg(palette::DANGER.color())))
-    } else {
-        Line::from(Span::styled(
-            " ⏎ apply   esc cancel   space toggle   a all / n none",
-            Style::default().fg(palette::MUTED.color()),
-        ))
-    };
+    let footer = footer_line(&view::footer(column));
     f.render_widget(Paragraph::new(footer), chunks[1]);
 }
 
@@ -3944,17 +3916,7 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" new task "));
     f.render_widget(body, chunks[0]);
 
-    let footer = if let Some(msg) = &column.status_msg {
-        Line::from(Span::styled(
-            format!(" {msg}"),
-            Style::default().fg(palette::DANGER.color()),
-        ))
-    } else {
-        Line::from(Span::styled(
-            " ⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent",
-            Style::default().fg(palette::MUTED.color()),
-        ))
-    };
+    let footer = footer_line(&view::footer(column));
     f.render_widget(Paragraph::new(footer), chunks[1]);
 }
 
