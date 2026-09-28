@@ -111,8 +111,12 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         import('@xterm/addon-web-links'),
         import('@xterm/addon-clipboard'),
       ]);
+      // Both weights before the first glyph: the WebGL renderer rasterizes a
+      // glyph once into its atlas, so bold drawn before the 700 face arrives
+      // stays a synthesized smear until the atlas is rebuilt.
       try {
-        await document.fonts.load(`${propsRef.current.fontSize}px "JetBrains Mono"`);
+        const size = propsRef.current.fontSize;
+        await Promise.all([document.fonts.load(`${size}px "JetBrains Mono"`), document.fonts.load(`bold ${size}px "JetBrains Mono"`)]);
       } catch {
         // Falls back to the next monospace in the stack.
       }
@@ -147,6 +151,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
           xterm?.refresh(0, xterm.rows - 1);
         });
         xterm.loadAddon(webgl);
+        // A face that finishes loading later (a fallback glyph's font, a
+        // weight): rebuild the atlas so nothing stays drawn in the stand-in.
+        document.fonts.addEventListener('loadingdone', () => xterm?.clearTextureAtlas());
       } catch {
         // No WebGL: xterm's DOM renderer draws instead.
       }
