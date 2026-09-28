@@ -24,6 +24,7 @@ type Focus = 'column' | 'terminal';
 const NARROW_COLS = 100;
 
 const HW_KEY = 'tenx-hardware-keyboard';
+const FONT_KEY = 'tenx-terminal-font';
 
 function measureCell(fontSize: number): number {
   const probe = document.createElement('span');
@@ -69,7 +70,35 @@ export function App() {
   const kbd = useRef<HTMLInputElement>(null);
   const term = useRef<TerminalHandle>(null);
   const mac = useRef(false);
-  const fontSize = touch && narrow ? 12 : 13;
+  const [fontPref, setFontPref] = useState<{ size?: number; weight?: number }>({});
+  const fontSize = fontPref.size ?? (touch && narrow ? 12 : 13);
+  const fontWeight = fontPref.weight ?? 400;
+
+  // The terminal's font, overridable per device from the address bar —
+  // `?font=12&weight=300` — and remembered (`?font=&weight=` forgets it).
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    let pref: { size?: number; weight?: number } = {};
+    try {
+      pref = JSON.parse(localStorage.getItem(FONT_KEY) ?? '{}');
+    } catch {
+      // None stored, or storage blocked.
+    }
+    const num = (v: string | null, lo: number, hi: number) => {
+      const n = Number(v);
+      return v && Number.isFinite(n) && n >= lo && n <= hi ? n : undefined;
+    };
+    if (q.has('font')) pref.size = num(q.get('font'), 8, 32);
+    if (q.has('weight')) pref.weight = num(q.get('weight'), 300, 600);
+    if (q.has('font') || q.has('weight')) {
+      try {
+        localStorage.setItem(FONT_KEY, JSON.stringify(pref));
+      } catch {
+        // Applies to this visit only.
+      }
+    }
+    setFontPref(pref);
+  }, []);
 
   // Latest state for the listeners registered once.
   const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen });
@@ -514,6 +543,7 @@ export function App() {
           <Terminal
             ref={term}
             fontSize={fontSize}
+            fontWeight={fontWeight}
             onData={onTerminalData}
             onResize={(cols, rows) => send({ type: 'resize', cols, rows })}
             onBell={bell}

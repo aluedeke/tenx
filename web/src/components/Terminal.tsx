@@ -24,6 +24,8 @@ export interface TerminalHandle {
 
 interface Props {
   fontSize: number;
+  /** JetBrains Mono weight for normal text (300 light … 500); bold is 700. */
+  fontWeight: number;
   /** Keyboard input, as the string xterm produced for it. */
   onData(data: string): void;
   onResize(cols: number, rows: number): void;
@@ -116,7 +118,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       // stays a synthesized smear until the atlas is rebuilt.
       try {
         const size = propsRef.current.fontSize;
-        await Promise.all([document.fonts.load(`${size}px "JetBrains Mono"`), document.fonts.load(`bold ${size}px "JetBrains Mono"`)]);
+        const weight = propsRef.current.fontWeight;
+        await Promise.all([document.fonts.load(`${weight} ${size}px "JetBrains Mono"`), document.fonts.load(`bold ${size}px "JetBrains Mono"`)]);
       } catch {
         // Falls back to the next monospace in the stack.
       }
@@ -124,6 +127,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm = new XTermCtor({
         fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace',
         fontSize: propsRef.current.fontSize,
+        fontWeight: propsRef.current.fontWeight as 400,
+        fontWeightBold: 700,
         lineHeight: 1.1,
         theme,
         cursorBlink: true,
@@ -189,6 +194,24 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       term.current = null;
     };
   }, []);
+
+  // Size or weight changed after start (a phone turning narrow, the `?font=`
+  // / `?weight=` preference): load the face, then redraw with it.
+  useEffect(() => {
+    const t = term.current;
+    if (!t) return;
+    const { fontSize, fontWeight } = props;
+    document.fonts.load(`${fontWeight} ${fontSize}px "JetBrains Mono"`).finally(() => {
+      t.options.fontSize = fontSize;
+      t.options.fontWeight = fontWeight as 400;
+      t.clearTextureAtlas();
+      try {
+        fitRef.current?.fit();
+      } catch {
+        // Not laid out.
+      }
+    });
+  }, [props.fontSize, props.fontWeight]);
 
   return <div className="xterm-host" ref={host} data-testid="terminal" />;
 });
