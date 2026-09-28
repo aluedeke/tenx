@@ -593,12 +593,10 @@ export function App() {
         spellCheck={false}
         onInput={onKbdInput}
       />
-      {touch && (
+      {/* The special keys only while the on-screen keyboard is up: they're for
+          typing, and a hardware keyboard (which never raises it) has them. */}
+      {touch && kbOpen && (
         <KeyBar
-          // The special keys only while typing on the on-screen keyboard;
-          // otherwise (and always with a hardware keyboard, which never
-          // raises it) just esc, 📋 and 📎, floating over the terminal.
-          compact={!kbOpen}
           column={columnHasKeys}
           ctrlSticky={ctrlSticky}
           onCtrl={() => setCtrlSticky((s) => !s)}

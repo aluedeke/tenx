@@ -964,24 +964,7 @@ a:hover {
   padding: 10px 16px;
 }
 
-/* A hardware keyboard: only 📋 and 📎, floating at the terminal's
-   bottom-right above tmux's status line, instead of a bar. */
-.keybar.compact {
-  position: absolute;
-  right: 10px;
-  bottom: 34px;
-  z-index: 8;
-  width: auto;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: rgba(16, 17, 23, 0.85);
-}
-.keybar.compact .key {
-  flex: none;
-  width: 40px;
-  min-height: 36px;
-}
+
 
 /* ── Header ───────────────────────────────────────────────────────────── */
 

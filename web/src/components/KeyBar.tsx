@@ -16,9 +16,6 @@ interface Props {
   onImages(files: File[]): void;
   /** Paste what's on the clipboard — an image or text. */
   onPaste(): void;
-  /** No on-screen keyboard up: only esc, 📋 and 📎, floating over the
-   * terminal instead of a bar under it. */
-  compact?: boolean;
   /** Put the keyboard focus back where it was (the terminal, or the
    * column's text input) — called inside the tap, the only place iOS lets a
    * focus keep its on-screen keyboard up. */
@@ -35,7 +32,7 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, compact, onRefocus }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, onRefocus }: Props) {
   const bar = useRef<HTMLDivElement>(null);
   // iOS moves focus off the terminal — and closes the keyboard — on a tap
   // anywhere else, whatever pointerdown does. Cancelling the touch itself
@@ -53,9 +50,7 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, c
       el.removeEventListener('touchstart', hold);
       el.removeEventListener('touchend', hold);
     };
-    // Re-attached whenever the bar is re-rendered from nothing (it renders
-    // null in the column without a keyboard).
-  }, [compact, column]);
+  }, []);
   // Pointer-down, not click, and no default: a tap mustn't take focus from
   // the terminal (and with it the on-screen keyboard).
   const press = (fn: () => void) => (ev: React.PointerEvent) => {
@@ -63,41 +58,31 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, c
     fn();
     onRefocus();
   };
-  if (compact && column) return null;
   return (
-    <div ref={bar} className={compact ? 'keybar compact' : 'keybar'} data-testid="keybar">
-      {compact && (
-        <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('Escape', false))}>
-          esc
+    <div ref={bar} className="keybar" data-testid="keybar">
+      <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('Escape', false))}>
+        esc
+      </button>
+      {!column && (
+        <button type="button" className={ctrlSticky ? 'key on' : 'key'} data-keep-focus onPointerDown={press(onCtrl)}>
+          ctrl
         </button>
       )}
-      {!compact && (
-        <>
-          <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('Escape', false))}>
-            esc
-          </button>
-          {!column && (
-            <button type="button" className={ctrlSticky ? 'key on' : 'key'} data-keep-focus onPointerDown={press(onCtrl)}>
-              ctrl
-            </button>
-          )}
-          {KEYS.slice(1).map((k) => (
-            <button
-              key={k.key}
-              type="button"
-              className={k.cls ? `key ${k.cls}` : 'key'}
-              data-keep-focus
-              onPointerDown={press(() => onKey(k.key, !!k.shift))}
-            >
-              {k.label}
-            </button>
-          ))}
-          {column && (
-            <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('?', true))}>
-              ?
-            </button>
-          )}
-        </>
+      {KEYS.slice(1).map((k) => (
+        <button
+          key={k.key}
+          type="button"
+          className={k.cls ? `key ${k.cls}` : 'key'}
+          data-keep-focus
+          onPointerDown={press(() => onKey(k.key, !!k.shift))}
+        >
+          {k.label}
+        </button>
+      ))}
+      {column && (
+        <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('?', true))}>
+          ?
+        </button>
       )}
       {!column && (
         // A click, not a pointer-down: reading the clipboard needs the

@@ -190,23 +190,20 @@ test('the manifest and service worker make it installable', async ({ request }) 
   expect(await sw.text()).toContain("addEventListener('push'");
 });
 
-test('the special keys only show with the on-screen keyboard up', async ({ page, isMobile }) => {
+test('the key bar only shows with the on-screen keyboard up', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'touch screens only');
   await page.goto('/');
-  const bar = page.getByTestId('keybar');
-  // Headless has no on-screen keyboard: the floating esc / 📋 / 📎 only.
-  await expect(bar).toHaveClass(/compact/);
-  await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
-  await expect(bar.getByRole('button', { name: 'ctrl' })).toHaveCount(0);
-  await expect(page.getByTestId('attach')).toBeVisible();
-  // A keyboard taking a third of the screen: the full bar on top of it.
+  // Headless has no on-screen keyboard: no bar at all.
+  await expect(page.getByTestId('keybar')).toHaveCount(0);
+  // A keyboard taking a third of the screen: the bar on top of it.
   await page.evaluate(() => {
     const vv = window.visualViewport!;
     Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
     vv.dispatchEvent(new Event('resize'));
   });
-  await expect(bar).not.toHaveClass(/compact/);
-  await expect(bar.getByRole('button', { name: 'ctrl' })).toBeVisible();
+  const bar = page.getByTestId('keybar');
+  await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
+  await expect(bar.getByTestId('attach')).toBeVisible();
 });
 
 test('the header names the task you are in and drives the column', async ({ page, isMobile }) => {
