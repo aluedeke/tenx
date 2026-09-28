@@ -95,10 +95,30 @@ pub fn install(listen: &str, port: u16, dev_origins: &[String]) -> Result<()> {
         let path = plist_path()?;
         write(&path, &service::launchd_plist(&unit))?;
         let domain = format!("gui/{}", uid());
+        let target = format!("{domain}/{LABEL}");
         // Replacing an installed one: unload it first (fails harmlessly when
-        // it isn't loaded).
-        let _ = run(Command::new("launchctl").args(["bootout", &format!("{domain}/{LABEL}")]));
-        check(Command::new("launchctl").args(["bootstrap", &domain]).arg(&path))?;
+        // it isn't loaded). `bootout` returns before the job is gone, and a
+        // `bootstrap` racing it fails with "Input/output error" — so wait for
+        // it to disappear, and retry the load a few times.
+        if run(Command::new("launchctl").args(["bootout", &target]))?.status.success() {
+            for _ in 0..50 {
+                if !run(Command::new("launchctl").args(["print", &target]))?.status.success() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+        let mut attempt = 0;
+        loop {
+            match check(Command::new("launchctl").args(["bootstrap", &domain]).arg(&path)) {
+                Ok(()) => break,
+                Err(_) if attempt < 5 => {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+                Err(e) => return Err(e),
+            }
+        }
         println!("installed {}", path.display());
     } else {
         let path = systemd_path()?;
@@ -126,7 +146,12 @@ pub fn restart() -> Result<()> {
             println!("tenx web service not installed — nothing to restart");
             return Ok(());
         }
-        check(Command::new("launchctl").args(["kickstart", "-k", &format!("gui/{}/{LABEL}", uid())]))?;
+        let domain = format!("gui/{}", uid());
+        // Installed but not loaded (a failed load, a `bootout` by hand): load
+        // it, which starts it.
+        if !run(Command::new("launchctl").args(["kickstart", "-k", &format!("{domain}/{LABEL}")]))?.status.success() {
+            check(Command::new("launchctl").args(["bootstrap", &domain]).arg(plist_path()?))?;
+        }
     } else {
         if !systemd_path()?.exists() {
             println!("tenx web service not installed — nothing to restart");
