@@ -117,6 +117,9 @@ a:hover {
 .xterm-host {
   position: absolute;
   inset: 4px 0 0 6px;
+  /* Touch drags are the page's to turn into tmux wheel scrolls; the browser
+     mustn't pan, zoom or cancel the pointer for them. */
+  touch-action: none;
 }
 
 .xterm .xterm-viewport {

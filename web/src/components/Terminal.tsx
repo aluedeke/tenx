@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { imagesIn } from '@/lib/paste';
+import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
 
 export interface TerminalHandle {
   write(bytes: Uint8Array): void;
@@ -155,7 +156,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.onResize(({ cols, rows }) => propsRef.current.onResize(cols, rows));
       xterm.onBell(() => propsRef.current.onBell());
       xterm.textarea?.addEventListener('focus', () => propsRef.current.onFocus());
-      tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d));
+      const gesture = { scrolled: false };
+      touchScroll(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
+      tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       catchImages(host.current, (files) => propsRef.current.onImages(files));
       term.current = xterm;
       fitRef.current = fit;
@@ -186,7 +189,104 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
 /** A tap — or an Alt/Option-click — in the text being edited walks the
  * cursor there with arrow keys (lib/tapcursor). The click still goes on to
  * tmux, which only selects the pane it is already in. */
-function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) => void) {
+/** What the touch handlers share: a drag that scrolled is not a tap. */
+interface Gesture {
+  scrolled: boolean;
+}
+
+/** The cell under a point on the terminal, or null outside it. */
+function cellAt(xterm: XTerm, el: HTMLElement, clientX: number, clientY: number): Cell | null {
+  const screen = el.querySelector('.xterm-screen');
+  if (!screen) return null;
+  const r = screen.getBoundingClientRect();
+  const x = Math.floor(((clientX - r.left) / r.width) * xterm.cols);
+  const y = Math.floor(((clientY - r.top) / r.height) * xterm.rows);
+  return x < 0 || y < 0 || x >= xterm.cols || y >= xterm.rows ? null : { x, y };
+}
+
+/** A vertical finger drag scrolls the pane under the finger through tmux's
+ * history (lib/touchscroll), and a flick keeps going for a moment. */
+function touchScroll(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture) {
+  let start: { x: number; y: number } | null = null;
+  let lastY = 0;
+  let anchor: Cell | null = null;
+  let scrolling = false;
+  let acc = new Accumulator(1);
+  let samples: { y: number; t: number }[] = [];
+  let fling = 0;
+
+  const notches = (n: number) => {
+    if (!anchor || n === 0) return;
+    send(wheelNotch(n > 0, anchor.x, anchor.y).repeat(Math.abs(n)));
+  };
+  const stopFling = () => {
+    if (fling) cancelAnimationFrame(fling);
+    fling = 0;
+  };
+
+  el.addEventListener(
+    'pointerdown',
+    (ev) => {
+      if (ev.pointerType !== 'touch') return;
+      stopFling();
+      start = { x: ev.clientX, y: ev.clientY };
+      lastY = ev.clientY;
+      scrolling = false;
+      gesture.scrolled = false;
+      const screen = el.querySelector('.xterm-screen');
+      const lineH = screen ? screen.getBoundingClientRect().height / xterm.rows : 16;
+      acc = new Accumulator(lineH * LINES_PER_NOTCH);
+      samples = [{ y: ev.clientY, t: performance.now() }];
+    },
+    true,
+  );
+  el.addEventListener(
+    'pointermove',
+    (ev) => {
+      if (!start || ev.pointerType !== 'touch') return;
+      if (!scrolling) {
+        const dx = ev.clientX - start.x;
+        const dy = ev.clientY - start.y;
+        if (Math.abs(dy) < SCROLL_SLOP_PX || Math.abs(dy) < Math.abs(dx)) return;
+        anchor = cellAt(xterm, el, start.x, start.y);
+        if (!anchor) return;
+        scrolling = true;
+        gesture.scrolled = true;
+        lastY = start.y;
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      notches(acc.add(ev.clientY - lastY));
+      lastY = ev.clientY;
+      const now = performance.now();
+      samples.push({ y: ev.clientY, t: now });
+      samples = samples.filter((s) => now - s.t < 100);
+    },
+    true,
+  );
+  const end = (ev: PointerEvent) => {
+    if (ev.pointerType !== 'touch' || !start) return;
+    start = null;
+    if (!scrolling) return;
+    // The flick: the finger's speed over its last 100 ms, then decaying.
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    let v = first && last && last.t > first.t ? (last.y - first.y) / (last.t - first.t) : 0;
+    let t = performance.now();
+    const step = (now: number) => {
+      const dt = now - t;
+      t = now;
+      notches(acc.add(v * dt));
+      v = decay(v, dt);
+      fling = Math.abs(v) > FLING_STOP ? requestAnimationFrame(step) : 0;
+    };
+    if (Math.abs(v) > FLING_STOP * 4) fling = requestAnimationFrame(step);
+  };
+  el.addEventListener('pointerup', end, true);
+  el.addEventListener('pointercancel', end, true);
+}
+
+function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture) {
   let down: { x: number; y: number; t: number } | null = null;
   let moving = false;
   // Capture: xterm handles these itself on the way down.
@@ -200,7 +300,7 @@ function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) =>
   el.addEventListener('pointerup', (ev) => {
     const start = down;
     down = null;
-    if (!start || moving) return;
+    if (!start || moving || gesture.scrolled) return;
     const isTap = ev.pointerType === 'touch' || ev.pointerType === 'pen' || ev.altKey;
     const still = Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 10 && performance.now() - start.t < 500;
     if (!isTap || !still) return;
