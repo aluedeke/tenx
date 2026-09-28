@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Column } from './Column';
+import { Header } from './Header';
 import { KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
@@ -500,10 +501,29 @@ export function App() {
       .catch((e) => notice(`test failed: ${e instanceof Error ? e.message : String(e)}`));
   }, [notice]);
 
-  const hide = useCallback(() => {
-    setVisible(false);
-    setFocus('terminal');
+  /** The header's ☰ / ⟨: show the column with the keyboard in it, or hide
+   * it and give the keyboard back to the terminal. */
+  const toggleColumn = useCallback(() => {
+    if (state.current.visible) {
+      setVisible(false);
+      setFocus('terminal');
+    } else {
+      setVisible(true);
+      setFocus('column');
+    }
   }, []);
+
+  /** The header's current task: the column, with that task selected. */
+  const showCurrent = useCallback(
+    (id: string) => {
+      setVisible(true);
+      setFocus('column');
+      const tasks = lastView.current?.tabs.findIndex((t) => t.label === 'Tasks') ?? 0;
+      if (!lastView.current?.tabs[tasks]?.active) send({ type: 'click', kind: 'tab', index: Math.max(0, tasks) });
+      send({ type: 'click', kind: 'task', id });
+    },
+    [send],
+  );
 
   // Called from the tap itself: a phone only raises its keyboard for a
   // focus() made inside a user gesture.
@@ -528,33 +548,35 @@ export function App() {
     [sendKey],
   );
 
-  const waiting = view?.items.filter((i) => i.kind === 'task' && (i.status === 'blocked' || i.status === 'signaled')).length ?? 0;
-
   const overlay = narrow;
   const columnStyle = overlay ? undefined : { width: `${Math.ceil(columnCols * cell + 20)}px` };
-  // Whenever the column is hidden, and on touch screens beside it too.
-  const showFab = !visible || (touch && !overlay);
 
   return (
     <div className={`app${overlay ? ' narrow' : ''}${touch ? ' touch' : ''}${kbOpen ? ' kb-open' : ''}`}>
+      <Header
+        view={view}
+        status={status}
+        failures={failures}
+        host={host}
+        columnShown={visible}
+        onToggle={toggleColumn}
+        onAction={onAction}
+        onShowCurrent={showCurrent}
+        push={pushState}
+        onPushToggle={togglePush}
+        onPushTest={testPush}
+      />
       <div className="main">
         {visible && (
           <div className={overlay ? 'column-wrap overlay' : 'column-wrap'} style={columnStyle}>
             <Column
               view={view}
               focused={columnHasKeys}
-              status={status}
-              failures={failures}
-              host={host}
               onClick={onClick}
               onFocus={() => setFocus('column')}
               onAction={onAction}
               onKey={onColumnKey}
               onWantKeyboard={wantKeyboard}
-              onHide={hide}
-              push={pushState}
-              onPushToggle={togglePush}
-              onPushTest={testPush}
               touch={touch}
             />
           </div>
@@ -586,13 +608,6 @@ export function App() {
             >
               {pasting}
             </div>
-          )}
-          {showFab && (
-            <button type="button" className="fab" data-testid="fab" onClick={cycle}>
-              {waiting > 0 && <span className="warn">●</span>}
-              {waiting > 0 && <span>{waiting}</span>}
-              <span className="muted">tasks</span>
-            </button>
           )}
         </div>
       </div>

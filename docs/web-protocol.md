@@ -72,7 +72,7 @@ Two frame kinds:
 // A form field, by its place in ⇥ order: it takes the focus.
 { "type": "click", "kind": "field", "index": 2 }
 
-// A row's or the tab bar's button: the list key it names, pressed with the list (not the
+// A row's or the header's button: the list key it names, pressed with the list (not the
 // search field) focused. Ignored outside list mode — forms and prompts get
 // their buttons as plain `key` messages (Enter, Escape, y, space, ←/→).
 // open | approve | deny | rename | edit_repos | close | delete | unlock |
@@ -110,15 +110,19 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
 The terminal attaches on the first `resize`, so send one as soon as xterm.js
 is fitted — until then there is no terminal output.
 
-Everything is also reachable by pointer: the column's `⟨` hides it and a
-handle (a tab on the left edge, or the tasks button on touch screens) shows
-it; a click selects a row, a double click opens it. A row's controls send a
+Everything is also reachable by pointer. A header runs across the page: `☰`
+/ `⟨` shows and hides the column (the same as `^w`, and how a phone opens its
+overlay), then the current task (`view.current` — glyph, title, workspace,
+its reason chip; tapping it opens the column on that task with a `task`
+click), then `● next`, `+`, the notifications bell, the connection and `?`.
+In the column, a click selects a row, a double click opens it. A row's controls send a
 `task` click (select it) then an `action`: allow / deny on a blocked row's
 chip (`answerable`), and the row's menu — `⋯`, a right-click, or on touch a
 long-press (a bottom sheet) — for open, unlock (`locked`), rename, edit
 repos, close and delete; on touch a swipe uncovers allow / deny (left) or
-delete (right). The tab bar's `+`, `● next` and `?` send `new` (on Repos a
-menu of `add_repo` / `new_workspace`), `next` and `help`. Forms carry their
+delete (right). The header's `+`, `● next` (shown when a task other than the
+current one needs you) and `?` send `new` (on Repos a menu of `add_repo` /
+`new_workspace`), `next` and `help`. Forms carry their
 own submit / cancel buttons and a delete asks on its row; those send plain
 `key` messages (Enter, Escape, y, n). Form fields send `field` clicks. Tapping
 something that takes typing focuses an off-screen input so a phone raises its

@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 test('the column renders the view and the terminal mounts', async ({ page, isMobile }) => {
   await page.goto('/');
   await expect(page.locator('.xterm')).toBeVisible();
-  // A phone starts on the terminal; the button opens the column.
-  if (isMobile) await page.getByTestId('fab').tap();
+  // A phone starts on the terminal; the header's toggle opens the column.
+  if (isMobile) await page.getByTestId('toggle').tap();
   await expect(page.getByTestId('conn')).toContainText('mock');
   await expect(page.getByTestId('task')).toHaveCount(8);
   await expect(page.getByTestId('task').first()).toContainText('Cloud tasks');
@@ -54,13 +54,13 @@ test('the mouse alone shows and hides the column and drives it', async ({ page, 
   const sent = sentMessages(page);
   await page.goto('/');
   const tap = async (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
-  if (isMobile) await tap(page.getByTestId('fab'));
+  if (isMobile) await tap(page.getByTestId('toggle'));
   await expect(page.getByTestId('column')).toBeVisible();
 
-  // The column's own button hides it; the handle brings it back.
-  await tap(page.getByTestId('hide'));
+  // The header's toggle hides it and brings it back.
+  await tap(page.getByTestId('toggle'));
   await expect(page.getByTestId('column')).toHaveCount(0);
-  await tap(page.getByTestId('fab'));
+  await tap(page.getByTestId('toggle'));
   await expect(page.getByTestId('column')).toBeVisible();
 
   // The blocked row answers on its chip — selected or not.
@@ -71,7 +71,7 @@ test('the mouse alone shows and hides the column and drives it', async ({ page, 
   const i = sent().findIndex((m) => m.type === 'action' && m.name === 'approve');
   expect(sent()[i - 1]).toMatchObject({ type: 'click', kind: 'task', id: 'acme/fix-login-timeout' });
 
-  // ? in the tab bar opens the keys; a tap closes them.
+  // ? in the header opens the keys; a tap closes them.
   await tap(page.getByTestId('keys'));
   await expect(page.getByTestId('help')).toBeVisible();
   await tap(page.getByTestId('help'));
@@ -114,7 +114,7 @@ test('the selected row has a menu, and a delete asks on the row', async ({ page,
 test('forms carry their own buttons; + opens the new-task form', async ({ page, isMobile }) => {
   const sent = sentMessages(page);
   await page.goto('/');
-  if (isMobile) await page.getByTestId('fab').tap();
+  if (isMobile) await page.getByTestId('toggle').tap();
   await (isMobile ? page.getByTestId('add').tap() : page.getByTestId('add').click());
   const buttons = page.locator('.form').getByTestId('form-buttons');
   await expect(buttons.getByRole('button', { name: /create/ })).toBeVisible();
@@ -126,7 +126,7 @@ test('forms carry their own buttons; + opens the new-task form', async ({ page, 
 test('on touch, a swipe uncovers allow / deny and a long-press opens the sheet', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'touch');
   await page.goto('/');
-  await page.getByTestId('fab').tap();
+  await page.getByTestId('toggle').tap();
   const row = page.locator('[data-id="acme/fix-login-timeout"]');
   const box = (await row.boundingBox())!;
   const at = (dx: number) => ({ pointerType: 'touch', pointerId: 7, isPrimary: true, bubbles: true, clientX: box.x + box.width / 2 + dx, clientY: box.y + box.height / 2 });
@@ -153,7 +153,7 @@ test('on touch, a swipe uncovers allow / deny and a long-press opens the sheet',
 
 test('the bell turns notifications on; an iPhone outside the Home Screen is told to install first', async ({ page, browser, isMobile }) => {
   await page.goto('/');
-  if (isMobile) await page.getByTestId('fab').tap();
+  if (isMobile) await page.getByTestId('toggle').tap();
   const bell = page.getByTestId('push');
   await expect(bell).toBeVisible();
   // Chromium on http://127.0.0.1 (a secure context) has Web Push: off until
@@ -173,7 +173,7 @@ test('the bell turns notifications on; an iPhone outside the Home Screen is told
   });
   const phone = await ios.newPage();
   await phone.goto('/');
-  await phone.getByTestId('fab').tap();
+  await phone.getByTestId('toggle').tap();
   await expect(phone.getByTestId('push-hint')).toContainText('Add to Home Screen');
   await expect(phone.getByTestId('push')).toHaveAttribute('data-state', 'needs-install');
   await ios.close();
@@ -206,4 +206,43 @@ test('a hardware keyboard on a touch screen folds the key bar away', async ({ pa
   // Remembered for the next visit.
   await page.reload();
   await expect(page.getByTestId('keybar')).toHaveClass(/compact/);
+});
+
+test('the header names the task you are in and drives the column', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
+  await page.goto('/');
+  const tap = async (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
+  const header = page.getByTestId('header');
+  const current = header.getByTestId('current');
+  await expect(current).toContainText('Fix login timeout');
+  await expect(current).toContainText('permission: Bash');
+  // Only the task you're in needs you: nothing to jump to.
+  await expect(header.getByTestId('next')).toHaveCount(0);
+
+  // The toggle: the column appears (on a phone, over the terminal, under the
+  // header) and goes again.
+  if (isMobile) {
+    await tap(header.getByTestId('toggle'));
+    await expect(page.getByTestId('column')).toBeVisible();
+    const h = (await header.boundingBox())!;
+    const c = (await page.getByTestId('column').boundingBox())!;
+    expect(c.y).toBeGreaterThanOrEqual(h.y + h.height - 1);
+    await tap(header.getByTestId('toggle'));
+    await expect(page.getByTestId('column')).toHaveCount(0);
+  } else {
+    await tap(header.getByTestId('toggle'));
+    await expect(page.getByTestId('column')).toHaveCount(0);
+  }
+
+  // The current task: back in the column, selected.
+  await tap(current);
+  await expect(page.getByTestId('column')).toBeVisible();
+  await expect.poll(() => sent().some((m) => m.type === 'click' && m.kind === 'task' && m.id === 'acme/fix-login-timeout')).toBe(true);
+
+  // + and ? are the new-task and keys actions.
+  await tap(header.getByTestId('keys'));
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'help')).toBe(true);
+  await tap(page.getByTestId('help'));
+  await tap(header.getByTestId('add'));
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'new')).toBe(true);
 });

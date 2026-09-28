@@ -8,23 +8,18 @@
 // acts on is: a click selects a row and a double click opens it; a blocked
 // row's chip answers it (allow / deny); ⋯, a right-click or a long-press opens
 // the row's menu (a sheet on touch); a swipe reveals allow / deny or delete;
-// the tab bar holds what doesn't depend on a row (+, next, ?); forms carry
+// the header (Header.tsx) holds what doesn't depend on a row; forms carry
 // their own submit / cancel, and a delete confirms on the row it deletes.
 // All of it sends the same keys and clicks the keyboard would.
 
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { PopupLayer, Slide, jobEntries, subEntries, taskEntries, useRowGestures, type Popup, type Reveal } from './RowActions';
 import type { Action, Click, ColumnView, Footer, Item, JobItem, ModeView, SubItem, TaskItem } from '@/protocol';
-import type { Status } from '@/lib/connection';
-import type { PushState } from '@/lib/push';
 
 interface Props {
   view: ColumnView | null;
   /** The column has the keyboard: show the selection and the caret. */
   focused: boolean;
-  status: Status;
-  failures: number;
-  host: string;
   onClick(click: Click): void;
   onFocus(): void;
   /** An action-bar button (view.rs `Action`). */
@@ -33,10 +28,6 @@ interface Props {
   onKey(key: string, shift?: boolean): void;
   /** Something that takes typing was tapped: raise the on-screen keyboard. */
   onWantKeyboard(): void;
-  onHide(): void;
-  push: PushState;
-  onPushToggle(): void;
-  onPushTest(): void;
   /** A touch screen: long-press opens a sheet, rows swipe. */
   touch: boolean;
 }
@@ -49,7 +40,7 @@ interface Ctl {
 }
 
 export function Column(props: Props) {
-  const { view, focused, status, failures, host, onClick, onFocus, onAction, onKey, onWantKeyboard, onHide } = props;
+  const { view, focused, onClick, onFocus, onAction, onKey, onWantKeyboard } = props;
   const listRef = useRef<HTMLDivElement>(null);
 
   // Keep the selected row in view as the cursor moves.
@@ -97,12 +88,6 @@ export function Column(props: Props) {
 
   return (
     <aside className="column" data-testid="column" onMouseDown={onFocus}>
-      <Brand status={status} failures={failures} host={host} onHide={onHide} push={props.push} onPushToggle={props.onPushToggle} onPushTest={props.onPushTest} />
-      {props.push === 'needs-install' && (
-        <div className="hint" data-testid="push-hint">
-          Add to Home Screen, then enable notifications
-        </div>
-      )}
       {view && (
         <>
           <div className="tabs">
@@ -117,8 +102,6 @@ export function Column(props: Props) {
                 {t.running > 0 && <span className="jobs"> [{t.running}]</span>}
               </button>
             ))}
-            <span className="grow" />
-            {mode.kind === 'list' && <Globals view={view} onAction={onAction} openPopup={setPopup} />}
           </div>
           <SearchBox view={view} focused={focused} ctl={ctl} />
           {form ?? (
@@ -135,118 +118,6 @@ export function Column(props: Props) {
       {!view && <div className="list" />}
       <PopupLayer popup={popup} onClose={closePopup} />
     </aside>
-  );
-}
-
-interface BrandProps {
-  status: Status;
-  failures: number;
-  host: string;
-  onHide(): void;
-  push: PushState;
-  onPushToggle(): void;
-  onPushTest(): void;
-}
-
-const PUSH_TITLE: Record<PushState, string> = {
-  unsupported: 'notifications need HTTPS (tailscale serve) and a browser with Web Push',
-  'needs-install': 'on iPhone and iPad: Share → Add to Home Screen, then enable here',
-  off: 'notify me when a task needs me',
-  on: 'notifications on — click to turn off',
-  denied: 'notifications are blocked in this browser’s settings',
-};
-
-function Brand({ status, failures, host, onHide, push, onPushToggle, onPushTest }: BrandProps) {
-  const label =
-    status === 'open'
-      ? host || (typeof location !== 'undefined' ? location.host : '')
-      : status === 'connecting'
-        ? 'connecting…'
-        : failures > 5
-          ? 'offline — is tenx web running?'
-          : 'reconnecting…';
-  return (
-    <div className="brand">
-      <span className="wordmark">
-        ten<span className="accent">x</span>
-      </span>
-      <span className="brand-right">
-        <span className={`conn ${status}`} data-testid="conn">
-          <span className="dot" />
-          {label}
-        </span>
-        {push === 'on' && (
-          <button type="button" className="icon-btn small" data-testid="push-test" title="send a test notification" onClick={onPushTest}>
-            test
-          </button>
-        )}
-        <button
-          type="button"
-          className={`icon-btn bell ${push}`}
-          data-testid="push"
-          data-state={push}
-          title={PUSH_TITLE[push]}
-          aria-label={PUSH_TITLE[push]}
-          disabled={push === 'unsupported' || push === 'denied' || push === 'needs-install'}
-          onClick={(e) => {
-            e.stopPropagation();
-            onPushToggle();
-          }}
-        >
-          {push === 'on' ? '🔔' : '🔕'}
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          data-testid="hide"
-          title="hide the column (^w)"
-          aria-label="hide the column"
-          onClick={(e) => {
-            e.stopPropagation();
-            onHide();
-          }}
-        >
-          ⟨
-        </button>
-      </span>
-    </div>
-  );
-}
-
-/** The tab bar's right end: what doesn't depend on a row. `+` is a new task
- * (on Repos: a menu of add repo / new workspace), `● next` shows only when
- * another task needs you, `?` the keys. */
-function Globals({ view, onAction, openPopup }: { view: ColumnView; onAction(a: Action): void; openPopup(p: Popup): void }) {
-  const tab = view.tabs.find((t) => t.active)?.label ?? 'Tasks';
-  const another = view.items.some(
-    (i) => i.kind === 'task' && !i.selected && i.id !== view.current && (i.status === 'blocked' || i.status === 'signaled'),
-  );
-  const plus = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
-    if (tab !== 'Repos') return onAction('new');
-    const r = e.currentTarget.getBoundingClientRect();
-    openPopup({
-      at: { left: r.right - 218, top: r.bottom + 4 },
-      entries: [
-        { label: 'add repo', key: 'a', run: () => onAction('add_repo') },
-        { label: 'new workspace', key: 'W', run: () => onAction('new_workspace') },
-      ],
-    });
-  };
-  return (
-    <span className="ibs">
-      {tab === 'Tasks' && another && (
-        <button type="button" className="ib hot" title="next task that needs you (n)" onClick={() => onAction('next')}>
-          ● next
-        </button>
-      )}
-      <button type="button" className="ib box" data-testid="add" title={tab === 'Repos' ? 'add a repo or a workspace' : 'new task (^n)'} onClick={plus}>
-        +
-      </button>
-      <button type="button" className="ib box" data-testid="keys" title="keys (?)" onClick={() => onAction('help')}>
-        ?
-      </button>
-    </span>
   );
 }
 
