@@ -71,8 +71,11 @@ export function App() {
   const term = useRef<TerminalHandle>(null);
   const mac = useRef(false);
   const [fontPref, setFontPref] = useState<{ size?: number; weight?: number }>({});
-  const fontSize = fontPref.size ?? (touch && narrow ? 12 : 13);
-  const fontWeight = fontPref.weight ?? 400;
+  // 12 px everywhere; Light on a desktop screen, where it comes closest to a
+  // native terminal's thin strokes, regular on touch screens, where the DOM
+  // renderer draws it and Light gets too faint to read.
+  const fontSize = fontPref.size ?? 12;
+  const fontWeight = fontPref.weight ?? (touch ? 400 : 300);
 
   // The terminal's font, overridable per device from the address bar —
   // `?font=12&weight=300` — and remembered (`?font=&weight=` forgets it).
