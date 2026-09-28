@@ -14,8 +14,8 @@ interface Props {
   onImages(files: File[]): void;
   /** Paste what's on the clipboard — an image or text. */
   onPaste(): void;
-  /** A hardware keyboard is attached: no special keys, only 📋 and 📎,
-   * floating over the terminal instead of a bar under it. */
+  /** No on-screen keyboard up: only esc, 📋 and 📎, floating over the
+   * terminal instead of a bar under it. */
   compact?: boolean;
 }
 
@@ -39,6 +39,11 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, c
   if (compact && column) return null;
   return (
     <div className={compact ? 'keybar compact' : 'keybar'} data-testid="keybar">
+      {compact && (
+        <button type="button" className="key" onPointerDown={press(() => onKey('Escape', false))}>
+          esc
+        </button>
+      )}
       {!compact && (
         <>
           <button type="button" className="key" onPointerDown={press(() => onKey('Escape', false))}>

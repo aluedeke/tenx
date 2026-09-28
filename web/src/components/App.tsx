@@ -24,7 +24,6 @@ type Focus = 'column' | 'terminal';
  * until the server says otherwise in `layout`. */
 const NARROW_COLS = 100;
 
-const HW_KEY = 'tenx-hardware-keyboard';
 const FONT_KEY = 'tenx-terminal-font';
 
 function measureCell(fontSize: number): number {
@@ -56,10 +55,6 @@ export function App() {
   const [pasting, setPasting] = useState<string | null>(null);
   /** The notice is a button that brings the keyboard back (after 📎). */
   const [pastingTap, setPastingTap] = useState(false);
-  /** Keys arrive while no on-screen keyboard is up: a hardware keyboard
-   * (an iPad's). Remembered per device; the on-screen keyboard appearing
-   * undoes it. */
-  const [hwKeyboard, setHwKeyboard] = useState(false);
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
@@ -258,28 +253,6 @@ export function App() {
   const needsYou = view?.items.filter((i) => i.kind === 'task' && (i.status === 'blocked' || i.status === 'signaled')).length ?? 0;
   useEffect(() => push.badge(needsYou), [needsYou]);
 
-  // ── A hardware keyboard ─────────────────────────────────────────────────
-  // No browser says whether one is attached; what gives it away is a key
-  // press while the viewport shows no on-screen keyboard (iOS doesn't raise
-  // it when a keyboard is connected). The special-key bar is then only in
-  // the way. The on-screen keyboard coming up turns it back on.
-  const rememberHw = useCallback((on: boolean) => {
-    setHwKeyboard(on);
-    try {
-      if (on) localStorage.setItem(HW_KEY, '1');
-      else localStorage.removeItem(HW_KEY);
-    } catch {
-      // Storage blocked: it's detected again on the next key.
-    }
-  }, []);
-  useEffect(() => {
-    try {
-      setHwKeyboard(localStorage.getItem(HW_KEY) === '1');
-    } catch {
-      // As above.
-    }
-  }, []);
-
   // ── The visible area ────────────────────────────────────────────────────
   // A phone's keyboard covers the page rather than shrinking it (iOS ignores
   // `interactive-widget`), and Safari scrolls the page to keep the focused
@@ -300,7 +273,6 @@ export function App() {
       else full.height = Math.max(full.height, vv.height, window.innerHeight);
       const open = full.height - vv.height > 120;
       setKbOpen(open);
-      if (open) rememberHw(false);
     };
     apply();
     vv.addEventListener('resize', apply);
@@ -356,7 +328,6 @@ export function App() {
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       const { touch, kbOpen } = state.current;
-      if (touch && !kbOpen && !ev.isComposing && ev.key !== 'Unidentified' && ev.keyCode !== 229) rememberHw(true);
       if (isModifierOnly(ev)) return;
       // A row's menu or sheet is open: it takes Escape itself, and nothing
       // else should reach the column or the terminal behind it.
@@ -389,7 +360,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [cycle, send, sendKey, rememberHw]);
+  }, [cycle, send, sendKey]);
 
   const onTerminalData = useCallback((data: string) => {
     if (state.current.ctrlSticky && data.length === 1) {
@@ -624,7 +595,10 @@ export function App() {
       />
       {touch && (
         <KeyBar
-          compact={hwKeyboard}
+          // The special keys only while typing on the on-screen keyboard;
+          // otherwise (and always with a hardware keyboard, which never
+          // raises it) just esc, 📋 and 📎, floating over the terminal.
+          compact={!kbOpen}
           column={columnHasKeys}
           ctrlSticky={ctrlSticky}
           onCtrl={() => setCtrlSticky((s) => !s)}

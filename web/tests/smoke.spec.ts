@@ -190,22 +190,23 @@ test('the manifest and service worker make it installable', async ({ request }) 
   expect(await sw.text()).toContain("addEventListener('push'");
 });
 
-test('a hardware keyboard on a touch screen folds the key bar away', async ({ page, isMobile }) => {
+test('the special keys only show with the on-screen keyboard up', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'touch screens only');
   await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('tenx-hardware-keyboard'));
-  await page.reload();
   const bar = page.getByTestId('keybar');
-  await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
-  // A key with no on-screen keyboard up can only come from a real keyboard.
-  await page.locator('.xterm-helper-textarea').focus();
-  await page.keyboard.press('a');
+  // Headless has no on-screen keyboard: the floating esc / 📋 / 📎 only.
   await expect(bar).toHaveClass(/compact/);
-  await expect(bar.getByRole('button', { name: 'esc' })).toHaveCount(0);
+  await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'ctrl' })).toHaveCount(0);
   await expect(page.getByTestId('attach')).toBeVisible();
-  // Remembered for the next visit.
-  await page.reload();
-  await expect(page.getByTestId('keybar')).toHaveClass(/compact/);
+  // A keyboard taking a third of the screen: the full bar on top of it.
+  await page.evaluate(() => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
+    vv.dispatchEvent(new Event('resize'));
+  });
+  await expect(bar).not.toHaveClass(/compact/);
+  await expect(bar.getByRole('button', { name: 'ctrl' })).toBeVisible();
 });
 
 test('the header names the task you are in and drives the column', async ({ page, isMobile }) => {
