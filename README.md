@@ -227,6 +227,8 @@ Each browser tab switches tasks on its own, without moving your terminal client,
 
 The address carries a token (`~/.config/tenx/web-token`, readable only by you) that the page swaps for a cookie; `tenx web --rotate-token` replaces it and logs every browser out. The page is a shell on this machine, so by default it listens on `127.0.0.1` only. To reach it from a phone, put it behind [`tailscale serve`](https://tailscale.com/kb/1312/serve) rather than `--listen 0.0.0.0`, which serves it over plain HTTP. Building from source, `make web` builds the page (Node and pnpm) before `cargo build`; without it the binary serves a placeholder.
 
+To keep it running without a terminal — started at login, restarted if it exits — install it as a service: `tenx web service install [--listen …] [--port …]` (a LaunchAgent on macOS, a systemd user unit on Linux; `tenx web service status`, `tenx web service uninstall`). It logs to `~/.config/tenx/web.log`, and it carries your shell's `PATH` into the unit, since tmux panes it starts inherit its environment. Reinstall after moving or upgrading the binary it points at.
+
 ### On a phone or tablet, as an app
 
 Behind `tailscale serve` (HTTPS), the page installs as an app: on an iPhone or iPad, Safari's Share → **Add to Home Screen**; on Android or a desktop Chrome/Edge, the install button in the address bar. The installed app signs itself in on first launch and opens full screen.

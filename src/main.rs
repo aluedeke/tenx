@@ -63,7 +63,12 @@ fn run() -> Result<()> {
 
         Some(Commands::Watch) => cli::watch::run()?,
 
-        Some(Commands::Web { listen, port, open, rotate_token, dev_origin }) => {
+        Some(Commands::Web { command: Some(cli::WebCommand::Service { action }), .. }) => match action {
+            cli::WebServiceAction::Install { listen, port, dev_origin } => web::service::install(&listen, port, &dev_origin)?,
+            cli::WebServiceAction::Uninstall => web::service::uninstall()?,
+            cli::WebServiceAction::Status => web::service::status()?,
+        },
+        Some(Commands::Web { command: None, listen, port, open, rotate_token, dev_origin }) => {
             web::run(web::Options { listen, port, open, rotate_token, dev_origins: dev_origin })?
         }
 

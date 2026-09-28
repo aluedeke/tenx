@@ -25,6 +25,7 @@ pub mod sweep;
 pub mod taskmd;
 pub mod time;
 pub mod transcript;
+pub mod service;
 pub mod trust;
 pub mod web;
 pub mod webpush;

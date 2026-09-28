@@ -72,6 +72,8 @@ pub enum Commands {
     /// keys as the terminal client. Prints the address to open, with the
     /// token that logs the browser in. Runs in the foreground.
     Web {
+        #[command(subcommand)]
+        command: Option<WebCommand>,
         /// Address to listen on. Anything but loopback serves a shell on this
         /// machine over plain HTTP — prefer `tailscale serve` in front
         #[arg(long, default_value = "127.0.0.1")]
@@ -586,4 +588,33 @@ pub enum TaskCommands {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum WebCommand {
+    /// Run `tenx web` at login and keep it running (a LaunchAgent on macOS,
+    /// a systemd user unit on Linux)
+    Service {
+        #[command(subcommand)]
+        action: WebServiceAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum WebServiceAction {
+    /// Install (or replace) the service and start it now
+    Install {
+        /// Address to listen on (see `tenx web --listen`)
+        #[arg(long, default_value = "127.0.0.1")]
+        listen: String,
+        #[arg(long, default_value_t = 7070)]
+        port: u16,
+        /// Also accept the page from this origin — repeatable
+        #[arg(long = "dev-origin", value_name = "URL")]
+        dev_origin: Vec<String>,
+    },
+    /// Stop the service and remove it
+    Uninstall,
+    /// Whether it is installed and running
+    Status,
 }

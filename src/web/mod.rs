@@ -14,6 +14,7 @@ mod assets;
 mod paste;
 mod push;
 mod server;
+pub mod service;
 mod tab;
 mod token;
 
