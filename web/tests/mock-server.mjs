@@ -86,6 +86,10 @@ function view(st) {
   } else if (st.mode === 'command') {
     mode = { kind: 'command', buffer: st.buffer };
     footer = { kind: 'command', tag: null, text: st.buffer, hint: st.buffer ? null : 'new · open · delete · rename · close · help · quit', warn: null };
+  } else if (st.mode === 'confirm') {
+    const t = TASKS.find((x) => x.id === at.task);
+    mode = { kind: 'confirm', title: t.title };
+    footer = { kind: 'confirm', tag: null, text: `delete '${t.title}' + worktrees?   y = delete   n/esc = cancel`, hint: null, warn: null };
   } else if (st.mode === 'create') {
     mode = { kind: 'create', workspace: 'acme', workspace_index: 1, workspaces: 3, name: st.buffer, repos: [{ name: 'api', checked: true }, { name: 'web', checked: true }, { name: 'infra', checked: false }], agent: 'claude', agent_inherits: true, focus: 'name', focus_repo: null };
     footer = { kind: 'hint', tag: null, text: '⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent', hint: null, warn: null };
@@ -172,6 +176,10 @@ wss.on('connection', (ws) => {
         // The list keys the real server presses for a button.
         const keys = { help: '?', open: 'Enter', next: 'n' };
         if (m.name === 'new') key({ key: 'n', ctrl: true });
+        else if (m.name === 'delete') {
+          st.focus = 'list';
+          st.mode = 'confirm';
+        }
         else if (keys[m.name]) {
           st.focus = 'list';
           key({ key: keys[m.name] });
@@ -182,6 +190,10 @@ wss.on('connection', (ws) => {
     }
   });
   function key(m) {
+    if (st.mode === 'confirm') {
+      if (['y', 'n', 'Escape'].includes(m.key)) st.mode = 'list';
+      return;
+    }
     if (st.mode === 'help') {
       st.mode = 'list';
       return;

@@ -268,6 +268,9 @@ export function App() {
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (isModifierOnly(ev)) return;
+      // A row's menu or sheet is open: it takes Escape itself, and nothing
+      // else should reach the column or the terminal behind it.
+      if (document.querySelector('[data-popup]')) return;
       if (isFocusCycle(ev, mac.current)) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -450,6 +453,7 @@ export function App() {
               push={pushState}
               onPushToggle={togglePush}
               onPushTest={testPush}
+              touch={touch}
             />
           </div>
         )}

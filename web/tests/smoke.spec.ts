@@ -42,7 +42,16 @@ test('a click selects a row without opening it', async ({ page, isMobile }) => {
   await expect(page.getByTestId('column')).toBeVisible();
 });
 
+/** Every text frame the page sends, for asserting on the messages a control
+ * produced. Call before `goto`. */
+function sentMessages(page: import('@playwright/test').Page): () => Array<Record<string, unknown>> {
+  const sent: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload === 'string' && sent.push(f.payload)));
+  return () => sent.map((t) => JSON.parse(t));
+}
+
 test('the mouse alone shows and hides the column and drives it', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
   await page.goto('/');
   const tap = async (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
   if (isMobile) await tap(page.getByTestId('fab'));
@@ -54,17 +63,92 @@ test('the mouse alone shows and hides the column and drives it', async ({ page, 
   await tap(page.getByTestId('fab'));
   await expect(page.getByTestId('column')).toBeVisible();
 
-  // The action bar follows the selection: a blocked task can be answered.
-  await tap(page.getByText('Fix login timeout'));
-  const actions = page.getByTestId('actions');
-  await expect(actions.getByRole('button', { name: 'approve' })).toBeVisible();
-  await expect(actions.getByRole('button', { name: 'deny' })).toBeVisible();
+  // The blocked row answers on its chip — selected or not.
+  const blocked = page.locator('[data-id="acme/fix-login-timeout"]');
+  await expect(blocked.getByTestId('answer')).toContainText('permission: Bash');
+  await tap(blocked.getByRole('button', { name: '✓ allow' }));
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'approve')).toBe(true);
+  const i = sent().findIndex((m) => m.type === 'action' && m.name === 'approve');
+  expect(sent()[i - 1]).toMatchObject({ type: 'click', kind: 'task', id: 'acme/fix-login-timeout' });
 
-  // ? opens the keys; a tap closes them.
-  await tap(actions.getByRole('button', { name: '?' }));
+  // ? in the tab bar opens the keys; a tap closes them.
+  await tap(page.getByTestId('keys'));
   await expect(page.getByTestId('help')).toBeVisible();
   await tap(page.getByTestId('help'));
   await expect(page.getByTestId('help')).toHaveCount(0);
+});
+
+test('the selected row has a menu, and a delete asks on the row', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'touch gets the sheet: next test');
+  const sent = sentMessages(page);
+  await page.goto('/');
+  await page.getByText('Better loading indicators').click();
+  const row = page.locator('.row.sel');
+  await row.getByTestId('more').click();
+  const menu = page.getByTestId('menu');
+  for (const item of ['go to task', 'rename', 'edit repos', 'close window', 'delete…']) {
+    await expect(menu.getByRole('menuitem', { name: new RegExp(item) })).toBeVisible();
+  }
+  // Escape closes it without reaching the column.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByTestId('column')).toBeVisible();
+
+  // A right-click on another row selects it and opens its menu; a closed
+  // task has no "close window".
+  await page.getByText('Zero permission').click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: /close window/ })).toHaveCount(0);
+  await menu.getByRole('menuitem', { name: /delete/ }).click();
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'delete')).toBe(true);
+
+  // The question sits on the row; the footer only echoes the keys.
+  const confirm = page.getByTestId('confirm');
+  await expect(confirm).toBeVisible();
+  await expect(page.locator('.row.conf')).toContainText('Zero permission');
+  await expect(page.getByTestId('footer')).toHaveText('y delete · n keep');
+  await confirm.getByRole('button', { name: /keep/ }).click();
+  await expect(confirm).toHaveCount(0);
+});
+
+test('forms carry their own buttons; + opens the new-task form', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
+  await page.goto('/');
+  if (isMobile) await page.getByTestId('fab').tap();
+  await (isMobile ? page.getByTestId('add').tap() : page.getByTestId('add').click());
+  const buttons = page.locator('.form').getByTestId('form-buttons');
+  await expect(buttons.getByRole('button', { name: /create/ })).toBeVisible();
+  await buttons.getByRole('button', { name: /cancel/ }).click();
+  await expect(page.locator('.form')).toHaveCount(0);
+  expect(sent().some((m) => m.type === 'key' && m.key === 'Escape')).toBe(true);
+});
+
+test('on touch, a swipe uncovers allow / deny and a long-press opens the sheet', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch');
+  await page.goto('/');
+  await page.getByTestId('fab').tap();
+  const row = page.locator('[data-id="acme/fix-login-timeout"]');
+  const box = (await row.boundingBox())!;
+  const at = (dx: number) => ({ pointerType: 'touch', pointerId: 7, isPrimary: true, bubbles: true, clientX: box.x + box.width / 2 + dx, clientY: box.y + box.height / 2 });
+
+  // Swipe left: allow / deny slide out from under the row.
+  await row.dispatchEvent('pointerdown', at(0));
+  for (const dx of [-20, -60, -110, -150]) await row.dispatchEvent('pointermove', at(dx));
+  await row.dispatchEvent('pointerup', at(-150));
+  await expect(page.locator('.ua.ok')).toBeVisible();
+  await expect(page.locator('.ua.no')).toBeVisible();
+  await page.locator('.ua.no').tap();
+  await expect(page.locator('.ua.ok')).toHaveCount(0);
+
+  // Hold: the sheet, with the answers first.
+  const other = page.locator('[data-id="web/better-loading"]');
+  const ob = (await other.boundingBox())!;
+  await other.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 8, isPrimary: true, bubbles: true, clientX: ob.x + 40, clientY: ob.y + 10 });
+  const sheet = page.getByTestId('sheet');
+  await expect(sheet).toBeVisible({ timeout: 2000 });
+  await other.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 8, isPrimary: true, bubbles: true, clientX: ob.x + 40, clientY: ob.y + 10 });
+  await expect(sheet.getByRole('menuitem', { name: 'go to task' })).toBeVisible();
+  await expect(sheet.getByRole('menuitem', { name: 'delete…' })).toBeVisible();
 });
 
 test('the bell turns notifications on; an iPhone outside the Home Screen is told to install first', async ({ page, browser, isMobile }) => {

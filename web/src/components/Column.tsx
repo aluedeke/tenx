@@ -4,12 +4,16 @@
 // decides what to show — which rows, which chips, which hint — only how it
 // looks. Clicks go back by id; keys go through the page (App).
 //
-// Everything a key does can also be done with a pointer: a click selects a
-// row, a double click (or double tap) opens it, the action bar under the list
-// presses the list's keys for the selection, and forms and prompts get
-// buttons. Those send the same keys and clicks the keyboard would.
+// Everything a key does can also be done with a pointer, where the thing it
+// acts on is: a click selects a row and a double click opens it; a blocked
+// row's chip answers it (allow / deny); ⋯, a right-click or a long-press opens
+// the row's menu (a sheet on touch); a swipe reveals allow / deny or delete;
+// the tab bar holds what doesn't depend on a row (+, next, ?); forms carry
+// their own submit / cancel, and a delete confirms on the row it deletes.
+// All of it sends the same keys and clicks the keyboard would.
 
-import { Fragment, useEffect, useRef, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { PopupLayer, Slide, jobEntries, subEntries, taskEntries, useRowGestures, type Popup, type Reveal } from './RowActions';
 import type { Action, Click, ColumnView, Footer, Item, JobItem, ModeView, SubItem, TaskItem } from '@/protocol';
 import type { Status } from '@/lib/connection';
 import type { PushState } from '@/lib/push';
@@ -33,6 +37,8 @@ interface Props {
   push: PushState;
   onPushToggle(): void;
   onPushTest(): void;
+  /** A touch screen: long-press opens a sheet, rows swipe. */
+  touch: boolean;
 }
 
 /** Keys and clicks, for the pieces below. */
@@ -61,6 +67,33 @@ export function Column(props: Props) {
   const mode = view?.mode ?? { kind: 'list' };
   const ctl: Ctl = { onClick, onKey, onWantKeyboard };
   const form = formFor(mode, ctl);
+  const [popup, setPopup] = useState<Popup | null>(null);
+  const [reveal, setReveal] = useState<{ id: string; side: Reveal } | null>(null);
+  const closePopup = useCallback(() => setPopup(null), []);
+
+  // Leaving list mode (a form, a confirm) or a new list: nothing stays open.
+  useEffect(() => {
+    if (mode.kind !== 'list') {
+      setPopup(null);
+      setReveal(null);
+    }
+  }, [mode.kind]);
+
+  const rows: RowCtl = {
+    focused,
+    touch: props.touch,
+    confirming: mode.kind === 'confirm',
+    onClick,
+    onKey,
+    onOpen: () => onAction('open'),
+    act: (click, action) => {
+      onClick(click);
+      onAction(action);
+    },
+    openPopup: setPopup,
+    reveal,
+    setReveal: (id, side) => setReveal(side ? { id, side } : null),
+  };
 
   return (
     <aside className="column" data-testid="column" onMouseDown={onFocus}>
@@ -84,28 +117,23 @@ export function Column(props: Props) {
                 {t.running > 0 && <span className="jobs"> [{t.running}]</span>}
               </button>
             ))}
+            <span className="grow" />
+            {mode.kind === 'list' && <Globals view={view} onAction={onAction} openPopup={setPopup} />}
           </div>
           <SearchBox view={view} focused={focused} ctl={ctl} />
           {form ?? (
             <div className="list" ref={listRef} data-testid="list">
               {view.items.map((item, i) => (
-                <ListItem
-                  key={itemKey(item, i)}
-                  item={item}
-                  first={i === 0}
-                  focused={focused}
-                  onClick={onClick}
-                  onOpen={() => onAction('open')}
-                />
+                <ListItem key={itemKey(item, i)} item={item} first={i === 0} ctl={rows} />
               ))}
             </div>
           )}
-          <Buttons view={view} onAction={onAction} onKey={onKey} />
-          <FooterLine footer={view.footer} focused={focused} />
+          <FooterLine footer={view.footer} focused={focused} onKey={onKey} />
           {mode.kind === 'help' && <Help view={view} scroll={mode.scroll} onKey={onKey} />}
         </>
       )}
       {!view && <div className="list" />}
+      <PopupLayer popup={popup} onClose={closePopup} />
     </aside>
   );
 }
@@ -185,14 +213,90 @@ function Brand({ status, failures, host, onHide, push, onPushToggle, onPushTest 
   );
 }
 
+/** The tab bar's right end: what doesn't depend on a row. `+` is a new task
+ * (on Repos: a menu of add repo / new workspace), `● next` shows only when
+ * another task needs you, `?` the keys. */
+function Globals({ view, onAction, openPopup }: { view: ColumnView; onAction(a: Action): void; openPopup(p: Popup): void }) {
+  const tab = view.tabs.find((t) => t.active)?.label ?? 'Tasks';
+  const another = view.items.some(
+    (i) => i.kind === 'task' && !i.selected && i.id !== view.current && (i.status === 'blocked' || i.status === 'signaled'),
+  );
+  const plus = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (tab !== 'Repos') return onAction('new');
+    const r = e.currentTarget.getBoundingClientRect();
+    openPopup({
+      at: { left: r.right - 218, top: r.bottom + 4 },
+      entries: [
+        { label: 'add repo', key: 'a', run: () => onAction('add_repo') },
+        { label: 'new workspace', key: 'W', run: () => onAction('new_workspace') },
+      ],
+    });
+  };
+  return (
+    <span className="ibs">
+      {tab === 'Tasks' && another && (
+        <button type="button" className="ib hot" title="next task that needs you (n)" onClick={() => onAction('next')}>
+          ● next
+        </button>
+      )}
+      <button type="button" className="ib box" data-testid="add" title={tab === 'Repos' ? 'add a repo or a workspace' : 'new task (^n)'} onClick={plus}>
+        +
+      </button>
+      <button type="button" className="ib box" data-testid="keys" title="keys (?)" onClick={() => onAction('help')}>
+        ?
+      </button>
+    </span>
+  );
+}
+
+/** What a row needs to act: select-then-press, the popup, the swipe state. */
+interface RowCtl {
+  focused: boolean;
+  touch: boolean;
+  /** A delete is waiting for y / n: the selected task row asks. */
+  confirming: boolean;
+  onClick(c: Click): void;
+  onKey(key: string, shift?: boolean): void;
+  onOpen(): void;
+  /** Select with `click`, then press `action`'s key. */
+  act(click: Click, action: Action): void;
+  openPopup(p: Popup): void;
+  reveal: { id: string; side: Reveal } | null;
+  setReveal(id: string, side: Reveal): void;
+}
+
+/** The ⋯ button: a menu under it, right-aligned to it. */
+function More({ on, onOpen }: { on: boolean; onOpen(at: { left: number; top: number }): void }) {
+  return (
+    <button
+      type="button"
+      className={on ? 'more on' : 'more'}
+      aria-label="more actions"
+      data-testid="more"
+      onClick={(e) => {
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        onOpen({ left: r.right - 218, top: r.bottom + 4 });
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      ⋯
+    </button>
+  );
+}
+
 function SearchBox({ view, focused, ctl }: { view: ColumnView; focused: boolean; ctl: Ctl }) {
   if (view.mode.kind === 'rename') {
     return (
       <div className="search rename" onClick={ctl.onWantKeyboard}>
         <span className="search-title">rename task</span>
         <span className="accent">✎ </span>
-        <span>{view.mode.buffer}</span>
+        <span className="rename-text">{view.mode.buffer}</span>
         <span className="caret" />
+        <span className="grow" />
+        <KeyPill label="cancel" k="esc" onKey={ctl.onKey} keyName="Escape" tone="ghost" />
+        <KeyPill label="save" k="⏎" onKey={ctl.onKey} keyName="Enter" tone="pri" />
       </div>
     );
   }
@@ -225,16 +329,8 @@ function itemKey(item: Item, i: number): string {
   }
 }
 
-interface ItemProps {
-  item: Item;
-  first: boolean;
-  focused: boolean;
-  onClick(c: Click): void;
-  /** A double click or double tap: ⏎ on what the first click selected. */
-  onOpen(): void;
-}
-
-function ListItem({ item, first, focused, onClick, onOpen }: ItemProps) {
+function ListItem({ item, first, ctl }: { item: Item; first: boolean; ctl: RowCtl }) {
+  const { focused, onClick } = ctl;
   switch (item.kind) {
     case 'header':
       return (
@@ -244,9 +340,9 @@ function ListItem({ item, first, focused, onClick, onOpen }: ItemProps) {
         </div>
       );
     case 'task':
-      return <TaskRow task={item} focused={focused} onClick={onClick} onOpen={onOpen} />;
+      return <TaskRow task={item} ctl={ctl} />;
     case 'sub':
-      return <SubRow sub={item} focused={focused} onClick={onClick} onOpen={onOpen} />;
+      return <SubRow sub={item} ctl={ctl} />;
     case 'repo':
       return (
         <div
@@ -263,7 +359,7 @@ function ListItem({ item, first, focused, onClick, onOpen }: ItemProps) {
         </div>
       );
     case 'job':
-      return <JobRow job={item} focused={focused} onClick={onClick} />;
+      return <JobRow job={item} ctl={ctl} />;
     case 'empty':
       return (
         <div className="empty">
@@ -277,11 +373,71 @@ function ListItem({ item, first, focused, onClick, onOpen }: ItemProps) {
   }
 }
 
-function TaskRow({ task, focused, onClick, onOpen }: { task: TaskItem; focused: boolean; onClick(c: Click): void; onOpen(): void }) {
+function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
+  const select: Click = { kind: 'task', id: task.id };
+  const act = (a: Action) => ctl.act(select, a);
+  const reveal = ctl.reveal?.id === task.id ? ctl.reveal.side : null;
+  const gesture = useRowGestures({
+    left: ctl.touch && task.answerable,
+    right: ctl.touch && !task.pending,
+    reveal,
+    setReveal: (side) => ctl.setReveal(task.id, side),
+    onFullSwipe: () => act('approve'),
+    onLongPress: () => sheet(),
+  });
+
+  // Touch: the sheet, answers first; its header says what the task wants.
+  function sheet() {
+    ctl.onClick(select);
+    const waiting = task.status === 'blocked' || task.status === 'signaled';
+    ctl.openPopup({
+      entries: taskEntries(task, act, true),
+      head: {
+        glyph: task.glyph,
+        color: task.glyph_color,
+        title: task.title,
+        detail: [task.ws, task.age && (waiting ? `waiting ${task.age}` : task.age), task.reason?.label].filter(Boolean).join(' · '),
+      },
+    });
+  }
+
   // Second line, in the TUI's priority order: what it wants from you, the
-  // workspace, a non-default agent, the age, PRs, ports.
+  // workspace, a non-default agent, the age, PRs, ports. A permission it can
+  // answer is a split chip: the answer sits on what it answers.
   const pieces: ReactNode[] = [];
-  if (task.reason) {
+  if (task.reason && task.answerable) {
+    pieces.push(
+      <span key="reason" className="split" data-testid="answer">
+        <span className="s0" style={{ color: task.reason.fg, background: task.reason.bg }}>
+          {task.reason.label}
+        </span>
+        <button
+          type="button"
+          className="s1"
+          title="approve (A)"
+          onClick={(e) => {
+            e.stopPropagation();
+            act('approve');
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          ✓ allow
+        </button>
+        <button
+          type="button"
+          className="s2"
+          title="deny (D)"
+          onClick={(e) => {
+            e.stopPropagation();
+            act('deny');
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          ✕ deny
+        </button>
+      </span>,
+    );
+  } else if (task.reason) {
     pieces.push(
       <span key="reason" className="chip" style={{ color: task.reason.fg, background: task.reason.bg }}>
         {task.reason.label}
@@ -304,54 +460,152 @@ function TaskRow({ task, focused, onClick, onOpen }: { task: TaskItem; focused: 
   );
   if (task.ports.length) pieces.push(<span key="ports">{task.ports.map((p) => `:${p}`).join(' ')}</span>);
 
-  const sel = task.selected && focused;
+  const sel = task.selected && ctl.focused;
+  // The delete prompt sits on the row it deletes (the selection).
+  const confirming = ctl.confirming && task.selected;
+  const menu = (at: { left: number; top: number }) =>
+    ctl.touch ? sheet() : ctl.openPopup({ at, entries: taskEntries(task, act, false) });
+  const cls = ['row', 'task', (sel || confirming) && 'sel', confirming && 'conf'].filter(Boolean).join(' ');
+
   return (
-    <div
-      className={sel ? 'row task sel' : 'row task'}
-      data-testid="task"
-      data-id={task.id}
-      onClick={() => onClick({ kind: 'task', id: task.id })}
-      onDoubleClick={onOpen}
+    <Slide
+      offset={gesture.offset}
+      dragging={gesture.dragging}
+      left={
+        <>
+          <button type="button" className="ua ok" onClick={() => (ctl.setReveal(task.id, null), act('approve'))}>
+            ✓ allow<span className="k">A</span>
+          </button>
+          <button type="button" className="ua no" onClick={() => (ctl.setReveal(task.id, null), act('deny'))}>
+            ✕ deny<span className="k">D</span>
+          </button>
+        </>
+      }
+      right={
+        <button type="button" className="ua del" onClick={() => (ctl.setReveal(task.id, null), act('delete'))}>
+          delete…<span className="k">dd</span>
+        </button>
+      }
     >
-      <div className="line1">
-        <span className={task.pending ? 'glyph spin' : 'glyph'} style={{ color: task.glyph_color }}>
-          {task.glyph}
-        </span>
-        <span className="title" style={{ color: sel ? 'var(--sel-text)' : task.title_color }}>
-          {task.title}
-        </span>
+      <div
+        className={cls}
+        data-testid="task"
+        data-id={task.id}
+        onClick={() => ctl.onClick(select)}
+        onDoubleClick={ctl.onOpen}
+        onContextMenu={(e) => {
+          if (ctl.touch || task.pending) return; // touch: the long-press sheet
+          e.preventDefault();
+          ctl.onClick(select);
+          menu({ left: e.clientX, top: e.clientY });
+        }}
+        {...gesture.handlers}
+      >
+        <div className="line1">
+          <span className={task.pending ? 'glyph spin' : 'glyph'} style={{ color: confirming ? 'var(--danger)' : task.glyph_color }}>
+            {task.glyph}
+          </span>
+          <span className="title" style={{ color: sel || confirming ? 'var(--sel-text)' : task.title_color }}>
+            {task.title}
+          </span>
+          {sel && !task.pending && !ctl.confirming && <More on={false} onOpen={menu} />}
+        </div>
+        <div className="line2">
+          {pieces.map((p, i) => (
+            <Fragment key={i}>
+              {i > 0 && <span className="sep"> · </span>}
+              {p}
+            </Fragment>
+          ))}
+        </div>
+        {confirming && (
+          <>
+            <div className="ctext">delete it and its worktrees? uncommitted work in them is lost.</div>
+            <div className="inl" data-testid="confirm">
+              <KeyPill label="delete" k="y" keyName="y" onKey={ctl.onKey} tone="no" big />
+              <KeyPill label="keep" k="n / esc" keyName="n" onKey={ctl.onKey} tone="ghost" />
+            </div>
+          </>
+        )}
       </div>
-      <div className="line2">
-        {pieces.map((p, i) => (
-          <Fragment key={i}>
-            {i > 0 && <span className="sep"> · </span>}
-            {p}
-          </Fragment>
-        ))}
-      </div>
-    </div>
+    </Slide>
   );
 }
 
-function SubRow({ sub, focused, onClick, onOpen }: { sub: SubItem; focused: boolean; onClick(c: Click): void; onOpen(): void }) {
-  const sel = sub.selected && focused;
+/** A button that presses a key, showing it: `delete y`, `save ⏎`. */
+function KeyPill({
+  label,
+  k,
+  keyName,
+  onKey,
+  tone,
+  big,
+}: {
+  label: string;
+  k: string;
+  keyName: string;
+  onKey(key: string): void;
+  tone?: 'pri' | 'ok' | 'no' | 'ghost';
+  big?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={['pill', tone, big && 'big'].filter(Boolean).join(' ')}
+      onClick={(e) => {
+        e.stopPropagation();
+        onKey(keyName);
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      {label} <span className="k">{k}</span>
+    </button>
+  );
+}
+
+function SubRow({ sub, ctl }: { sub: SubItem; ctl: RowCtl }) {
+  const select: Click = { kind: 'task', id: sub.task, sub: sub.id };
+  const act = (a: Action) => ctl.act(select, a);
+  const sel = sub.selected && ctl.focused;
+  const menu = (at: { left: number; top: number }) => ctl.openPopup({ at, entries: subEntries(sub, act) });
+  const gesture = useRowGestures({
+    left: false,
+    right: false,
+    reveal: null,
+    setReveal: () => {},
+    onFullSwipe: () => {},
+    onLongPress: () => {
+      ctl.onClick(select);
+      ctl.openPopup({ entries: subEntries(sub, act), head: { glyph: sub.glyph, color: sub.glyph_color, title: sub.label, detail: sub.extras.join(' · ') } });
+    },
+  });
   return (
     <div
       className={sel ? 'row sub sel' : 'row sub'}
       onClick={(e) => {
         e.stopPropagation();
-        onClick({ kind: 'task', id: sub.task, sub: sub.id });
+        ctl.onClick(select);
       }}
       onDoubleClick={(e) => {
         e.stopPropagation();
-        onOpen();
+        ctl.onOpen();
       }}
+      onContextMenu={(e) => {
+        if (ctl.touch) return;
+        e.preventDefault();
+        ctl.onClick(select);
+        menu({ left: e.clientX, top: e.clientY });
+      }}
+      {...gesture.handlers}
     >
       <span className="glyph" style={{ color: sub.glyph_color }}>
         {sub.glyph}
       </span>
-      <span style={{ color: sel ? 'var(--sel-text)' : sub.finished ? 'var(--muted)' : 'var(--text)' }}>{sub.label}</span>
-      {sub.extras.length > 0 && <span className="muted"> · {sub.extras.join(' · ')}</span>}
+      <span className="sub-label" style={{ color: sel ? 'var(--sel-text)' : sub.finished ? 'var(--muted)' : 'var(--text)' }}>
+        {sub.label}
+        {sub.extras.length > 0 && <span className="muted"> · {sub.extras.join(' · ')}</span>}
+      </span>
+      {sel && <More on={false} onOpen={menu} />}
     </div>
   );
 }
@@ -359,15 +613,28 @@ function SubRow({ sub, focused, onClick, onOpen }: { sub: SubItem; focused: bool
 const STEP_GLYPH = { pending: '·', running: '◐', done: '✔', failed: '✗' } as const;
 const STEP_COLOR = { pending: 'var(--idle)', running: 'var(--info)', done: 'var(--success)', failed: 'var(--danger)' } as const;
 
-function JobRow({ job, focused, onClick }: { job: JobItem; focused: boolean; onClick(c: Click): void }) {
+function JobRow({ job, ctl }: { job: JobItem; ctl: RowCtl }) {
+  const select: Click = { kind: 'item', pos: job.pos };
+  const entries = jobEntries(job, (a) => ctl.act(select, a));
+  const sel = job.selected && ctl.focused;
   return (
-    <div className={job.selected && focused ? 'row job sel' : 'row job'} onClick={() => onClick({ kind: 'item', pos: job.pos })}>
+    <div
+      className={sel ? 'row job sel' : 'row job'}
+      onClick={() => ctl.onClick(select)}
+      onContextMenu={(e) => {
+        if (entries.length === 0) return;
+        e.preventDefault();
+        ctl.onClick(select);
+        ctl.openPopup({ at: { left: e.clientX, top: e.clientY }, entries });
+      }}
+    >
       <div className="line1">
         <span className="glyph" style={{ color: STEP_COLOR[job.state] }}>
           {STEP_GLYPH[job.state]}
         </span>
         <span className="title">{job.title}</span>
         {job.counter && <span className="muted"> {job.counter}</span>}
+        {sel && entries.length > 0 && <More on={false} onOpen={(at) => ctl.openPopup({ at, entries })} />}
       </div>
       {job.state === 'running' && (
         <div className="progress">
@@ -474,12 +741,29 @@ function Checkbox({ ctl, index, focused, checked, label, note }: CheckboxProps) 
   );
 }
 
-function FormBox({ title, children }: { title: string; children: ReactNode }) {
+/** A form's frame, title on the border, its buttons inside at the
+ * bottom-right (primary last). */
+function FormBox({ title, buttons, children }: { title: string; buttons?: ReactNode; children: ReactNode }) {
   return (
     <div className="form">
       <span className="form-title">{title}</span>
       {children}
+      {buttons && (
+        <div className="fbtns" data-testid="form-buttons">
+          {buttons}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** cancel esc · <primary> ⏎ */
+function submitCancel(ctl: Ctl, primary: string): ReactNode {
+  return (
+    <>
+      <KeyPill label="cancel" k="esc" keyName="Escape" onKey={ctl.onKey} tone="ghost" />
+      <KeyPill label={primary} k="⏎" keyName="Enter" onKey={ctl.onKey} tone="pri" big />
+    </>
   );
 }
 
@@ -488,7 +772,7 @@ function formFor(mode: ModeView, ctl: Ctl): ReactNode | null {
     case 'create': {
       const agentIndex = 2 + mode.repos.length;
       return (
-        <FormBox title="new task">
+        <FormBox title="new task" buttons={submitCancel(ctl, 'create')}>
           <Field ctl={ctl} index={0} focused={mode.focus === 'workspace'} label="workspace">
             {mode.workspaces > 1 ? (
               <>
@@ -530,7 +814,7 @@ function formFor(mode: ModeView, ctl: Ctl): ReactNode | null {
     }
     case 'add_repo':
       return (
-        <FormBox title={`add repo to ${mode.workspace}`}>
+        <FormBox title={`add repo to ${mode.workspace}`} buttons={submitCancel(ctl, 'add')}>
           <div className="ln" />
           <Field ctl={ctl} index={0} focused={mode.focus === 'url'} label="url" text>
             {mode.url}
@@ -545,7 +829,7 @@ function formFor(mode: ModeView, ctl: Ctl): ReactNode | null {
       );
     case 'new_workspace':
       return (
-        <FormBox title="new workspace">
+        <FormBox title="new workspace" buttons={submitCancel(ctl, 'create')}>
           <div className="ln" />
           <Field ctl={ctl} index={0} focused={mode.focus === 'path'} label="path" text>
             {mode.path}
@@ -567,7 +851,24 @@ function formFor(mode: ModeView, ctl: Ctl): ReactNode | null {
       );
     case 'edit_repos':
       return (
-        <FormBox title={`repos of ${mode.task}`}>
+        <FormBox
+          title={`repos of ${mode.task}`}
+          buttons={
+            mode.confirm ? (
+              <>
+                <KeyPill label="back" k="esc" keyName="Escape" onKey={ctl.onKey} tone="ghost" />
+                <KeyPill label="detach" k="y" keyName="y" onKey={ctl.onKey} tone="no" big />
+              </>
+            ) : (
+              <>
+                <KeyPill label="all" k="a" keyName="a" onKey={ctl.onKey} tone="ghost" />
+                <KeyPill label="none" k="n" keyName="n" onKey={ctl.onKey} tone="ghost" />
+                <span className="grow" />
+                {submitCancel(ctl, 'apply')}
+              </>
+            )
+          }
+        >
           <div className="ln" />
           {mode.picks.map((p, i) => (
             <Checkbox
@@ -587,101 +888,9 @@ function formFor(mode: ModeView, ctl: Ctl): ReactNode | null {
   }
 }
 
-// ── Buttons ───────────────────────────────────────────────────────────────
-//
-// Under the list: in list mode, what the list keys would do to the selection;
-// in a form or prompt, its submit / cancel. Only the buttons that apply now.
-
-interface Btn {
-  label: string;
-  title: string;
-  run(): void;
-  cls?: string;
-}
-
-function Buttons({ view, onAction, onKey }: { view: ColumnView; onAction(a: Action): void; onKey(key: string, shift?: boolean): void }) {
-  const act = (label: string, title: string, a: Action, cls?: string): Btn => ({ label, title, run: () => onAction(a), cls });
-  const key = (label: string, title: string, k: string, cls?: string): Btn => ({ label, title, run: () => onKey(k), cls });
-  const mode = view.mode;
-  let btns: Btn[] = [];
-
-  switch (mode.kind) {
-    case 'list': {
-      const tab = view.tabs.find((t) => t.active)?.label ?? 'Tasks';
-      if (tab === 'Tasks') {
-        const task = view.items.find((i): i is Extract<Item, { kind: 'task' }> => i.kind === 'task' && i.selected);
-        const sub = view.items.find((i): i is Extract<Item, { kind: 'sub' }> => i.kind === 'sub' && i.selected);
-        const waiting = view.items.some((i) => i.kind === 'task' && !i.selected && (i.status === 'blocked' || i.status === 'signaled'));
-        btns.push(act('+ new', 'new task (^n)', 'new'));
-        if (sub) {
-          btns.push(act('open agent', 'open the agent (⏎)', 'open', 'primary'), act('transcript', 'its transcript (t)', 'transcript'));
-        } else if (task && !task.pending) {
-          if (task.answerable) btns.push(act('approve', 'approve the permission (A)', 'approve', 'ok'), act('deny', 'deny it (D)', 'deny', 'danger'));
-          if (task.locked) btns.push(act('unlock', 'unlock its secrets (u)', 'unlock', 'accent'));
-          btns.push(act(task.closed ? 'open' : 'go to', 'open the task (⏎)', 'open', 'primary'));
-          btns.push(act('rename', 'rename (r)', 'rename'), act('repos', 'edit repos (e)', 'edit_repos'));
-          if (!task.closed) btns.push(act('close', 'close its window (x)', 'close'));
-          btns.push(act('delete', 'delete task + worktrees (dd)', 'delete', 'danger'));
-        }
-        if (waiting) btns.push(act('next ●', 'next task that needs you (n)', 'next', 'warn'));
-      } else if (tab === 'Repos') {
-        btns.push(act('+ repo', 'add a repo (a)', 'add_repo'), act('+ workspace', 'new workspace (W)', 'new_workspace'));
-      } else {
-        const job = view.items.find((i): i is Extract<Item, { kind: 'job' }> => i.kind === 'job' && i.selected);
-        if (job && job.state !== 'running') btns.push({ label: 'dismiss', title: 'dismiss (dd)', run: () => onAction('delete') });
-      }
-      btns.push(act('?', 'keys (?)', 'help'));
-      break;
-    }
-    case 'command':
-      btns = [key('run', 'run (⏎)', 'Enter', 'primary'), key('cancel', 'cancel (esc)', 'Escape')];
-      break;
-    case 'create':
-      btns = [key('create', 'create (⏎)', 'Enter', 'primary'), key('cancel', 'cancel (esc)', 'Escape')];
-      break;
-    case 'add_repo':
-      btns = [key('add', 'add (⏎)', 'Enter', 'primary'), key('cancel', 'cancel (esc)', 'Escape')];
-      break;
-    case 'new_workspace':
-      btns = [key('create', 'create (⏎)', 'Enter', 'primary'), key('cancel', 'cancel (esc)', 'Escape')];
-      break;
-    case 'edit_repos':
-      btns = mode.confirm
-        ? [key('detach', 'confirm (y)', 'y', 'danger'), key('back', 'back to the list', 'Escape')]
-        : [key('apply', 'apply (⏎)', 'Enter', 'primary'), key('all', 'check all (a)', 'a'), key('none', 'clear all (n)', 'n'), key('cancel', 'cancel (esc)', 'Escape')];
-      break;
-    case 'confirm':
-      btns = [key('delete', 'delete (y)', 'y', 'danger'), key('cancel', 'cancel (n)', 'n')];
-      break;
-    case 'rename':
-      btns = [key('save', 'save (⏎)', 'Enter', 'primary'), key('cancel', 'cancel (esc)', 'Escape')];
-      break;
-    case 'help':
-      return null;
-  }
-  return (
-    <div className="actions" data-testid="actions">
-      {btns.map((b) => (
-        <button
-          key={b.label}
-          type="button"
-          className={b.cls ? `act ${b.cls}` : 'act'}
-          title={b.title}
-          onClick={(e) => {
-            e.stopPropagation();
-            b.run();
-          }}
-        >
-          {b.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ── Footer and help ───────────────────────────────────────────────────────
 
-function FooterLine({ footer, focused }: { footer: Footer; focused: boolean }) {
+function FooterLine({ footer, focused, onKey }: { footer: Footer; focused: boolean; onKey(key: string): void }) {
   switch (footer.kind) {
     case 'command':
       return (
@@ -691,12 +900,17 @@ function FooterLine({ footer, focused }: { footer: Footer; focused: boolean }) {
           <span className="caret thin" />
           {footer.hint && <span className="muted">{'  ' + footer.hint}</span>}
           {footer.warn && <span className="warn">{'  ' + footer.warn}</span>}
+          <span className="grow" />
+          <KeyPill label="cancel" k="esc" keyName="Escape" onKey={onKey} tone="ghost" />
+          <KeyPill label="run" k="⏎" keyName="Enter" onKey={onKey} tone="pri" />
         </div>
       );
     case 'confirm':
+      // The question and its buttons are on the row being deleted; the
+      // footer only echoes the keys.
       return (
-        <div className="footer wrap danger bold" data-testid="footer">
-          {footer.text}
+        <div className="footer" data-testid="footer">
+          <span className="muted">y delete · n keep</span>
         </div>
       );
     case 'message':

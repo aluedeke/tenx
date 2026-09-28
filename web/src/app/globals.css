@@ -211,6 +211,7 @@ a:hover {
 
 .tabs {
   display: flex;
+  align-items: center;
   gap: 2px;
   padding: 0 8px 8px;
   white-space: pre;
@@ -569,52 +570,6 @@ a:hover {
 
 /* ── Pointer controls ─────────────────────────────────────────────────── */
 
-.actions {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border);
-}
-.act {
-  padding: 2px 9px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--ground);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.act:hover {
-  background: var(--hover-bg);
-  border-color: var(--border-active);
-  color: var(--bright);
-}
-.act.primary {
-  color: var(--accent);
-  border-color: var(--accent);
-  font-weight: 700;
-}
-.act.ok {
-  color: var(--success);
-  border-color: var(--success);
-}
-.act.danger {
-  color: var(--danger);
-}
-.act.warn {
-  color: var(--warn);
-}
-.act.accent {
-  color: var(--accent);
-}
-.touch .act {
-  min-height: 40px;
-  padding: 6px 12px;
-}
-
 .field,
 .check,
 .search,
@@ -709,4 +664,386 @@ a:hover {
   margin: -2px 14px 8px;
   color: var(--muted);
   font-size: 11.5px;
+}
+
+/* ── Row actions (design turn 2: 2a globals + ⋯, 2b split chip + menu,
+   2d swipe + sheet, 2e forms and confirms in place) ───────────────────── */
+
+.grow {
+  flex: 1;
+}
+
+/* The tab bar's right end: + · ● next · ? */
+.ibs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.ib {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 5px;
+  color: var(--muted);
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.ib:hover {
+  color: var(--bright);
+  background: var(--hover-bg);
+}
+.ib.hot {
+  color: var(--warn);
+  border-color: #4a3c22;
+  background: #241f16;
+}
+.ib.box {
+  border-color: var(--border);
+}
+.touch .ib {
+  height: 32px;
+  min-width: 34px;
+}
+
+/* ⋯ at the end of the selected row's first line. */
+.line1 .title {
+  flex: 1;
+  min-width: 0;
+}
+.more {
+  flex: none;
+  width: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.more:hover,
+.more.on {
+  color: var(--bright);
+  background: #2c3444;
+}
+.touch .more {
+  width: 32px;
+}
+.sub-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 2b: a permission chip that answers itself. */
+.split {
+  display: inline-flex;
+  border-radius: 3px;
+  overflow: hidden;
+  font-weight: 700;
+  white-space: pre;
+  vertical-align: top;
+}
+.split .s0 {
+  padding: 0 6px;
+}
+.split .s1,
+.split .s2 {
+  padding: 0 7px;
+  border: 0;
+  border-left: 1px solid var(--col-bg);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.split .s1 {
+  color: var(--success);
+  background: #1f2c21;
+}
+.split .s2 {
+  color: var(--danger);
+  background: #2d1c1f;
+}
+.split .s1:hover {
+  background: #2a3d2d;
+}
+.split .s2:hover {
+  background: #3d2529;
+}
+.touch .split .s1,
+.touch .split .s2 {
+  padding: 3px 10px;
+}
+
+/* Buttons that show their key: `save ⏎`, `delete y`. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 1px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pill .k {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.pill:hover {
+  border-color: var(--border-active);
+}
+.pill.ok {
+  color: var(--success);
+  border-color: #3c5a3d;
+  background: #1a241c;
+}
+.pill.no {
+  color: var(--danger);
+  border-color: #5c3438;
+  background: #26191c;
+}
+.pill.ghost {
+  border-color: transparent;
+  color: var(--muted);
+}
+.pill.ghost:hover {
+  color: var(--bright);
+  background: var(--hover-bg);
+}
+.pill.pri {
+  color: var(--accent);
+  border-color: #4b3f73;
+  background: #1f1b2e;
+}
+.pill.big {
+  padding: 6px 12px;
+  font-weight: 700;
+}
+.touch .pill {
+  min-height: 36px;
+}
+.inl {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 0 3px 3ch;
+}
+
+/* 2e: a form's buttons inside its frame, bottom-right. */
+.form {
+  display: flex;
+  flex-direction: column;
+}
+.fbtns {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+.search.rename {
+  align-items: center;
+  gap: 0;
+}
+.search.rename .pill {
+  margin-left: 6px;
+}
+.footer .pill {
+  margin-left: 6px;
+}
+
+/* 2e: the delete question on the row it deletes. */
+.row.conf,
+.row.conf:hover {
+  background: #26191c;
+  box-shadow: inset 0 0 0 1px #5c3438;
+}
+.conf .ctext {
+  padding: 4px 0 2px 3ch;
+  color: var(--danger);
+  white-space: normal;
+}
+
+/* 2b: the row's menu. */
+.popup-layer .backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+.menu {
+  position: fixed;
+  z-index: 21;
+  padding: 5px;
+  border-radius: 8px;
+  background: #1d2029;
+  border: 1px solid var(--border-active);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.mi {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mi:hover,
+.mi:focus-visible {
+  background: #2a3040;
+  color: var(--bright);
+  outline: none;
+}
+.mi .k {
+  color: var(--muted);
+}
+.mi.dan {
+  color: var(--danger);
+}
+.msep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
+
+/* 2d: swipe a row to uncover its buttons. */
+.swrap {
+  position: relative;
+  overflow: hidden;
+}
+.swrap .slid {
+  position: relative;
+  background: var(--col-bg);
+  transition: transform 0.18s ease-out;
+}
+.touch .row.task {
+  touch-action: pan-y;
+}
+.under {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.under.left {
+  justify-content: flex-start;
+}
+.ua {
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ua.ok {
+  background: #2f5a33;
+  color: #dff2df;
+}
+.ua.no,
+.ua.del {
+  background: #6a2e35;
+  color: #f6dadd;
+}
+.ua .k {
+  font-size: 10.5px;
+  opacity: 0.75;
+  font-weight: 400;
+}
+
+/* 2d: long-press opens the row's sheet. */
+.popup-layer .dim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(8, 9, 12, 0.55);
+}
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  border-radius: 14px 14px 0 0;
+  background: #1a1c25;
+  border-top: 1px solid var(--border-active);
+  padding: 8px 14px max(26px, env(safe-area-inset-bottom));
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.45);
+}
+.handle {
+  width: 38px;
+  height: 4px;
+  border-radius: 2px;
+  background: #454b5a;
+  margin: 0 auto 12px;
+}
+.shead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sbtn {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 9px;
+  background: #252936;
+  color: var(--bright);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.sbtn.ok {
+  background: #22382a;
+  color: #bfe6c0;
+}
+.sbtn.no {
+  background: #3a2226;
+  color: #f2c4c9;
+}
+.sbtn.dan {
+  color: var(--danger);
+}
+.sbtn.pri {
+  background: #2a2442;
+  color: #d6c9ff;
+}
+.sbtn.wide {
+  grid-column: 1 / -1;
 }

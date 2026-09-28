@@ -679,7 +679,7 @@ impl Column {
         }
     }
 
-    /// An action-bar button: its key(s), from the list. Nothing outside list
+    /// A front end's row or tab-bar button: its key(s), from the list. Nothing outside list
     /// mode — a form or a prompt has its own buttons.
     pub(crate) fn handle_action(&mut self, action: Action) -> anyhow::Result<()> {
         if !matches!(self.mode, Mode::List) {
@@ -772,7 +772,7 @@ pub(crate) enum Click {
     Field { index: usize },
 }
 
-/// What a button in a front end's action bar does: the list-mode key it
+/// What a row or tab-bar button in a front end does: the list-mode key it
 /// stands for, pressed with the list (not the search field) in focus — so a
 /// tap on "rename" renames the selection rather than typing `r` into the
 /// filter.

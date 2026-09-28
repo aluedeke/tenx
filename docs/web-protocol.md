@@ -72,7 +72,7 @@ Two frame kinds:
 // A form field, by its place in ⇥ order: it takes the focus.
 { "type": "click", "kind": "field", "index": 2 }
 
-// An action-bar button: the list key it names, pressed with the list (not the
+// A row's or the tab bar's button: the list key it names, pressed with the list (not the
 // search field) focused. Ignored outside list mode — forms and prompts get
 // their buttons as plain `key` messages (Enter, Escape, y, space, ←/→).
 // open | approve | deny | rename | edit_repos | close | delete | unlock |
@@ -112,9 +112,15 @@ is fitted — until then there is no terminal output.
 
 Everything is also reachable by pointer: the column's `⟨` hides it and a
 handle (a tab on the left edge, or the tasks button on touch screens) shows
-it; a click selects a row, a double click opens it; the action bar sends
-`action`s for the selection (`answerable` and `locked` on a task say whether
-approve/deny and unlock apply); form fields send `field` clicks. Tapping
+it; a click selects a row, a double click opens it. A row's controls send a
+`task` click (select it) then an `action`: allow / deny on a blocked row's
+chip (`answerable`), and the row's menu — `⋯`, a right-click, or on touch a
+long-press (a bottom sheet) — for open, unlock (`locked`), rename, edit
+repos, close and delete; on touch a swipe uncovers allow / deny (left) or
+delete (right). The tab bar's `+`, `● next` and `?` send `new` (on Repos a
+menu of `add_repo` / `new_workspace`), `next` and `help`. Forms carry their
+own submit / cancel buttons and a delete asks on its row; those send plain
+`key` messages (Enter, Escape, y, n). Form fields send `field` clicks. Tapping
 something that takes typing focuses an off-screen input so a phone raises its
 keyboard; what it types goes over as `key` messages.
 
