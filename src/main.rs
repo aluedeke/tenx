@@ -65,6 +65,7 @@ fn run() -> Result<()> {
 
         Some(Commands::Web { command: Some(cli::WebCommand::Service { action }), .. }) => match action {
             cli::WebServiceAction::Install { listen, port, dev_origin } => web::service::install(&listen, port, &dev_origin)?,
+            cli::WebServiceAction::Restart => web::service::restart()?,
             cli::WebServiceAction::Uninstall => web::service::uninstall()?,
             cli::WebServiceAction::Status => web::service::status()?,
         },

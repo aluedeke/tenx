@@ -63,7 +63,11 @@ fn write(path: &PathBuf, contents: &str) -> Result<()> {
 }
 
 pub fn install(listen: &str, port: u16, dev_origins: &[String]) -> Result<()> {
-    let program = std::env::current_exe().context("locate the tenx binary")?.canonicalize()?;
+    // The path as you reach it — `~/.cargo/bin/tenx`, `/opt/homebrew/bin/tenx`
+    // — not with symlinks resolved: Homebrew's link target is a versioned
+    // Cellar directory that an upgrade deletes. So replacing the binary there
+    // and `service restart` is an upgrade.
+    let program = crate::tmux::self_bin()?;
     let mut args = vec!["web".to_string(), "--listen".into(), listen.to_string(), "--port".into(), port.to_string()];
     for o in dev_origins {
         args.push("--dev-origin".into());
@@ -114,6 +118,26 @@ pub fn install(listen: &str, port: u16, dev_origins: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Restart it — onto a replaced binary after an upgrade. Nothing to do (and
+/// no error) when it isn't installed, so `make install` can always call it.
+pub fn restart() -> Result<()> {
+    if cfg!(target_os = "macos") {
+        if !plist_path()?.exists() {
+            println!("tenx web service not installed — nothing to restart");
+            return Ok(());
+        }
+        check(Command::new("launchctl").args(["kickstart", "-k", &format!("gui/{}/{LABEL}", uid())]))?;
+    } else {
+        if !systemd_path()?.exists() {
+            println!("tenx web service not installed — nothing to restart");
+            return Ok(());
+        }
+        check(Command::new("systemctl").args(["--user", "restart", SYSTEMD_NAME]))?;
+    }
+    println!("restarted tenx web");
+    Ok(())
+}
+
 pub fn uninstall() -> Result<()> {
     if cfg!(target_os = "macos") {
         let path = plist_path()?;
@@ -155,6 +179,9 @@ pub fn status() -> Result<()> {
             text.lines().map(str::trim).find_map(|l| l.strip_prefix(name).map(|v| v.trim_start_matches([' ', '=']).trim().to_string()))
         };
         println!("installed {}", path.display());
+        if let Some(program) = field("program") {
+            println!("  runs  {program}");
+        }
         println!("  state {}", field("state").unwrap_or_else(|| "?".into()));
         if let Some(pid) = field("pid") {
             println!("  pid   {pid}");

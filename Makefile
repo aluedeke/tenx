@@ -48,6 +48,7 @@ try-stop:
 # the session to pick it up: `tmux -L tenx kill-server`, then `tenx`.
 install:
 	cargo install --path .
+	@"$${CARGO_HOME:-$$HOME/.cargo}/bin/tenx" web service restart
 	@echo "  ✓ installed — run 'tenx' to (re)create the session"
 
 test:

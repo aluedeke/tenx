@@ -613,6 +613,8 @@ pub enum WebServiceAction {
         #[arg(long = "dev-origin", value_name = "URL")]
         dev_origin: Vec<String>,
     },
+    /// Restart it, e.g. onto a new binary after an upgrade (no-op when not installed)
+    Restart,
     /// Stop the service and remove it
     Uninstall,
     /// Whether it is installed and running
