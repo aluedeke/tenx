@@ -604,6 +604,10 @@ export function App() {
           onCtrl={() => setCtrlSticky((s) => !s)}
           onImages={pasteImages}
           onPaste={pasteClipboard}
+          onRefocus={() => {
+            if (state.current.focus === 'column' && state.current.visible) kbd.current?.focus({ preventScroll: true });
+            else term.current?.focus();
+          }}
           onKey={(key, shift) => {
             if (columnHasKeys) {
               sendKey({ key, ctrl: state.current.ctrlSticky, alt: false, shift });

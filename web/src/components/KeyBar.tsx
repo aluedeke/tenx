@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+
 // The keys a phone keyboard lacks, above it: Esc, a sticky Ctrl for the next
 // key, Tab, arrows, Enter, and A/D to answer the task in front of you. They go
 // wherever the keyboard is — the column as key messages, the terminal as bytes.
@@ -17,6 +19,10 @@ interface Props {
   /** No on-screen keyboard up: only esc, 📋 and 📎, floating over the
    * terminal instead of a bar under it. */
   compact?: boolean;
+  /** Put the keyboard focus back where it was (the terminal, or the
+   * column's text input) — called inside the tap, the only place iOS lets a
+   * focus keep its on-screen keyboard up. */
+  onRefocus(): void;
 }
 
 const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
@@ -29,28 +35,49 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, compact }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, compact, onRefocus }: Props) {
+  const bar = useRef<HTMLDivElement>(null);
+  // iOS moves focus off the terminal — and closes the keyboard — on a tap
+  // anywhere else, whatever pointerdown does. Cancelling the touch itself
+  // stops that; it has to be a native, non-passive listener (React's are
+  // passive). Not for 📋 and 📎, which need their click.
+  useEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    const hold = (ev: TouchEvent) => {
+      if ((ev.target as Element | null)?.closest('[data-keep-focus]')) ev.preventDefault();
+    };
+    el.addEventListener('touchstart', hold, { passive: false });
+    el.addEventListener('touchend', hold, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', hold);
+      el.removeEventListener('touchend', hold);
+    };
+    // Re-attached whenever the bar is re-rendered from nothing (it renders
+    // null in the column without a keyboard).
+  }, [compact, column]);
   // Pointer-down, not click, and no default: a tap mustn't take focus from
   // the terminal (and with it the on-screen keyboard).
   const press = (fn: () => void) => (ev: React.PointerEvent) => {
     ev.preventDefault();
     fn();
+    onRefocus();
   };
   if (compact && column) return null;
   return (
-    <div className={compact ? 'keybar compact' : 'keybar'} data-testid="keybar">
+    <div ref={bar} className={compact ? 'keybar compact' : 'keybar'} data-testid="keybar">
       {compact && (
-        <button type="button" className="key" onPointerDown={press(() => onKey('Escape', false))}>
+        <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('Escape', false))}>
           esc
         </button>
       )}
       {!compact && (
         <>
-          <button type="button" className="key" onPointerDown={press(() => onKey('Escape', false))}>
+          <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('Escape', false))}>
             esc
           </button>
           {!column && (
-            <button type="button" className={ctrlSticky ? 'key on' : 'key'} onPointerDown={press(onCtrl)}>
+            <button type="button" className={ctrlSticky ? 'key on' : 'key'} data-keep-focus onPointerDown={press(onCtrl)}>
               ctrl
             </button>
           )}
@@ -59,13 +86,14 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, c
               key={k.key}
               type="button"
               className={k.cls ? `key ${k.cls}` : 'key'}
+              data-keep-focus
               onPointerDown={press(() => onKey(k.key, !!k.shift))}
             >
               {k.label}
             </button>
           ))}
           {column && (
-            <button type="button" className="key" onPointerDown={press(() => onKey('?', true))}>
+            <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('?', true))}>
               ?
             </button>
           )}
@@ -82,7 +110,10 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, c
           // No default on the press: the terminal keeps focus, and with it
           // the on-screen keyboard. The paste itself runs on the click.
           onPointerDown={(e) => e.preventDefault()}
-          onClick={onPaste}
+          onClick={() => {
+            onRefocus();
+            onPaste();
+          }}
         >
           📋
         </button>
