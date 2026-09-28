@@ -15,6 +15,7 @@ import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
+import { textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import type { Action, Click, ColumnView, KeyMessage, ServerMessage } from '@/protocol';
 
@@ -502,19 +503,23 @@ export function App() {
     if (state.current.touch) kbd.current?.focus({ preventScroll: true });
   }, []);
 
-  /** What the soft keyboard typed into the hidden input, as column keys. */
+  /** What the soft keyboard (or dictation, or a suggestion) put in the
+   * hidden input, as column keys: the edit since the field's last state
+   * (lib/textdiff), so dictation rewriting its guess per word doesn't repeat
+   * it. Real keys never reach the field (the keydown handler takes them). */
+  const kbdBefore = useRef('');
   const onKbdInput = useCallback(
     (ev: React.FormEvent<HTMLInputElement>) => {
-      const input = ev.nativeEvent as InputEvent;
       const el = ev.currentTarget;
-      if (input.inputType === 'deleteContentBackward') {
-        sendKey({ key: 'Backspace', ctrl: false, alt: false, shift: false });
-      } else if (input.inputType === 'insertLineBreak') {
-        sendKey({ key: 'Enter', ctrl: false, alt: false, shift: false });
-      } else {
-        for (const ch of input.data ?? el.value) sendKey({ key: ch, ctrl: false, alt: false, shift: false });
+      const edit = textEdit(kbdBefore.current, el.value);
+      kbdBefore.current = el.value;
+      const key = (k: string) => sendKey({ key: k, ctrl: false, alt: false, shift: false });
+      for (let i = 0; i < edit.erase; i++) key('Backspace');
+      for (const ch of edit.insert) key(ch === '\n' ? 'Enter' : ch);
+      if (edit.insert.includes('\n')) {
+        el.value = '';
+        kbdBefore.current = '';
       }
-      el.value = '';
     },
     [sendKey],
   );
@@ -592,6 +597,10 @@ export function App() {
         autoComplete="off"
         spellCheck={false}
         onInput={onKbdInput}
+        onBlur={(e) => {
+          e.currentTarget.value = '';
+          kbdBefore.current = '';
+        }}
       />
       {/* The special keys only while the on-screen keyboard is up: they're for
           typing, and a hardware keyboard (which never raises it) has them. */}

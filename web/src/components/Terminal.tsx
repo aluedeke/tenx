@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { imagesIn } from '@/lib/paste';
+import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
 
 export interface TerminalHandle {
@@ -172,6 +173,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       touchScroll(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       catchImages(host.current, (files) => propsRef.current.onImages(files));
+      if (xterm.textarea) keylessText(host.current, xterm.textarea, (d) => propsRef.current.onData(d));
       term.current = xterm;
       fitRef.current = fit;
       for (const b of pending.current) xterm.write(b);
@@ -415,4 +417,46 @@ function catchImages(el: HTMLElement, onImages: (files: File[]) => void) {
     ev.preventDefault();
     onImages(files);
   });
+}
+
+/** Text that reaches xterm's hidden textarea without a key press — iOS
+ * dictation, a predictive-text pick, autocorrect — is a rewrite of the
+ * field, not typing: dictation re-inserts its whole guess on every word, and
+ * xterm would send it all again each time. Such input is taken here, ahead
+ * of xterm, and sent as the edit since the field's last state (lib/textdiff):
+ * backspaces, then the new characters. Keys typed on a keyboard, and IME
+ * composition, still go to xterm as before. */
+function keylessText(host: HTMLElement, ta: HTMLTextAreaElement, send: (data: string) => void) {
+  let lastKey = 0;
+  let before = '';
+  // On the host, capturing: that runs before any listener on the textarea
+  // itself, xterm's included, so a stopped event never reaches xterm.
+  host.addEventListener('keydown', () => {
+    lastKey = performance.now();
+  }, true);
+  host.addEventListener('beforeinput', (e) => {
+    if (e.target === ta) before = ta.value;
+  }, true);
+  host.addEventListener(
+    'input',
+    (e) => {
+      if (e.target !== ta) return;
+      const ev = e as InputEvent;
+      if (ev.isComposing || performance.now() - lastKey < 100) return;
+      const edit = textEdit(before, ta.value);
+      before = ta.value;
+      e.stopImmediatePropagation();
+      if (edit.erase || edit.insert) send('\x7f'.repeat(edit.erase) + edit.insert);
+    },
+    true,
+  );
+  // A fresh field for the next dictation once the line is sent or left.
+  const clear = () => {
+    ta.value = '';
+    before = '';
+  };
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') clear();
+  });
+  ta.addEventListener('blur', clear);
 }
