@@ -265,22 +265,58 @@ export function App() {
     // The tallest the viewport has been at this width: the height with no
     // keyboard. Measured rather than taken from innerHeight, which Android
     // shrinks along with the viewport (`interactive-widget`) and iOS doesn't.
-    let full = { width: vv.width, height: vv.height };
+    let full = { width: vv.width, height: Math.max(vv.height, window.innerHeight) };
+    // An on-screen keyboard needs a text field with the focus, and never
+    // covers most of the screen. Anything else the viewport reports — iPadOS
+    // hands out a sliver while switching apps, for the switcher's snapshot,
+    // and doesn't always report the real size on return — is not a keyboard,
+    // and the page takes the whole window.
+    const editing = () => {
+      const a = document.activeElement as HTMLElement | null;
+      return !!a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable);
+    };
     const apply = () => {
-      const root = document.documentElement.style;
-      root.setProperty('--vv-h', `${vv.height}px`);
-      root.setProperty('--vv-top', `${vv.offsetTop}px`);
-      if (Math.abs(vv.width - full.width) > 1) full = { width: vv.width, height: vv.height };
+      if (Math.abs(vv.width - full.width) > 1) full = { width: vv.width, height: Math.max(vv.height, window.innerHeight) };
       else full.height = Math.max(full.height, vv.height, window.innerHeight);
-      const open = full.height - vv.height > 120;
-      setKbOpen(open);
+      const keyboard = editing() && vv.height >= window.innerHeight * 0.35 && full.height - vv.height > 120;
+      const root = document.documentElement.style;
+      root.setProperty('--vv-h', `${keyboard ? vv.height : window.innerHeight}px`);
+      root.setProperty('--vv-top', `${keyboard ? vv.offsetTop : 0}px`);
+      setKbOpen(keyboard);
+    };
+    // Back in front (or rotated, or resized in Split View): measure again,
+    // and again shortly after — iOS settles the viewport over a few frames
+    // and may not send a resize for the last step.
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const settle = () => {
+      apply();
+      for (const ms of [100, 400, 1000]) timers.push(setTimeout(apply, ms));
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') settle();
     };
     apply();
     vv.addEventListener('resize', apply);
     vv.addEventListener('scroll', apply);
+    window.addEventListener('resize', settle);
+    window.addEventListener('orientationchange', settle);
+    window.addEventListener('pageshow', settle);
+    window.addEventListener('focus', settle);
+    document.addEventListener('visibilitychange', onVisible);
+    // Focus moving in or out of a text field is when a keyboard comes or goes.
+    document.addEventListener('focusin', settle);
+    document.addEventListener('focusout', settle);
     return () => {
+      timers.forEach(clearTimeout);
       vv.removeEventListener('resize', apply);
       vv.removeEventListener('scroll', apply);
+      window.removeEventListener('resize', settle);
+      window.removeEventListener('orientationchange', settle);
+      window.removeEventListener('pageshow', settle);
+      window.removeEventListener('focus', settle);
+      document.removeEventListener('visibilitychange', onVisible);
+      document.removeEventListener('focusin', settle);
+      document.removeEventListener('focusout', settle);
     };
   }, []);
 

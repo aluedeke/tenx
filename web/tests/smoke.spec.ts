@@ -195,7 +195,9 @@ test('the key bar only shows with the on-screen keyboard up', async ({ page, isM
   await page.goto('/');
   // Headless has no on-screen keyboard: no bar at all.
   await expect(page.getByTestId('keybar')).toHaveCount(0);
-  // A keyboard taking a third of the screen: the bar on top of it.
+  // A keyboard taking a third of the screen, for the focused terminal: the
+  // bar on top of it.
+  await page.locator('.xterm-helper-textarea').focus();
   await page.evaluate(() => {
     const vv = window.visualViewport!;
     Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
@@ -204,6 +206,22 @@ test('the key bar only shows with the on-screen keyboard up', async ({ page, isM
   const bar = page.getByTestId('keybar');
   await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
   await expect(bar.getByTestId('attach')).toBeVisible();
+});
+
+test('a sliver of a viewport while switching apps keeps the whole page', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  await page.goto('/');
+  await page.locator('.xterm-helper-textarea').focus();
+  // iPadOS reports ~10% of the screen for the app switcher's snapshot.
+  await page.evaluate(() => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => 80 });
+    vv.dispatchEvent(new Event('resize'));
+  });
+  const app = await page.locator('.app').boundingBox();
+  const inner = await page.evaluate(() => window.innerHeight);
+  expect(app!.height).toBeGreaterThan(inner * 0.9);
+  await expect(page.getByTestId('keybar')).toHaveCount(0);
 });
 
 test('the header names the task you are in and drives the column', async ({ page, isMobile }) => {
