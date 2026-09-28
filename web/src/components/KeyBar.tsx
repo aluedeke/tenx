@@ -61,7 +61,16 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste }:
       {!column && (
         // A click, not a pointer-down: reading the clipboard needs the
         // gesture to have completed (iOS then shows its own Paste bubble).
-        <button type="button" className="key" aria-label="paste" data-testid="paste" onClick={onPaste}>
+        <button
+          type="button"
+          className="key"
+          aria-label="paste"
+          data-testid="paste"
+          // No default on the press: the terminal keeps focus, and with it
+          // the on-screen keyboard. The paste itself runs on the click.
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={onPaste}
+        >
           📋
         </button>
       )}

@@ -1047,3 +1047,10 @@ a:hover {
 .sbtn.wide {
   grid-column: 1 / -1;
 }
+
+.toast.tap {
+  cursor: pointer;
+  border-color: var(--accent);
+  color: var(--accent);
+  padding: 10px 16px;
+}

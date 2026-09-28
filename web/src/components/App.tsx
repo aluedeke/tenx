@@ -50,6 +50,8 @@ export function App() {
   const [kbOpen, setKbOpen] = useState(false);
   /** A paste on its way up, or why it failed. */
   const [pasting, setPasting] = useState<string | null>(null);
+  /** The notice is a button that brings the keyboard back (after 📎). */
+  const [pastingTap, setPastingTap] = useState(false);
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
@@ -64,8 +66,8 @@ export function App() {
   const fontSize = touch && narrow ? 12 : 13;
 
   // Latest state for the listeners registered once.
-  const state = useRef({ focus, visible, narrow, ctrlSticky, touch });
-  state.current = { focus, visible, narrow, ctrlSticky, touch };
+  const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen });
+  state.current = { focus, visible, narrow, ctrlSticky, touch, kbOpen };
 
   const send = useCallback((msg: Parameters<Connection['send']>[0]) => conn.current?.send(msg), []);
   const sendKey = useCallback((k: Omit<KeyMessage, 'type'>) => send({ type: 'key', ...k }), [send]);
@@ -343,7 +345,20 @@ export function App() {
       const paths: string[] = [];
       for (const f of files) paths.push(asTyped(await upload(f)));
       term.current?.paste(paths.join(' ') + ' ');
+      term.current?.focus();
       setPasting(null);
+      // The photo picker took the keyboard away, and iOS only brings it back
+      // for a focus inside a tap — so offer the tap.
+      setTimeout(() => {
+        if (state.current.touch && !state.current.kbOpen) {
+          setPastingTap(true);
+          setPasting('pasted · tap here to keep typing');
+          setTimeout(() => {
+            setPasting(null);
+            setPastingTap(false);
+          }, 6000);
+        }
+      }, 400);
     } catch (e) {
       setPasting(`paste failed: ${e instanceof Error ? e.message : String(e)}`);
       setTimeout(() => setPasting(null), 4000);
@@ -471,7 +486,16 @@ export function App() {
             onImages={pasteImages}
           />
           {pasting && (
-            <div className="toast" role="status">
+            <div
+              className={pastingTap ? 'toast tap' : 'toast'}
+              role="status"
+              onClick={() => {
+                if (!pastingTap) return;
+                term.current?.focus();
+                setPasting(null);
+                setPastingTap(false);
+              }}
+            >
               {pasting}
             </div>
           )}
