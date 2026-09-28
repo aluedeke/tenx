@@ -76,6 +76,17 @@ export function App() {
   // renderer draws it and Light gets too faint to read.
   const fontSize = fontPref.size ?? 12;
   const fontWeight = fontPref.weight ?? (touch ? 400 : 300);
+  /** The size for code that runs outside a render (layout messages). */
+  const fontRef = useRef(fontSize);
+  fontRef.current = fontSize;
+
+  // The column is drawn in the terminal's font, as in the TUI, where both
+  // share one grid: same size, same weight for plain text (bold stays bold).
+  useEffect(() => {
+    const root = document.documentElement.style;
+    root.setProperty('--ui-size', `${fontSize}px`);
+    root.setProperty('--ui-weight', String(fontWeight));
+  }, [fontSize, fontWeight]);
 
   // The terminal's font, overridable per device from the address bar —
   // `?font=12&weight=300` — and remembered (`?font=&weight=` forgets it).
@@ -113,7 +124,7 @@ export function App() {
   const columnHasKeys = focus === 'column' && visible;
 
   const sendViewport = useCallback(() => {
-    const cellW = measureCell(13);
+    const cellW = measureCell(fontRef.current);
     setCell(cellW);
     const cols = Math.floor(window.innerWidth / cellW);
     send({ type: 'viewport', cols });
@@ -130,7 +141,7 @@ export function App() {
 
     // Before the server's first `layout`: guess from the width, and start a
     // narrow page on the terminal, as the TUI does.
-    const cols = Math.floor(window.innerWidth / measureCell(13));
+    const cols = Math.floor(window.innerWidth / measureCell(fontRef.current));
     if (cols < NARROW_COLS) {
       setNarrow(true);
       setVisible(false);
@@ -153,7 +164,7 @@ export function App() {
             term.current?.reset();
             const size = term.current?.size();
             if (size) c.send({ type: 'resize', ...size });
-            c.send({ type: 'viewport', cols: Math.floor(window.innerWidth / measureCell(13)) });
+            c.send({ type: 'viewport', cols: Math.floor(window.innerWidth / measureCell(fontRef.current)) });
             const { focus, visible } = state.current;
             c.send({ type: 'focus', column: focus === 'column' && visible });
             break;
@@ -315,6 +326,12 @@ export function App() {
       window.removeEventListener('focus', onFocus);
     };
   }, [send, sendViewport]);
+
+  // A new font size changes how many cells fit: the server re-decides the
+  // column's width (and narrow or not) from the new count.
+  useEffect(() => {
+    sendViewport();
+  }, [fontSize, sendViewport]);
 
   // The terminal's size follows the column's.
   useEffect(() => {
