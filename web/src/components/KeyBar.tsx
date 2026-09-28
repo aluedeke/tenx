@@ -14,6 +14,9 @@ interface Props {
   onImages(files: File[]): void;
   /** Paste what's on the clipboard — an image or text. */
   onPaste(): void;
+  /** A hardware keyboard is attached: no special keys, only 📋 and 📎,
+   * floating over the terminal instead of a bar under it. */
+  compact?: boolean;
 }
 
 const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
@@ -26,37 +29,42 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, compact }: Props) {
   // Pointer-down, not click, and no default: a tap mustn't take focus from
   // the terminal (and with it the on-screen keyboard).
   const press = (fn: () => void) => (ev: React.PointerEvent) => {
     ev.preventDefault();
     fn();
   };
+  if (compact && column) return null;
   return (
-    <div className="keybar" data-testid="keybar">
-      <button type="button" className="key" onPointerDown={press(() => onKey('Escape', false))}>
-        esc
-      </button>
-      {!column && (
-        <button type="button" className={ctrlSticky ? 'key on' : 'key'} onPointerDown={press(onCtrl)}>
-          ctrl
-        </button>
-      )}
-      {KEYS.slice(1).map((k) => (
-        <button
-          key={k.key}
-          type="button"
-          className={k.cls ? `key ${k.cls}` : 'key'}
-          onPointerDown={press(() => onKey(k.key, !!k.shift))}
-        >
-          {k.label}
-        </button>
-      ))}
-      {column && (
-        <button type="button" className="key" onPointerDown={press(() => onKey('?', true))}>
-          ?
-        </button>
+    <div className={compact ? 'keybar compact' : 'keybar'} data-testid="keybar">
+      {!compact && (
+        <>
+          <button type="button" className="key" onPointerDown={press(() => onKey('Escape', false))}>
+            esc
+          </button>
+          {!column && (
+            <button type="button" className={ctrlSticky ? 'key on' : 'key'} onPointerDown={press(onCtrl)}>
+              ctrl
+            </button>
+          )}
+          {KEYS.slice(1).map((k) => (
+            <button
+              key={k.key}
+              type="button"
+              className={k.cls ? `key ${k.cls}` : 'key'}
+              onPointerDown={press(() => onKey(k.key, !!k.shift))}
+            >
+              {k.label}
+            </button>
+          ))}
+          {column && (
+            <button type="button" className="key" onPointerDown={press(() => onKey('?', true))}>
+              ?
+            </button>
+          )}
+        </>
       )}
       {!column && (
         // A click, not a pointer-down: reading the clipboard needs the

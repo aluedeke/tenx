@@ -189,3 +189,21 @@ test('the manifest and service worker make it installable', async ({ request }) 
   const sw = await request.get('/sw.js');
   expect(await sw.text()).toContain("addEventListener('push'");
 });
+
+test('a hardware keyboard on a touch screen folds the key bar away', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  await page.goto('/');
+  await page.evaluate(() => localStorage.removeItem('tenx-hardware-keyboard'));
+  await page.reload();
+  const bar = page.getByTestId('keybar');
+  await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
+  // A key with no on-screen keyboard up can only come from a real keyboard.
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.keyboard.press('a');
+  await expect(bar).toHaveClass(/compact/);
+  await expect(bar.getByRole('button', { name: 'esc' })).toHaveCount(0);
+  await expect(page.getByTestId('attach')).toBeVisible();
+  // Remembered for the next visit.
+  await page.reload();
+  await expect(page.getByTestId('keybar')).toHaveClass(/compact/);
+});
