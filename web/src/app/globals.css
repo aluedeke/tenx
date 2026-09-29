@@ -1117,3 +1117,189 @@ a:hover {
 .row.task.cur.sel {
   box-shadow: inset 3px 0 0 var(--current), inset 0 0 0 1px #2c3444;
 }
+
+/* ── Web forms (WebForms.tsx) ─────────────────────────────────────────── */
+
+/* The frame fits its fields (the buttons right under them, not at the
+   column's foot); only the fields scroll when they don't fit, so the title
+   on the border isn't clipped. */
+.form.webform {
+  flex: 0 1 auto;
+  gap: 10px;
+}
+.form.webform .fbtns {
+  margin-top: 0;
+  padding-top: 4px;
+}
+.wf-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 2px 2px;
+}
+.wf-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wf-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 0;
+}
+.wf-input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--ground);
+  color: var(--bright);
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+}
+.wf-input::placeholder {
+  color: var(--idle);
+  font-weight: var(--ui-weight, 400);
+}
+.wf-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.18);
+}
+select.wf-input {
+  appearance: none;
+  padding-right: 24px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.wf-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.wf-static {
+  font-weight: 700;
+  padding: 5px 0;
+}
+.wf-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.wf-group > legend {
+  margin-bottom: 3px;
+}
+.wf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.wf-check:hover {
+  background: var(--hover-bg);
+}
+.wf-check.on {
+  color: var(--bright);
+}
+.wf-check input,
+.wf-seg input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.wf-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+.wf-check .wf-note {
+  margin-left: auto;
+  color: var(--warn);
+}
+.wf-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+.wf-seg label {
+  position: relative;
+  padding: 4px 10px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.wf-seg label + label {
+  border-left: 1px solid var(--border);
+}
+.wf-seg label.on {
+  background: #1f1b2e;
+  color: var(--accent);
+  font-weight: 700;
+}
+/* The radio itself is only for the keyboard and screen readers; the pill is
+   what shows the choice. */
+.wf-seg input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  cursor: pointer;
+}
+.wf-seg label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.wf-error {
+  color: var(--danger);
+  font-size: 12px;
+}
+.touch .wf-input {
+  font-size: 16px; /* under 16px iOS zooms the page on focus */
+  padding: 8px 10px;
+}
+.touch .wf-check,
+.touch .wf-seg label {
+  min-height: 40px;
+}
+
+/* Rename: the search box's place, one bare input. */
+.search.rename.webform {
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow: visible;
+}
+.search.rename.webform .fbtns {
+  margin: 0;
+  padding: 0;
+}
+.search.rename.webform .wf-error {
+  flex-basis: 100%;
+}
+.wf-input.wf-bare {
+  flex: 1;
+  width: auto;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}

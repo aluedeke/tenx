@@ -79,6 +79,19 @@ Two frame kinds:
 // transcript | next | new | add_repo | new_workspace | help
 { "type": "action", "name": "rename" }
 
+// An edit in one of the column's web forms (view.rs `FormOp`), applied to the
+// open form (create, add repo, new workspace, edit repos, rename); ignored
+// when no such form is open. `set` carries a text field's whole value (`name`,
+// `url`, `path`, `repo_url`, `title`); `check` sets (never toggles) a checkbox
+// (`repo` by index, `skills`); `pick` chooses by index into the create form's
+// `workspace_options` / `agent_options` (a new workspace reloads its repos, as
+// ←/→ does). `submit` / `cancel` are the form's own ⏎ / esc, so they run the
+// terminal's paths (jobs, errors, where it lands).
+{ "type": "form", "op": "set", "field": "name", "value": "Rate limit login" }
+{ "type": "form", "op": "check", "field": "repo", "index": 1, "on": false }
+{ "type": "form", "op": "pick", "field": "workspace", "index": 0 }
+{ "type": "form", "op": "submit" }
+
 // The terminal's size in cells (xterm fit addon) → PTY resize.
 { "type": "resize", "cols": 120, "rows": 40 }
 
@@ -122,9 +135,12 @@ long-press (a bottom sheet) — for open, unlock (`locked`), rename, edit
 repos, close and delete; on touch a swipe uncovers allow / deny (left) or
 delete (right). The header's `+`, `● next` (shown when a task other than the
 current one needs you) and `?` send `new` (on Repos a menu of `add_repo` /
-`new_workspace`), `next` and `help`. Forms carry their
-own submit / cancel buttons and a delete asks on its row; those send plain
-`key` messages (Enter, Escape, y, n). Form fields send `field` clicks. Tapping
+`new_workspace`), `next` and `help`. The column's forms
+(new task, new workspace, add repo, edit repos, rename) are native web forms —
+text inputs, a workspace select, agent radios, checkboxes, Tab order, Enter
+submits, Escape cancels — sending `form` messages; a refused submit shows the
+view's `status` inside the form. A delete asks on its row with `key` messages
+(y, n). Tapping
 something that takes typing focuses an off-screen input so a phone raises its
 keyboard; what it types goes over as `key` messages.
 

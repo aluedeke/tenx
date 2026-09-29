@@ -11,6 +11,9 @@ export interface ColumnView {
   items: Item[];
   mode: ModeView;
   footer: Footer;
+  /** The column's last message (an error or an outcome), also while a
+   * form's footer hides it — a form shows it inside itself. */
+  status: string | null;
   help: HelpSection[];
 }
 
@@ -120,6 +123,11 @@ export type ModeView =
       workspace: string;
       workspace_index: number;
       workspaces: number;
+      /** Every workspace, in picker order (`pick` `workspace` indexes it). */
+      workspace_options: { name: string; color: string }[];
+      /** `default` first, then each agent (`pick` `agent` indexes it). */
+      agent_options: string[];
+      agent_index: number;
       name: string;
       repos: Check[];
       agent: string;
@@ -202,7 +210,19 @@ export type ClientMessage =
   | KeyMessage
   | ({ type: 'click' } & Click)
   | { type: 'action'; name: Action }
+  | ({ type: 'form' } & FormOp)
   | { type: 'resize'; cols: number; rows: number }
   | { type: 'viewport'; cols: number }
   | { type: 'focus'; column: boolean }
   | { type: 'visible' };
+
+/** An edit from a web form (view.rs `FormOp`), applied to the open form. */
+export type FormOp =
+  /** A text field's whole value: `name`, `url`, `path`, `repo_url`, `title`. */
+  | { op: 'set'; field: string; value: string }
+  /** A checkbox, set (not toggled): `repo` by index, or `skills`. */
+  | { op: 'check'; field: string; index?: number; on: boolean }
+  /** A picker on the create form: `workspace` or `agent`, by index. */
+  | { op: 'pick'; field: 'workspace' | 'agent'; index: number }
+  | { op: 'submit' }
+  | { op: 'cancel' };

@@ -34,6 +34,7 @@ pub(super) enum PageMsg {
     Key(WebKey),
     Click(Click),
     Action { name: crate::tui::column::view::Action },
+    Form(crate::tui::column::view::FormOp),
     Resize { cols: u16, rows: u16 },
     Viewport { cols: u16 },
     Focus { column: bool },
@@ -301,6 +302,11 @@ impl Driver {
                 }
             }
             PageMsg::Click(click) => self.column.handle_click(&click),
+            PageMsg::Form(op) => {
+                if let Err(e) = self.column.handle_form(&op) {
+                    self.column.set_status(e.to_string());
+                }
+            }
             PageMsg::Action { name } => {
                 if let Err(e) = self.column.handle_action(name) {
                     self.column.set_status(e.to_string());
@@ -393,6 +399,14 @@ mod tests {
         let resize: PageMsg = serde_json::from_str(r#"{"type":"resize","cols":120,"rows":40}"#).unwrap();
         assert!(matches!(resize, PageMsg::Resize { cols: 120, rows: 40 }));
         assert!(matches!(serde_json::from_str(r#"{"type":"visible"}"#).unwrap(), PageMsg::Visible));
+        let set: PageMsg = serde_json::from_str(r#"{"type":"form","op":"set","field":"name","value":"Fix"}"#).unwrap();
+        assert!(matches!(set, PageMsg::Form(crate::tui::column::view::FormOp::Set { ref field, ref value }) if field == "name" && value == "Fix"));
+        let pick: PageMsg = serde_json::from_str(r#"{"type":"form","op":"pick","field":"agent","index":2}"#).unwrap();
+        assert!(matches!(pick, PageMsg::Form(crate::tui::column::view::FormOp::Pick { index: 2, .. })));
+        assert!(matches!(
+            serde_json::from_str(r#"{"type":"form","op":"submit"}"#).unwrap(),
+            PageMsg::Form(crate::tui::column::view::FormOp::Submit)
+        ));
         assert!(matches!(serde_json::from_str(r#"{"type":"focus","column":true}"#).unwrap(), PageMsg::Focus { column: true }));
     }
 }

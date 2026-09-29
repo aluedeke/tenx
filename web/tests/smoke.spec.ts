@@ -120,7 +120,7 @@ test('forms carry their own buttons; + opens the new-task form', async ({ page, 
   await expect(buttons.getByRole('button', { name: /create/ })).toBeVisible();
   await buttons.getByRole('button', { name: /cancel/ }).click();
   await expect(page.locator('.form')).toHaveCount(0);
-  expect(sent().some((m) => m.type === 'key' && m.key === 'Escape')).toBe(true);
+  expect(sent().some((m) => m.type === 'form' && m.op === 'cancel')).toBe(true);
 });
 
 test('on touch, a swipe uncovers allow / deny and a long-press opens the sheet', async ({ page, isMobile }) => {
@@ -286,4 +286,75 @@ test('a closed last task is not reopened', async ({ page }) => {
   await expect(page.getByTestId('header')).toBeVisible();
   await page.waitForTimeout(800);
   expect(sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(false);
+});
+
+test('the new-task form is a real web form', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
+  const forms = () => sent().filter((m) => m.type === 'form');
+  await page.goto('/');
+  if (isMobile) await page.getByTestId('toggle').tap();
+  await (isMobile ? page.getByTestId('add').tap() : page.getByTestId('add').click());
+  const name = page.locator('input[data-field=name]');
+  await expect(name).toBeVisible();
+  if (!isMobile) await expect(name).toBeFocused();
+  await name.fill('Rate limit login');
+  await expect.poll(() => forms().some((m) => m.op === 'set' && m.field === 'name' && m.value === 'Rate limit login')).toBe(true);
+
+  // Another workspace brings its repos.
+  await page.locator('select[data-field=workspace]').selectOption('1');
+  await expect(page.getByRole('checkbox', { name: 'notes' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'api' })).toHaveCount(0);
+  await page.locator('select[data-field=workspace]').selectOption('0');
+  await page.getByRole('checkbox', { name: 'web' }).uncheck();
+  await expect.poll(() => forms().some((m) => m.op === 'check' && m.field === 'repo' && m.index === 1 && m.on === false)).toBe(true);
+  await expect(page.getByRole('checkbox', { name: 'web' })).not.toBeChecked();
+  await page.getByRole('radio', { name: 'codex' }).check();
+  await expect.poll(() => forms().some((m) => m.op === 'pick' && m.field === 'agent' && m.index === 2)).toBe(true);
+
+  // Tab walks the fields natively; Enter submits.
+  if (!isMobile) {
+    await name.focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('checkbox', { name: 'api' })).toBeFocused();
+    await name.focus();
+  }
+  await name.press('Enter');
+  await expect.poll(() => forms().some((m) => m.op === 'submit')).toBe(true);
+  await expect(page.locator('.webform')).toHaveCount(0);
+  // Typing in the form never went to the column as keys.
+  expect(sent().some((m) => m.type === 'key' && m.key === 'R')).toBe(false);
+});
+
+test('a refused submit shows why inside the form; Escape cancels', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  const sent = sentMessages(page);
+  await page.goto('/');
+  await page.getByTestId('add').click();
+  await page.locator('input[data-field=name]').press('Enter');
+  await expect(page.getByTestId('form-error')).toHaveText('name the task first');
+  await page.locator('input[data-field=name]').press('Escape');
+  await expect(page.locator('.webform')).toHaveCount(0);
+  expect(sent().some((m) => m.type === 'form' && m.op === 'cancel')).toBe(true);
+});
+
+test('rename and edit repos are web forms too', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the row menu by right-click');
+  const sent = sentMessages(page);
+  await page.goto('/');
+  const row = page.locator('[data-id="web/better-loading"]');
+  await row.click({ button: 'right' });
+  await page.getByText('rename').click();
+  const title = page.locator('input[data-field=title]');
+  await expect(title).toBeFocused();
+  await title.fill('Faster loading indicators');
+  await title.press('Enter');
+  await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'set' && m.field === 'title' && m.value === 'Faster loading indicators')).toBe(true);
+  await expect(title).toHaveCount(0);
+
+  await row.click({ button: 'right' });
+  await page.getByText('edit repos').click();
+  await page.getByRole('checkbox', { name: 'web' }).check();
+  await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'check' && m.field === 'repo' && m.index === 1 && m.on === true)).toBe(true);
+  await page.getByRole('button', { name: /apply/ }).click();
+  await expect(page.locator('.webform')).toHaveCount(0);
 });

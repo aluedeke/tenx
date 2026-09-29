@@ -14,7 +14,8 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { PopupLayer, Slide, jobEntries, subEntries, taskEntries, useRowGestures, type Popup, type Reveal } from './RowActions';
-import type { Action, Click, ColumnView, Footer, Item, JobItem, ModeView, SubItem, TaskItem } from '@/protocol';
+import type { Action, Click, ColumnView, Footer, FormOp, Item, JobItem, SubItem, TaskItem } from '@/protocol';
+import { RenameForm, WebForms } from './WebForms';
 
 interface Props {
   view: ColumnView | null;
@@ -30,6 +31,8 @@ interface Props {
   onWantKeyboard(): void;
   /** A touch screen: long-press opens a sheet, rows swipe. */
   touch: boolean;
+  /** An edit in one of the column's web forms (`FormOp`). */
+  onForm(op: FormOp): void;
 }
 
 /** Keys and clicks, for the pieces below. */
@@ -57,7 +60,10 @@ export function Column(props: Props) {
 
   const mode = view?.mode ?? { kind: 'list' };
   const ctl: Ctl = { onClick, onKey, onWantKeyboard };
-  const form = formFor(mode, ctl);
+  // Keyed by the form's kind, so a new form starts with fresh inputs.
+  const form = view && ['create', 'add_repo', 'new_workspace', 'edit_repos'].includes(mode.kind) ? (
+    <WebForms key={mode.kind} mode={mode} status={view.status} send={props.onForm} onKey={onKey} touch={props.touch} />
+  ) : null;
   const [popup, setPopup] = useState<Popup | null>(null);
   const [reveal, setReveal] = useState<{ id: string; side: Reveal } | null>(null);
   const closePopup = useCallback(() => setPopup(null), []);
@@ -103,7 +109,11 @@ export function Column(props: Props) {
               </button>
             ))}
           </div>
-          <SearchBox view={view} focused={focused} ctl={ctl} />
+          {view.mode.kind === 'rename' ? (
+            <RenameForm value={view.mode.buffer} status={view.status} send={props.onForm} touch={props.touch} />
+          ) : (
+            <SearchBox view={view} focused={focused} ctl={ctl} />
+          )}
           {form ?? (
             <div className="list" ref={listRef} data-testid="list">
               {view.items.map((item, i) => (
@@ -111,7 +121,15 @@ export function Column(props: Props) {
               ))}
             </div>
           )}
-          <FooterLine footer={view.footer} focused={focused} onKey={onKey} />
+          {form ? (
+            // The terminal's hints (space toggles, ←→ cycle) aren't how a
+            // web form works; its own keys are.
+            <div className="footer" data-testid="footer">
+              <span className="muted">⇥ next field · ⏎ {mode.kind === 'edit_repos' ? 'apply' : 'submit'} · esc cancel</span>
+            </div>
+          ) : (
+            <FooterLine footer={view.footer} focused={focused} onKey={onKey} />
+          )}
           {mode.kind === 'help' && <Help view={view} scroll={mode.scroll} onKey={onKey} />}
         </>
       )}
@@ -158,19 +176,6 @@ function More({ on, onOpen }: { on: boolean; onOpen(at: { left: number; top: num
 }
 
 function SearchBox({ view, focused, ctl }: { view: ColumnView; focused: boolean; ctl: Ctl }) {
-  if (view.mode.kind === 'rename') {
-    return (
-      <div className="search rename" onClick={ctl.onWantKeyboard}>
-        <span className="search-title">rename task</span>
-        <span className="accent">✎ </span>
-        <span className="rename-text">{view.mode.buffer}</span>
-        <span className="caret" />
-        <span className="grow" />
-        <KeyPill label="cancel" k="esc" onKey={ctl.onKey} keyName="Escape" tone="ghost" />
-        <KeyPill label="save" k="⏎" onKey={ctl.onKey} keyName="Enter" tone="pri" />
-      </div>
-    );
-  }
   const typing = focused && view.focus === 'search' && view.mode.kind === 'list';
   return (
     <div
@@ -530,233 +535,6 @@ function JobRow({ job, ctl }: { job: JobItem; ctl: RowCtl }) {
       )}
     </div>
   );
-}
-
-// ── Forms ─────────────────────────────────────────────────────────────────
-//
-// Each field is clickable (`field` click: it takes the focus), a checkbox
-// toggles on click (focus, then space), ‹ › step a picker (focus, then ← / →),
-// and a text field raises the on-screen keyboard.
-
-interface FieldProps {
-  ctl: Ctl;
-  index: number;
-  focused: boolean;
-  label: string;
-  /** Takes typing: a tap also raises the keyboard. */
-  text?: boolean;
-  children: ReactNode;
-}
-
-function Field({ ctl, index, focused, label, text, children }: FieldProps) {
-  return (
-    <div
-      className="ln field"
-      onClick={() => {
-        ctl.onClick({ kind: 'field', index });
-        if (text) ctl.onWantKeyboard();
-      }}
-    >
-      <span className={focused ? 'flabel on' : 'flabel'}>
-        {focused ? '▸ ' : '  '}
-        {label.padEnd(11)}
-      </span>
-      <span className={focused ? 'fvalue on' : 'fvalue'}>{children}</span>
-    </div>
-  );
-}
-
-/** ‹ value › with the arrows as buttons. */
-function Picker({ ctl, index, children }: { ctl: Ctl; index: number; children: ReactNode }) {
-  const step = (key: string) => (e: React.MouseEvent) => {
-    e.stopPropagation();
-    ctl.onClick({ kind: 'field', index });
-    ctl.onKey(key);
-  };
-  return (
-    <>
-      <button type="button" className="step-btn" onClick={step('ArrowLeft')} aria-label="previous">
-        ‹
-      </button>{' '}
-      {children}{' '}
-      <button type="button" className="step-btn" onClick={step('ArrowRight')} aria-label="next">
-        ›
-      </button>
-    </>
-  );
-}
-
-interface CheckboxProps {
-  ctl: Ctl;
-  index: number;
-  focused: boolean;
-  checked: boolean;
-  label: string;
-  note?: string;
-}
-
-function Checkbox({ ctl, index, focused, checked, label, note }: CheckboxProps) {
-  const cls = focused ? 'ln check on' : checked ? 'ln check checked' : 'ln check';
-  return (
-    <div
-      className={cls}
-      onClick={() => {
-        ctl.onClick({ kind: 'field', index });
-        ctl.onKey(' ');
-      }}
-    >
-      {focused ? '▸ ' : '  '}
-      {checked ? '[x]' : '[ ]'} {label}
-      {note && <span className="muted">  {note}</span>}
-    </div>
-  );
-}
-
-/** A form's frame, title on the border, its buttons inside at the
- * bottom-right (primary last). */
-function FormBox({ title, buttons, children }: { title: string; buttons?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="form">
-      <span className="form-title">{title}</span>
-      {children}
-      {buttons && (
-        <div className="fbtns" data-testid="form-buttons">
-          {buttons}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** cancel esc · <primary> ⏎ */
-function submitCancel(ctl: Ctl, primary: string): ReactNode {
-  return (
-    <>
-      <KeyPill label="cancel" k="esc" keyName="Escape" onKey={ctl.onKey} tone="ghost" />
-      <KeyPill label={primary} k="⏎" keyName="Enter" onKey={ctl.onKey} tone="pri" big />
-    </>
-  );
-}
-
-function formFor(mode: ModeView, ctl: Ctl): ReactNode | null {
-  switch (mode.kind) {
-    case 'create': {
-      const agentIndex = 2 + mode.repos.length;
-      return (
-        <FormBox title="new task" buttons={submitCancel(ctl, 'create')}>
-          <Field ctl={ctl} index={0} focused={mode.focus === 'workspace'} label="workspace">
-            {mode.workspaces > 1 ? (
-              <>
-                <Picker ctl={ctl} index={0}>
-                  {mode.workspace}
-                </Picker>
-                <span className="muted"> ({mode.workspace_index} of {mode.workspaces})</span>
-              </>
-            ) : (
-              mode.workspace
-            )}
-          </Field>
-          <div className="ln" />
-          <Field ctl={ctl} index={1} focused={mode.focus === 'name'} label="name" text>
-            {mode.name}
-            {mode.focus === 'name' && <span className="caret thin" />}
-          </Field>
-          <div className="ln" />
-          <div className="ln muted">{'  repos'}</div>
-          {mode.repos.map((r, i) => (
-            <Checkbox
-              key={r.name}
-              ctl={ctl}
-              index={2 + i}
-              focused={mode.focus === 'repo' && mode.focus_repo === i}
-              checked={r.checked}
-              label={r.name}
-            />
-          ))}
-          <div className="ln" />
-          <Field ctl={ctl} index={agentIndex} focused={mode.focus === 'agent'} label="agent">
-            <Picker ctl={ctl} index={agentIndex}>
-              {mode.agent}
-              {mode.agent_inherits ? '  (inherits default)' : ''}
-            </Picker>
-          </Field>
-        </FormBox>
-      );
-    }
-    case 'add_repo':
-      return (
-        <FormBox title={`add repo to ${mode.workspace}`} buttons={submitCancel(ctl, 'add')}>
-          <div className="ln" />
-          <Field ctl={ctl} index={0} focused={mode.focus === 'url'} label="url" text>
-            {mode.url}
-            {mode.focus === 'url' && <span className="caret thin" />}
-          </Field>
-          <div className="ln" />
-          <Field ctl={ctl} index={1} focused={mode.focus === 'name'} label="name" text>
-            {mode.name}
-            {mode.focus === 'name' && <span className="caret thin" />}
-          </Field>
-        </FormBox>
-      );
-    case 'new_workspace':
-      return (
-        <FormBox title="new workspace" buttons={submitCancel(ctl, 'create')}>
-          <div className="ln" />
-          <Field ctl={ctl} index={0} focused={mode.focus === 'path'} label="path" text>
-            {mode.path}
-            {mode.focus === 'path' && <span className="caret thin" />}
-          </Field>
-          <div className="ln" />
-          <Field ctl={ctl} index={1} focused={mode.focus === 'name'} label="name" text>
-            {mode.name}
-            {mode.focus === 'name' && <span className="caret thin" />}
-          </Field>
-          <div className="ln" />
-          <Field ctl={ctl} index={2} focused={mode.focus === 'repo_url'} label="repo url" text>
-            {mode.repo_url}
-            {mode.focus === 'repo_url' && <span className="caret thin" />}
-          </Field>
-          <div className="ln" />
-          <Checkbox ctl={ctl} index={3} focused={mode.focus === 'skills'} checked={mode.skills} label="skills" />
-        </FormBox>
-      );
-    case 'edit_repos':
-      return (
-        <FormBox
-          title={`repos of ${mode.task}`}
-          buttons={
-            mode.confirm ? (
-              <>
-                <KeyPill label="back" k="esc" keyName="Escape" onKey={ctl.onKey} tone="ghost" />
-                <KeyPill label="detach" k="y" keyName="y" onKey={ctl.onKey} tone="no" big />
-              </>
-            ) : (
-              <>
-                <KeyPill label="all" k="a" keyName="a" onKey={ctl.onKey} tone="ghost" />
-                <KeyPill label="none" k="n" keyName="n" onKey={ctl.onKey} tone="ghost" />
-                <span className="grow" />
-                {submitCancel(ctl, 'apply')}
-              </>
-            )
-          }
-        >
-          <div className="ln" />
-          {mode.picks.map((p, i) => (
-            <Checkbox
-              key={p.name}
-              ctl={ctl}
-              index={i}
-              focused={mode.focus === i}
-              checked={p.checked}
-              label={p.name}
-              note={p.checked === p.present ? undefined : p.checked ? 'add' : 'detach'}
-            />
-          ))}
-        </FormBox>
-      );
-    default:
-      return null;
-  }
 }
 
 // ── Footer and help ───────────────────────────────────────────────────────

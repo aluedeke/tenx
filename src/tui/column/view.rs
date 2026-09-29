@@ -29,6 +29,10 @@ pub(crate) struct ColumnView {
     pub(crate) items: Vec<Item>,
     pub(crate) mode: ModeView,
     pub(crate) footer: Footer,
+    /// The column's last message (an error or an outcome), even while a mode
+    /// footer hides it — so a web form can show why a submit was refused
+    /// inside the form.
+    pub(crate) status: Option<String>,
     /// The `?` overlay's table: section, then (keys, action) rows.
     pub(crate) help: Vec<HelpSection>,
 }
@@ -162,6 +166,14 @@ pub(crate) enum ModeView {
         /// 1-based, of `workspaces`.
         workspace_index: usize,
         workspaces: usize,
+        /// Every registered workspace, in picker order (`FormOp::Pick`
+        /// `workspace` takes an index into this).
+        workspace_options: Vec<WorkspaceOption>,
+        /// The agent choices, in picker order: `default` first, then each kind
+        /// (`FormOp::Pick` `agent` takes an index into this).
+        agent_options: Vec<&'static str>,
+        /// 0-based, of `agent_options`.
+        agent_index: usize,
         name: String,
         repos: Vec<Check>,
         /// `default` when it inherits.
@@ -221,6 +233,12 @@ pub(crate) enum ModeView {
 pub(crate) struct Wanted {
     pub(crate) name: String,
     pub(crate) why: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct WorkspaceOption {
+    pub(crate) name: String,
+    pub(crate) color: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -388,6 +406,7 @@ impl Column {
             items,
             mode: self.mode_view(),
             footer: footer(self),
+            status: self.status_msg.clone(),
             help: KEYS.iter().map(|(section, keys)| HelpSection { section, keys: keys.to_vec() }).collect(),
         }
     }
@@ -559,6 +578,16 @@ impl Column {
                 workspace: ws_name(f.ws_idx),
                 workspace_index: f.ws_idx + 1,
                 workspaces: self.workspaces.len(),
+                workspace_options: self
+                    .workspaces
+                    .iter()
+                    .map(|w| WorkspaceOption {
+                        name: w.config.name.clone(),
+                        color: palette::workspace_color(&w.config.name).hex(),
+                    })
+                    .collect(),
+                agent_options: CreateForm::AGENTS.iter().map(|a| a.map_or("default", |k| k.as_str())).collect(),
+                agent_index: f.agent_index(),
                 name: f.name.clone(),
                 repos: f.repos.iter().map(|(name, checked)| Check { name: name.clone(), checked: *checked }).collect(),
                 agent: f.agent_label(),
@@ -667,6 +696,82 @@ impl Column {
         }
     }
 
+    /// A web form's edit (`FormOp`), applied to the open form's state — the
+    /// same fields the keyboard edits in the terminal, set whole rather than
+    /// a key at a time. Submit and cancel go through the form's own Enter and
+    /// Escape, so they run exactly the terminal's paths (jobs, errors,
+    /// where it lands). Anything that doesn't match the open form is ignored.
+    pub(crate) fn handle_form(&mut self, op: &FormOp) -> Result<bool> {
+        let is_form = matches!(
+            self.mode,
+            Mode::Create(_) | Mode::AddRepo(_) | Mode::NewWorkspace(_) | Mode::EditRepos(_) | Mode::Rename(_)
+        );
+        if !is_form {
+            return Ok(false);
+        }
+        match op {
+            FormOp::Submit => return self.handle_key(KeyEvent::from(KeyCode::Enter)),
+            FormOp::Cancel => return self.handle_key(KeyEvent::from(KeyCode::Esc)),
+            FormOp::Set { field, value } => {
+                // One line, as the terminal types it: no control characters.
+                let value: String = value.chars().filter(|c| !c.is_control()).collect();
+                match (&mut self.mode, field.as_str()) {
+                    (Mode::Create(f), "name") => (f.name, f.focus) = (value, CreateForm::NAME),
+                    (Mode::AddRepo(f), "url") => (f.url, f.focus) = (value, 0),
+                    (Mode::AddRepo(f), "name") => (f.name, f.focus) = (value, 1),
+                    (Mode::NewWorkspace(f), "path") => (f.path, f.focus) = (value, 0),
+                    (Mode::NewWorkspace(f), "name") => (f.name, f.focus) = (value, 1),
+                    (Mode::NewWorkspace(f), "repo_url") => (f.repo_url, f.focus) = (value, 2),
+                    (Mode::Rename(f), "title") => f.buffer = value,
+                    _ => {}
+                }
+            }
+            FormOp::Check { field, index, on } => match (&mut self.mode, field.as_str()) {
+                (Mode::Create(f), "repo") => {
+                    if let Some(r) = f.repos.get_mut(*index) {
+                        r.1 = *on;
+                        f.focus = 2 + index;
+                    }
+                }
+                (Mode::EditRepos(f), "repo") if !f.confirm => {
+                    if let Some(p) = f.picks.get_mut(*index) {
+                        p.checked = *on;
+                        f.focus = *index;
+                    }
+                }
+                (Mode::NewWorkspace(f), "skills") => (f.skills, f.focus) = (*on, NewWorkspaceForm::SKILLS),
+                _ => {}
+            },
+            FormOp::Pick { field, index } => {
+                let count = self.workspaces.len();
+                let mut reload = None;
+                match (&mut self.mode, field.as_str()) {
+                    (Mode::Create(f), "workspace") if *index < count => {
+                        f.focus = CreateForm::WORKSPACE;
+                        if f.ws_idx != *index {
+                            f.ws_idx = *index;
+                            reload = Some(*index);
+                        }
+                    }
+                    (Mode::Create(f), "agent") if *index < CreateForm::AGENTS.len() => {
+                        f.agent = CreateForm::AGENTS[*index];
+                        f.focus = f.agent_field();
+                    }
+                    _ => {}
+                }
+                // A new workspace brings its own repo checklist, as ←/→ does.
+                if let Some(ws) = reload {
+                    let repos = self.ws_repos(ws);
+                    if let Mode::Create(f) = &mut self.mode {
+                        f.repos = repos;
+                        f.focus = CreateForm::WORKSPACE;
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
     /// A form field was clicked: give it the focus. Out-of-range indexes and
     /// clicks outside a form are ignored.
     fn focus_field(&mut self, index: usize) {
@@ -750,6 +855,29 @@ impl WebKey {
         }
         Some(KeyEvent::new(code, modifiers))
     }
+}
+
+/// An edit from a front end's own form (`handle_form`): a whole text value,
+/// a checkbox, a picker choice, or submit / cancel.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub(crate) enum FormOp {
+    /// A text field's whole value: `name` (create, add repo, new workspace),
+    /// `url` (add repo), `path` / `repo_url` (new workspace), `title` (rename).
+    Set { field: String, value: String },
+    /// A checkbox, set (not toggled, so a repeated message can't flip it
+    /// back): `repo` by index (create, edit repos), `skills` (new workspace).
+    Check {
+        field: String,
+        #[serde(default)]
+        index: usize,
+        on: bool,
+    },
+    /// A picker: `workspace` (index into `workspace_options`) or `agent`
+    /// (index into `agent_options`), on the create form.
+    Pick { field: String, index: usize },
+    Submit,
+    Cancel,
 }
 
 /// A click on something a [`ColumnView`] named.
@@ -900,6 +1028,108 @@ mod tests {
         c.handle_click(&Click::Field { index: 999 });
         let ModeView::Create { focus, .. } = c.view().mode else { panic!("create form") };
         assert_eq!(focus, "workspace", "an index past the last field is ignored");
+    }
+
+    /// A fixture column with two workspaces of their own repos, so the create
+    /// form has a workspace to switch and a checklist to reload.
+    fn with_workspaces() -> Column {
+        use crate::workspace::{RepoConfig, Workspace, WorkspaceConfig};
+        let ws = |name: &str, repos: &[&str]| Workspace {
+            dir: PathBuf::from(format!("/work/{name}")),
+            config: WorkspaceConfig {
+                name: name.into(),
+                repos: repos.iter().map(|r| RepoConfig { name: (*r).into(), url: format!("git@x:{r}") }).collect(),
+                ..Default::default()
+            },
+        };
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.workspaces = vec![ws("acme", &["api", "web"]), ws("notes", &["notes"])];
+        c.mode = Mode::Create(CreateForm { ws_idx: 0, name: String::new(), repos: c.ws_repos(0), agent: None, focus: CreateForm::NAME });
+        c
+    }
+
+    fn form(c: &mut Column, json: &str) {
+        let op: FormOp = serde_json::from_str(json).unwrap();
+        c.handle_form(&op).unwrap();
+    }
+
+    #[test]
+    fn a_web_form_sets_whole_text_values() {
+        let mut c = with_workspaces();
+        form(&mut c, r#"{"op":"set","field":"name","value":"Fix login\n timeout"}"#);
+        let ModeView::Create { name, focus, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(name, "Fix login timeout", "one line: control characters dropped");
+        assert_eq!(focus, "name");
+        // A field the open form doesn't have is ignored.
+        form(&mut c, r#"{"op":"set","field":"url","value":"x"}"#);
+        assert!(matches!(c.view().mode, ModeView::Create { .. }));
+    }
+
+    #[test]
+    fn a_web_form_checks_repos_and_picks_workspace_and_agent() {
+        let mut c = with_workspaces();
+        form(&mut c, r#"{"op":"check","field":"repo","index":1,"on":false}"#);
+        form(&mut c, r#"{"op":"check","field":"repo","index":1,"on":false}"#);
+        let ModeView::Create { repos, focus_repo, .. } = c.view().mode else { panic!() };
+        assert_eq!(repos.iter().map(|r| r.checked).collect::<Vec<_>>(), [true, false], "set, not toggled");
+        assert_eq!(focus_repo, Some(1));
+        form(&mut c, r#"{"op":"check","field":"repo","index":9,"on":true}"#);
+
+        // Another workspace brings its own checklist, as ←/→ does.
+        form(&mut c, r#"{"op":"pick","field":"workspace","index":1}"#);
+        let ModeView::Create { workspace, repos, workspace_options, .. } = c.view().mode else { panic!() };
+        assert_eq!(workspace, "notes");
+        assert_eq!(repos.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["notes"]);
+        assert_eq!(workspace_options.len(), 2);
+        form(&mut c, r#"{"op":"pick","field":"workspace","index":7}"#);
+        let ModeView::Create { workspace, .. } = c.view().mode else { panic!() };
+        assert_eq!(workspace, "notes", "out of range is ignored");
+
+        form(&mut c, r#"{"op":"pick","field":"agent","index":2}"#);
+        let ModeView::Create { agent, agent_index, agent_options, .. } = c.view().mode else { panic!() };
+        assert_eq!((agent.as_str(), agent_index), ("codex", 2));
+        assert_eq!(agent_options, ["default", "claude", "codex", "pi"]);
+    }
+
+    #[test]
+    fn web_form_cancel_and_submit_are_the_forms_own_keys() {
+        let mut c = with_workspaces();
+        form(&mut c, r#"{"op":"cancel"}"#);
+        assert!(matches!(c.view().mode, ModeView::List));
+        // Outside a form, submit is not ⏎ on the list (which would open a task).
+        form(&mut c, r#"{"op":"submit"}"#);
+        assert!(matches!(c.view().mode, ModeView::List));
+
+        // Rename: a whole title; an empty one stays open with the error.
+        c.mode = Mode::Rename(RenameForm { slug: "x".into(), path: PathBuf::from("/nowhere"), buffer: "old".into() });
+        form(&mut c, r#"{"op":"set","field":"title","value":"  "}"#);
+        form(&mut c, r#"{"op":"submit"}"#);
+        assert!(matches!(c.view().mode, ModeView::Rename { .. }));
+        assert_eq!(c.view().status.as_deref(), Some("title cannot be empty"));
+    }
+
+    #[test]
+    fn web_form_checks_edit_repos_and_the_skills_box() {
+        let mut c = with_workspaces();
+        c.mode = Mode::EditRepos(EditReposForm {
+            ws_idx: 0,
+            slug: "t".into(),
+            title: "T".into(),
+            picks: vec![RepoPick { name: "api".into(), checked: true, present: true }],
+            focus: 0,
+            confirm: false,
+        });
+        form(&mut c, r#"{"op":"check","field":"repo","index":0,"on":false}"#);
+        let ModeView::EditRepos { picks, .. } = c.view().mode else { panic!() };
+        assert!(!picks[0].checked);
+
+        c.mode = Mode::NewWorkspace(NewWorkspaceForm { path: String::new(), name: String::new(), repo_url: String::new(), skills: true, focus: 0 });
+        form(&mut c, r#"{"op":"check","field":"skills","on":false}"#);
+        form(&mut c, r#"{"op":"set","field":"repo_url","value":"git@x:a"}"#);
+        let ModeView::NewWorkspace { skills, repo_url, focus, .. } = c.view().mode else { panic!() };
+        assert!(!skills);
+        assert_eq!((repo_url.as_str(), focus), ("git@x:a", "repo_url"));
     }
 
     #[test]

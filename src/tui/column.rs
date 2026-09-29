@@ -83,13 +83,25 @@ impl CreateForm {
         self.ws_idx = if back { (cur + count - 1) % count } else { (cur + 1) % count };
         self.ws_idx != cur
     }
+    /// The agent choices, in the order ←/→ cycle them; `None` inherits the
+    /// workspace/global default.
+    const AGENTS: [Option<crate::agent::AgentKind>; 4] = [
+        None,
+        Some(crate::agent::AgentKind::Claude),
+        Some(crate::agent::AgentKind::Codex),
+        Some(crate::agent::AgentKind::Pi),
+    ];
+
+    /// Where the agent choice is in `AGENTS`.
+    fn agent_index(&self) -> usize {
+        Self::AGENTS.iter().position(|a| *a == self.agent).unwrap_or(0)
+    }
+
     /// Cycle the agent choice: default → claude → codex → pi → default.
     fn cycle_agent(&mut self, back: bool) {
-        use crate::agent::AgentKind::{Claude, Codex, Pi};
-        let order = [None, Some(Claude), Some(Codex), Some(Pi)];
-        let cur = order.iter().position(|a| *a == self.agent).unwrap_or(0);
-        let n = order.len();
-        self.agent = order[if back { (cur + n - 1) % n } else { (cur + 1) % n }];
+        let cur = self.agent_index();
+        let n = Self::AGENTS.len();
+        self.agent = Self::AGENTS[if back { (cur + n - 1) % n } else { (cur + 1) % n }];
     }
     fn agent_label(&self) -> String {
         self.agent.map(|k| k.as_str().to_string()).unwrap_or_else(|| "default".to_string())

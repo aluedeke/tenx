@@ -91,14 +91,35 @@ function view(st) {
     mode = { kind: 'confirm', title: t.title };
     footer = { kind: 'confirm', tag: null, text: `delete '${t.title}' + worktrees?   y = delete   n/esc = cancel`, hint: null, warn: null };
   } else if (st.mode === 'create') {
-    mode = { kind: 'create', workspace: 'acme', workspace_index: 1, workspaces: 3, name: st.buffer, repos: [{ name: 'api', checked: true }, { name: 'web', checked: true }, { name: 'infra', checked: false }], agent: 'claude', agent_inherits: true, focus: 'name', focus_repo: null };
+    const f = st.form;
+    mode = {
+      kind: 'create', workspace: WORKSPACES[f.ws].name, workspace_index: f.ws + 1, workspaces: WORKSPACES.length,
+      workspace_options: WORKSPACES.map((w) => ({ name: w.name, color: w.color })),
+      agent_options: AGENTS, agent_index: f.agent,
+      name: f.name, repos: f.repos, agent: AGENTS[f.agent], agent_inherits: f.agent === 0, focus: 'name', focus_repo: null,
+    };
     footer = { kind: 'hint', tag: null, text: '⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent', hint: null, warn: null };
+  } else if (st.mode === 'rename') {
+    mode = { kind: 'rename', buffer: st.buffer };
+    footer = { kind: 'hint', tag: null, text: '⏎ save   esc cancel', hint: null, warn: null };
+  } else if (st.mode === 'edit_repos') {
+    mode = { kind: 'edit_repos', task: 'Fix login timeout', picks: st.picks, focus: 0, confirm: false };
+    footer = { kind: 'hint', tag: null, text: '⏎ apply   esc cancel', hint: null, warn: null };
   }
   return {
     tabs: [{ label: 'Tasks', active: true, running: 0 }, { label: 'Repos', active: false, running: 0 }, { label: 'Work', active: false, running: 1 }],
-    focus: st.focus, filter: st.filter, current: st.current, items, mode, footer, help: HELP,
+    focus: st.focus, filter: st.filter, current: st.current, items, mode, footer, help: HELP, status: st.status ?? null,
   };
 }
+
+// The create form's pickers: a workspace brings its own repos, as in tenx.
+const WORKSPACES = [
+  { name: 'acme', color: '#5eb4aa', repos: ['api', 'web', 'infra'] },
+  { name: 'notes', color: '#ce86a8', repos: ['notes'] },
+  { name: 'tenx', color: '#78b4ce', repos: ['tenx'] },
+];
+const AGENTS = ['default', 'claude', 'codex', 'pi'];
+const repoChecks = (ws) => WORKSPACES[ws].repos.map((name) => ({ name, checked: true }));
 
 const E = '\x1b[';
 const SCREEN = [
@@ -172,10 +193,21 @@ wss.on('connection', (ws) => {
         key(m);
         push();
         return;
+      case 'form':
+        form(m);
+        push();
+        return;
       case 'action': {
         // The list keys the real server presses for a button.
         const keys = { help: '?', open: 'Enter', next: 'n' };
         if (m.name === 'new') key({ key: 'n', ctrl: true });
+        else if (m.name === 'rename') {
+          st.mode = 'rename';
+          st.buffer = TASKS.find((t) => t.id === CURSOR[st.sel].task).title;
+        } else if (m.name === 'edit_repos') {
+          st.mode = 'edit_repos';
+          st.picks = [{ name: 'api', checked: true, present: true }, { name: 'web', checked: false, present: false }];
+        }
         else if (m.name === 'delete') {
           st.focus = 'list';
           st.mode = 'confirm';
@@ -189,6 +221,40 @@ wss.on('connection', (ws) => {
       }
     }
   });
+  // `form` messages, as view.rs `handle_form` takes them.
+  function form(m) {
+    st.status = null;
+    if (m.op === 'cancel') {
+      st.mode = 'list';
+      return;
+    }
+    if (st.mode === 'create') {
+      const f = st.form;
+      if (m.op === 'set' && m.field === 'name') f.name = m.value;
+      if (m.op === 'check' && m.field === 'repo' && f.repos[m.index]) f.repos[m.index].checked = m.on;
+      if (m.op === 'pick' && m.field === 'workspace' && WORKSPACES[m.index] && m.index !== f.ws) {
+        f.ws = m.index;
+        f.repos = repoChecks(m.index);
+      }
+      if (m.op === 'pick' && m.field === 'agent' && AGENTS[m.index]) f.agent = m.index;
+      if (m.op === 'submit') {
+        if (!f.name.trim()) st.status = 'name the task first';
+        else {
+          st.mode = 'list';
+          st.status = `created '${f.name}'`;
+        }
+      }
+    } else if (st.mode === 'rename') {
+      if (m.op === 'set' && m.field === 'title') st.buffer = m.value;
+      if (m.op === 'submit') {
+        if (!st.buffer.trim()) st.status = 'title cannot be empty';
+        else st.mode = 'list';
+      }
+    } else if (st.mode === 'edit_repos') {
+      if (m.op === 'check' && st.picks[m.index]) st.picks[m.index].checked = m.on;
+      if (m.op === 'submit') st.mode = 'list';
+    }
+  }
   function key(m) {
     if (st.mode === 'confirm') {
       if (['y', 'n', 'Escape'].includes(m.key)) st.mode = 'list';
@@ -208,6 +274,7 @@ wss.on('connection', (ws) => {
     }
     if (m.ctrl && m.key === 'n') {
       st.mode = 'create';
+      st.form = { ws: 0, name: '', repos: repoChecks(0), agent: 0 };
       return;
     }
     if (st.focus === 'search') {

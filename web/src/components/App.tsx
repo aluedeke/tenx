@@ -17,7 +17,7 @@ import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
-import type { Action, Click, ColumnView, KeyMessage, ServerMessage } from '@/protocol';
+import type { Action, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
 
@@ -417,6 +417,9 @@ export function App() {
         cycle();
         return;
       }
+      // A web form's own inputs type natively; the form handles Enter
+      // (submit) and Escape (cancel) itself.
+      if ((ev.target as Element | null)?.closest?.('.webform')) return;
       const { focus, visible, ctrlSticky } = state.current;
       if (focus !== 'column' || !visible) return; // xterm has it
       if (ev.metaKey) return; // the browser's own: Cmd+R, Cmd+C, …
@@ -462,6 +465,14 @@ export function App() {
     (name: Action) => {
       setFocus('column');
       send({ type: 'action', name });
+    },
+    [send],
+  );
+
+  const onForm = useCallback(
+    (op: FormOp) => {
+      setFocus('column');
+      send({ type: 'form', ...op });
     },
     [send],
   );
@@ -632,6 +643,7 @@ export function App() {
               onKey={onColumnKey}
               onWantKeyboard={wantKeyboard}
               touch={touch}
+              onForm={onForm}
             />
           </div>
         )}
@@ -690,6 +702,8 @@ export function App() {
           onImages={pasteImages}
           onPaste={pasteClipboard}
           onRefocus={() => {
+            // A web form's field keeps the keyboard it has.
+            if (document.activeElement?.closest('.webform')) return;
             if (state.current.focus === 'column' && state.current.visible) kbd.current?.focus({ preventScroll: true });
             else term.current?.focus();
           }}
