@@ -18,7 +18,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { FormOp, JobProgress, ModeView } from '@/protocol';
 
 type Send = (op: FormOp) => void;
-type FormMode = Extract<ModeView, { kind: 'create' | 'add_repo' | 'new_workspace' | 'edit_repos' }>;
+type FormMode = Extract<ModeView, { kind: 'create' | 'add_repo' | 'new_workspace' | 'edit_repos' | 'reject' }>;
 
 /** A submitted form, frozen while the job it started runs (3g). */
 export interface FormProgress {
@@ -510,7 +510,55 @@ export function WebForms({ mode, status, send, onKey, touch, progress }: Props) 
       );
     case 'edit_repos':
       return <EditRepos mode={mode} send={send} onKey={onKey} error={error} progress={progress} />;
+    case 'reject':
+      return <RejectForm mode={mode} send={send} error={error} touch={touch} />;
   }
+}
+
+/** Rejecting a task's pending secrets requests: every name is denied at once
+ * (the agent exits "denied" and is shown the note), not withdrawn. The names
+ * are listed with the agent's reasons, so you see what you're turning down. */
+function RejectForm({ mode, send, error, touch }: { mode: Extract<FormMode, { kind: 'reject' }>; send: Send; error: string | null; touch: boolean }) {
+  const n = mode.names.length;
+  return (
+    <Shell
+      title="Reject credential request"
+      primary=""
+      send={send}
+      error={error}
+      bar={
+        <div className="wf-bar" data-testid="form-buttons">
+          <button type="button" className="wf-btn ghost" onClick={() => send({ op: 'cancel' })}>
+            Cancel <span className="k">esc</span>
+          </button>
+          <button type="submit" className="wf-btn danger" data-testid="reject-submit">
+            Reject{n > 1 ? ` (${n})` : ''} <span className="k">⏎</span>
+          </button>
+        </div>
+      }
+    >
+      <Section caption={n > 1 ? `${n} REQUESTS FROM ${mode.task.toUpperCase()}` : `REQUEST FROM ${mode.task.toUpperCase()}`}>
+        <ul className="wf-wants" data-testid="reject-names">
+          {mode.names.map((w) => (
+            <li key={w.name}>
+              <span className="wf-want-name">{w.name}</span>
+              {w.why ? <span className="wf-want-why">{w.why}</span> : <span className="wf-want-why none">no reason given</span>}
+            </li>
+          ))}
+        </ul>
+      </Section>
+      <TextField
+        caption="NOTE FOR THE AGENT"
+        field="note"
+        value={mode.note}
+        send={send}
+        autoFocus={!touch}
+        aside="optional"
+        placeholder="e.g. use the test key in .env.example"
+        hint="The agent is told the request was denied, with this note."
+      />
+    </Shell>
+  );
 }
 
 /** Rename, in the search box's place (3e): the title, esc and Save, and a

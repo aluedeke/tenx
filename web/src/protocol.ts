@@ -76,6 +76,8 @@ export interface TaskItem {
   answerable: boolean;
   /** Has secrets waiting to be unlocked (u). */
   locked: boolean;
+  /** The pending secrets requests, each with the agent's reason. */
+  wants: Wanted[];
   agent: string | null;
   age: string | null;
   prs: Chip[];
@@ -168,6 +170,8 @@ export type ModeView =
   | { kind: 'edit_repos'; task: string; picks: Pick[]; focus: number; confirm: boolean }
   | { kind: 'confirm'; title: string }
   | { kind: 'rename'; buffer: string }
+  /** Rejecting every pending secrets request of a task (`D`, `:reject`). */
+  | { kind: 'reject'; task: string; id: string; names: Wanted[]; note: string }
   | { kind: 'help'; scroll: number };
 
 export interface HelpSection {
@@ -225,7 +229,9 @@ export type Action =
   | 'new'
   | 'add_repo'
   | 'new_workspace'
-  | 'help';
+  | 'help'
+  /** Reject every pending secrets request of the row. */
+  | 'reject';
 
 export type ClientMessage =
   | KeyMessage
@@ -247,3 +253,10 @@ export type FormOp =
   | { op: 'pick'; field: 'workspace' | 'agent'; index: number }
   | { op: 'submit' }
   | { op: 'cancel' };
+
+/** A pending secrets request: the name, and why the agent asked (`need
+ * --why`; empty when it gave no reason). */
+export interface Wanted {
+  name: string;
+  why: string;
+}

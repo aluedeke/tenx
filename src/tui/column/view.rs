@@ -122,8 +122,11 @@ pub(crate) struct TaskItem {
     pub(crate) reason: Option<Chip>,
     /// Waiting on a permission prompt `A`/`D` can answer.
     pub(crate) answerable: bool,
-    /// Has secrets waiting to be unlocked (`u`).
+    /// Has secrets waiting to be unlocked (`u`) or rejected (`D`).
     pub(crate) locked: bool,
+    /// The pending secrets requests, each with the agent's reason — what
+    /// `locked` is about, for a front end to show before you answer.
+    pub(crate) wants: Vec<Wanted>,
     /// Its agent, when it isn't the default (Claude).
     pub(crate) agent: Option<String>,
     /// How long it has rested (blocked, signaled and done rows only).
@@ -507,6 +510,15 @@ impl Column {
                 answerable: row.status == TaskStatus::Blocked
                     && row.waiting_for.as_deref().is_some_and(tenx_core::dialog::is_permission_reason),
                 locked: !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty(),
+                wants: row
+                    .secrets_pending
+                    .iter()
+                    .chain(&row.secrets_pending_set)
+                    .map(|name| Wanted {
+                        name: name.clone(),
+                        why: row.secrets_why.iter().find(|(n, _)| n == name).map(|(_, w)| w.clone()).unwrap_or_default(),
+                    })
+                    .collect(),
                 agent: (row.agent != crate::agent::AgentKind::Claude).then(|| row.agent.as_str().to_string()),
                 age: row.changed.filter(|_| rested).map(workspace::format_age),
                 prs: row.live.prs.iter().map(|pr| Chip { label: pr.chip(), fg: pr_rgb(&pr.checks).hex(), bg: None }).collect(),
@@ -760,7 +772,12 @@ impl Column {
     pub(crate) fn handle_form(&mut self, op: &FormOp) -> Result<bool> {
         let is_form = matches!(
             self.mode,
-            Mode::Create(_) | Mode::AddRepo(_) | Mode::NewWorkspace(_) | Mode::EditRepos(_) | Mode::Rename(_)
+            Mode::Create(_)
+                | Mode::AddRepo(_)
+                | Mode::NewWorkspace(_)
+                | Mode::EditRepos(_)
+                | Mode::Rename(_)
+                | Mode::Reject(_)
         );
         if !is_form {
             return Ok(false);
@@ -779,6 +796,7 @@ impl Column {
                     (Mode::NewWorkspace(f), "name") => (f.name, f.focus) = (value, 1),
                     (Mode::NewWorkspace(f), "repo_url") => (f.repo_url, f.focus) = (value, 2),
                     (Mode::Rename(f), "title") => f.buffer = value,
+                    (Mode::Reject(f), "note") => f.buffer = value,
                     _ => {}
                 }
             }
@@ -851,6 +869,12 @@ impl Column {
         // `^n` works from either place; everything else is a list key.
         if action != Action::New {
             self.focus_list();
+        }
+        // Not `D`: on a row that also waits on a permission prompt, `D`
+        // answers that first. The button says what it does.
+        if action == Action::Reject {
+            self.start_reject();
+            return Ok(());
         }
         for &(key, ctrl) in action.keys() {
             self.handle_web_key(&WebKey { key: key.into(), ctrl, ..Default::default() })?;
@@ -979,6 +1003,8 @@ pub(crate) enum Action {
     AddRepo,
     NewWorkspace,
     Help,
+    /// Reject every pending secrets request of the row (`:reject`).
+    Reject,
 }
 
 impl Action {
@@ -998,6 +1024,7 @@ impl Action {
             Action::AddRepo => &[("a", false)],
             Action::NewWorkspace => &[("W", false)],
             Action::Help => &[("?", false)],
+            Action::Reject => &[],
         }
     }
 }
@@ -1293,5 +1320,58 @@ mod tests {
         assert_eq!(ev("A", false, true), Some(KeyCode::Char('A')));
         assert_eq!(ev("ArrowDown", false, false), Some(KeyCode::Down));
         assert_eq!(ev("Shift", false, true), None);
+    }
+
+    /// The web's reject form: opened by the row's button (not `D`, which
+    /// answers a permission prompt first), lists every pending name with the
+    /// agent's reason, takes a note, and rejects them all on submit.
+    #[test]
+    fn rejecting_a_secrets_request_from_the_web() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        let row = c.rows.iter_mut().find(|r| !r.secrets_pending.is_empty()).unwrap();
+        row.secrets_why = vec![("STRIPE_WEBHOOK_SECRET".into(), "verify webhook signatures".into())];
+        let id = row_id(row);
+        let task = c.view().items.into_iter().find_map(|i| match i {
+            Item::Task(t) if t.id == id => Some(t),
+            _ => None,
+        });
+        let wants = task.unwrap().wants;
+        assert_eq!(wants.len(), 1);
+        assert_eq!(wants[0].why, "verify webhook signatures", "the row carries the reason");
+
+        c.handle_click(&Click::Task { id: id.clone(), sub: None });
+        c.handle_action(Action::Reject).unwrap();
+        let ModeView::Reject { names, note, id: form_id, .. } = c.view().mode else { panic!("reject form") };
+        assert_eq!(form_id, id);
+        assert_eq!(names[0].name, "STRIPE_WEBHOOK_SECRET");
+        assert_eq!(names[0].why, "verify webhook signatures");
+        assert!(note.is_empty());
+        assert!(c.view().footer.text.contains("reject STRIPE_WEBHOOK_SECRET"));
+
+        c.handle_form(&FormOp::Set { field: "note".into(), value: "use the test key".into() }).unwrap();
+        let ModeView::Reject { note, .. } = c.view().mode else { panic!("reject form") };
+        assert_eq!(note, "use the test key");
+
+        // Cancel keeps the request; submit rejects it.
+        c.handle_form(&FormOp::Cancel).unwrap();
+        assert!(matches!(c.view().mode, ModeView::List));
+        assert!(c.rows.iter().any(|r| row_id(r) == id && !r.secrets_pending.is_empty()));
+        c.handle_action(Action::Reject).unwrap();
+        c.handle_form(&FormOp::Submit).unwrap();
+        assert!(matches!(c.view().mode, ModeView::List));
+        assert_eq!(c.status_msg.as_deref(), Some("rejected STRIPE_WEBHOOK_SECRET for 'stripe-webhook-signing'"));
+        assert!(c.rows.iter().any(|r| row_id(r) == id && r.secrets_pending.is_empty()));
+    }
+
+    #[test]
+    fn reject_on_a_row_without_secrets_says_so() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        let id = c.rows.iter().find(|r| r.secrets_pending.is_empty()).map(row_id).unwrap();
+        c.handle_click(&Click::Task { id, sub: None });
+        c.handle_action(Action::Reject).unwrap();
+        assert!(matches!(c.view().mode, ModeView::List));
+        assert_eq!(c.status_msg.as_deref(), Some("no pending secrets for this task"));
     }
 }

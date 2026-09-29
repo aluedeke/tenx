@@ -445,3 +445,67 @@ test('the list scrolls to keep the selection in view', async ({ page, isMobile }
     });
   await expect.poll(gap).toBeGreaterThanOrEqual(-1);
 });
+
+test('a pending credential request can be rejected, with a note for the agent', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
+  await page.goto('/');
+  if (isMobile) await page.getByTestId('toggle').tap();
+  const row = page.locator('[data-id="tenx/cloud-tasks"]');
+  let presses = 20;
+  // The row's menu (right-click), or on touch its sheet (long-press), then
+  // "reject request…".
+  const openReject = async () => {
+    if (isMobile) {
+      const b = (await row.boundingBox())!;
+      const at = { pointerType: 'touch', pointerId: presses++, isPrimary: true, bubbles: true, clientX: b.x + 40, clientY: b.y + 10 };
+      await row.dispatchEvent('pointerdown', at);
+      await expect(page.getByTestId('sheet')).toBeVisible({ timeout: 2000 });
+      await row.dispatchEvent('pointerup', at);
+      await page.getByTestId('sheet').getByRole('menuitem', { name: /reject request/ }).tap();
+    } else {
+      await row.click({ button: 'right' });
+      await page.getByTestId('menu').getByRole('menuitem', { name: /reject request/ }).click();
+    }
+  };
+  await openReject();
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'reject')).toBe(true);
+
+  // The form lists every pending name with the agent's reason.
+  const form = page.getByTestId('webform');
+  await expect(form).toContainText('Reject credential request');
+  const names = page.getByTestId('reject-names');
+  await expect(names).toContainText('OPENAI_API_KEY');
+  await expect(names).toContainText('run the embedding eval against the real API');
+  await expect(names).toContainText('SENTRY_DSN');
+  await expect(names).toContainText('no reason given');
+  await page.screenshot({ path: `../../.playwright-mcp/reject-${isMobile ? 'phone' : 'desk'}.png` });
+
+  // Cancel leaves the request alone.
+  await form.getByTestId('form-buttons').getByRole('button', { name: /cancel/i }).click();
+  await expect(form).toHaveCount(0);
+  await expect(row).toBeVisible();
+
+  // Again, with a note, and reject: the note goes over, then the submit.
+  await openReject();
+  const note = form.locator('input[data-field="note"]');
+  await note.fill('use the test key in .env.example');
+  await expect
+    .poll(() => sent().some((m) => m.type === 'form' && m.op === 'set' && m.field === 'note' && m.value === 'use the test key in .env.example'))
+    .toBe(true);
+  await page.getByTestId('reject-submit').click();
+  await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'submit')).toBe(true);
+  await expect(form).toHaveCount(0);
+  await expect(page.getByTestId('footer')).toContainText('rejected OPENAI_API_KEY, SENTRY_DSN');
+});
+
+test('esc cancels the reject form', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  const sent = sentMessages(page);
+  await page.goto('/');
+  await page.locator('[data-id="tenx/cloud-tasks"]').click({ button: 'right' });
+  await page.getByTestId('menu').getByRole('menuitem', { name: /reject request/ }).click();
+  await expect(page.getByTestId('webform')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('webform')).toHaveCount(0);
+  expect(sent().some((m) => m.type === 'form' && m.op === 'cancel')).toBe(true);
+});

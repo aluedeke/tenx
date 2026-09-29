@@ -43,7 +43,7 @@ interface Ctl {
 }
 
 /** The modes a web form (WebForms) draws. Rename sits in the search box's place. */
-const FORM_KINDS = ['create', 'add_repo', 'new_workspace', 'edit_repos'] as const;
+const FORM_KINDS = ['create', 'add_repo', 'new_workspace', 'edit_repos', 'reject'] as const;
 type FormMode = Extract<ModeView, { kind: (typeof FORM_KINDS)[number] }>;
 const isForm = (m: ModeView): m is FormMode => (FORM_KINDS as readonly string[]).includes(m.kind);
 

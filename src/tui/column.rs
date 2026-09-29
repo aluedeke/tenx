@@ -2704,7 +2704,7 @@ impl Column {
         self.rebuild_rows();
     }
 
-    fn selected_has_secrets(&self) -> bool {
+    pub(super) fn selected_has_secrets(&self) -> bool {
         self.selected_row().is_some_and(|r| !r.secrets_pending.is_empty() || !r.secrets_pending_set.is_empty())
     }
 
@@ -2713,7 +2713,7 @@ impl Column {
     /// Open the note prompt for rejecting every pending secrets request of
     /// the selected row. Unlike `:cancel`, the waiting agent is told it was
     /// *denied* (exit 4, with the note), not that the request went away.
-    fn start_reject(&mut self) {
+    pub(super) fn start_reject(&mut self) {
         let Some(r) = self.selected_row() else {
             return;
         };

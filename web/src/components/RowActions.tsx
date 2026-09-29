@@ -33,6 +33,8 @@ export function taskEntries(task: TaskItem, act: (a: Action) => void, answers: b
   out.push({ label: 'rename', key: 'r', run: () => act('rename') });
   out.push({ label: 'edit repos', key: 'e', run: () => act('edit_repos') });
   if (!task.closed) out.push({ label: 'close window', key: 'x', run: () => act('close') });
+  // A denial, not a withdrawal: the waiting agent is told no, with a note.
+  if (task.locked) out.push({ label: 'reject request…', key: 'D', danger: true, run: () => act('reject') });
   out.push({ label: 'delete…', key: 'dd', danger: true, run: () => act('delete') });
   return out;
 }

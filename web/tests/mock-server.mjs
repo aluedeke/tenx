@@ -75,7 +75,8 @@ function view(st) {
       title_color: current ? C.cur : t.closed ? C.mut : C.text, glyph: t.glyph, glyph_color: t.glyph_color, status: t.status,
       selected, current, closed: !!t.closed, pending: false, reason: t.reason ?? null, agent: t.agent ?? null, age: t.age ?? null,
       prs: t.prs ?? [], ports: t.ports ?? [],
-      answerable: t.status === 'blocked', locked: t.glyph === '🔒',
+      answerable: t.status === 'blocked', locked: t.glyph === '🔒' && !st.rejected?.includes(t.id),
+      wants: t.glyph === '🔒' && !st.rejected?.includes(t.id) ? WANTS : [],
     });
     for (const s of t.subs ?? []) {
       items.push({ kind: 'sub', task: t.id, ...s, selected: at.task === t.id && at.sub === s.id && st.focus === 'list' });
@@ -83,7 +84,10 @@ function view(st) {
   }
   const hint = st.focus === 'search' ? 'filter · ↓↑ switch · ⏎ open' : TASKS.find((t) => t.id === at.task).status === 'blocked' ? 'A/D answer · ⏎ open' : '↓↑ switch · ⏎ open · ^n new · ? keys';
   let mode = { kind: 'list' };
-  let footer = { kind: 'hint', tag: st.focus === 'search' ? 'INSERT' : 'NORMAL', text: hint, hint: null, warn: null };
+  // As view.rs: in the list, the last message replaces the hint.
+  let footer = st.mode === 'list' && st.status
+    ? { kind: 'message', tag: null, text: st.status, hint: null, warn: null }
+    : { kind: 'hint', tag: st.focus === 'search' ? 'INSERT' : 'NORMAL', text: hint, hint: null, warn: null };
   if (st.mode === 'help') {
     mode = { kind: 'help', scroll: 0 };
     footer = { kind: 'hint', tag: null, text: 'j/k scroll · any key closes', hint: null, warn: null };
@@ -104,6 +108,10 @@ function view(st) {
       agent_default: 'claude', slug: f.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
     };
     footer = { kind: 'hint', tag: null, text: '⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent', hint: null, warn: null };
+  } else if (st.mode === 'reject') {
+    const t = TASKS.find((x) => x.id === st.rejecting);
+    mode = { kind: 'reject', task: t.title, id: t.id, names: WANTS, note: st.buffer };
+    footer = { kind: 'error', tag: null, text: `⏎ reject ${WANTS.map((w) => w.name).join(', ')}   esc cancel`, hint: null, warn: null };
   } else if (st.mode === 'rename') {
     mode = { kind: 'rename', buffer: st.buffer };
     footer = { kind: 'hint', tag: null, text: '⏎ save   esc cancel', hint: null, warn: null };
@@ -118,6 +126,12 @@ function view(st) {
     jobs: st.jobs ?? [],
   };
 }
+
+// What the locked task (Cloud tasks) is waiting on, as the agent asked.
+const WANTS = [
+  { name: 'OPENAI_API_KEY', why: 'run the embedding eval against the real API' },
+  { name: 'SENTRY_DSN', why: '' },
+];
 
 // The create form's pickers: a workspace brings its own repos, as in tenx.
 const WORKSPACES = [
@@ -217,6 +231,14 @@ wss.on('connection', (ws) => {
           st.mode = 'edit_repos';
           st.picks = [{ name: 'api', checked: true, present: true }, { name: 'web', checked: false, present: false }];
         }
+        else if (m.name === 'reject') {
+          const t = TASKS.find((x) => x.id === CURSOR[st.sel].task);
+          if (t.glyph === '🔒' && !st.rejected?.includes(t.id)) {
+            st.mode = 'reject';
+            st.rejecting = t.id;
+            st.buffer = '';
+          } else st.status = 'no pending secrets for this task';
+        }
         else if (m.name === 'delete') {
           st.focus = 'list';
           st.mode = 'confirm';
@@ -264,6 +286,13 @@ wss.on('connection', (ws) => {
             push();
           }, Number(process.env.MOCK_JOB_TICK_MS ?? 400));
         }
+      }
+    } else if (st.mode === 'reject') {
+      if (m.op === 'set' && m.field === 'note') st.buffer = m.value;
+      if (m.op === 'submit') {
+        st.rejected = [...(st.rejected ?? []), st.rejecting];
+        st.status = `rejected ${WANTS.map((w) => w.name).join(', ')} for '${st.rejecting.split('/')[1]}'`;
+        st.mode = 'list';
       }
     } else if (st.mode === 'rename') {
       if (m.op === 'set' && m.field === 'title') st.buffer = m.value;

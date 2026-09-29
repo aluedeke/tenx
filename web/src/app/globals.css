@@ -1656,3 +1656,39 @@ a:hover {
 .app:not(.touch):not(.narrow) .header .chip {
   padding: 2px 8px;
 }
+
+/* Reject credential request: the names being turned down, danger-tinted
+   like the detach confirm, each with the agent's reason. */
+.wf-wants {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wf-wants li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #26191c;
+  border: 1px solid #5c3438;
+}
+.wf-want-name {
+  color: #f2c4c9;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.wf-want-why {
+  color: var(--text);
+}
+.wf-want-why.none {
+  color: var(--muted);
+  font-style: italic;
+}
+.wf-bar .wf-btn.danger {
+  flex: 1;
+  justify-content: center;
+}

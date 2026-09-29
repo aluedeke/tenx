@@ -76,7 +76,9 @@ Two frame kinds:
 // search field) focused. Ignored outside list mode — forms and prompts get
 // their buttons as plain `key` messages (Enter, Escape, y, space, ←/→).
 // open | approve | deny | rename | edit_repos | close | delete | unlock |
-// transcript | next | new | add_repo | new_workspace | help
+// transcript | next | new | add_repo | new_workspace | help | reject
+// (`reject` opens the reject form for the row's pending secrets requests —
+// `:reject`, not `D`, which answers a permission prompt first)
 { "type": "action", "name": "rename" }
 
 // An edit in one of the column's web forms (view.rs `FormOp`), applied to the
@@ -173,3 +175,15 @@ its own grouped session's (`tmux::current_window_id_in`).
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).
+
+## Rejecting a credential request
+
+A task row carries `wants: [{name, why}]` — its pending secrets requests and
+the reason the agent gave (`need --why`, empty when none). `action: reject`
+(the row menu's "reject request…", the touch sheet's) opens `mode.kind =
+"reject"`: `{task, id, names: [{name, why}], note}`. The page edits the note
+with `form` `set` (`field: "note"`) and ends it with `submit` (every pending
+name is denied — the waiting agent is told no, with the note; not a
+withdrawal) or `cancel`. The outcome is the column's status message
+("rejected A, B for '<slug>'", "'<slug>' had nothing pending any more", or
+the error). `D` and `:reject` reach the same mode from the keyboard.
