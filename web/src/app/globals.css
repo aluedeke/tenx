@@ -1347,3 +1347,29 @@ select.wf-input {
   border-color: var(--border-active);
   background: var(--hover-bg);
 }
+
+/* A desktop (a mouse, a wide page): a roomier header — taller, bigger text
+   and targets, the task in front of you readable at a glance. Touch keeps
+   the compact row above, which suits a tablet. */
+.app:not(.touch):not(.narrow) .header {
+  min-height: 48px;
+  gap: 14px;
+  padding-left: 12px;
+  padding-right: 14px;
+  font-size: calc(var(--ui-size, 12px) + 2px);
+}
+.app:not(.touch):not(.narrow) .header .wordmark {
+  font-size: 17px;
+}
+.app:not(.touch):not(.narrow) .hbtn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: inherit;
+}
+.app:not(.touch):not(.narrow) .hbtn.toggle {
+  font-size: 17px;
+}
+.app:not(.touch):not(.narrow) .header .chip {
+  padding: 2px 8px;
+}
