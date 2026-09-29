@@ -1,24 +1,34 @@
 'use client';
 
-// The column's forms as real web forms: text inputs, a workspace select, an
-// agent radio group, checkboxes — native Tab order, Enter submits, Escape
-// cancels. The server's form state (view.rs `ModeView`) stays the one truth:
-// every edit goes over as a `form` message (`FormOp`) and comes back in the
-// next view; submit and cancel run the form's own ⏎ / esc there, so a web form
-// creates, adds and renames exactly as the terminal's does.
+// The column's forms as real web forms (design turn 3: 3c's sections, chips
+// and sticky action bar, 3a's boxed inputs and per-field errors, 3e's other
+// forms, 3f on the phone, 3g's progress). The server's form state (view.rs
+// `ModeView`) stays the one truth: every edit goes over as a `form` message
+// (`FormOp`) and comes back in the next view; submit and cancel run the
+// form's own ⏎ / esc there, so a web form creates, adds and renames exactly
+// as the terminal's does.
 //
 // Text inputs are uncontrolled while they have the focus — the page sends the
 // whole value on every input and never writes the server's echo back into a
-// field being typed in, so the caret doesn't jump. Checkboxes, the select and
-// the radios follow the server, showing a change at once until its echo.
+// field being typed in, so the caret doesn't jump. Chips (radios and
+// checkboxes under the hood, so Tab, arrows and Space work) follow the
+// server, showing a change at once until its echo.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { FormOp, ModeView } from '@/protocol';
+import type { FormOp, JobProgress, ModeView } from '@/protocol';
 
 type Send = (op: FormOp) => void;
+type FormMode = Extract<ModeView, { kind: 'create' | 'add_repo' | 'new_workspace' | 'edit_repos' }>;
+
+/** A submitted form, frozen while the job it started runs (3g). */
+export interface FormProgress {
+  job: JobProgress;
+  /** esc / ✕: stop watching; the job keeps going on the Work tab. */
+  onLeave(): void;
+}
 
 interface Props {
-  mode: ModeView;
+  mode: FormMode;
   /** `view.status`: shown in the form as its error once it changes. */
   status: string | null;
   send: Send;
@@ -26,6 +36,7 @@ interface Props {
   onKey(key: string): void;
   /** A touch screen: no autofocus (it can't raise the keyboard outside a tap). */
   touch: boolean;
+  progress?: FormProgress;
 }
 
 /** A value from the server, shown changed at once when the user changes it. */
@@ -42,16 +53,49 @@ function useFormError(status: string | null): string | null {
   return status && status !== opened.current ? status : null;
 }
 
+/** Which field an error is about, so it shows under that field (3a); `null`
+ * shows it above the action bar. */
+function errorField(kind: FormMode['kind'] | 'rename', error: string): string | null {
+  const e = error.toLowerCase();
+  switch (kind) {
+    case 'create':
+      return /name|title|exists|slug/.test(e) ? 'name' : null;
+    case 'add_repo':
+      return /url|clone/.test(e) ? 'url' : /name/.test(e) ? 'name' : null;
+    case 'new_workspace':
+      return /path|folder|director/.test(e) ? 'path' : /repo|url|clone/.test(e) ? 'repo_url' : /name/.test(e) ? 'name' : null;
+    case 'rename':
+      return 'title';
+    default:
+      return null;
+  }
+}
+
+function Section({ caption, aside, children }: { caption: string; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="wf-sec">
+      <div className="wf-cap">
+        <span>{caption}</span>
+        {aside && <span className="wf-aside">{aside}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 interface TextProps {
-  label: string;
+  caption: string;
   field: string;
   value: string;
   send: Send;
   autoFocus?: boolean;
   placeholder?: string;
+  aside?: ReactNode;
+  hint?: ReactNode;
+  error?: string | null;
 }
 
-function TextField({ label, field, value, send, autoFocus, placeholder }: TextProps) {
+function TextField({ caption, field, value, send, autoFocus, placeholder, aside, hint, error }: TextProps) {
   const ref = useRef<HTMLInputElement>(null);
   // The server's value, but never into a field being typed in.
   useEffect(() => {
@@ -62,12 +106,13 @@ function TextField({ label, field, value, send, autoFocus, placeholder }: TextPr
     if (autoFocus) ref.current?.focus({ preventScroll: true });
   }, [autoFocus]);
   return (
-    <label className="wf-row">
-      <span className="wf-label">{label}</span>
+    <Section caption={caption} aside={aside}>
       <input
         ref={ref}
-        className="wf-input"
+        className={error ? 'wf-in err' : 'wf-in'}
         data-field={field}
+        aria-label={caption.toLowerCase()}
+        aria-invalid={!!error}
         defaultValue={value}
         placeholder={placeholder}
         autoComplete="off"
@@ -76,45 +121,405 @@ function TextField({ label, field, value, send, autoFocus, placeholder }: TextPr
         spellCheck={false}
         onInput={(e) => send({ op: 'set', field, value: e.currentTarget.value })}
       />
+      {error ? (
+        <div className="wf-err" role="alert" data-testid="form-error">
+          {error}
+        </div>
+      ) : (
+        hint && <div className="wf-hint">{hint}</div>
+      )}
+    </Section>
+  );
+}
+
+/** A chip that is a radio underneath: arrows move within its group. */
+function ChipRadio({ name, checked, onPick, children }: { name: string; checked: boolean; onPick(): void; children: ReactNode }) {
+  return (
+    <label className={checked ? 'wf-chip on' : 'wf-chip'}>
+      <input type="radio" className="wf-hidden" name={name} checked={checked} onChange={onPick} />
+      {children}
     </label>
   );
 }
 
-function CheckField({ label, note, checked, onChange }: { label: string; note?: string; checked: boolean; onChange(on: boolean): void }) {
+/** A chip that is a checkbox underneath: Space toggles it. */
+function ChipCheck({ label, checked, onChange }: { label: string; checked: boolean; onChange(on: boolean): void }) {
   const [on, setOn] = useEcho(checked);
   return (
-    <label className={on ? 'wf-check on' : 'wf-check'}>
+    <label className={on ? 'wf-chip on' : 'wf-chip'}>
       <input
         type="checkbox"
+        className="wf-hidden"
         checked={on}
         onChange={(e) => {
           setOn(e.currentTarget.checked);
           onChange(e.currentTarget.checked);
         }}
       />
-      <span>{label}</span>
-      {note && <span className="wf-note">{note}</span>}
+      {on && <span className="wf-cm">✓</span>}
+      {label}
     </label>
   );
 }
 
-interface FormProps {
+/** "N of M · all · none" beside a checklist's caption. */
+function AllNone({ n, of, onAll }: { n?: number; of?: number; onAll(on: boolean): void }) {
+  return (
+    <>
+      {n != null && of != null && <>{`${n} of ${of} · `}</>}
+      <button type="button" className="wf-link" onClick={() => onAll(true)}>
+        all
+      </button>
+      {' · '}
+      <button type="button" className="wf-link" onClick={() => onAll(false)}>
+        none
+      </button>
+    </>
+  );
+}
+
+interface ShellProps {
   title: string;
   primary: string;
   send: Send;
-  error: string | null;
-  /** Buttons left of cancel (edit repos: all / none). */
-  extra?: ReactNode;
+  /** An error no field claims, shown above the bar. */
+  error?: string | null;
+  progress?: FormProgress;
+  /** Replaces the action bar (the edit-repos confirm step). */
+  bar?: ReactNode | false;
   children: ReactNode;
-  inline?: boolean;
 }
 
-/** A form's frame (title on the border, as the TUI's box), its error, and
- * cancel / primary inside at the bottom-right. */
-function WebForm({ title, primary, send, error, extra, children, inline }: FormProps) {
+/** A form that owns the column: a title row with ✕, sections that scroll,
+ * and an action bar pinned to the bottom (3c) — or, once submitted, the
+ * frozen form with the job's progress in the bar (3g). */
+function Shell({ title, primary, send, error, progress, bar, children }: ShellProps) {
+  const cancel = () => (progress ? progress.onLeave() : send({ op: 'cancel' }));
+  // Frozen, nothing in it has the focus: esc anywhere leaves it (the page's
+  // own key handling steps aside for a `data-popup`).
+  const leave = progress?.onLeave;
+  useEffect(() => {
+    if (!leave) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      leave();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [leave]);
   return (
     <form
-      className={inline ? 'search rename webform' : 'form webform'}
+      className={progress ? 'wf webform frozen' : 'wf webform'}
+      data-popup={progress ? '' : undefined}
+      data-testid="webform"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!progress) send({ op: 'submit' });
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          cancel();
+        }
+      }}
+    >
+      <div className="wf-top">
+        <span className="wf-title">{title}</span>
+        <span className="grow" />
+        <button type="button" className="wf-x" aria-label={progress ? 'leave it running' : 'cancel'} onClick={cancel}>
+          ✕
+        </button>
+      </div>
+      <fieldset className="wf-scroll" disabled={!!progress}>
+        {children}
+      </fieldset>
+      {error && !progress && (
+        <div className="wf-err wf-err-bar" role="alert" data-testid="form-error">
+          {error}
+        </div>
+      )}
+      {progress ? (
+        <div className="wf-bar" data-testid="form-progress">
+          <div className="wf-prog">
+            <div className="wf-prog-row">
+              <span>{progress.job.title}</span>
+              <span className="muted">
+                {progress.job.counter}
+                {progress.job.fraction != null && ` ${Math.round(progress.job.fraction * 100)}%`}
+              </span>
+            </div>
+            <div className="wf-track">
+              <i
+                className={progress.job.fraction == null ? 'marquee' : undefined}
+                style={progress.job.fraction == null ? undefined : { width: `${Math.round(progress.job.fraction * 100)}%` }}
+              />
+            </div>
+            <div className="wf-hint">keeps going on the Work tab — esc to leave it running</div>
+          </div>
+        </div>
+      ) : bar !== undefined ? (
+        bar
+      ) : (
+        <div className="wf-bar" data-testid="form-buttons">
+          <button type="button" className="wf-btn ghost" onClick={cancel}>
+            Cancel <span className="k">esc</span>
+          </button>
+          <button type="submit" className="wf-btn pri">
+            {primary} <span className="k">⏎</span>
+          </button>
+        </div>
+      )}
+    </form>
+  );
+}
+
+function CreateForm({ mode, send, error, touch, progress }: { mode: Extract<FormMode, { kind: 'create' }>; send: Send; error: string | null; touch: boolean; progress?: FormProgress }) {
+  const [ws, setWs] = useEcho(mode.workspace_index - 1);
+  const [agent, setAgent] = useEcho(mode.agent_index);
+  const pickWs = (i: number) => {
+    setWs(i);
+    send({ op: 'pick', field: 'workspace', index: i });
+  };
+  const nameError = error && errorField('create', error) === 'name' ? error : null;
+  const checked = mode.repos.filter((r) => r.checked).length;
+  return (
+    <Shell title="New task" primary="Create task" send={send} error={nameError ? null : error} progress={progress}>
+      <TextField
+        caption="NAME"
+        field="name"
+        value={mode.name}
+        send={send}
+        autoFocus={!touch && !progress}
+        placeholder="what the task is about"
+        error={nameError}
+        hint={mode.slug ? <span data-testid="slug">→ {mode.slug}</span> : null}
+      />
+      <Section caption="WORKSPACE">
+        {mode.workspace_options.length > 6 ? (
+          // Many workspaces: a native list reads better than a wall of chips.
+          <span className="wf-select">
+            <span className="wf-dot" style={{ background: mode.workspace_options[ws]?.color }} />
+            <select className="wf-in" data-field="workspace" aria-label="workspace" value={ws} onChange={(e) => pickWs(Number(e.currentTarget.value))}>
+              {mode.workspace_options.map((w, i) => (
+                <option key={w.name} value={i}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </span>
+        ) : (
+          <div className="wf-chips" role="radiogroup" aria-label="workspace">
+            {mode.workspace_options.map((w, i) => (
+              <ChipRadio key={w.name} name="workspace" checked={i === ws} onPick={() => pickWs(i)}>
+                <span className="wf-dot" style={{ background: w.color }} />
+                {w.name}
+              </ChipRadio>
+            ))}
+          </div>
+        )}
+      </Section>
+      <Section
+        caption="REPOS"
+        aside={
+          mode.repos.length > 0 && (
+            <AllNone n={checked} of={mode.repos.length} onAll={(on) => mode.repos.forEach((_, i) => send({ op: 'check', field: 'repo', index: i, on }))} />
+          )
+        }
+      >
+        {mode.repos.length === 0 ? (
+          <span className="wf-hint">this workspace has no repos yet</span>
+        ) : (
+          <div className="wf-chips" aria-label="repos">
+            {mode.repos.map((r, i) => (
+              <ChipCheck key={`${mode.workspace}/${r.name}`} label={r.name} checked={r.checked} onChange={(on) => send({ op: 'check', field: 'repo', index: i, on })} />
+            ))}
+          </div>
+        )}
+      </Section>
+      <Section caption="AGENT">
+        <div className="wf-chips" role="radiogroup" aria-label="agent">
+          {mode.agent_options.map((a, i) => (
+            <ChipRadio
+              key={a}
+              name="agent"
+              checked={i === agent}
+              onPick={() => {
+                setAgent(i);
+                send({ op: 'pick', field: 'agent', index: i });
+              }}
+            >
+              {a}
+              {i === 0 && <span className="wf-sub">{mode.agent_default}</span>}
+            </ChipRadio>
+          ))}
+        </div>
+      </Section>
+    </Shell>
+  );
+}
+
+function SkillsSwitch({ checked, send }: { checked: boolean; send: Send }) {
+  const [on, setOn] = useEcho(checked);
+  return (
+    <section className="wf-sec">
+      <label className="wf-switch-row">
+        <input
+          type="checkbox"
+          role="switch"
+          className="wf-hidden"
+          checked={on}
+          onChange={(e) => {
+            setOn(e.currentTarget.checked);
+            send({ op: 'check', field: 'skills', on: e.currentTarget.checked });
+          }}
+        />
+        <span className={on ? 'wf-sw on' : 'wf-sw'} aria-hidden="true" />
+        <span className="bright">Install the tenx skills</span>
+      </label>
+      <div className="wf-hint">/tenx and /standup for Claude, Codex and pi, plus AGENTS.md</div>
+    </section>
+  );
+}
+
+function EditRepos({ mode, send, onKey, error, progress }: { mode: Extract<FormMode, { kind: 'edit_repos' }>; send: Send; onKey(key: string): void; error: string | null; progress?: FormProgress }) {
+  const detach = mode.picks.filter((p) => p.present && !p.checked).map((p) => p.name);
+  const confirm = mode.confirm && !progress;
+  return (
+    <Shell
+      title={`Repos of ${mode.task}`}
+      primary="Apply"
+      send={send}
+      error={error}
+      progress={progress}
+      bar={confirm ? false : undefined}
+    >
+      <div className="wf-cap wf-cap-pad">
+        <span>IN THIS TASK</span>
+        {!confirm && (
+          <span className="wf-aside">
+            <AllNone onAll={(on) => mode.picks.forEach((_, i) => send({ op: 'check', field: 'repo', index: i, on }))} />
+          </span>
+        )}
+      </div>
+      {mode.picks.map((p, i) => (
+        <RepoRow key={p.name} name={p.name} checked={p.checked} present={p.present} disabled={confirm} onChange={(on) => send({ op: 'check', field: 'repo', index: i, on })} />
+      ))}
+      {confirm && (
+        <div className="wf-confirm" role="alert" data-testid="detach-confirm">
+          <div>
+            <b>Detach {detach.join(', ')}?</b> {detach.length > 1 ? 'Their worktrees and branches are' : 'Its worktree and branch are'} removed;
+            uncommitted work in {detach.length > 1 ? 'them' : 'it'} is lost.
+          </div>
+          <div className="wf-confirm-row">
+            <button type="button" className="wf-btn ghost on-danger" onClick={() => onKey('Escape')}>
+              Back <span className="k">esc</span>
+            </button>
+            <button type="button" className="wf-btn danger" onClick={() => onKey('y')} autoFocus>
+              Detach <span className="k">y</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+function RepoRow({ name, checked, present, disabled, onChange }: { name: string; checked: boolean; present: boolean; disabled: boolean; onChange(on: boolean): void }) {
+  const [on, setOn] = useEcho(checked);
+  const badge = on === present ? (present ? ['in', 'in task'] : null) : on ? ['add', '+ add'] : ['det', '− detach'];
+  return (
+    <label className="wf-row">
+      <input
+        type="checkbox"
+        className="wf-hidden"
+        checked={on}
+        disabled={disabled}
+        onChange={(e) => {
+          setOn(e.currentTarget.checked);
+          onChange(e.currentTarget.checked);
+        }}
+      />
+      <span className={on ? 'wf-cbx on' : 'wf-cbx'} aria-hidden="true">
+        {on ? '✓' : ''}
+      </span>
+      <span className={on ? 'bright' : 'muted'}>{name}</span>
+      <span className="grow" />
+      {badge && <span className={`wf-badge ${badge[0]}`}>{badge[1]}</span>}
+    </label>
+  );
+}
+
+export function WebForms({ mode, status, send, onKey, touch, progress }: Props) {
+  const error = useFormError(status);
+  const errFor = (kind: FormMode['kind'], field: string) => (error && errorField(kind, error) === field ? error : null);
+  const rest = (kind: FormMode['kind']) => (error && errorField(kind, error) === null ? error : null);
+  switch (mode.kind) {
+    case 'create':
+      return <CreateForm mode={mode} send={send} error={error} touch={touch} progress={progress} />;
+    case 'add_repo':
+      return (
+        <Shell title={`Add a repo to ${mode.workspace}`} primary="Add repo" send={send} error={rest('add_repo')} progress={progress}>
+          <TextField
+            caption="URL"
+            field="url"
+            value={mode.url}
+            send={send}
+            autoFocus={!touch && !progress}
+            placeholder="git@github.com:org/repo.git"
+            error={errFor('add_repo', 'url')}
+          />
+          <TextField
+            caption="NAME"
+            field="name"
+            value={mode.name}
+            send={send}
+            aside="optional"
+            placeholder="from the url"
+            error={errFor('add_repo', 'name')}
+          />
+        </Shell>
+      );
+    case 'new_workspace':
+      return (
+        <Shell title="New workspace" primary="Create workspace" send={send} error={rest('new_workspace')} progress={progress}>
+          <TextField
+            caption="FOLDER"
+            field="path"
+            value={mode.path}
+            send={send}
+            autoFocus={!touch && !progress}
+            placeholder="~/work/acme"
+            hint="created if it doesn't exist"
+            error={errFor('new_workspace', 'path')}
+          />
+          <TextField caption="NAME" field="name" value={mode.name} send={send} placeholder="the folder's last part" error={errFor('new_workspace', 'name')} />
+          <TextField
+            caption="FIRST REPO"
+            field="repo_url"
+            value={mode.repo_url}
+            send={send}
+            aside="optional"
+            placeholder="git@github.com:org/app.git"
+            error={errFor('new_workspace', 'repo_url')}
+          />
+          <SkillsSwitch checked={mode.skills} send={send} />
+        </Shell>
+      );
+    case 'edit_repos':
+      return <EditRepos mode={mode} send={send} onKey={onKey} error={error} progress={progress} />;
+  }
+}
+
+/** Rename, in the search box's place (3e): the title, esc and Save, and a
+ * note that only the title changes. */
+export function RenameForm({ value, status, send, touch }: { value: string; status: string | null; send: Send; touch: boolean }) {
+  const error = useFormError(status);
+  return (
+    <form
+      className="wf-rename webform"
       data-testid="webform"
       onSubmit={(e) => {
         e.preventDefault();
@@ -128,183 +533,24 @@ function WebForm({ title, primary, send, error, extra, children, inline }: FormP
         }
       }}
     >
-      <span className={inline ? 'search-title' : 'form-title'}>{title}</span>
-      {inline ? children : <div className="wf-body">{children}</div>}
-      {error && (
-        <div className="wf-error" role="alert" data-testid="form-error">
-          {error}
-        </div>
-      )}
-      <div className="fbtns" data-testid="form-buttons">
-        {extra}
-        <button type="button" className="pill ghost" onClick={() => send({ op: 'cancel' })}>
-          cancel <span className="k">esc</span>
+      <div className={error ? 'wf-ren err' : 'wf-ren'}>
+        <span className="accent">✎</span>
+        <RenameInput value={value} send={send} autoFocus={!touch} />
+        <button type="button" className="wf-btn ghost small" aria-label="cancel" onClick={() => send({ op: 'cancel' })}>
+          <span className="k">esc</span>
         </button>
-        <button type="submit" className={inline ? 'pill pri' : 'pill pri big'}>
-          {primary} <span className="k">⏎</span>
+        <button type="submit" className="wf-btn pri small">
+          Save <span className="k">⏎</span>
         </button>
       </div>
-    </form>
-  );
-}
-
-function CreateForm({ mode, send, error, touch }: { mode: Extract<ModeView, { kind: 'create' }>; send: Send; error: string | null; touch: boolean }) {
-  const [ws, setWs] = useEcho(mode.workspace_index - 1);
-  const [agent, setAgent] = useEcho(mode.agent_index);
-  const color = mode.workspace_options[ws]?.color;
-  return (
-    <WebForm title="new task" primary="create" send={send} error={error}>
-      <label className="wf-row">
-        <span className="wf-label">workspace</span>
-        {mode.workspace_options.length > 1 ? (
-          <span className="wf-select">
-            <span className="wf-dot" style={{ background: color }} />
-            <select
-              className="wf-input"
-              data-field="workspace"
-              value={ws}
-              onChange={(e) => {
-                const i = Number(e.currentTarget.value);
-                setWs(i);
-                send({ op: 'pick', field: 'workspace', index: i });
-              }}
-            >
-              {mode.workspace_options.map((w, i) => (
-                <option key={w.name} value={i}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </span>
-        ) : (
-          <span className="wf-static" style={{ color }}>
-            {mode.workspace}
-          </span>
-        )}
-      </label>
-      <TextField label="name" field="name" value={mode.name} send={send} autoFocus={!touch} placeholder="what the task is about" />
-      <fieldset className="wf-group">
-        <legend className="wf-label">repos</legend>
-        {mode.repos.length === 0 && <span className="wf-note">this workspace has no repos yet</span>}
-        {mode.repos.map((r, i) => (
-          <CheckField key={`${mode.workspace}/${r.name}`} label={r.name} checked={r.checked} onChange={(on) => send({ op: 'check', field: 'repo', index: i, on })} />
-        ))}
-      </fieldset>
-      <fieldset className="wf-group">
-        <legend className="wf-label">agent</legend>
-        <div className="wf-seg" role="radiogroup">
-          {mode.agent_options.map((a, i) => (
-            <label key={a} className={i === agent ? 'on' : undefined}>
-              <input
-                type="radio"
-                name="agent"
-                value={i}
-                checked={i === agent}
-                onChange={() => {
-                  setAgent(i);
-                  send({ op: 'pick', field: 'agent', index: i });
-                }}
-              />
-              {a}
-            </label>
-          ))}
+      {error ? (
+        <div className="wf-err wf-ren-note" role="alert" data-testid="form-error">
+          {error}
         </div>
-        {agent === 0 && <span className="wf-note">inherits the workspace's agent</span>}
-      </fieldset>
-    </WebForm>
-  );
-}
-
-export function WebForms({ mode, status, send, onKey, touch }: Props) {
-  const error = useFormError(status);
-  switch (mode.kind) {
-    case 'create':
-      return <CreateForm mode={mode} send={send} error={error} touch={touch} />;
-    case 'add_repo':
-      return (
-        <WebForm title={`add repo to ${mode.workspace}`} primary="add" send={send} error={error}>
-          <TextField label="url" field="url" value={mode.url} send={send} autoFocus={!touch} placeholder="git@github.com:org/repo.git" />
-          <TextField label="name" field="name" value={mode.name} send={send} placeholder="from the url" />
-        </WebForm>
-      );
-    case 'new_workspace':
-      return (
-        <WebForm title="new workspace" primary="create" send={send} error={error}>
-          <TextField label="path" field="path" value={mode.path} send={send} autoFocus={!touch} placeholder="~/work/acme" />
-          <TextField label="name" field="name" value={mode.name} send={send} placeholder="the path's last part" />
-          <TextField label="repo url" field="repo_url" value={mode.repo_url} send={send} placeholder="optional — add repos later" />
-          <CheckField
-            label="skills"
-            note="/tenx, /standup and AGENTS.md"
-            checked={mode.skills}
-            onChange={(on) => send({ op: 'check', field: 'skills', on })}
-          />
-        </WebForm>
-      );
-    case 'edit_repos':
-      if (mode.confirm) {
-        const detach = mode.picks.filter((p) => p.present && !p.checked).map((p) => p.name);
-        return (
-          <div className="form webform" data-testid="webform">
-            <span className="form-title">{`repos of ${mode.task}`}</span>
-            <div className="wf-error" role="alert">
-              detach {detach.join(', ')}? Each worktree and its branch are removed.
-            </div>
-            <div className="fbtns" data-testid="form-buttons">
-              <button type="button" className="pill ghost" onClick={() => onKey('Escape')}>
-                back <span className="k">esc</span>
-              </button>
-              <button type="button" className="pill no big" onClick={() => onKey('y')} autoFocus>
-                detach <span className="k">y</span>
-              </button>
-            </div>
-          </div>
-        );
-      }
-      return (
-        <WebForm
-          title={`repos of ${mode.task}`}
-          primary="apply"
-          send={send}
-          error={error}
-          extra={
-            <>
-              <button type="button" className="pill ghost" onClick={() => mode.picks.forEach((_, i) => send({ op: 'check', field: 'repo', index: i, on: true }))}>
-                all
-              </button>
-              <button type="button" className="pill ghost" onClick={() => mode.picks.forEach((_, i) => send({ op: 'check', field: 'repo', index: i, on: false }))}>
-                none
-              </button>
-              <span className="grow" />
-            </>
-          }
-        >
-          <fieldset className="wf-group">
-            {mode.picks.map((p, i) => (
-              <CheckField
-                key={p.name}
-                label={p.name}
-                checked={p.checked}
-                note={p.checked === p.present ? undefined : p.checked ? 'add' : 'detach'}
-                onChange={(on) => send({ op: 'check', field: 'repo', index: i, on })}
-              />
-            ))}
-          </fieldset>
-        </WebForm>
-      );
-    default:
-      return null;
-  }
-}
-
-/** Rename, in the search box's place: one field, cancel and save. */
-export function RenameForm({ value, status, send, touch }: { value: string; status: string | null; send: Send; touch: boolean }) {
-  const error = useFormError(status);
-  return (
-    <WebForm title="rename task" primary="save" send={send} error={error} inline>
-      <span className="accent">✎ </span>
-      <RenameInput value={value} send={send} autoFocus={!touch} />
-    </WebForm>
+      ) : (
+        <div className="wf-hint wf-ren-note">renames the title only — the branch and folder stay the same</div>
+      )}
+    </form>
   );
 }
 
@@ -325,7 +571,7 @@ function RenameInput({ value, send, autoFocus }: { value: string; send: Send; au
   return (
     <input
       ref={ref}
-      className="wf-input wf-bare"
+      className="wf-ren-in"
       data-field="title"
       aria-label="task title"
       defaultValue={value}

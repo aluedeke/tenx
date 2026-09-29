@@ -14,7 +14,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { PopupLayer, Slide, jobEntries, subEntries, taskEntries, useRowGestures, type Popup, type Reveal } from './RowActions';
-import type { Action, Click, ColumnView, Footer, FormOp, Item, JobItem, SubItem, TaskItem } from '@/protocol';
+import type { Action, Click, ColumnView, Footer, FormOp, Item, JobItem, ModeView, SubItem, TaskItem } from '@/protocol';
 import { RenameForm, WebForms } from './WebForms';
 
 interface Props {
@@ -42,9 +42,45 @@ interface Ctl {
   onWantKeyboard(): void;
 }
 
+/** The modes a web form (WebForms) draws. Rename sits in the search box's place. */
+const FORM_KINDS = ['create', 'add_repo', 'new_workspace', 'edit_repos'] as const;
+type FormMode = Extract<ModeView, { kind: (typeof FORM_KINDS)[number] }>;
+const isForm = (m: ModeView): m is FormMode => (FORM_KINDS as readonly string[]).includes(m.kind);
+
+/** A submitted form, followed until its job lands (3g): the jobs running
+ * when it was submitted, the form as it was, and the job it started. */
+interface Tracking {
+  known: Set<number>;
+  snapshot: FormMode;
+  jobId: number | null;
+}
+
 export function Column(props: Props) {
   const { view, focused, onClick, onFocus, onAction, onKey, onWantKeyboard } = props;
   const listRef = useRef<HTMLDivElement>(null);
+  const [tracking, setTracking] = useState<Tracking | null>(null);
+
+  // A submit closes the form on the server and starts a job: keep showing the
+  // form, frozen, with that job's progress until it lands (or esc leaves it).
+  const sendForm = useCallback(
+    (op: FormOp) => {
+      if (op.op === 'submit' && view && isForm(view.mode)) {
+        setTracking({ known: new Set(view.jobs.map((j) => j.id)), snapshot: view.mode, jobId: null });
+      }
+      props.onForm(op);
+    },
+    [view, props],
+  );
+  useEffect(() => {
+    if (!tracking || !view || isForm(view.mode)) return; // still open: refused, or not yet answered
+    if (tracking.jobId == null) {
+      const started = view.jobs.find((j) => !tracking.known.has(j.id));
+      setTracking(started ? { ...tracking, jobId: started.id } : null);
+    } else if (!view.jobs.some((j) => j.id === tracking.jobId)) {
+      setTracking(null); // landed: the list (and its new row) again
+    }
+  }, [view, tracking]);
+  const tracked = tracking?.jobId != null ? view?.jobs.find((j) => j.id === tracking.jobId) : undefined;
 
   // Keep the selected row in view as the cursor moves.
   useEffect(() => {
@@ -62,9 +98,20 @@ export function Column(props: Props) {
   const mode = view?.mode ?? { kind: 'list' };
   const ctl: Ctl = { onClick, onKey, onWantKeyboard };
   // Keyed by the form's kind, so a new form starts with fresh inputs.
-  const form = view && ['create', 'add_repo', 'new_workspace', 'edit_repos'].includes(mode.kind) ? (
-    <WebForms key={mode.kind} mode={mode} status={view.status} send={props.onForm} onKey={onKey} touch={props.touch} />
-  ) : null;
+  const form =
+    view && isForm(mode) ? (
+      <WebForms key={mode.kind} mode={mode} status={view.status} send={sendForm} onKey={onKey} touch={props.touch} />
+    ) : tracking && tracked ? (
+      <WebForms
+        key={`frozen-${tracking.snapshot.kind}`}
+        mode={tracking.snapshot}
+        status={null}
+        send={() => {}}
+        onKey={() => {}}
+        touch={props.touch}
+        progress={{ job: tracked, onLeave: () => setTracking(null) }}
+      />
+    ) : null;
   const [popup, setPopup] = useState<Popup | null>(null);
   const [reveal, setReveal] = useState<{ id: string; side: Reveal } | null>(null);
   const closePopup = useCallback(() => setPopup(null), []);
@@ -113,7 +160,8 @@ export function Column(props: Props) {
           {view.mode.kind === 'rename' ? (
             <RenameForm value={view.mode.buffer} status={view.status} send={props.onForm} touch={props.touch} />
           ) : (
-            <SearchBox view={view} focused={focused} ctl={ctl} />
+            // A form owns the column (3c): no search box above it.
+            !form && <SearchBox view={view} focused={focused} ctl={ctl} />
           )}
           {form ?? (
             <div className="list" ref={listRef} data-testid="list">
@@ -122,15 +170,9 @@ export function Column(props: Props) {
               ))}
             </div>
           )}
-          {form ? (
-            // The terminal's hints (space toggles, ←→ cycle) aren't how a
-            // web form works; its own keys are.
-            <div className="footer" data-testid="footer">
-              <span className="muted">⇥ next field · ⏎ {mode.kind === 'edit_repos' ? 'apply' : 'submit'} · esc cancel</span>
-            </div>
-          ) : (
-            <FooterLine footer={view.footer} focused={focused} onKey={onKey} />
-          )}
+          {/* A web form's buttons carry its keys; the terminal's hint line
+              (space toggles, ←→ cycle) isn't how it works. */}
+          {!form && view.mode.kind !== 'rename' && <FooterLine footer={view.footer} focused={focused} onKey={onKey} />}
           {mode.kind === 'help' && <Help view={view} scroll={mode.scroll} onKey={onKey} />}
         </>
       )}

@@ -6,7 +6,6 @@ export interface ColumnView {
   /** Where the cursor is: the search field (Insert) or the list (Normal). */
   focus: 'search' | 'list';
   filter: string;
-  /** The current task's row id, if the session's current window is one. */
   /** The task the terminal area shows (`Column::is_shown`): the session's
    * current window, or a closed task the cursor rests on. */
   current: string | null;
@@ -19,7 +18,19 @@ export interface ColumnView {
   /** The column's last message (an error or an outcome), also while a
    * form's footer hides it — a form shows it inside itself. */
   status: string | null;
+  /** The running jobs this column started, on any tab: a form's submit
+   * follows the one it started (a new `id`). */
+  jobs: JobProgress[];
   help: HelpSection[];
+}
+
+export interface JobProgress {
+  id: number;
+  title: string;
+  /** The step running now, e.g. `2/3 api`. */
+  counter: string;
+  /** 0–1 while the running step reports a percentage. */
+  fraction: number | null;
 }
 
 export interface TabView {
@@ -137,6 +148,11 @@ export type ModeView =
       repos: Check[];
       agent: string;
       agent_inherits: boolean;
+      /** What `default` resolves to for the chosen workspace. */
+      agent_default: string;
+      /** The task's directory and branch name, from `name` (server-side
+       * slugify); empty until the name makes one. */
+      slug: string;
       focus: 'workspace' | 'name' | 'repo' | 'agent';
       focus_repo: number | null;
     }

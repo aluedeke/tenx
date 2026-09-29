@@ -277,6 +277,13 @@ pub fn agent_for(ws: &crate::workspace::Workspace, task_dir: &Path) -> AgentKind
             return AgentKind::from_token(token);
         }
     }
+    workspace_agent(ws)
+}
+
+/// The agent a task of `ws` gets when it has no override of its own: the
+/// workspace's, else the global one, else Claude — what a new task's
+/// "default" resolves to.
+pub fn workspace_agent(ws: &crate::workspace::Workspace) -> AgentKind {
     if !ws.config.agent.trim().is_empty() {
         return AgentKind::from_token(&ws.config.agent);
     }

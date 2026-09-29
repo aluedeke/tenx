@@ -679,6 +679,26 @@ mod shared_jobs {
     }
 
     #[test]
+    fn the_view_lists_only_the_running_jobs_this_column_started() {
+        let jobs = crate::tui::job::Jobs::default();
+        let mut a = fixture_column().with_jobs(jobs.clone());
+        let mut b = fixture_column().with_jobs(jobs);
+        let mut plan = Plan::new("creating 'checkout flow'", ["tenx".to_string()]);
+        plan.steps[0].state = StepState::Running(None);
+        let (job, tx) = crate::tui::job::fixture(plan);
+        std::mem::forget(tx);
+        a.push_job(job);
+        let (landed, tx) = crate::tui::job::fixture(Plan::new("done", ["tenx".to_string()]));
+        std::mem::forget(tx);
+        b.push_job(landed);
+        b.jobs.lock()[1].outcome = Some(Ok("done".into()));
+        let v = a.view();
+        assert_eq!(v.jobs.len(), 1);
+        assert_eq!(v.jobs[0].title, "creating 'checkout flow'");
+        assert!(b.view().jobs.is_empty(), "another column's job, and a landed one, aren't this form's progress");
+    }
+
+    #[test]
     fn a_column_of_its_own_does_not_share() {
         let mut a = fixture_column();
         let b = fixture_column();

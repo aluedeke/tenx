@@ -116,10 +116,13 @@ test('forms carry their own buttons; + opens the new-task form', async ({ page, 
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
   await (isMobile ? page.getByTestId('add').tap() : page.getByTestId('add').click());
-  const buttons = page.locator('.form').getByTestId('form-buttons');
-  await expect(buttons.getByRole('button', { name: /create/ })).toBeVisible();
-  await buttons.getByRole('button', { name: /cancel/ }).click();
-  await expect(page.locator('.form')).toHaveCount(0);
+  const buttons = page.locator('.wf').getByTestId('form-buttons');
+  await expect(buttons.getByRole('button', { name: /create task/i })).toBeVisible();
+  // The form owns the column: no search box, no terminal hint line.
+  await expect(page.locator('.search')).toHaveCount(0);
+  await expect(page.getByTestId('footer')).toHaveCount(0);
+  await buttons.getByRole('button', { name: /cancel/i }).click();
+  await expect(page.locator('.wf')).toHaveCount(0);
   expect(sent().some((m) => m.type === 'form' && m.op === 'cancel')).toBe(true);
 });
 
@@ -291,38 +294,67 @@ test('a closed last task is not reopened', async ({ page }) => {
 test('the new-task form is a real web form', async ({ page, isMobile }) => {
   const sent = sentMessages(page);
   const forms = () => sent().filter((m) => m.type === 'form');
+  const tap = (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
+  const chip = (label: string) => page.locator('.wf-chip', { hasText: new RegExp(`^\\W*${label}`) });
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
-  await (isMobile ? page.getByTestId('add').tap() : page.getByTestId('add').click());
+  await tap(page.getByTestId('add'));
   const name = page.locator('input[data-field=name]');
   await expect(name).toBeVisible();
   if (!isMobile) await expect(name).toBeFocused();
   await name.fill('Rate limit login');
   await expect.poll(() => forms().some((m) => m.op === 'set' && m.field === 'name' && m.value === 'Rate limit login')).toBe(true);
+  // The server's slug for it, under the name.
+  await expect(page.getByTestId('slug')).toHaveText('→ rate-limit-login');
 
-  // Another workspace brings its repos.
-  await page.locator('select[data-field=workspace]').selectOption('1');
-  await expect(page.getByRole('checkbox', { name: 'notes' })).toBeVisible();
-  await expect(page.getByRole('checkbox', { name: 'api' })).toHaveCount(0);
-  await page.locator('select[data-field=workspace]').selectOption('0');
-  await page.getByRole('checkbox', { name: 'web' }).uncheck();
+  // Workspace chips: another workspace brings its repos.
+  await tap(chip('notes'));
+  await expect.poll(() => forms().some((m) => m.op === 'pick' && m.field === 'workspace' && m.index === 1)).toBe(true);
+  await expect(page.getByRole('checkbox', { name: 'notes' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /api/ })).toHaveCount(0);
+  await tap(chip('acme'));
+  await expect(page.getByRole('radio', { name: /acme/ })).toBeChecked();
+  // Repo chips toggle; "none" / "all" check each one.
+  await tap(chip('web'));
   await expect.poll(() => forms().some((m) => m.op === 'check' && m.field === 'repo' && m.index === 1 && m.on === false)).toBe(true);
-  await expect(page.getByRole('checkbox', { name: 'web' })).not.toBeChecked();
-  await page.getByRole('radio', { name: 'codex' }).check();
+  await expect(page.getByRole('checkbox', { name: /web/ })).not.toBeChecked();
+  await tap(page.getByRole('button', { name: 'none' }));
+  await expect(page.getByRole('checkbox', { name: /api/ })).not.toBeChecked();
+  await tap(page.getByRole('button', { name: 'all' }));
+  await expect(page.getByRole('checkbox', { name: /infra/ })).toBeChecked();
+  // Agent chips; "default" names what it resolves to.
+  await expect(chip('default')).toContainText('claude');
+  await tap(chip('codex'));
   await expect.poll(() => forms().some((m) => m.op === 'pick' && m.field === 'agent' && m.index === 2)).toBe(true);
 
   // Tab walks the fields natively; Enter submits.
   if (!isMobile) {
     await name.focus();
     await page.keyboard.press('Tab');
-    await expect(page.getByRole('checkbox', { name: 'api' })).toBeFocused();
-    await name.focus();
+    await expect(page.getByRole('radio', { name: /acme/ })).toBeFocused();
   }
   await name.press('Enter');
   await expect.poll(() => forms().some((m) => m.op === 'submit')).toBe(true);
-  await expect(page.locator('.webform')).toHaveCount(0);
+  // The job it started: the form stays, frozen, with the progress (3g)…
+  await expect(page.getByTestId('form-progress')).toContainText("creating 'Rate limit login'");
+  await expect(page.getByTestId('form-progress')).toContainText('Work tab');
+  // …until the job lands, and the list is back.
+  await expect(page.locator('.webform')).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByTestId('list')).toBeVisible();
   // Typing in the form never went to the column as keys.
   expect(sent().some((m) => m.type === 'key' && m.key === 'R')).toBe(false);
+});
+
+test('esc leaves a running job to the Work tab', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  await page.goto('/');
+  await page.getByTestId('add').click();
+  await page.locator('input[data-field=name]').fill('Leave it');
+  await page.locator('input[data-field=name]').press('Enter');
+  await expect(page.getByTestId('form-progress')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.webform')).toHaveCount(0);
+  await expect(page.getByTestId('list')).toBeVisible();
 });
 
 test('a refused submit shows why inside the form; Escape cancels', async ({ page, isMobile }) => {
@@ -331,7 +363,10 @@ test('a refused submit shows why inside the form; Escape cancels', async ({ page
   await page.goto('/');
   await page.getByTestId('add').click();
   await page.locator('input[data-field=name]').press('Enter');
+  // Under the field it is about, which turns red (3a).
   await expect(page.getByTestId('form-error')).toHaveText('name the task first');
+  await expect(page.locator('input[data-field=name]')).toHaveClass(/err/);
+  await expect(page.getByTestId('form-progress')).toHaveCount(0);
   await page.locator('input[data-field=name]').press('Escape');
   await expect(page.locator('.webform')).toHaveCount(0);
   expect(sent().some((m) => m.type === 'form' && m.op === 'cancel')).toBe(true);
@@ -353,9 +388,19 @@ test('rename and edit repos are web forms too', async ({ page, isMobile }) => {
 
   await row.click({ button: 'right' });
   await page.getByText('edit repos').click();
-  await page.getByRole('checkbox', { name: 'web' }).check();
+  const repoRow = (name: string) => page.locator('.wf-row', { hasText: name });
+  await expect(repoRow('api')).toContainText('in task');
+  await repoRow('web').click();
   await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'check' && m.field === 'repo' && m.index === 1 && m.on === true)).toBe(true);
-  await page.getByRole('button', { name: /apply/ }).click();
+  await expect(repoRow('web')).toContainText('+ add');
+  // Unchecking a repo the task has: detach, which asks in place.
+  await repoRow('api').click();
+  await expect(repoRow('api')).toContainText('− detach');
+  await page.getByRole('button', { name: /apply/i }).click();
+  const confirm = page.getByTestId('detach-confirm');
+  await expect(confirm).toContainText('Detach api?');
+  await confirm.getByRole('button', { name: /detach/i }).click();
+  await expect.poll(() => sent().some((m) => m.type === 'key' && m.key === 'y')).toBe(true);
   await expect(page.locator('.webform')).toHaveCount(0);
 });
 

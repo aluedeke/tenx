@@ -38,8 +38,25 @@ pub(crate) struct ColumnView {
     /// footer hides it — so a web form can show why a submit was refused
     /// inside the form.
     pub(crate) status: Option<String>,
+    /// The long operations this column started that are still running, on
+    /// any tab — so a web form can show the progress of the job its submit
+    /// started (the Work tab's items only exist on that tab).
+    pub(crate) jobs: Vec<JobProgress>,
     /// The `?` overlay's table: section, then (keys, action) rows.
     pub(crate) help: Vec<HelpSection>,
+}
+
+/// A running job, as a form's progress bar shows it.
+#[derive(Debug, Serialize, PartialEq)]
+pub(crate) struct JobProgress {
+    /// Unique in this server, so the page can tell the job its submit
+    /// started from the ones already running.
+    pub(crate) id: u64,
+    pub(crate) title: String,
+    /// The step running now, e.g. `2/3 api`.
+    pub(crate) counter: String,
+    /// 0–1 while the running step reports a percentage.
+    pub(crate) fraction: Option<f32>,
 }
 
 /// What the empty screen for a closed task names.
@@ -193,6 +210,11 @@ pub(crate) enum ModeView {
         /// `default` when it inherits.
         agent: String,
         agent_inherits: bool,
+        /// What `default` resolves to for the chosen workspace (`claude`, …).
+        agent_default: &'static str,
+        /// The task's directory and branch name, from `name`
+        /// (`tenx_core::slug::slugify`) — empty until the name makes one.
+        slug: String,
         /// `workspace`, `name`, `repo` or `agent`.
         focus: &'static str,
         /// The repo under the cursor when `focus` is `repo`.
@@ -427,6 +449,18 @@ impl Column {
             mode: self.mode_view(),
             footer: footer(self),
             status: self.status_msg.clone(),
+            jobs: self
+                .jobs
+                .lock()
+                .iter()
+                .filter(|j| j.owner == self.id && !j.landed())
+                .map(|j| JobProgress {
+                    id: j.id,
+                    title: j.plan.title.clone(),
+                    counter: j.plan.counter(),
+                    fraction: j.active_snapshot().and_then(|s| s.percent).map(|_| j.plan.fraction()),
+                })
+                .collect(),
             help: KEYS.iter().map(|(section, keys)| HelpSection { section, keys: keys.to_vec() }).collect(),
         }
     }
@@ -612,6 +646,8 @@ impl Column {
                 repos: f.repos.iter().map(|(name, checked)| Check { name: name.clone(), checked: *checked }).collect(),
                 agent: f.agent_label(),
                 agent_inherits: f.agent.is_none(),
+                agent_default: f.inherited.as_str(),
+                slug: tenx_core::slug::slugify(&f.name),
                 focus: match f.focus {
                     CreateForm::WORKSPACE => "workspace",
                     CreateForm::NAME => "name",
@@ -782,8 +818,10 @@ impl Column {
                 // A new workspace brings its own repo checklist, as ←/→ does.
                 if let Some(ws) = reload {
                     let repos = self.ws_repos(ws);
+                    let inherited = self.ws_agent(ws);
                     if let Mode::Create(f) = &mut self.mode {
                         f.repos = repos;
+                        f.inherited = inherited;
                         f.focus = CreateForm::WORKSPACE;
                     }
                 }
@@ -1065,7 +1103,14 @@ mod tests {
         let mut c = screenshot::fixture_column();
         c.offline = true;
         c.workspaces = vec![ws("acme", &["api", "web"]), ws("notes", &["notes"])];
-        c.mode = Mode::Create(CreateForm { ws_idx: 0, name: String::new(), repos: c.ws_repos(0), agent: None, focus: CreateForm::NAME });
+        c.mode = Mode::Create(CreateForm {
+            ws_idx: 0,
+            name: String::new(),
+            repos: c.ws_repos(0),
+            agent: None,
+            inherited: crate::agent::AgentKind::Claude,
+            focus: CreateForm::NAME,
+        });
         c
     }
 
@@ -1084,6 +1129,23 @@ mod tests {
         // A field the open form doesn't have is ignored.
         form(&mut c, r#"{"op":"set","field":"url","value":"x"}"#);
         assert!(matches!(c.view().mode, ModeView::Create { .. }));
+    }
+
+    #[test]
+    fn the_create_form_previews_the_slug_and_what_default_means() {
+        let mut c = with_workspaces();
+        form(&mut c, r#"{"op":"set","field":"name","value":"Rate limit: login!"}"#);
+        let ModeView::Create { slug, agent_default, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(slug, tenx_core::slug::slugify("Rate limit: login!"), "the rule task creation uses");
+        assert_eq!(agent_default, "claude");
+        // A workspace with its own agent: "default" now means that one.
+        c.workspaces[1].config.agent = "codex".into();
+        form(&mut c, r#"{"op":"pick","field":"workspace","index":1}"#);
+        let ModeView::Create { agent_default, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(agent_default, "codex");
+        form(&mut c, r#"{"op":"set","field":"name","value":"   "}"#);
+        let ModeView::Create { slug, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(slug, "", "no slug until the name makes one");
     }
 
     #[test]

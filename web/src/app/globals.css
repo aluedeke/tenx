@@ -1118,66 +1118,125 @@ a:hover {
   box-shadow: inset 3px 0 0 var(--current), inset 0 0 0 1px #2c3444;
 }
 
-/* ── Web forms (WebForms.tsx) ─────────────────────────────────────────── */
+/* ── Web forms (WebForms.tsx) — design turn 3: 3c + 3a, 3e, 3f, 3g ────── */
 
-/* The frame fits its fields (the buttons right under them, not at the
-   column's foot); only the fields scroll when they don't fit, so the title
-   on the border isn't clipped. */
-.form.webform {
-  flex: 0 1 auto;
-  gap: 10px;
-}
-.form.webform .fbtns {
-  margin-top: 0;
-  padding-top: 4px;
-}
-.wf-body {
+/* The form owns the column: a title row, sections that scroll, and the
+   action bar pinned to the bottom (3c). */
+.wf {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+}
+.wf-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 10px;
+}
+.wf-title {
+  font-weight: 700;
+  color: var(--bright);
+  font-size: calc(var(--ui-size, 12px) + 1px);
+}
+.wf-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.wf-x:hover {
+  color: var(--bright);
+  background: var(--hover-bg);
+}
+.wf-scroll {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 2px 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
 }
-.wf-row {
+.wf-sec {
+  padding: 10px 12px;
+  border-top: 1px solid #23262f;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 8px;
 }
-.wf-label {
+.wf-cap {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
   color: var(--muted);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  padding: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
 }
-.wf-input {
+.wf-cap-pad {
+  padding: 0 12px 6px;
+}
+.wf-aside {
+  letter-spacing: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.wf-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.wf-link:hover,
+.wf-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* 3a's boxed input, with its focus ring and error state. */
+.wf-in {
   width: 100%;
-  min-width: 0;
-  padding: 5px 8px;
+  height: 34px;
+  padding: 0 11px;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--ground);
+  border-radius: 7px;
+  background: #10111a;
   color: var(--bright);
   font: inherit;
-  font-weight: 700;
+  font-size: calc(var(--ui-size, 12px) + 0.5px);
   outline: none;
 }
-.wf-input::placeholder {
+.wf-in::placeholder {
   color: var(--idle);
-  font-weight: var(--ui-weight, 400);
 }
-.wf-input:focus {
+.wf-in:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.18);
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.18);
 }
-select.wf-input {
-  appearance: none;
-  padding-right: 24px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%;
-  background-size: 5px 5px;
-  background-repeat: no-repeat;
-  cursor: pointer;
+.wf-in.err {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(229, 112, 123, 0.15);
+}
+.wf-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+.wf-err {
+  color: var(--danger);
+  font-size: 11px;
+}
+.wf-err-bar {
+  flex: none;
+  padding: 8px 12px 0;
 }
 .wf-select {
   display: flex;
@@ -1185,133 +1244,357 @@ select.wf-input {
   gap: 8px;
 }
 .wf-dot {
-  flex: none;
+  display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  flex: none;
 }
-.wf-static {
-  font-weight: 700;
-  padding: 5px 0;
-}
-.wf-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+
+/* Chips: radios and checkboxes underneath, for the keyboard and screen
+   readers; the chip is what shows. */
+.wf-hidden {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
   margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
+  pointer-events: none;
 }
-.wf-group > legend {
-  margin-bottom: 3px;
+.wf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.wf-check {
+.wf-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.wf-chip:hover {
+  border-color: var(--border-active);
+  color: var(--text);
+}
+.wf-chip.on {
+  border-color: #6b5aa8;
+  background: #221d36;
+  color: var(--bright);
+}
+.wf-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.wf-cm {
+  color: var(--accent);
+}
+.wf-sub {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+/* The action bar, pinned under the sections. */
+.wf-bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 4px;
-  border-radius: 4px;
-  color: var(--muted);
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: #11121a;
+}
+.wf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
   cursor: pointer;
 }
-.wf-check:hover {
+.wf-btn.ghost {
+  border-color: transparent;
+  color: var(--muted);
+}
+.wf-btn.ghost:hover {
+  color: var(--bright);
   background: var(--hover-bg);
 }
-.wf-check.on {
-  color: var(--bright);
-}
-.wf-check input,
-.wf-seg input {
-  accent-color: var(--accent);
-  margin: 0;
-}
-.wf-note {
-  color: var(--muted);
-  font-size: 11px;
-}
-.wf-check .wf-note {
-  margin-left: auto;
-  color: var(--warn);
-}
-.wf-seg {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  overflow: hidden;
-  align-self: flex-start;
-}
-.wf-seg label {
-  position: relative;
-  padding: 4px 10px;
-  color: var(--muted);
-  cursor: pointer;
-}
-.wf-seg label + label {
-  border-left: 1px solid var(--border);
-}
-.wf-seg label.on {
-  background: #1f1b2e;
-  color: var(--accent);
+.wf-btn.pri {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #16131f;
   font-weight: 700;
 }
-/* The radio itself is only for the keyboard and screen readers; the pill is
-   what shows the choice. */
-.wf-seg input {
-  position: absolute;
-  opacity: 0;
-  inset: 0;
+.wf-bar .wf-btn.pri {
+  flex: 1;
+}
+.wf-btn.pri .k {
+  color: #3b2f63;
+  border-color: #8a73d6;
+}
+.wf-btn.danger {
+  background: #6a2e35;
+  border-color: #8a3c45;
+  color: #fbe3e6;
+  font-weight: 700;
+}
+.wf-btn.danger .k {
+  color: #f2c4c9;
+  border-color: #a0535b;
+}
+.wf-btn.on-danger {
+  color: #f2c4c9;
+}
+.wf-btn.small {
+  height: 24px;
+  padding: 0 7px;
+}
+.wf .k,
+.wf-rename .k {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 10.5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 1.35;
+}
+
+/* 3g: submitted — the form dims, the bar shows the job's progress. */
+.wf.frozen .wf-scroll,
+.wf.frozen .wf-top .wf-title {
+  opacity: 0.55;
+}
+.wf-prog {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.wf-prog-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+}
+.wf-prog-row > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #262a36;
+  overflow: hidden;
+}
+.wf-track i {
+  display: block;
+  height: 100%;
+  background: var(--info);
+  transition: width 0.3s;
+}
+.wf-track i.marquee {
+  width: 30%;
+  animation: wf-marquee 1.2s ease-in-out infinite alternate;
+}
+@keyframes wf-marquee {
+  from {
+    margin-left: 0;
+  }
+  to {
+    margin-left: 70%;
+  }
+}
+
+/* 3e: new workspace's skills switch. */
+.wf-switch-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   cursor: pointer;
 }
-.wf-seg label:has(input:focus-visible) {
+.wf-sw {
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--border);
+  position: relative;
+  flex: none;
+  transition: background 0.15s;
+}
+.wf-sw::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: left 0.15s;
+}
+.wf-sw.on {
+  background: var(--accent);
+}
+.wf-sw.on::after {
+  left: 14px;
+  background: #16131f;
+}
+.wf-switch-row:has(input:focus-visible) .wf-sw {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 3e: edit repos — rows with badges, and the detach confirm in place. */
+.wf-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border-top: 1px solid #23262f;
+  cursor: pointer;
+}
+.wf-row:hover {
+  background: var(--hover-bg);
+}
+.wf-row:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.wf-error {
+.wf-cbx {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border-active);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  flex: none;
+}
+.wf-cbx.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #16131f;
+  font-weight: 700;
+}
+.wf-badge {
+  font-size: 10.5px;
+  padding: 0 6px;
+  border-radius: 3px;
+  line-height: 1.6;
+}
+.wf-badge.add {
+  color: var(--success);
+  background: #1a241c;
+  border: 1px solid #3c5a3d;
+}
+.wf-badge.det {
   color: var(--danger);
-  font-size: 12px;
+  background: #26191c;
+  border: 1px solid #5c3438;
 }
-.touch .wf-input {
-  font-size: 16px; /* under 16px iOS zooms the page on focus */
-  padding: 8px 10px;
+.wf-badge.in {
+  color: var(--muted);
+  border: 1px solid var(--border);
 }
-.touch .wf-check,
-.touch .wf-seg label {
-  min-height: 40px;
+.wf-confirm {
+  margin: 10px 12px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: #26191c;
+  border: 1px solid #5c3438;
+  color: #f2c4c9;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wf-confirm-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-/* Rename: the search box's place, one bare input. */
-.search.rename.webform {
-  flex-wrap: wrap;
-  gap: 4px;
-  overflow: visible;
+/* 3e: rename, in the search box's place. */
+.wf-rename {
+  flex: none;
 }
-.search.rename.webform .fbtns {
-  margin: 0;
-  padding: 0;
+.wf-ren {
+  margin: 0 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: #10111a;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.18);
 }
-.search.rename.webform .wf-error {
-  flex-basis: 100%;
+.wf-ren.err {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(229, 112, 123, 0.15);
 }
-.wf-input.wf-bare {
+.wf-ren-in {
   flex: 1;
-  width: auto;
-  padding: 0 2px;
+  min-width: 0;
   border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-/* A web form's title is a heading inside its frame, not a legend over the
-   border: the frame's container clips anything drawn above it. */
-.form.webform > .form-title {
-  position: static;
-  padding: 0;
+  outline: none;
   background: none;
   color: var(--bright);
-  font-weight: 700;
+  font: inherit;
+}
+.wf-ren-note {
+  padding: 0 12px 10px;
+}
+
+/* 3f: a touch screen — thumb-sized chips, inputs and buttons, no key hints. */
+.touch .wf-chip {
+  height: 36px;
+  border-radius: 18px;
+  padding: 0 14px;
+}
+.touch .wf-in,
+.touch .wf-bar .wf-btn,
+.touch .wf-ren {
+  height: 44px;
+}
+.touch .wf-bar {
+  padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+}
+.touch .wf-x {
+  min-width: 40px;
+  height: 40px;
+}
+.touch .wf-row {
+  height: 44px;
+}
+.touch .wf .k,
+.touch .wf-rename .k {
+  display: none;
+}
+.touch .wf-err {
+  font-size: 11.5px;
 }
 
 /* A closed task under the cursor: its empty screen over the terminal, as

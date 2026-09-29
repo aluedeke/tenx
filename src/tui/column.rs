@@ -54,6 +54,9 @@ struct CreateForm {
     repos: Vec<(String, bool)>,
     /// The task's agent, or `None` to inherit the workspace/global default.
     agent: Option<crate::agent::AgentKind>,
+    /// What `None` resolves to for the chosen workspace, read when the
+    /// workspace is picked — shown beside "default".
+    inherited: crate::agent::AgentKind,
     focus: usize,
 }
 
@@ -1726,14 +1729,21 @@ impl Column {
             }
         };
         let repos = self.ws_repos(ws_idx);
+        let inherited = self.ws_agent(ws_idx);
         self.status_msg = None;
         self.mode = Mode::Create(CreateForm {
             ws_idx,
             name: String::new(),
             repos,
             agent: None,
+            inherited,
             focus: CreateForm::NAME,
         });
+    }
+
+    /// The agent a new task in this workspace inherits.
+    fn ws_agent(&self, ws_idx: usize) -> crate::agent::AgentKind {
+        self.workspaces.get(ws_idx).map_or(crate::agent::AgentKind::Claude, crate::agent::workspace_agent)
     }
 
     fn ws_repos(&self, ws_idx: usize) -> Vec<(String, bool)> {
@@ -1771,6 +1781,7 @@ impl Column {
                 let back = key.code == KeyCode::Left;
                 if form.cycle_workspace(self.workspaces.len(), back) {
                     form.repos = self.ws_repos(form.ws_idx);
+                    form.inherited = self.ws_agent(form.ws_idx);
                 }
             }
             KeyCode::Right if form.focus == form.agent_field() => form.cycle_agent(false),

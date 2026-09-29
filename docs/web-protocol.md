@@ -137,9 +137,16 @@ delete (right). The header's `+`, `● next` (shown when a task other than the
 current one needs you) and `?` send `new` (on Repos a menu of `add_repo` /
 `new_workspace`), `next` and `help`. The column's forms
 (new task, new workspace, add repo, edit repos, rename) are native web forms —
-text inputs, a workspace select, agent radios, checkboxes, Tab order, Enter
-submits, Escape cancels — sending `form` messages; a refused submit shows the
-view's `status` inside the form. A delete asks on its row with `key` messages
+a form owns the column (title, ✕, captioned sections, an action bar pinned to
+the bottom): text inputs, chips that are radios / checkboxes underneath
+(workspace, repos, agent — a native select past six workspaces), Tab order,
+Enter submits, Escape cancels — sending `form` messages. The create form shows
+the server's `slug` for the name and what `default` resolves to
+(`agent_default`). A refused submit shows the view's `status` under the field
+it is about (else above the bar). A submit that starts a job keeps the form on
+screen, frozen, with that job's progress from `view.jobs` (the one whose `id`
+wasn't there before the submit) until it lands; esc leaves it running on the
+Work tab. A delete asks on its row with `key` messages
 (y, n). Tapping
 something that takes typing focuses an off-screen input so a phone raises its
 keyboard; what it types goes over as `key` messages.

@@ -101,19 +101,21 @@ function view(st) {
       workspace_options: WORKSPACES.map((w) => ({ name: w.name, color: w.color })),
       agent_options: AGENTS, agent_index: f.agent,
       name: f.name, repos: f.repos, agent: AGENTS[f.agent], agent_inherits: f.agent === 0, focus: 'name', focus_repo: null,
+      agent_default: 'claude', slug: f.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
     };
     footer = { kind: 'hint', tag: null, text: '⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent', hint: null, warn: null };
   } else if (st.mode === 'rename') {
     mode = { kind: 'rename', buffer: st.buffer };
     footer = { kind: 'hint', tag: null, text: '⏎ save   esc cancel', hint: null, warn: null };
   } else if (st.mode === 'edit_repos') {
-    mode = { kind: 'edit_repos', task: 'Fix login timeout', picks: st.picks, focus: 0, confirm: false };
+    mode = { kind: 'edit_repos', task: 'Fix login timeout', picks: st.picks, focus: 0, confirm: !!st.confirmDetach };
     footer = { kind: 'hint', tag: null, text: '⏎ apply   esc cancel', hint: null, warn: null };
   }
   return {
     tabs: [{ label: 'Tasks', active: true, running: 0 }, { label: 'Repos', active: false, running: 0 }, { label: 'Work', active: false, running: 1 }],
     focus: st.focus, filter: st.filter, current: shownId, items,
     shown_closed: closedSel ? (({ id, title, ws, ws_color }) => ({ id, title, ws, ws_color }))(TASKS.find((t) => t.id === closedSel)) : null, mode, footer, help: HELP, status: st.status ?? null,
+    jobs: st.jobs ?? [],
   };
 }
 
@@ -167,6 +169,7 @@ const server = createServer(async (req, res) => {
 const wss = new WebSocketServer({ server, path: '/ws' });
 let sessions = 0;
 wss.on('connection', (ws) => {
+  let jobIds = 0;
   const st = { sel: 1, focus: 'list', filter: '', current: 'acme/fix-login-timeout', mode: 'list', buffer: '' };
   const json = (m) => ws.send(JSON.stringify(m));
   const push = () => json({ type: 'view', view: view(st) });
@@ -246,8 +249,20 @@ wss.on('connection', (ws) => {
       if (m.op === 'submit') {
         if (!f.name.trim()) st.status = 'name the task first';
         else {
+          // As tenx: the form closes and a job starts; it reports progress,
+          // then lands.
           st.mode = 'list';
-          st.status = `created '${f.name}'`;
+          const job = { id: ++jobIds, title: `creating '${f.name}'`, counter: '1/2 api', fraction: 0 };
+          st.jobs = [...(st.jobs ?? []), job];
+          const tick = setInterval(() => {
+            job.fraction = Math.min(1, job.fraction + 0.2);
+            if (job.fraction >= 1) {
+              clearInterval(tick);
+              st.jobs = st.jobs.filter((j) => j !== job);
+              st.status = `created '${f.name}'`;
+            }
+            push();
+          }, Number(process.env.MOCK_JOB_TICK_MS ?? 400));
         }
       }
     } else if (st.mode === 'rename') {
@@ -258,10 +273,22 @@ wss.on('connection', (ws) => {
       }
     } else if (st.mode === 'edit_repos') {
       if (m.op === 'check' && st.picks[m.index]) st.picks[m.index].checked = m.on;
-      if (m.op === 'submit') st.mode = 'list';
+      if (m.op === 'submit') {
+        // Detaching asks first, as tenx does.
+        if (!st.confirmDetach && st.picks.some((p) => p.present && !p.checked)) st.confirmDetach = true;
+        else {
+          st.confirmDetach = false;
+          st.mode = 'list';
+        }
+      }
     }
   }
   function key(m) {
+    if (st.mode === 'edit_repos' && st.confirmDetach) {
+      if (m.key === 'y') st.mode = 'list';
+      if (m.key === 'y' || m.key === 'Escape') st.confirmDetach = false;
+      return;
+    }
     if (st.mode === 'confirm') {
       if (['y', 'n', 'Escape'].includes(m.key)) st.mode = 'list';
       return;
