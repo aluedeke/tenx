@@ -154,5 +154,15 @@ What the service worker (`web/public/sw.js`) receives, encrypted (RFC 8291 `aes1
 
 Sent on the edges the attention watcher notifies on (a task going Blocked or Signaled, a secrets request), once per edge. `tag` replaces an older notification for the same task. A tap focuses an open page and posts it `{type: "open-task", task}`, or opens `url`; either way the page selects the task (`click`) and opens it (`action: open`).
 
+The marker: `view.current` (and each task's `current`) is what the terminal
+area shows (`Column::is_shown`) — the session's current window, or, while the
+cursor rests on a task with no open window, that task. For the latter the
+view also carries `shown_closed` (`{id, title, ws, ws_color}`), and the page
+draws that task's empty screen over the terminal — its title, "no window
+open", "⏎ open it here" — as the TUI's `render_closed` does; a click there
+sends `action: open`. Tasks and windows are matched by task directory, never
+by name alone (`snapshot::Windows::window_of`), and a tab's current window is
+its own grouped session's (`tmux::current_window_id_in`).
+
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

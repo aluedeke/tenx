@@ -1313,3 +1313,37 @@ select.wf-input {
   color: var(--bright);
   font-weight: 700;
 }
+
+/* A closed task under the cursor: its empty screen over the terminal, as
+   the TUI draws it — the title, "no window open", and ⏎ to open it. */
+.closed-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: var(--ground);
+  text-align: center;
+  cursor: pointer;
+}
+.closed-title {
+  color: var(--bright);
+  font-weight: 700;
+}
+.closed-open {
+  margin-top: calc(var(--line) - 4px);
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.closed-open:hover {
+  border-color: var(--border-active);
+  background: var(--hover-bg);
+}

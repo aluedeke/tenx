@@ -661,6 +661,24 @@ export function App() {
             }}
             onImages={pasteImages}
           />
+          {view?.shown_closed && columnHasKeys && (
+            // The cursor rests on a task with no window: its empty screen in
+            // place of the session, as the TUI draws it (`render_closed`); the
+            // session keeps running behind it. A press here must not move the
+            // keyboard to the terminal first — that would take the screen away.
+            <div
+              className="closed-screen"
+              data-testid="closed-screen"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => onAction('open')}
+            >
+              <div className="closed-title">{view.shown_closed.title}</div>
+              <div className="muted">no window open</div>
+              <button type="button" className="closed-open">
+                <span className="accent bold">⏎</span> open it here
+              </button>
+            </div>
+          )}
           {pasting && (
             <div
               className={pastingTap ? 'toast tap' : 'toast'}

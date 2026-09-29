@@ -23,8 +23,13 @@ pub(crate) struct ColumnView {
     /// Where the cursor is: `search` (Insert) or `list` (Normal).
     pub(crate) focus: &'static str,
     pub(crate) filter: String,
-    /// The current task's row id, if the session's current window is one.
+    /// The row id of the task the task area shows (`Column::is_shown`): the
+    /// session's current window, or a closed task the cursor rests on.
     pub(crate) current: Option<String>,
+    /// The cursor rests on a task with no open window: the task area shows
+    /// its empty "⏎ open it here" screen instead of the session, as the TUI
+    /// does (`Column::selected_closed`, `client::render_closed`).
+    pub(crate) shown_closed: Option<ShownClosed>,
     /// The active tab's list, top to bottom.
     pub(crate) items: Vec<Item>,
     pub(crate) mode: ModeView,
@@ -35,6 +40,15 @@ pub(crate) struct ColumnView {
     pub(crate) status: Option<String>,
     /// The `?` overlay's table: section, then (keys, action) rows.
     pub(crate) help: Vec<HelpSection>,
+}
+
+/// What the empty screen for a closed task names.
+#[derive(Debug, Serialize, PartialEq)]
+pub(crate) struct ShownClosed {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) ws: String,
+    pub(crate) ws_color: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -403,6 +417,12 @@ impl Column {
             },
             filter: self.filter.clone(),
             current,
+            shown_closed: self.selected_closed_row().map(|r| ShownClosed {
+                id: row_id(r),
+                title: r.title.clone(),
+                ws: r.ws_name.clone(),
+                ws_color: palette::workspace_color(&r.ws_name).hex(),
+            }),
             items,
             mode: self.mode_view(),
             footer: footer(self),
@@ -1130,6 +1150,39 @@ mod tests {
         let ModeView::NewWorkspace { skills, repo_url, focus, .. } = c.view().mode else { panic!() };
         assert!(!skills);
         assert_eq!((repo_url.as_str(), focus), ("git@x:a", "repo_url"));
+    }
+
+    /// The cursor on a closed task: the view names it for the empty screen,
+    /// and the marker (`current`) moves onto it; back on the terminal side,
+    /// both go back to the window the session shows.
+    #[test]
+    fn a_closed_task_under_the_cursor_is_what_the_view_shows() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        let shown = c.view().current.clone().expect("the current window's task");
+        assert_eq!(c.view().shown_closed, None);
+        let closed = c.filtered.iter().position(|&i| c.rows[i].window_id.is_none() && !c.rows[i].pending).unwrap();
+        c.selected = closed;
+        let row = &c.rows[c.filtered[closed]];
+        let v = c.view();
+        let sc = v.shown_closed.expect("the empty screen");
+        assert_eq!(sc.id, row_id(row));
+        assert_eq!(sc.title, row.title);
+        assert_eq!(v.current.as_deref(), Some(sc.id.as_str()), "the marker is on what's shown");
+        let marked: Vec<String> = v
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Task(t) if t.current => Some(t.id.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marked, std::slice::from_ref(&sc.id), "one marker, on the closed task");
+        // The keyboard goes back to the terminal: the session's window again.
+        c.blur();
+        let v = c.view();
+        assert_eq!(v.shown_closed, None);
+        assert_eq!(v.current.as_deref(), Some(shown.as_str()));
     }
 
     #[test]

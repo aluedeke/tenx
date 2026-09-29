@@ -59,12 +59,16 @@ function view(st) {
   const items = [];
   let last = null;
   const at = CURSOR[st.sel];
+  // The TUI's `Column::is_shown`: a closed task under the cursor (the list
+  // has the keyboard) is what the terminal area shows; else the current window.
+  const closedSel = st.keys !== false && st.focus === 'list' && st.mode === 'list' && !at.sub && TASKS.find((t) => t.id === at.task)?.closed ? at.task : null;
+  const shownId = closedSel ?? st.current;
   for (const t of TASKS) {
     if (t.section[0] !== last) {
       items.push({ kind: 'header', label: t.section[0], count: TASKS.filter((x) => x.section[0] === t.section[0]).length, color: t.section[1] });
       last = t.section[0];
     }
-    const current = t.id === st.current;
+    const current = t.id === shownId;
     const selected = at.task === t.id && !at.sub && st.focus === 'list';
     items.push({
       kind: 'task', id: t.id, ws: t.ws, ws_color: t.ws_color, slug: t.id.split('/')[1], title: t.title,
@@ -108,7 +112,8 @@ function view(st) {
   }
   return {
     tabs: [{ label: 'Tasks', active: true, running: 0 }, { label: 'Repos', active: false, running: 0 }, { label: 'Work', active: false, running: 1 }],
-    focus: st.focus, filter: st.filter, current: st.current, items, mode, footer, help: HELP, status: st.status ?? null,
+    focus: st.focus, filter: st.filter, current: shownId, items,
+    shown_closed: closedSel ? (({ id, title, ws, ws_color }) => ({ id, title, ws, ws_color }))(TASKS.find((t) => t.id === closedSel)) : null, mode, footer, help: HELP, status: st.status ?? null,
   };
 }
 
@@ -180,6 +185,7 @@ wss.on('connection', (ws) => {
         json({ type: 'layout', column_cols: Math.max(30, Math.min(48, Math.round(m.cols * 0.28))), narrow: m.cols < 100 });
         return;
       case 'focus':
+        st.keys = m.column;
         if (m.column) st.sel = Math.max(0, CURSOR.findIndex((c) => c.task === st.current && !c.sub));
         push();
         return;

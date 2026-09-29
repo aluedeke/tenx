@@ -7,7 +7,12 @@ export interface ColumnView {
   focus: 'search' | 'list';
   filter: string;
   /** The current task's row id, if the session's current window is one. */
+  /** The task the terminal area shows (`Column::is_shown`): the session's
+   * current window, or a closed task the cursor rests on. */
   current: string | null;
+  /** The cursor rests on a task with no open window: show its empty "⏎ open
+   * it here" screen in place of the terminal. */
+  shown_closed: { id: string; title: string; ws: string; ws_color: string } | null;
   items: Item[];
   mode: ModeView;
   footer: Footer;

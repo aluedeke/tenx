@@ -358,3 +358,26 @@ test('rename and edit repos are web forms too', async ({ page, isMobile }) => {
   await page.getByRole('button', { name: /apply/ }).click();
   await expect(page.locator('.webform')).toHaveCount(0);
 });
+
+test('a closed task under the cursor shows its empty screen and takes the marker', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the column overlays the terminal on a phone');
+  const sent = sentMessages(page);
+  await page.goto('/');
+  // Starts on the current window's task.
+  await expect(page.locator('.row.task.cur')).toContainText('Fix login timeout');
+  await expect(page.getByTestId('closed-screen')).toHaveCount(0);
+  // Onto a closed task: its screen replaces the terminal, the marker moves.
+  await page.getByText('Competitor analysis').click();
+  await expect(page.getByTestId('closed-screen')).toContainText('Competitor analysis');
+  await expect(page.getByTestId('closed-screen')).toContainText('open it here');
+  await expect(page.locator('.row.task.cur')).toHaveCount(1);
+  await expect(page.locator('.row.task.cur')).toContainText('Competitor analysis');
+  // Back onto an open task: the terminal again, the marker on the window.
+  await page.getByText('Better loading indicators').click();
+  await expect(page.getByTestId('closed-screen')).toHaveCount(0);
+  await expect(page.locator('.row.task.cur')).toContainText('Fix login timeout');
+  // The empty screen's button opens the task.
+  await page.getByText('Competitor analysis').click();
+  await page.getByTestId('closed-screen').getByRole('button').click();
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(true);
+});
