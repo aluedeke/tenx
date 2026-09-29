@@ -29,9 +29,9 @@ page passes the token as `?token=` on the WebSocket URL instead of the cookie
 ## WebSocket `/ws?session=<id>`
 
 `session` is optional: the id of a grouped session this tab had before (kept
-in `sessionStorage`). If `tenx-web-<id>` still exists (within the 30 s grace
+in `localStorage`). If `tenx-web-<id>` still exists (within the 30 s grace
 period after a disconnect) the connection re-attaches to it; otherwise the
-server makes a new one, grouped with `tenx`, on `tenx`'s current window.
+server makes a new one, grouped with `tenx`, on `tenx`'s current window. The page then goes back to the task that device last had in front of it (remembered in `localStorage`), if that task's window is open — a closed one isn't reopened, since that would start its agent.
 
 Two frame kinds:
 

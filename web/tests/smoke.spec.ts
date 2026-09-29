@@ -262,3 +262,28 @@ test('the header names the task you are in and drives the column', async ({ page
   await tap(header.getByTestId('add'));
   await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'new')).toBe(true);
 });
+
+test('a fresh start goes back to the last task, if its window is open', async ({ page }) => {
+  // The mock's current task is acme/fix-login-timeout; this device last had
+  // web/better-loading (open) in front of it.
+  await page.addInitScript(() => {
+    localStorage.setItem('tenx-last-task', 'web/better-loading');
+    localStorage.removeItem('tenx-web-session');
+  });
+  const sent = sentMessages(page);
+  await page.goto('/');
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(true);
+  expect(sent().some((m) => m.type === 'click' && m.kind === 'task' && m.id === 'web/better-loading')).toBe(true);
+});
+
+test('a closed last task is not reopened', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('tenx-last-task', 'notes/competitor-analysis');
+    localStorage.removeItem('tenx-web-session');
+  });
+  const sent = sentMessages(page);
+  await page.goto('/');
+  await expect(page.getByTestId('header')).toBeVisible();
+  await page.waitForTimeout(800);
+  expect(sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(false);
+});

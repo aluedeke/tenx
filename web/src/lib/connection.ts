@@ -38,9 +38,13 @@ function socketUrl(session: string | null): string {
   return qs ? `${base}?${qs}` : base;
 }
 
+// localStorage, not sessionStorage: an iOS Home Screen app that is closed and
+// reopened starts a new session storage, and would never find its tmux
+// session again. Two desktop tabs asking for the same id is fine — the
+// server gives the second one a session of its own.
 function storedSession(): string | null {
   try {
-    return sessionStorage.getItem(SESSION_KEY);
+    return localStorage.getItem(SESSION_KEY);
   } catch {
     return null;
   }
@@ -48,7 +52,7 @@ function storedSession(): string | null {
 
 function storeSession(id: string) {
   try {
-    sessionStorage.setItem(SESSION_KEY, id);
+    localStorage.setItem(SESSION_KEY, id);
   } catch {
     // Private mode or blocked storage: a reload just starts a new session.
   }
@@ -58,6 +62,11 @@ export class Connection {
   private ws: WebSocket | null = null;
   private failures = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** The session the last socket asked for. */
+  private asked: string | null = null;
+  /** The last `hello` came back with the session asked for: the page is back
+   * where it was (within the server's grace period), not on a new session. */
+  resumed = false;
   private closed = false;
   private encoder = new TextEncoder();
 
@@ -91,7 +100,8 @@ export class Connection {
 
   private open() {
     this.handlers.status(this.failures === 0 ? 'connecting' : 'reconnecting', this.failures);
-    const ws = new WebSocket(socketUrl(storedSession()));
+    this.asked = storedSession();
+    const ws = new WebSocket(socketUrl(this.asked));
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onopen = () => {
@@ -106,7 +116,10 @@ export class Connection {
         } catch {
           return;
         }
-        if (msg.type === 'hello') storeSession(msg.session);
+        if (msg.type === 'hello') {
+          this.resumed = msg.session === this.asked;
+          storeSession(msg.session);
+        }
         this.handlers.message(msg);
       } else {
         this.handlers.output(new Uint8Array(ev.data as ArrayBuffer));

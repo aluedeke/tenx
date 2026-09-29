@@ -26,6 +26,16 @@ type Focus = 'column' | 'terminal';
 const NARROW_COLS = 100;
 
 const FONT_KEY = 'tenx-terminal-font';
+/** The task this device last had in front of it, to come back to. */
+const LAST_TASK_KEY = 'tenx-last-task';
+
+function lastTask(): string | null {
+  try {
+    return localStorage.getItem(LAST_TASK_KEY);
+  } catch {
+    return null;
+  }
+}
 
 function measureCell(fontSize: number): number {
   const probe = document.createElement('span');
@@ -60,6 +70,8 @@ export function App() {
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
   const wantTask = useRef<string | null>(null);
+  /** The last task to go back to once a new session sends its first view. */
+  const restoreTask = useRef<string | null>(null);
   const lastView = useRef<ColumnView | null>(null);
 
   const conn = useRef<Connection | null>(null);
@@ -164,12 +176,17 @@ export function App() {
             c.send({ type: 'viewport', cols: Math.floor(window.innerWidth / measureCell(fontRef.current)) });
             const { focus, visible } = state.current;
             c.send({ type: 'focus', column: focus === 'column' && visible });
+            // A new session starts on the Mac's current window; this device
+            // goes back to the task it last had (unless a notification or a
+            // link asked for another).
+            if (!c.resumed && !wantTask.current) restoreTask.current = lastTask();
             break;
           }
           case 'view':
             setView(msg.view);
             lastView.current = msg.view;
             openWanted(msg.view);
+            restoreLast(msg.view);
             break;
           case 'layout':
             setColumnCols(msg.column_cols);
@@ -231,6 +248,31 @@ export function App() {
     setFocus('terminal');
     if (state.current.narrow) setVisible(false);
   };
+
+  // Coming back to the last task: only one whose window is open — switching
+  // to it is harmless, while opening a closed one would start its agent.
+  const restoreLast = (v: ColumnView) => {
+    const id = restoreTask.current;
+    if (!id) return;
+    restoreTask.current = null;
+    const task = v.items.find((i) => i.kind === 'task' && i.id === id);
+    if (!task || task.kind !== 'task' || task.closed || v.current === id) return;
+    conn.current?.send({ type: 'click', kind: 'task', id });
+    conn.current?.send({ type: 'action', name: 'open' });
+    setFocus('terminal');
+    if (state.current.narrow) setVisible(false);
+  };
+
+  // Remember the task in front of this device.
+  const currentTask = view?.current ?? null;
+  useEffect(() => {
+    if (!currentTask) return;
+    try {
+      localStorage.setItem(LAST_TASK_KEY, currentTask);
+    } catch {
+      // Storage blocked: nothing to come back to.
+    }
+  }, [currentTask]);
 
   useEffect(() => {
     const url = new URL(location.href);
