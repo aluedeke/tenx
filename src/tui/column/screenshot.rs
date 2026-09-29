@@ -363,6 +363,10 @@ fn column_renders_narrow() {
     let y = text.lines().position(|l| l.contains("column screenshot")).unwrap() as u16;
     let x = text.lines().nth(y as usize).unwrap().find("column").unwrap() as u16;
     assert_eq!(buf.cell((x, y)).unwrap().fg, palette::CURRENT.color());
+    // …and a gutter bar marks both of its lines.
+    let bar = text.lines().nth(y as usize).unwrap().chars().position(|c| c == '▌').expect("gutter bar on the title line");
+    assert!(text.lines().nth(y as usize + 1).unwrap().contains('▌'), "gutter bar on the second line");
+    assert_eq!(buf.cell((bar as u16, y)).unwrap().fg, palette::CURRENT.color());
     if std::env::var_os("TENX_SCREENSHOT").is_some() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/column.svg");
         std::fs::write(&path, svg(buf)).unwrap();

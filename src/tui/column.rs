@@ -3388,8 +3388,8 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
 /// bold title on the first, taking the whole width; on the second, muted
 /// and indented under the title, the workspace, the age of a resting task,
 /// then the PR, port and reason chips, each kept only if it fits whole.
-/// The current task's title takes the "current" chip's colour instead of a
-/// chip. No spacer between tasks: the headers already separate the groups,
+/// The current task's title takes the "current" colour, and a `▌` in that
+/// colour marks both its lines in the indent. No spacer between tasks: the headers already separate the groups,
 /// and a column has less height to spare than width.
 fn column_items(column: &Column, list_width: usize) -> ListParts {
     const INDENT: usize = 2 + 3; // indent + glyph column
@@ -3444,8 +3444,18 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         // Sized per row, not per list: a column has no other columns to line
         // up with, so every title gets the whole width.
         let title_w = list_width.saturating_sub(INDENT).max(1);
+        // The current task carries a bar in the indent on both lines: a
+        // colour change alone was too easy to miss, and the bar costs no
+        // width and never reads as the selection's background bar.
+        let gutter = || {
+            if is_current {
+                Span::styled("▌ ", Style::default().fg(palette::CURRENT.color()))
+            } else {
+                Span::raw("  ")
+            }
+        };
         let first = Line::from(vec![
-            Span::raw("  "),
+            gutter(),
             Span::styled(glyph, glyph_style),
             Span::styled(pad_cell(&row.title, title_w), Style::default().fg(title_fg).add_modifier(Modifier::BOLD)),
         ]);
@@ -3484,7 +3494,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
             let ports: Vec<String> = row.live.ports.iter().map(|p| format!(":{p}")).collect();
             pieces.push(Span::styled(ports.join(" "), dim));
         }
-        let mut second = vec![Span::raw(" ".repeat(INDENT))];
+        let mut second = vec![gutter(), Span::raw(" ".repeat(INDENT - 2))];
         let mut used = INDENT;
         for (i, piece) in pieces.into_iter().enumerate() {
             let sep = if i == 0 { 0 } else { 3 };
