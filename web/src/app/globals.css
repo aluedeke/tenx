@@ -1106,3 +1106,14 @@ a:hover {
     display: none;
   }
 }
+
+/* The task this tab's window shows: a gutter bar in the "current" colour
+   down both of its lines, as the TUI's `▌` in the indent — independent of
+   the selection's grey background, which it can sit on. An inset shadow,
+   not a border, so the row's text doesn't move. */
+.row.task.cur {
+  box-shadow: inset 3px 0 0 var(--current);
+}
+.row.task.cur.sel {
+  box-shadow: inset 3px 0 0 var(--current), inset 0 0 0 1px #2c3444;
+}

@@ -336,7 +336,7 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
   const confirming = ctl.confirming && task.selected;
   const menu = (at: { left: number; top: number }) =>
     ctl.touch ? sheet() : ctl.openPopup({ at, entries: taskEntries(task, act, false) });
-  const cls = ['row', 'task', (sel || confirming) && 'sel', confirming && 'conf'].filter(Boolean).join(' ');
+  const cls = ['row', 'task', task.current && 'cur', (sel || confirming) && 'sel', confirming && 'conf'].filter(Boolean).join(' ');
 
   return (
     <Slide
