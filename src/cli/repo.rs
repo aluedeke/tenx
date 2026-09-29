@@ -100,6 +100,9 @@ pub fn fetch(name: Option<&str>) -> Result<()> {
             continue;
         }
         rep.emit(crate::progress::Event::Start { step, label: repo.name.clone(), verb: "fetching" });
+        // A fetch writes the repo (refs, and its config when the refspec is
+        // repaired), so it takes the lock like every other write.
+        let _lock = crate::git::lock_repo(&bare_dir, &repo.name)?;
         let mut on = |snap| rep.emit(crate::progress::Event::Update { step, snap });
         match crate::git::fetch(&bare_path, &mut on) {
             Ok(updated) => {

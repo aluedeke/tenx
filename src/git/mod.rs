@@ -133,10 +133,12 @@ pub fn lock_repo(bare_dir: &Path, name: &str) -> Result<RepoLock> {
     Ok(RepoLock { _file: file })
 }
 
-/// Return the short hash + subject of the latest commit in a bare repo, e.g. `"a1b2c3d feat: …"`.
+/// Return the short hash + subject of the latest commit on the branch new
+/// tasks start from ([`base_ref`]), e.g. `"a1b2c3d feat: …"`.
 pub fn last_commit(bare_repo_path: &Path) -> Option<String> {
+    let base = base_ref(bare_repo_path).ok()?;
     let out = Command::new("git")
-        .args(["-C", &bare_repo_path.to_string_lossy(), "log", "-1", "--format=%h %s"])
+        .args(["-C", &bare_repo_path.to_string_lossy(), "log", "-1", "--format=%h %s", &base, "--"])
         .output()
         .ok()?;
     if out.status.success() {
@@ -167,7 +169,61 @@ pub fn bare_clone(url: &str, bare_dir: &Path, name: &str, on: OnProgress) -> Res
         let _ = std::fs::remove_dir_all(&dest);
         bail!("git clone --bare failed for {url}: {}", last_error(&stderr));
     }
+
+    // `clone --bare` copies the remote's branches into `refs/heads/*` once and
+    // configures no fetch refspec, so no later fetch would ever move them.
+    // Give it the ordinary one, then fetch so `origin/<default>` exists from
+    // the start. Best-effort: the objects are all here already, so a failure
+    // (the network dropped in the last second) only means the first task is
+    // based on the clone's own `refs/heads/<default>` — which is just as
+    // fresh — and the next fetch creates `origin/*`.
+    ensure_fetch_refspec(&dest)?;
+    let _ = fetch(&dest, on);
     Ok(())
+}
+
+/// The fetch refspec every bare repo tenx manages must have: the remote's
+/// branches as remote-tracking refs, so a fetch advances `origin/<default>`.
+///
+/// Not `refs/heads/*:refs/heads/*` (what `--mirror` does): every task's branch
+/// lives in `refs/heads/*` of the same repo, and a fetch that writes there
+/// would move or `--prune` them. `refs/remotes/origin/*` is fetch's alone.
+pub const ORIGIN_FETCH_REFSPEC: &str = "+refs/heads/*:refs/remotes/origin/*";
+
+/// Give a bare repo's `origin` the [`ORIGIN_FETCH_REFSPEC`] if it has no fetch
+/// refspec at all. Returns whether it changed anything.
+///
+/// This is the repair for bare repos cloned before [`bare_clone`] set one:
+/// without a refspec `git fetch` only writes `FETCH_HEAD`, and every task in
+/// that workspace starts from the default branch as it was on clone day.
+/// Idempotent, and a refspec that is already there — whatever it says — is
+/// left alone: someone chose it. A repo with no `origin` is not touched either.
+/// Called with the repo's lock held, like every other write.
+pub fn ensure_fetch_refspec(bare_repo_path: &Path) -> Result<bool> {
+    let bare = bare_repo_path.to_string_lossy();
+    let config = |args: &[&str]| {
+        Command::new("git")
+            .args(["-C", &bare, "config"])
+            .args(args)
+            .output()
+            .context("run git config")
+    };
+    if !config(&["--get", "remote.origin.url"])?.status.success() {
+        return Ok(false);
+    }
+    // `--get-all` exits 1 when the key is unset and 0 with any value.
+    if config(&["--get-all", "remote.origin.fetch"])?.status.success() {
+        return Ok(false);
+    }
+    let out = config(&["--add", "remote.origin.fetch", ORIGIN_FETCH_REFSPEC])?;
+    if !out.status.success() {
+        bail!(
+            "set remote.origin.fetch in {}: {}",
+            bare_repo_path.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(true)
 }
 
 /// The part of git's stderr worth putting in an error message: its last
@@ -236,7 +292,11 @@ impl Synced {
 /// Fetch all remotes of a bare repo, reporting git's own progress to `on`.
 /// Returns true if any refs were updated.
 /// Uses the system `git` so SSH agent and credential helpers work correctly.
+///
+/// Repairs a missing fetch refspec first ([`ensure_fetch_refspec`]), so a bare
+/// repo cloned by an older tenx starts updating on its next fetch.
 pub fn fetch(bare_repo_path: &Path, on: OnProgress) -> Result<bool> {
+    ensure_fetch_refspec(bare_repo_path)?;
     let mut cmd = Command::new("git");
     cmd.args(["-C", &bare_repo_path.to_string_lossy(), "fetch", "--all", "--prune", "--progress"]);
     let (status, stderr) = run_streaming(&mut cmd, on).context("run git fetch")?;
@@ -265,7 +325,10 @@ fn is_repo(path: &Path) -> bool {
 }
 
 /// Detect the default branch in a bare repo (e.g. "main" or "master").
-/// Bare clones store branches as refs/heads/* directly — there is no origin/HEAD.
+///
+/// `clone --bare` points the bare repo's HEAD at `refs/heads/<default>` and
+/// sets no `origin/HEAD`, so HEAD's target is the name to use — even though
+/// that local ref itself is never updated by a fetch (see [`base_ref`]).
 fn default_remote_branch(bare_repo_path: &Path) -> Result<String> {
     let bare = bare_repo_path.to_string_lossy();
     // In a bare clone HEAD is a symref pointing to refs/heads/<default>.
@@ -292,17 +355,18 @@ fn default_remote_branch(bare_repo_path: &Path) -> Result<String> {
 }
 
 /// Resolve the ref a new task branch should be based on: the freshly-fetched
-/// remote default branch.
+/// remote default branch, `origin/<default>`.
 ///
-/// Depending on how the bare repo was created, "freshly fetched" lives in
-/// different refs:
-///   - `git clone --bare` (heads↔heads): fetch advances `refs/heads/<default>`.
-///   - a mirror-style clone (`+refs/heads/*:refs/remotes/origin/*`): fetch only
-///     advances `refs/remotes/origin/<default>`, while `refs/heads/<default>`
-///     stays frozen at clone time and goes stale.
+/// [`bare_clone`] and the repair in [`fetch`] give every bare repo
+/// [`ORIGIN_FETCH_REFSPEC`], so a fetch advances `refs/remotes/origin/*`.
+/// `refs/heads/<default>` is the clone's snapshot and is never moved by a
+/// fetch — basing a task on it is what used to start tasks weeks stale.
 ///
-/// So prefer the remote-tracking ref (`origin/<default>`) when it exists, and
-/// only fall back to the local head when there is no remote-tracking ref.
+/// `origin/<default>` can still be missing: a repo repaired while offline has
+/// its refspec but has not fetched with it yet, or the upstream has no such
+/// branch. Then the local `<default>` is the best there is — as old as the
+/// clone, but a task that starts stale is better than no task — and the next
+/// fetch that gets through fixes it for every task after.
 fn base_ref(bare_repo_path: &Path) -> Result<String> {
     let bare = bare_repo_path.to_string_lossy();
     let default = default_remote_branch(bare_repo_path)?;
@@ -324,6 +388,12 @@ fn base_ref(bare_repo_path: &Path) -> Result<String> {
 /// (`task rm` removes the worktree but not the branch). It still refuses to
 /// reset a branch that is currently checked out in another live worktree, so
 /// active tasks are safe.
+///
+/// `--no-track`: the base is `origin/<default>`, and git would otherwise make
+/// it the new branch's upstream — so a bare `git push` from the task either
+/// refuses (`push.default=simple`, names differ) or, with `upstream`, pushes
+/// the task's commits straight to the default branch. A task branch gets its
+/// own upstream when it is first pushed.
 ///
 /// `on` is still passed the stream, but `git worktree add` has no `--progress`
 /// (only `--quiet`) and reports nothing through a pipe, so in practice the
@@ -350,7 +420,7 @@ pub fn add_worktree(
         .stderr(Stdio::null())
         .status();
     let mut cmd = Command::new("git");
-    cmd.args(["-C", &bare, "worktree", "add", "-B", branch_name, &wt, &base]);
+    cmd.args(["-C", &bare, "worktree", "add", "--no-track", "-B", branch_name, &wt, &base]);
     let (status, stderr) = run_streaming(&mut cmd, on).context("run git worktree add")?;
 
     if !status.success() {
@@ -503,6 +573,130 @@ mod tests {
         std::fs::create_dir_all(fake.join("objects")).unwrap();
         std::fs::write(fake.join("HEAD"), "garbage").unwrap();
         assert!(!is_repo(&fake), "an interrupted clone must not pass as a repository");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Fetch refspec, against a real local upstream ────────────────────────
+
+    /// Run git in `dir` with a fixed identity, so commits work on a box (or CI
+    /// runner) with no `user.name`, and return trimmed stdout.
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(["-c", "user.name=tenx", "-c", "user.email=tenx@example.com", "-c", "commit.gpgsign=false"])
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// An upstream repo on `main` with one commit; returns (root, upstream).
+    fn upstream(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = tmpdir(tag);
+        let up = dir.join("up");
+        std::fs::create_dir_all(&up).unwrap();
+        git(&up, &["init", "-q", "-b", "main"]);
+        commit(&up, "first");
+        (dir, up)
+    }
+
+    fn commit(repo: &Path, msg: &str) -> String {
+        git(repo, &["commit", "-q", "--allow-empty", "-m", msg]);
+        git(repo, &["rev-parse", "HEAD"])
+    }
+
+    fn fetch_refspecs(bare: &Path) -> Vec<String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(bare)
+            .args(["config", "--get-all", "remote.origin.fetch"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect()
+    }
+
+    /// The bug this guards: a task created after upstream moved must start at
+    /// upstream's new commit, not at the default branch as of clone time.
+    #[test]
+    fn a_new_task_starts_from_the_default_branch_as_last_fetched() {
+        let (dir, up) = upstream("fresh");
+        let bare_dir = dir.join(".bare");
+        bare_clone(&up.to_string_lossy(), &bare_dir, "acme", &mut |_| {}).unwrap();
+        let bare = bare_repo_path(&bare_dir, "acme");
+        assert_eq!(fetch_refspecs(&bare), [ORIGIN_FETCH_REFSPEC]);
+        assert_eq!(base_ref(&bare).unwrap(), "origin/main", "a fresh clone has origin/main from the start");
+
+        let newer = commit(&up, "second");
+        assert!(fetch(&bare, &mut |_| {}).unwrap(), "the fetch must report the update");
+        let wt = dir.join("task/acme");
+        add_worktree(&bare, &wt, "task", &mut |_| {}).unwrap();
+        assert_eq!(git(&wt, &["rev-parse", "HEAD"]), newer);
+        // Based on origin/main, but not tracking it: a bare `git push` from the
+        // task must never land on main.
+        let upstream_cfg = Command::new("git").arg("-C").arg(&bare).args(["config", "branch.task.merge"]).output().unwrap();
+        assert!(!upstream_cfg.status.success(), "the task branch must not track origin/main");
+        assert!(last_commit(&bare).unwrap().ends_with("second"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A bare repo cloned by an older tenx (plain `clone --bare`, no refspec)
+    /// is repaired by its next fetch, once, and task branches survive it.
+    #[test]
+    fn fetch_repairs_a_bare_repo_with_no_refspec() {
+        let (dir, up) = upstream("legacy");
+        let bare_dir = dir.join(".bare");
+        let bare = bare_repo_path(&bare_dir, "acme");
+        std::fs::create_dir_all(&bare_dir).unwrap();
+        git(&dir, &["clone", "-q", "--bare", &up.to_string_lossy(), &bare.to_string_lossy()]);
+        assert!(fetch_refspecs(&bare).is_empty(), "precondition: clone --bare sets no refspec");
+
+        // A task's own branch, with a commit upstream has never seen.
+        let old_wt = dir.join("old/acme");
+        add_worktree(&bare, &old_wt, "old-task", &mut |_| {}).unwrap();
+        let task_tip = commit(&old_wt, "task work");
+
+        let newer = commit(&up, "second");
+        fetch(&bare, &mut |_| {}).unwrap();
+        assert_eq!(fetch_refspecs(&bare), [ORIGIN_FETCH_REFSPEC]);
+        assert!(!ensure_fetch_refspec(&bare).unwrap(), "the repair is idempotent");
+        fetch(&bare, &mut |_| {}).unwrap();
+        assert_eq!(fetch_refspecs(&bare), [ORIGIN_FETCH_REFSPEC], "no duplicate refspec");
+
+        assert_eq!(git(&bare, &["rev-parse", "refs/heads/old-task"]), task_tip, "fetch --prune must not touch task branches");
+        let wt = dir.join("new/acme");
+        add_worktree(&bare, &wt, "new-task", &mut |_| {}).unwrap();
+        assert_eq!(git(&wt, &["rev-parse", "HEAD"]), newer);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_existing_refspec_is_left_alone() {
+        let (dir, up) = upstream("custom");
+        let bare = dir.join("acme.git");
+        git(&dir, &["clone", "-q", "--bare", &up.to_string_lossy(), &bare.to_string_lossy()]);
+        git(&bare, &["config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main"]);
+        assert!(!ensure_fetch_refspec(&bare).unwrap());
+        assert_eq!(fetch_refspecs(&bare), ["+refs/heads/main:refs/remotes/origin/main"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Repaired but offline: no `origin/<default>` yet, so a task falls back
+    /// to the local default branch instead of failing.
+    #[test]
+    fn with_no_remote_tracking_ref_a_task_uses_the_local_default_branch() {
+        let (dir, up) = upstream("offline");
+        let bare = dir.join("acme.git");
+        git(&dir, &["clone", "-q", "--bare", &up.to_string_lossy(), &bare.to_string_lossy()]);
+        let first = git(&up, &["rev-parse", "HEAD"]);
+        git(&bare, &["remote", "set-url", "origin", &dir.join("gone").to_string_lossy()]);
+        assert!(fetch(&bare, &mut |_| {}).is_err(), "the remote is unreachable");
+        assert_eq!(fetch_refspecs(&bare), [ORIGIN_FETCH_REFSPEC], "repaired even though the fetch failed");
+        assert_eq!(base_ref(&bare).unwrap(), "main");
+        let wt = dir.join("task/acme");
+        add_worktree(&bare, &wt, "task", &mut |_| {}).unwrap();
+        assert_eq!(git(&wt, &["rev-parse", "HEAD"]), first);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
