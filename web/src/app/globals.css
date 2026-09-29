@@ -1303,3 +1303,13 @@ select.wf-input {
   background: transparent;
   box-shadow: none;
 }
+
+/* A web form's title is a heading inside its frame, not a legend over the
+   border: the frame's container clips anything drawn above it. */
+.form.webform > .form-title {
+  position: static;
+  padding: 0;
+  background: none;
+  color: var(--bright);
+  font-weight: 700;
+}
