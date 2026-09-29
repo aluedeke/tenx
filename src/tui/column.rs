@@ -997,10 +997,27 @@ impl Column {
     /// The selected task's title when it has no open window (and the list
     /// has the cursor) — what the client shows an empty screen for.
     pub(super) fn selected_closed(&self) -> Option<String> {
+        self.selected_closed_row().map(|r| r.title.clone())
+    }
+
+    fn selected_closed_row(&self) -> Option<&Row> {
         if self.tab != Tab::Tasks || self.focus != Focus::List {
             return None;
         }
-        self.selected_row().filter(|r| r.window_id.is_none()).map(|r| r.title.clone())
+        self.selected_row().filter(|r| r.window_id.is_none())
+    }
+
+    /// Whether `row` is what the task area beside the column shows — the
+    /// row that gets the "current" marker. That is the selected task's empty
+    /// screen while the cursor rests on a closed task (`selected_closed`),
+    /// else the session's current window: the marker says "this is what's
+    /// on the right", so it moves onto a closed task as soon as the right
+    /// side does.
+    fn is_shown(&self, row: &Row) -> bool {
+        match self.selected_closed_row() {
+            Some(closed) => closed.path == row.path,
+            None => self.is_current(row),
+        }
     }
 
     /// The movement of `nav_down` without the column's window switch — the
@@ -3419,8 +3436,9 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
 /// bold title on the first, taking the whole width; on the second, muted
 /// and indented under the title, the workspace, the age of a resting task,
 /// then the PR, port and reason chips, each kept only if it fits whole.
-/// The current task's title takes the "current" colour, and a `▌` in that
-/// colour marks both its lines in the indent. No spacer between tasks: the headers already separate the groups,
+/// The task shown beside the column (`Column::is_shown`: its window, or a
+/// closed task's empty screen) has its title in the "current" colour, and a
+/// `▌` in that colour marks both its lines in the indent. No spacer between tasks: the headers already separate the groups,
 /// and a column has less height to spare than width.
 fn column_items(column: &Column, list_width: usize) -> ListParts {
     const INDENT: usize = 2 + 3; // indent + glyph column
@@ -3460,7 +3478,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         }
 
         let selected = pos == column.selected && column.focus == Focus::List && on_sub.is_none();
-        let is_current = column.is_current(row);
+        let is_current = column.is_shown(row);
         // Closed tasks (no window) read dimmer; ⏎ opens them.
         let title_fg = if selected {
             palette::SEL_TEXT.color()
@@ -4101,6 +4119,30 @@ mod tests {
         c.current = c.current_from(Some("@7".into()));
         let current: Vec<usize> = (0..c.rows.len()).filter(|&i| c.is_current(&c.rows[i])).collect();
         assert_eq!(current, [mine], "only the task in the current window is current");
+    }
+
+    #[test]
+    fn the_marker_follows_whats_shown_onto_a_closed_task() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        let shown = |c: &Column| -> Vec<String> {
+            c.filtered.iter().map(|&i| &c.rows[i]).filter(|r| c.is_shown(r)).map(|r| r.slug.clone()).collect()
+        };
+        assert_eq!(shown(&c), ["column-screenshot"], "the current window's task, to start");
+
+        // The cursor lands on a closed task: the right side shows its empty
+        // screen, and the marker goes with it — to it alone.
+        let closed = c.filtered.iter().position(|&i| c.rows[i].window_id.is_none() && !c.rows[i].pending).unwrap();
+        c.selected = closed;
+        let slug = c.rows[c.filtered[closed]].slug.clone();
+        assert!(c.selected_closed().is_some());
+        assert_eq!(shown(&c), [slug]);
+
+        // The keyboard leaves the column: the empty screen goes, and the
+        // marker is back on the window tmux shows.
+        c.blur();
+        assert_eq!(c.selected_closed(), None);
+        assert_eq!(shown(&c), ["column-screenshot"]);
     }
 
     #[test]
