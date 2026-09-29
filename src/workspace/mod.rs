@@ -556,6 +556,7 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "repos": task.repos,
         "secrets_pending": secrets_pending(&task.path),
         "secrets_pending_set": secrets_pending_set(&task.path),
+        "secrets_why": secrets_why(&task.path).into_iter().map(|(n, w)| (n, w.into())).collect::<serde_json::Map<_, _>>(),
     })
 }
 

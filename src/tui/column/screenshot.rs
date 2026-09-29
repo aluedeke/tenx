@@ -89,6 +89,7 @@ fn row(f: Fx) -> Row {
         agent: crate::agent::AgentKind::Claude,
         secrets_pending: f.secrets.iter().map(|s| s.to_string()).collect(),
         secrets_pending_set: vec![],
+        secrets_why: vec![],
         section,
         subagents: vec![],
     }

@@ -88,6 +88,10 @@ struct Row {
     /// release yet, someone has to type a value in first. Same
     /// frozen-at-`rebuild_rows` treatment.
     secrets_pending_set: Vec<String>,
+    /// `(name, why)` the agent gave with `need --why`, for the pending names
+    /// above (`workspace::secrets_why`); read only when something is pending.
+    /// For front ends that show why before you answer (the web view).
+    secrets_why: Vec<(String, String)>,
     /// The task's coding agent (`.tenx-agent` override, else workspace default,
     /// else claude). Shown as a tag when it isn't the default; set at
     /// `rebuild_rows` time (an agent change is rare and needs a reopen anyway).
@@ -256,6 +260,16 @@ struct Confirm {
     path: PathBuf,
 }
 
+/// Note prompt for rejecting a task's pending secrets requests (`D` on a
+/// SECRETS PENDING row, `:reject`). The names are fixed when it opens; one
+/// answered meanwhile is skipped by `deny_quiet`.
+struct RejectForm {
+    ws_idx: usize,
+    slug: String,
+    names: Vec<String>,
+    buffer: String,
+}
+
 /// Rename-title form.
 struct RenameForm {
     slug: String,
@@ -330,6 +344,7 @@ enum Mode {
     EditRepos(EditReposForm),
     Confirm(Confirm),
     Rename(RenameForm),
+    Reject(RejectForm),
     /// `?` / `:help` — every key, from `KEYS`; the u16 is the scroll offset.
     Help(u16),
 }
@@ -727,7 +742,9 @@ impl Column {
                 let window_id = self.window_of(&task.name, &task.path);
                 let secrets_pending = workspace::secrets_pending(&task.path);
                 let secrets_pending_set = workspace::secrets_pending_set(&task.path);
-                let section = if !secrets_pending.is_empty() || !secrets_pending_set.is_empty() {
+                let any_secrets = !secrets_pending.is_empty() || !secrets_pending_set.is_empty();
+                let secrets_why = if any_secrets { workspace::secrets_why(&task.path) } else { Vec::new() };
+                let section = if any_secrets {
                     workspace::TaskGroup::SecretsPending
                 } else {
                     state.status.group()
@@ -751,6 +768,7 @@ impl Column {
                     agent: crate::agent::agent_for(ws, &task.path),
                     secrets_pending,
                     secrets_pending_set,
+                    secrets_why,
                     section,
                     subagents: state.subagents,
                 });
@@ -1350,6 +1368,7 @@ impl Column {
             EditRepos,
             Confirm,
             Rename,
+            Reject,
             Help,
         }
         let kind = match self.mode {
@@ -1361,6 +1380,7 @@ impl Column {
             Mode::EditRepos(_) => Kind::EditRepos,
             Mode::Confirm(_) => Kind::Confirm,
             Mode::Rename(_) => Kind::Rename,
+            Mode::Reject(_) => Kind::Reject,
             Mode::Help(_) => Kind::Help,
         };
         let close = match kind {
@@ -1375,6 +1395,7 @@ impl Column {
                 Ok(false)
             }
             Kind::Rename => self.handle_rename_key(key),
+            Kind::Reject => self.handle_reject_key(key),
             Kind::Help => {
                 self.handle_help_key(key);
                 Ok(false)
@@ -1488,7 +1509,7 @@ impl Column {
                 }
             }
             KeyCode::Char('A') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
-            KeyCode::Char('D') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::No),
+            KeyCode::Char('D') if self.require_tasks() => self.deny_selected(),
             KeyCode::Char('t') if self.selected_sub().is_some() => self.view_subagent(false),
             KeyCode::Char('u') => {
                 if self.require_tasks() {
@@ -1644,7 +1665,8 @@ impl Column {
             "x" | "close" => self.close_selected_tab(),
             "u" | "unlock" => self.start_unlock(),
             "a" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
-            "deny" => self.answer(tenx_core::dialog::Answer::No),
+            "deny" => self.deny_selected(),
+            "reject" => self.start_reject(),
             "cancel" => self.cancel_secrets(),
             "hide" => self.client_request = Some(ClientRequest::Hide),
             "o" | "open" => return self.jump(),
@@ -1740,6 +1762,17 @@ impl Column {
             Err(e) => self.status_msg = Some(e.to_string()),
         }
         self.refresh_statuses();
+    }
+
+    /// `D` / `:deny`: a permission prompt is what blocks the agent now, so it
+    /// takes the key; failing that, a row with pending secrets rejects them;
+    /// anything else goes to `answer`, which says why there is nothing to deny.
+    fn deny_selected(&mut self) {
+        if !self.selected_answerable() && self.selected_has_secrets() {
+            self.start_reject();
+        } else {
+            self.answer(tenx_core::dialog::Answer::No);
+        }
     }
 
     /// The selected row has a permission dialog the column can answer.
@@ -2097,6 +2130,7 @@ impl Column {
                 agent: form.agent.unwrap_or_else(|| crate::agent::agent_for(ws, &ws.dir.join("tasks").join(&slug))),
                 secrets_pending: vec![],
                 secrets_pending_set: vec![],
+                secrets_why: vec![],
                 section: TaskStatus::Working.group(),
                 subagents: vec![],
             });
@@ -2206,6 +2240,7 @@ impl Column {
             agent: agent.unwrap_or_else(|| crate::agent::agent_for(ws, &path)),
             secrets_pending: vec![],
             secrets_pending_set: vec![],
+            secrets_why: vec![],
             section: TaskStatus::Working.group(),
             subagents: vec![],
         }
@@ -2714,6 +2749,81 @@ impl Column {
         self.rebuild_rows();
     }
 
+    fn selected_has_secrets(&self) -> bool {
+        self.selected_row().is_some_and(|r| !r.secrets_pending.is_empty() || !r.secrets_pending_set.is_empty())
+    }
+
+    // ── Rejecting secrets requests ────────────────────────────────────────────
+
+    /// Open the note prompt for rejecting every pending secrets request of
+    /// the selected row. Unlike `:cancel`, the waiting agent is told it was
+    /// *denied* (exit 4, with the note), not that the request went away.
+    fn start_reject(&mut self) {
+        let Some(r) = self.selected_row() else {
+            return;
+        };
+        if !self.selected_has_secrets() {
+            self.status_msg = Some("no pending secrets for this task".into());
+            return;
+        }
+        let names = r.secrets_pending.iter().chain(&r.secrets_pending_set).cloned().collect();
+        self.mode = Mode::Reject(RejectForm { ws_idx: r.ws_idx, slug: r.slug.clone(), names, buffer: String::new() });
+    }
+
+    fn handle_reject_key(&mut self, key: KeyEvent) -> Result<bool> {
+        let mut form = match std::mem::replace(&mut self.mode, Mode::List) {
+            Mode::Reject(f) => f,
+            other => {
+                self.mode = other;
+                return Ok(false);
+            }
+        };
+        match key.code {
+            KeyCode::Esc => return Ok(false),
+            KeyCode::Enter => {
+                self.reject_secrets(form);
+                return Ok(false);
+            }
+            KeyCode::Backspace => {
+                form.buffer.pop();
+            }
+            KeyCode::Char(c) => form.buffer.push(c),
+            _ => {}
+        }
+        self.mode = Mode::Reject(form);
+        Ok(false)
+    }
+
+    /// Write the denials (`cli::secrets::deny_quiet`: inline, like
+    /// `:cancel` — no passphrase, no terminal handoff) and drop the row out
+    /// of SECRETS PENDING.
+    fn reject_secrets(&mut self, form: RejectForm) {
+        let note = form.buffer.trim();
+        let note = (!note.is_empty()).then_some(note);
+        let slug = form.slug;
+        if self.offline {
+            if let Some(row) = self.rows.iter_mut().find(|r| r.ws_idx == form.ws_idx && r.slug == slug) {
+                row.secrets_pending.clear();
+                row.secrets_pending_set.clear();
+                row.secrets_why.clear();
+            }
+            self.status_msg = Some(format!("rejected {} for '{slug}'", form.names.join(", ")));
+            return;
+        }
+        let result = self
+            .workspaces
+            .get(form.ws_idx)
+            .context("workspace no longer registered")
+            .and_then(|ws| ws.find_task(&slug))
+            .and_then(|task| crate::cli::secrets::deny_quiet(&task, &form.names, note));
+        self.status_msg = Some(match result {
+            Ok(denied) if denied.is_empty() => format!("'{slug}' had nothing pending any more"),
+            Ok(denied) => format!("rejected {} for '{slug}'", denied.join(", ")),
+            Err(e) => e.to_string(),
+        });
+        self.rebuild_rows();
+    }
+
     // ── Rename ────────────────────────────────────────────────────────────────
 
     fn start_rename(&mut self) {
@@ -3102,13 +3212,14 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     f.render_widget(Paragraph::new(Line::from(spans)), chunks[0]);
 
     // ── Search box (or the rename input) ──────────────────────────────────────
-    let title = if matches!(column.mode, Mode::Rename(_)) {
-        " rename task "
-    } else {
-        ""
+    let title = match column.mode {
+        Mode::Rename(_) => " rename task ",
+        Mode::Reject(_) => " reject · note for the agent ",
+        _ => "",
     };
     let (prefix, prefix_style, value) = match &column.mode {
         Mode::Rename(form) => ("✎ ", Style::default().fg(palette::ACCENT.color()), form.buffer.clone()),
+        Mode::Reject(form) => ("✗ ", Style::default().fg(palette::DANGER.color()), form.buffer.clone()),
         // `/` — the vim search prompt, a sibling of the `:` command line
         // below. A text glyph takes the accent colour and renders one column
         // wide everywhere; the emoji it replaced did neither.
@@ -3121,7 +3232,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     // Cargo.toml) so it agrees with what `Paragraph` actually renders — the
     // rename prefix is a dingbat, so a plain `.chars().count()` could
     // misplace it by a column on some terminals.
-    let show_cursor = matches!(column.mode, Mode::Rename(_)) || column.focus == Focus::Search;
+    let show_cursor = matches!(column.mode, Mode::Rename(_) | Mode::Reject(_)) || column.focus == Focus::Search;
     let top_spans = vec![Span::styled(prefix, prefix_style), Span::raw(value.clone())];
     let top = Paragraph::new(Line::from(top_spans))
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(title));
@@ -3184,6 +3295,10 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
             " ⏎ save   esc cancel",
             Style::default().fg(palette::MUTED.color()),
         )),
+        (Mode::Reject(form), _) => Line::from(Span::styled(
+            format!(" ⏎ reject {}   esc cancel", form.names.join(", ")),
+            Style::default().fg(palette::DANGER.color()),
+        )),
         (_, Some(msg)) => Line::from(Span::styled(
             format!(" {msg}"),
             Style::default().fg(palette::SUCCESS.color()),
@@ -3199,6 +3314,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
                     " setting up · esc detach"
                 }
                 (InputMode::Normal, Tab::Tasks) if column.selected_answerable() => " A/D answer · ⏎ open",
+                (InputMode::Normal, Tab::Tasks) if column.selected_has_secrets() => " u unlock · D reject · ⏎ open",
                 (InputMode::Normal, Tab::Tasks) if column.selected_row().is_some_and(|r| r.window_id.is_none()) => {
                     " closed · ⏎ open · ↓↑ move"
                 }
@@ -3247,6 +3363,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("t", "agent transcript"),
             ("n", "next task that needs you"),
             ("A D", "approve / deny permission"),
+            ("D", "reject pending secrets"),
             ("u", "unlock pending secrets"),
             ("^n", "new task"),
             ("r", "rename"),
@@ -3269,6 +3386,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             (":e", "edit repos (:edit-repos)"),
             (":x", "close window (:close)"),
             (":u", "unlock secrets (:unlock)"),
+            (":reject", "reject secrets request"),
             (":cancel", "withdraw secrets request"),
             (":a", "approve (:approve)"),
             (":deny", "deny permission"),
@@ -4196,6 +4314,31 @@ mod tests {
         assert!(c.selected_answerable());
         c.handle_key(plain('A')).unwrap();
         assert!(c.status_msg.is_some(), "A answers (or explains why not)");
+    }
+
+    /// `D` on a SECRETS PENDING row asks for an optional note, then rejects
+    /// every pending name; `Esc` leaves the request alone.
+    #[test]
+    fn d_rejects_pending_secrets() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.focus_list();
+        let pos = c.filtered.iter().position(|&i| !c.rows[i].secrets_pending_set.is_empty() || !c.rows[i].secrets_pending.is_empty());
+        c.set_cur_sel(pos.expect("fixture has a secrets row"));
+        assert!(!c.selected_answerable());
+        c.handle_key(plain('D')).unwrap();
+        assert!(matches!(c.mode, Mode::Reject(_)));
+        c.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap();
+        assert!(matches!(c.mode, Mode::List));
+        assert!(c.selected_has_secrets(), "esc rejects nothing");
+        c.handle_key(plain('D')).unwrap();
+        for ch in "no".chars() {
+            c.handle_key(plain(ch)).unwrap();
+        }
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert!(matches!(c.mode, Mode::List));
+        assert!(c.status_msg.as_deref().is_some_and(|m| m.starts_with("rejected STRIPE_WEBHOOK_SECRET")), "{:?}", c.status_msg);
+        assert!(!c.selected_has_secrets());
     }
 
     fn ws(name: &str, repos: &[&str]) -> crate::workspace::Workspace {

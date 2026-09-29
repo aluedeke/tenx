@@ -424,12 +424,24 @@ pub fn deny(names: &[String], note: Option<&str>) -> Result<()> {
 /// name leaves its queue — the commit point — so a waiter can never mistake
 /// it for a withdrawal.
 pub fn deny_in(task: &Task, names: &[String], note: Option<&str>) -> Result<()> {
-    let pending: Vec<String> = names.iter().filter(|n| queued_on(task, n).is_some()).cloned().collect();
+    let pending = deny_quiet(task, names, note)?;
     for n in names.iter().filter(|n| !pending.contains(n)) {
         eprintln!("nothing pending named '{n}' for task '{}'", task.name);
     }
     if pending.is_empty() {
         return Ok(());
+    }
+    eprintln!("denied {} for task '{}'", pending.join(", "), task.name);
+    Ok(())
+}
+
+/// The work of [`deny_in`] without a word to stderr — the column draws on
+/// that stream. Returns the names actually denied: those still queued, the
+/// rest having been answered or withdrawn in the meantime.
+pub fn deny_quiet(task: &Task, names: &[String], note: Option<&str>) -> Result<Vec<String>> {
+    let pending: Vec<String> = names.iter().filter(|n| queued_on(task, n).is_some()).cloned().collect();
+    if pending.is_empty() {
+        return Ok(pending);
     }
     for n in &pending {
         set_note(task, workspace::SECRETS_DENIED_FILE, n, Some(note.unwrap_or("")))?;
@@ -437,8 +449,7 @@ pub fn deny_in(task: &Task, names: &[String], note: Option<&str>) -> Result<()> 
     let set: HashSet<String> = pending.iter().cloned().collect();
     Queue::Release.remove(task, &set)?;
     Queue::Value.remove(task, &set)?;
-    eprintln!("denied {} for task '{}'", pending.join(", "), task.name);
-    Ok(())
+    Ok(pending)
 }
 
 /// Withdraw pending requests for the current task (resolved from cwd): one

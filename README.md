@@ -133,6 +133,7 @@ The column lists every task from every registered workspace, sectioned by attent
 | `x` | Close the task's window (the conversation resumes on next open) |
 | `u` | Unlock pending secrets |
 | `A`, `D` | Approve or deny the task's permission prompt without visiting it |
+| `D` on a secrets row | Reject its pending secrets requests, with an optional note for the agent |
 | `dd` | Delete the task |
 | `?` | Every key and command, in the column (also `:help`) |
 | `:` | Command line, see below |
@@ -141,7 +142,7 @@ The column opens in the search field (`Ctrl+w` lands in the list instead). Typin
 
 The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task, starting in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else. `W` (or `:init [path]`), from either tab, creates a whole new workspace: a path, a name, a first repo URL and whether to install the skills, the same questions `tenx init` asks. The column then lands on the new workspace's repo in the Repos tab, where `Ctrl+n` creates its first task; given no repo, it opens the add-repo form for it instead, since a task needs one.
 
-The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`, `:init [path]`. The rest have no key: `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:cancel` withdraws a pending secrets request, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:help` lists every key, `:q` quits the client.
+The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`, `:init [path]`. The rest have no key: `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:reject` rejects a pending secrets request (what `D` does on a secrets row), `:cancel` withdraws one, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:help` lists every key, `:q` quits the client.
 
 The **forms** (new task, new workspace, add repo, edit repos, rename, delete) are keyboard-only. `Tab`/`↓` and `Shift+Tab`/`↑` move between fields, `Space` toggles a repo, `Enter` submits, `Esc` cancels. In the new-task form, the workspace starts as the selected item's and `←`/`→` on that field move it to another registered workspace (the repo list follows), and `←`/`→` on the agent field cycle the choice; in the new-workspace form, `Space` on the skills field toggles it. In the edit-repos form, `j`/`k` also move, `x` also toggles, `a` picks every repo and `n` none. Deleting a task, or removing a worktree from the edit-repos form, asks once more; `y` or `Enter` confirms, any other key cancels.
 
