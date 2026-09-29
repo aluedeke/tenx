@@ -105,7 +105,7 @@ impl Scene {
         for r in column.rows.iter_mut() {
             r.subagents.clear();
         }
-        column.current = Some("onboarding-emails".into());
+        column.current = column.rows.iter().find(|r| r.slug == "onboarding-emails").map(|r| r.path.clone());
         column.focus_search();
         column.selected = 0;
         let screen = Rc::new(RefCell::new(Vt::new(ROWS, COLS)));
@@ -149,8 +149,9 @@ impl Scene {
     /// switch tmux performs under the real client.
     fn sync_screen(&mut self) {
         let column = &self.client.column;
-        let Some(slug) = column.current.clone() else { return };
-        let row = column.rows.iter().find(|r| r.slug == slug).expect("fixture row");
+        let Some(path) = column.current.clone() else { return };
+        let row = column.rows.iter().find(|r| r.path == path).expect("fixture row");
+        let slug = row.slug.clone();
         let key = format!("{slug}/{:?}/{}", row.status, self.answered);
         if self.shown.as_deref() == Some(key.as_str()) {
             return;

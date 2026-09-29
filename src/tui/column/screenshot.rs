@@ -200,7 +200,7 @@ pub(super) fn fixture_column() -> Column {
         ];
     }
     o.apply_filter();
-    o.current = Some("column-screenshot".into());
+    o.current = o.rows.iter().find(|r| r.slug == "column-screenshot").map(|r| r.path.clone());
     o.input_mode = InputMode::Normal;
     o.focus = Focus::List;
     o.selected = 1; // "add release workflow" — the blocked one

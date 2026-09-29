@@ -480,14 +480,17 @@ pub(super) struct Column {
 
     /// Window signals as of the last slow refresh (see `refresh_statuses`).
     signals: workspace::Signals,
-    /// Open task windows by slug, from the same `list-windows` as `signals`.
-    /// The per-task cache file is *not* used here: it outlives a closed
-    /// window and a restarted server, and a row that only looks open makes
-    /// the arrows stop on it for nothing.
-    window_ids: std::collections::HashMap<String, String>,
-    /// Slug of the session's current window, if it's a task — gets the
-    /// "current" chip.
-    current: Option<String>,
+    /// Open windows, from the same `list-windows` as `signals`, with the
+    /// panes' paths when an untagged window needs them — what
+    /// `window_of` matches a task against. The per-task cache file is *not*
+    /// used here: it outlives a closed window and a restarted server, and a
+    /// row that only looks open makes the arrows stop on it for nothing.
+    windows: Vec<crate::tmux::Window>,
+    pane_paths: std::collections::HashMap<String, Vec<PathBuf>>,
+    /// Directory of the task in the session's current window, if it's a
+    /// task — drawn with the "current" marker. A directory, not a slug: two
+    /// workspaces can each have a task with the same slug.
+    current: Option<PathBuf>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
 }
@@ -647,7 +650,8 @@ impl Column {
             list_area: Rect::default(),
             last_swept: None,
             signals: workspace::Signals::new(),
-            window_ids: std::collections::HashMap::new(),
+            windows: Vec::new(),
+            pane_paths: std::collections::HashMap::new(),
             current: None,
             slow_refreshed: None,
         }
@@ -720,7 +724,7 @@ impl Column {
         for (ws_idx, ws) in self.workspaces.iter().enumerate() {
             for task in ws.tasks().unwrap_or_default() {
                 let state = workspace::resolve_task_state(&task.path, &sessions, signals);
-                let window_id = self.window_ids.get(&task.name).cloned();
+                let window_id = self.window_of(&task.name, &task.path);
                 let secrets_pending = workspace::secrets_pending(&task.path);
                 let secrets_pending_set = workspace::secrets_pending_set(&task.path);
                 let section = if !secrets_pending.is_empty() || !secrets_pending_set.is_empty() {
@@ -763,7 +767,7 @@ impl Column {
         self.rows = rows;
         self.sort_rows();
         self.apply_filter();
-        self.current = crate::tmux::current_task();
+        self.current = self.current_from(crate::tmux::current_window_id());
     }
 
     fn sort_rows(&mut self) {
@@ -828,26 +832,54 @@ impl Column {
             r.subagents = state.subagents;
             r.activity = state.changed.unwrap_or(r.activity);
             if slow {
-                r.window_id = self.window_ids.get(&r.slug).cloned();
+                r.window_id = self.window_of(&r.slug, &r.path);
                 r.live = crate::live::read(&r.path);
             }
         }
         self.rows = rows;
         // Fresher than the slow refresh's window list: the task beside the
         // column is what ↓/↑ start from.
-        self.current = crate::tmux::current_task();
+        self.current = self.current_from(crate::tmux::current_window_id());
     }
 
-    /// One `list-windows` for both the bell signals and the current window.
+    /// One `list-windows` for both the bell signals and the open windows.
     fn refresh_windows(&mut self) {
         let windows = crate::tmux::list_windows().unwrap_or_default();
         self.signals = crate::tmux::signals_from(&windows);
-        self.window_ids = windows.iter().map(|w| (w.name.clone(), w.id.clone())).collect();
-        self.current = windows
-            .iter()
-            .find(|w| w.active && w.name != crate::tmux::HOME_WINDOW)
-            .map(|w| w.name.clone());
+        // Only a window opened before `TASK_DIR_OPTION` needs its panes'
+        // paths to say whose it is; after one reopen, none do.
+        self.pane_paths = if windows.iter().any(|w| w.task_dir.is_none()) {
+            crate::tmux::pane_paths_by_window().unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        };
+        self.windows = windows;
         self.slow_refreshed = Some(Instant::now());
+    }
+
+    /// The id of the open window that belongs to the task at `path` —
+    /// narrowed by name (a task's window is named by its slug), settled by
+    /// directory (`tmux::window_owned_by`), the same rule as
+    /// `tmux::find_task_window`. Never by name alone: a slug is unique only
+    /// within a workspace, so a namesake in another workspace would read as
+    /// open, and as current.
+    fn window_of(&self, slug: &str, path: &std::path::Path) -> Option<String> {
+        self.windows
+            .iter()
+            .find(|w| w.name == slug && crate::tmux::window_owned_by(w, &self.pane_paths, path))
+            .map(|w| w.id.clone())
+    }
+
+    /// The directory of the task whose window is `window_id`, if any row
+    /// holds it.
+    fn current_from(&self, window_id: Option<String>) -> Option<PathBuf> {
+        let id = window_id?;
+        self.rows.iter().find(|r| r.window_id.as_deref() == Some(id.as_str())).map(|r| r.path.clone())
+    }
+
+    /// Whether `row` is the task in the session's current window.
+    fn is_current(&self, row: &Row) -> bool {
+        self.current.as_deref() == Some(row.path.as_path())
     }
 
     fn apply_filter(&mut self) {
@@ -1077,7 +1109,7 @@ impl Column {
         if self.tab != Tab::Tasks {
             return None;
         }
-        self.filtered.iter().position(|&i| Some(self.rows[i].slug.as_str()) == self.current.as_deref())
+        self.filtered.iter().position(|&i| self.is_current(&self.rows[i]))
     }
 
     /// The column follows its selection: moving onto a task whose window is
@@ -1099,18 +1131,16 @@ impl Column {
         if row.window_id.is_none() {
             return;
         }
-        if Some(row.slug.as_str()) != self.current.as_deref() {
+        if !self.is_current(row) {
             let slug = row.slug.clone();
             let path = row.path.clone();
-            if self.offline {
-                self.current = Some(slug);
-            } else {
+            if !self.offline {
                 let Some(w) = crate::tmux::find_task_window(&slug, &path).ok().flatten() else { return };
                 if crate::tmux::select_window(&w.id).is_err() {
                     return;
                 }
-                self.current = Some(slug);
             }
+            self.current = Some(path);
         }
         self.follow_agent();
     }
@@ -1731,6 +1761,7 @@ impl Column {
         }
         let ws_idx = row.ws_idx;
         let slug = row.slug.clone();
+        let path = row.path.clone();
         if !self.offline {
             let ws = &self.workspaces[ws_idx];
             if let Err(e) = crate::cli::task::open_in(ws, &slug) {
@@ -1738,11 +1769,11 @@ impl Column {
                 return Ok(false);
             }
         }
-        self.current = Some(slug.clone());
+        self.current = Some(path.clone());
         self.client_request = Some(ClientRequest::FocusTerminal);
         self.filter.clear();
         self.apply_filter();
-        if let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].slug == slug) {
+        if let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].path == path) {
             self.selected = pos;
         }
         self.focus_search();
@@ -3429,7 +3460,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         }
 
         let selected = pos == column.selected && column.focus == Focus::List && on_sub.is_none();
-        let is_current = column.current.as_deref() == Some(row.slug.as_str());
+        let is_current = column.is_current(row);
         // Closed tasks (no window) read dimmer; ⏎ opens them.
         let title_fg = if selected {
             palette::SEL_TEXT.color()
@@ -4042,6 +4073,37 @@ mod tests {
     }
 
     #[test]
+    fn a_namesake_in_another_workspace_is_neither_open_nor_current() {
+        let mut c = screenshot::fixture_column();
+        // Another row becomes the fixture task's namesake: same slug, another
+        // workspace. Only the fixture task has a window, tagged with its own
+        // directory.
+        let mine = c.rows.iter().position(|r| r.slug == "column-screenshot").unwrap();
+        let twin = (0..c.rows.len()).find(|&i| i != mine && !c.rows[i].pending).unwrap();
+        c.rows[twin].slug = "column-screenshot".into();
+        c.rows[twin].ws_name = "other".into();
+        c.rows[twin].path = PathBuf::from("/home/you/other/tasks/column-screenshot");
+        c.windows = vec![crate::tmux::Window {
+            id: "@7".into(),
+            name: "column-screenshot".into(),
+            active: true,
+            bell: false,
+            activity: false,
+            last_activity: None,
+            task_dir: Some(c.rows[mine].path.clone()),
+        }];
+        for i in [mine, twin] {
+            c.rows[i].window_id = c.window_of(&c.rows[i].slug, &c.rows[i].path);
+        }
+        assert_eq!(c.rows[mine].window_id.as_deref(), Some("@7"));
+        assert_eq!(c.rows[twin].window_id, None, "the namesake has no window");
+
+        c.current = c.current_from(Some("@7".into()));
+        let current: Vec<usize> = (0..c.rows.len()).filter(|&i| c.is_current(&c.rows[i])).collect();
+        assert_eq!(current, [mine], "only the task in the current window is current");
+    }
+
+    #[test]
     fn n_cycles_through_tasks_that_need_you() {
         let mut c = screenshot::fixture_column();
         c.offline = true;
@@ -4049,7 +4111,7 @@ mod tests {
 
         c.handle_key(plain('n')).unwrap();
         assert_eq!(selected_slug(&c), "rotate-signing-keys"); // signaled
-        assert_eq!(c.current.as_deref(), Some("rotate-signing-keys"));
+        assert_eq!(c.current.as_deref(), c.selected_row().map(|r| r.path.as_path())); // rotate-signing-keys
 
         c.handle_key(plain('n')).unwrap();
         assert_eq!(selected_slug(&c), "stripe-webhook-signing"); // wraps to secrets pending

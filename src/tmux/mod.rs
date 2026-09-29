@@ -690,13 +690,15 @@ pub fn popup_tenx(client: &str, cwd: &str, title: &str, tenx_bin: &str, args: &s
 
 // ── Current window ────────────────────────────────────────────────────────────
 
-/// The name of the session's current window (`None` for the home window
-/// or when the server is down) — the task a client is looking at, asked
-/// live rather than read from the watcher's snapshot, which can lag a
-/// switch by a couple of seconds.
-pub fn current_task() -> Option<String> {
-    let name = run(&["display-message", "-p", "-t", SESSION, "#{window_name}"]).ok()?.trim().to_string();
-    (!name.is_empty() && name != HOME_WINDOW).then_some(name)
+/// The id (`@12`) of the session's current window (`None` when the server
+/// is down) — the window a client is looking at, asked live rather than read
+/// from the watcher's snapshot, which can lag a switch by a couple of
+/// seconds. An id, not the name: a name is a slug, and a slug is only unique
+/// within a workspace, so which *task* this is gets settled by the caller
+/// against windows it already matched to task directories.
+pub fn current_window_id() -> Option<String> {
+    let id = run(&["display-message", "-p", "-t", SESSION, "#{window_id}"]).ok()?.trim().to_string();
+    (!id.is_empty()).then_some(id)
 }
 
 /// What a task window needs to be built.
