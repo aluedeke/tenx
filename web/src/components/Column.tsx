@@ -51,11 +51,12 @@ export function Column(props: Props) {
     const list = listRef.current;
     const sel = list?.querySelector<HTMLElement>('.sel');
     if (!list || !sel) return;
-    const top = sel.offsetTop - list.offsetTop;
-    if (top < list.scrollTop) list.scrollTop = top;
-    else if (top + sel.offsetHeight > list.scrollTop + list.clientHeight) {
-      list.scrollTop = top + sel.offsetHeight - list.clientHeight;
-    }
+    // Measured on screen, not with offsetTop: a row sits inside its swipe
+    // wrapper, which is what offsetTop would be relative to.
+    const box = list.getBoundingClientRect();
+    const row = sel.getBoundingClientRect();
+    if (row.top < box.top) list.scrollTop -= box.top - row.top;
+    else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom;
   }, [view]);
 
   const mode = view?.mode ?? { kind: 'list' };

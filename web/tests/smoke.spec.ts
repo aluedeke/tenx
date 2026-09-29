@@ -381,3 +381,22 @@ test('a closed task under the cursor shows its empty screen and takes the marker
   await page.getByTestId('closed-screen').getByRole('button').click();
   await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(true);
 });
+
+test('the list scrolls to keep the selection in view', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  await page.setViewportSize({ width: 1200, height: 560 });
+  await page.goto('/');
+  await expect(page.getByTestId('task')).toHaveCount(8);
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.keyboard.press('Control+w');
+  // Down to the last row, below the fold at this height.
+  for (let i = 0; i < 8; i++) await page.keyboard.press('j');
+  await expect(page.locator('.row.sel')).toContainText('Zero permission');
+  const gap = () =>
+    page.evaluate(() => {
+      const list = document.querySelector('[data-testid=list]')!.getBoundingClientRect();
+      const sel = document.querySelector('[data-testid=list] .sel')!.getBoundingClientRect();
+      return Math.min(sel.top - list.top, list.bottom - sel.bottom);
+    });
+  await expect.poll(gap).toBeGreaterThanOrEqual(-1);
+});
