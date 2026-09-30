@@ -962,6 +962,17 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         };
         assert!(typed["view"]["items"].to_string().contains("Web task"));
 
+        // A numbered input is acknowledged in a view — even one that changes
+        // nothing in the column (Shift alone), so the page can drop its
+        // prediction for it.
+        ws.send(Message::Text(r#"{"type":"key","key":"Shift","ctrl":false,"alt":false,"shift":true,"seq":7}"#.into())).await.unwrap();
+        loop {
+            let v = next_of(&mut ws, "view").await;
+            if v["ack"] == 7 {
+                break;
+            }
+        }
+
         // The layout rule, for a phone and a desktop.
         ws.send(Message::Text(r#"{"type":"viewport","cols":60}"#.into())).await.unwrap();
         assert_eq!(next_of(&mut ws, "layout").await["narrow"], true);

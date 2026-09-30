@@ -1692,3 +1692,9 @@ a:hover {
   flex: 1;
   justify-content: center;
 }
+
+/* A tab switch predicted before the server's rows for it arrive. */
+.list.loading {
+  opacity: 0.45;
+  transition: opacity 120ms;
+}

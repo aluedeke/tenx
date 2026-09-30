@@ -88,8 +88,11 @@ export class Connection {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  send(msg: ClientMessage) {
-    if (this.isOpen) this.ws!.send(JSON.stringify(msg));
+  /** Whether it went out (the socket was open). */
+  send(msg: ClientMessage): boolean {
+    if (!this.isOpen) return false;
+    this.ws!.send(JSON.stringify(msg));
+    return true;
   }
 
   /** Keyboard input for the terminal. */

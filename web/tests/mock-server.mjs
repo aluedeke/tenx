@@ -183,11 +183,21 @@ const server = createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/ws' });
 let sessions = 0;
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   let jobIds = 0;
-  const st = { sel: 1, focus: 'list', filter: '', current: 'acme/fix-login-timeout', mode: 'list', buffer: '' };
+  const st = { sel: 1, focus: 'list', filter: '', current: 'acme/fix-login-timeout', mode: 'list', buffer: '', ack: 0 };
+  // Test knobs, as cookies on the socket's request: `mocklag=<ms>` delays
+  // every view (a slow connection); `mockskip=1` makes j move two rows, so a
+  // prediction of one has to be corrected.
+  const cookie = (name) => (req.headers.cookie ?? '').split(';').map((c) => c.trim().split('=')).find(([k]) => k === name)?.[1];
+  const lag = Number(cookie('mocklag') ?? 0);
+  const skip = cookie('mockskip') === '1';
   const json = (m) => ws.send(JSON.stringify(m));
-  const push = () => json({ type: 'view', view: view(st) });
+  const push = () => {
+    const msg = { type: 'view', ack: st.ack, view: view(st) };
+    if (lag > 0) setTimeout(() => ws.readyState === ws.OPEN && json(msg), lag);
+    else json(msg);
+  };
   json({ type: 'hello', session: `mock${++sessions}`, host: 'mock', version: '0.0.0' });
   ws.send(Buffer.from(SCREEN));
   push();
@@ -198,6 +208,7 @@ wss.on('connection', (ws) => {
       return;
     }
     const m = JSON.parse(data.toString());
+    if (typeof m.seq === 'number') st.ack = Math.max(st.ack, m.seq);
     switch (m.type) {
       case 'viewport':
         json({ type: 'layout', column_cols: Math.max(30, Math.min(48, Math.round(m.cols * 0.28))), narrow: m.cols < 100 });
@@ -346,7 +357,7 @@ wss.on('connection', (ws) => {
       else if (m.key.length === 1) st.filter += m.key;
       return;
     }
-    if (m.key === 'j' || m.key === 'ArrowDown') st.sel = Math.min(CURSOR.length - 1, st.sel + 1);
+    if (m.key === 'j' || m.key === 'ArrowDown') st.sel = Math.min(CURSOR.length - 1, st.sel + (skip ? 2 : 1));
     else if (m.key === 'k' || m.key === 'ArrowUp') st.sel = Math.max(0, st.sel - 1);
     else if (m.key === '?') st.mode = 'help';
     else if (m.key === ':') st.mode = 'command';

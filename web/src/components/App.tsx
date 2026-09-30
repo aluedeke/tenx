@@ -6,7 +6,7 @@
 // column's own keys are the server's business: they go over as `key`
 // messages and come back as a new view.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Column } from './Column';
 import { Header } from './Header';
 import { KeyBar } from './KeyBar';
@@ -17,7 +17,8 @@ import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
-import type { Action, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
+import { predict, unacked, type Pending } from '@/lib/predict';
+import type { Action, ClientMessage, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
 
@@ -130,7 +131,22 @@ export function App() {
   const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen });
   state.current = { focus, visible, narrow, ctrlSticky, touch, kbOpen };
 
-  const send = useCallback((msg: Parameters<Connection['send']>[0]) => conn.current?.send(msg), []);
+  // Inputs that change the column are numbered and kept until a view
+  // acknowledges them, so the column can be drawn with their effect before
+  // the round trip ends (lib/predict).
+  const seq = useRef(0);
+  const [pending, setPending] = useState<Pending[]>([]);
+  const [ack, setAck] = useState(0);
+  const send = useCallback((msg: ClientMessage) => {
+    if (msg.type === 'key' || msg.type === 'click' || msg.type === 'action' || msg.type === 'form') {
+      const numbered = { ...msg, seq: ++seq.current } as ClientMessage;
+      // Dropped while disconnected: nothing to predict.
+      if (!conn.current?.send(numbered)) return;
+      setPending((p) => [...p, { seq: seq.current, msg: numbered }]);
+      return;
+    }
+    conn.current?.send(msg);
+  }, []);
   const sendKey = useCallback((k: Omit<KeyMessage, 'type'>) => send({ type: 'key', ...k }), [send]);
 
   const columnHasKeys = focus === 'column' && visible;
@@ -172,6 +188,11 @@ export function App() {
         switch (msg.type) {
           case 'hello': {
             setHost(msg.host);
+            // A new socket numbers its inputs from 1, and what was waiting
+            // for the old one's acknowledgement is gone with it.
+            seq.current = 0;
+            setPending([]);
+            setAck(0);
             // A new attach redraws the whole screen.
             term.current?.reset();
             const size = term.current?.size();
@@ -185,12 +206,18 @@ export function App() {
             if (!c.resumed && !wantTask.current) restoreTask.current = lastTask();
             break;
           }
-          case 'view':
+          case 'view': {
+            // A server without `ack` predicts nothing: every input counts as
+            // acknowledged.
+            const acked = msg.ack ?? Number.MAX_SAFE_INTEGER;
+            setAck(acked);
+            setPending((p) => unacked(p, acked));
             setView(msg.view);
             lastView.current = msg.view;
             openWanted(msg.view);
             restoreLast(msg.view);
             break;
+          }
           case 'layout':
             setColumnCols(msg.column_cols);
             setNarrow((was) => {
@@ -637,6 +664,10 @@ export function App() {
   );
 
   const overlay = narrow;
+  // The column as drawn: the last view with the inputs it doesn't reflect
+  // yet replayed on it.
+  const predicted = useMemo(() => (view ? predict(view, unacked(pending, ack)) : null), [view, pending, ack]);
+
   const columnStyle = overlay ? undefined : { width: `${Math.ceil(columnCols * cell + 20)}px` };
 
   return (
@@ -658,7 +689,8 @@ export function App() {
         {visible && (
           <div className={overlay ? 'column-wrap overlay' : 'column-wrap'} style={columnStyle}>
             <Column
-              view={view}
+              view={predicted?.view ?? null}
+              loading={predicted?.loading ?? false}
               focused={columnHasKeys}
               onClick={onClick}
               onFocus={() => setFocus('column')}

@@ -17,7 +17,7 @@ use axum::Router;
 use serde::Deserialize;
 use tenx_core::web;
 
-use super::tab::{Input, Output, PageMsg, Tabs};
+use super::tab::{Input, Output, Tabs};
 
 pub(super) struct App {
     pub(super) token: String,
@@ -251,8 +251,8 @@ async fn connection(app: Arc<App>, mut socket: WebSocket, want: Option<String>) 
         loop {
             tokio::select! {
                 msg = socket.recv() => match msg {
-                    Some(Ok(Message::Text(text))) => match serde_json::from_str::<PageMsg>(&text) {
-                        Ok(msg) => { let _ = tab.input.send(Input::Page(msg)); }
+                    Some(Ok(Message::Text(text))) => match super::tab::parse_page(&text) {
+                        Ok((msg, seq)) => { let _ = tab.input.send(Input::Page(msg, seq)); }
                         Err(e) => {
                             let err = serde_json::json!({ "type": "error", "message": format!("bad message: {e}") });
                             if socket.send(Message::Text(err.to_string().into())).await.is_err() { break; }

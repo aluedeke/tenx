@@ -46,7 +46,9 @@ Two frame kinds:
 
 // The whole column, whenever it changes (after every key/click, and when the
 // refresh — 500 ms statuses, 2 s windows — changes what it would show).
-{ "type": "view", "view": ColumnView }   // src/tui/column/view.rs, serialized
+// `ack` is the highest input `seq` the view reflects (0: none yet); a view
+// goes out after every numbered input, even one that changed nothing.
+{ "type": "view", "ack": 17, "view": ColumnView }   // src/tui/column/view.rs, serialized
 
 // The column's layout for the browser's width in cells (reply to `viewport`).
 { "type": "layout", "column_cols": 36, "narrow": false }
@@ -59,6 +61,15 @@ Two frame kinds:
 ```
 
 ### Browser → server
+
+Inputs that change the column — `key`, `click`, `action`, `form` — may carry
+an increasing `seq` (per socket, from 1; a new socket starts over). The server
+applies them in order and reports the highest applied in each view's `ack`.
+The page uses that to draw the column ahead of the round trip: the last view
+with the not-yet-acknowledged inputs replayed on it — only cursor moves, the
+search field's focus and the filter text, and a tab switch as "loading"
+(`web/src/lib/predict.ts`); everything else waits for the server. Inputs
+without `seq` work as before.
 
 ```jsonc
 // A key while the column has the keyboard. `key` is KeyboardEvent.key.

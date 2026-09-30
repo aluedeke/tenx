@@ -192,7 +192,8 @@ export interface Footer {
 
 export type ServerMessage =
   | { type: 'hello'; session: string; host: string; version: string }
-  | { type: 'view'; view: ColumnView }
+  /** `ack`: the highest input `seq` this view reflects (0: none). */
+  | { type: 'view'; ack?: number; view: ColumnView }
   | { type: 'layout'; column_cols: number; narrow: boolean }
   | { type: 'request'; request: 'focus_terminal' | 'focus_column' | 'hide' | 'quit' }
   | { type: 'error'; message: string };
@@ -233,11 +234,14 @@ export type Action =
   /** Reject every pending secrets request of the row. */
   | 'reject';
 
+/** Inputs that change the column carry an increasing `seq`, which views
+ * acknowledge (`ack`) — what lets the page predict their effect
+ * (lib/predict). */
 export type ClientMessage =
-  | KeyMessage
-  | ({ type: 'click' } & Click)
-  | { type: 'action'; name: Action }
-  | ({ type: 'form' } & FormOp)
+  | (KeyMessage & { seq?: number })
+  | ({ type: 'click'; seq?: number } & Click)
+  | { type: 'action'; name: Action; seq?: number }
+  | ({ type: 'form'; seq?: number } & FormOp)
   | { type: 'resize'; cols: number; rows: number }
   | { type: 'viewport'; cols: number }
   | { type: 'focus'; column: boolean }

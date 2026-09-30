@@ -607,3 +607,54 @@ test('dictation sends each revision as an edit, not a repeat', async ({ page, is
   await page.waitForTimeout(500);
   expect(binary.join('')).toBe('Fix' + ' the log in' + '\x7f\x7f\x7f' + 'in timeout');
 });
+
+// A slow connection: every view the mock sends arrives this late.
+async function slowLink(page: import('@playwright/test').Page, ms: number, extra: Record<string, string> = {}) {
+  const cookies = Object.entries({ mocklag: String(ms), ...extra }).map(([name, value]) => ({ name, value, url: 'http://127.0.0.1:7071' }));
+  await page.context().addCookies(cookies);
+}
+
+test('on a slow link the cursor moves at once, and the server agrees later', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  await slowLink(page, 600);
+  await page.goto('/');
+  const selected = page.locator('.row.sel');
+  await expect(selected).toContainText('Fix login timeout', { timeout: 5000 });
+  const t0 = Date.now();
+  await page.keyboard.press('j');
+  await expect(selected).toContainText('Better loading indicators', { timeout: 150 });
+  expect(Date.now() - t0).toBeLessThan(400);
+  // The server's own answer (600 ms later) is the same row: no flicker back.
+  await page.waitForTimeout(900);
+  await expect(selected).toContainText('Better loading indicators');
+});
+
+test('fast presses on a slow link end on the right row without jumping back', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  await slowLink(page, 500);
+  await page.goto('/');
+  const selected = page.locator('.row.sel');
+  await expect(selected).toContainText('Fix login timeout', { timeout: 5000 });
+  for (let i = 0; i < 3; i++) await page.keyboard.press('j');
+  // Fix login → Better loading → web version → its first subagent.
+  await expect(selected).toContainText('Map column keymap', { timeout: 150 });
+  // Sample while the delayed views come in: it never shows an earlier row.
+  const seen = new Set<string>();
+  for (let i = 0; i < 16; i++) {
+    seen.add(((await selected.first().textContent()) ?? '').slice(0, 24));
+    await page.waitForTimeout(75);
+  }
+  expect([...seen].every((s) => s.includes('Map column keymap'))).toBe(true);
+});
+
+test('a wrong prediction is corrected by the server’s view', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  // This mock moves two rows on j; the page predicts one.
+  await slowLink(page, 300, { mockskip: '1' });
+  await page.goto('/');
+  const selected = page.locator('.row.sel');
+  await expect(selected).toContainText('Fix login timeout', { timeout: 5000 });
+  await page.keyboard.press('j');
+  await expect(selected).toContainText('Better loading indicators', { timeout: 150 });
+  await expect(selected).toContainText('web version', { timeout: 2000 });
+});

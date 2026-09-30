@@ -19,6 +19,8 @@ import { RenameForm, WebForms } from './WebForms';
 
 interface Props {
   view: ColumnView | null;
+  /** A tab switch is on its way: the rows are the old tab's (lib/predict). */
+  loading?: boolean;
   /** The column has the keyboard: show the selection and the caret. */
   focused: boolean;
   onClick(click: Click): void;
@@ -164,7 +166,7 @@ export function Column(props: Props) {
             !form && <SearchBox view={view} focused={focused} ctl={ctl} />
           )}
           {form ?? (
-            <div className="list" ref={listRef} data-testid="list">
+            <div className={props.loading ? 'list loading' : 'list'} ref={listRef} data-testid="list">
               {view.items.map((item, i) => (
                 <ListItem key={itemKey(item, i)} item={item} first={i === 0} ctl={rows} />
               ))}

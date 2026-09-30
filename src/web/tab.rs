@@ -41,8 +41,27 @@ pub(super) enum PageMsg {
     Visible,
 }
 
+/// A page message and its `seq`, if the page numbered it: inputs that change
+/// the column carry one, and every view says the highest one applied
+/// (`ack`), so the page knows which of its predicted moves the view already
+/// shows (`web/src/lib/predict.ts`).
+pub(super) fn parse_page(text: &str) -> Result<(PageMsg, Option<u64>), serde_json::Error> {
+    #[derive(Deserialize)]
+    struct Numbered {
+        seq: Option<u64>,
+    }
+    let msg: PageMsg = serde_json::from_str(text)?;
+    let seq = serde_json::from_str::<Numbered>(text).ok().and_then(|n| n.seq);
+    Ok((msg, seq))
+}
+
+/// A view message: the column, and the highest input `seq` it reflects.
+fn view_message(view: &str, ack: u64) -> String {
+    format!(r#"{{"type":"view","ack":{ack},"view":{view}}}"#)
+}
+
 pub(super) enum Input {
-    Page(PageMsg),
+    Page(PageMsg, Option<u64>),
     /// Keyboard input for the terminal.
     Term(Vec<u8>),
     /// A socket (re)attached: send everything afresh.
@@ -152,6 +171,8 @@ impl Tab {
             pty: None,
             out,
             last_view: String::new(),
+            ack: 0,
+            sent_ack: 0,
         };
         {
             let dead = dead.clone();
@@ -241,6 +262,11 @@ struct Driver {
     out: UnboundedSender<Output>,
     /// The last view sent, to send only a changed one.
     last_view: String,
+    /// The highest input `seq` applied, and the one the last view carried: a
+    /// view goes out when either the column or the ack changed, so a page
+    /// learns its input was applied even when it changed nothing.
+    ack: u64,
+    sent_ack: u64,
 }
 
 impl Driver {
@@ -274,7 +300,12 @@ impl Driver {
     /// One message; `false` ends the tab.
     fn handle(&mut self, input: Input) -> bool {
         match input {
-            Input::Page(msg) => self.page(msg),
+            Input::Page(msg, seq) => {
+                self.page(msg);
+                if let Some(seq) = seq {
+                    self.ack = self.ack.max(seq);
+                }
+            }
             Input::Term(bytes) => {
                 if let Some(pty) = &mut self.pty {
                     let _ = pty.writer.write_all(&bytes);
@@ -283,6 +314,8 @@ impl Driver {
             }
             Input::Attached => {
                 self.last_view.clear();
+                // A new socket numbers its inputs from 1 again.
+                self.ack = 0;
                 // A new page starts from an empty terminal; tmux only sends
                 // what changes, so ask it for the whole screen.
                 if let Some(client) = self.pty.as_ref().and_then(Pty::pid).and_then(crate::tmux::client_by_pid) {
@@ -361,9 +394,10 @@ impl Driver {
         self.request(req);
 
         match serde_json::to_string(&self.column.view()) {
-            Ok(view) if view != self.last_view => {
-                let _ = self.out.send(Output::Text(format!(r#"{{"type":"view","view":{view}}}"#)));
+            Ok(view) if view != self.last_view || self.ack != self.sent_ack => {
+                let _ = self.out.send(Output::Text(view_message(&view, self.ack)));
                 self.last_view = view;
+                self.sent_ack = self.ack;
             }
             _ => {}
         }
@@ -387,6 +421,21 @@ impl Driver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inputs_carry_an_optional_seq_and_views_an_ack() {
+        let (msg, seq) = parse_page(r#"{"type":"key","key":"j","ctrl":false,"alt":false,"shift":false,"seq":17}"#).unwrap();
+        assert!(matches!(msg, PageMsg::Key(k) if k.key == "j"));
+        assert_eq!(seq, Some(17));
+        let (msg, seq) = parse_page(r#"{"type":"click","kind":"tab","index":1}"#).unwrap();
+        assert!(matches!(msg, PageMsg::Click(Click::Tab { index: 1 })));
+        assert_eq!(seq, None, "an old page's unnumbered input still parses");
+        assert!(parse_page(r#"{"type":"nope"}"#).is_err());
+        let v: serde_json::Value = serde_json::from_str(&view_message(r#"{"a":1}"#, 5)).unwrap();
+        assert_eq!(v["type"], "view");
+        assert_eq!(v["ack"], 5);
+        assert_eq!(v["view"]["a"], 1);
+    }
 
     #[test]
     fn page_messages_parse() {
