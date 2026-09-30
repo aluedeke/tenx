@@ -539,3 +539,24 @@ test('unlock from the row menu hands the keyboard to the terminal in the same ta
   await page.getByTestId('sheet').getByRole('menuitem', { name: /unlock/ }).tap();
   await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
 });
+
+test('a link in the terminal opens outside the app', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'hover + click');
+  await page.addInitScript(() => {
+    (window as unknown as { opened: unknown[] }).opened = [];
+    window.open = ((url: string, target: string, features: string) => {
+      (window as unknown as { opened: unknown[] }).opened.push([url, target, features]);
+      return null;
+    }) as typeof window.open;
+  });
+  await page.goto('/?renderer=dom');
+  const line = page.locator('.xterm-rows > div', { hasText: 'https://github.com/aluedeke/tenx/pull/42' });
+  await expect(line).toBeVisible();
+  const box = (await line.boundingBox())!;
+  await page.mouse.move(box.x + 30, box.y + box.height / 2);
+  await page.waitForTimeout(300);
+  await page.mouse.click(box.x + 30, box.y + box.height / 2);
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { opened: unknown[] }).opened))
+    .toEqual([['https://github.com/aluedeke/tenx/pull/42', '_blank', 'noopener,noreferrer']]);
+});

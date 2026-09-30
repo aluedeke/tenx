@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { imagesIn } from '@/lib/paste';
+import { openExternal } from '@/lib/links';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
 
@@ -136,10 +137,14 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         allowProposedApi: true,
         scrollback: 0, // tmux keeps the history; copy-mode scrolls it.
         macOptionIsMeta: true,
+        // OSC 8 hyperlinks (a program's own links): the system browser, not
+        // a window inside the app (lib/links).
+        linkHandler: { activate: (_ev, uri) => openExternal(uri), allowNonHttpProtocols: false },
       });
       const fit = new FitAddon();
       xterm.loadAddon(fit);
-      xterm.loadAddon(new WebLinksAddon());
+      // URLs spotted in the text: same.
+      xterm.loadAddon(new WebLinksAddon((_ev, uri) => openExternal(uri)));
       xterm.loadAddon(new ClipboardAddon());
       xterm.open(host.current);
       // WebGL on desktops only: a phone's grid is small enough for the DOM

@@ -157,6 +157,7 @@ const SCREEN = [
   `${E}35m│${E}0m   2. No                                  ${E}35m│${E}0m`,
   `${E}35m╰──────────────────────────────────────────╯${E}0m`,
   '',
+  'https://github.com/aluedeke/tenx/pull/42',
   `${E}32mapi${E}0m ${E}35mfix-login-timeout${E}0m ❯ `,
 ].join('\r\n');
 
