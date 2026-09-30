@@ -187,6 +187,9 @@ pub(crate) struct Note {
     /// The task's id as front ends name it: `<workspace name>/<slug>`
     /// (`column::view::row_id`).
     pub(crate) id: String,
+    /// A secrets request (release or value), which a front end answers with
+    /// the unlock prompt rather than by switching to the task.
+    pub(crate) secrets: bool,
 }
 
 /// A secrets notification's text: the names, then the distinct reasons the
@@ -304,6 +307,7 @@ pub(crate) fn resolve_all() -> Snapshot {
                         workspace: ws.config.name.clone(),
                         id: format!("{}/{}", ws.config.name, task.name),
                         reason: state.waiting_for.clone(),
+                        secrets: false,
                     },
                 ));
             }
@@ -317,6 +321,7 @@ pub(crate) fn resolve_all() -> Snapshot {
                         workspace: ws.config.name.clone(),
                         id: format!("{}/{}", ws.config.name, task.name),
                         reason: Some(secrets_reason(&pending_names, &why)),
+                        secrets: true,
                     },
                 ));
             }
@@ -329,6 +334,7 @@ pub(crate) fn resolve_all() -> Snapshot {
                         workspace: ws.config.name.clone(),
                         id: format!("{}/{}", ws.config.name, task.name),
                         reason: Some(format!("{} (needs value)", secrets_reason(&pending_set_names, &why))),
+                        secrets: true,
                     },
                 ));
             }

@@ -509,3 +509,33 @@ test('esc cancels the reject form', async ({ page, isMobile }) => {
   await expect(page.getByTestId('webform')).toHaveCount(0);
   expect(sent().some((m) => m.type === 'form' && m.op === 'cancel')).toBe(true);
 });
+
+test('a secrets notification opens the unlock prompt', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
+  await page.goto('/?task=tenx/cloud-tasks&unlock=1');
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'unlock')).toBe(true);
+  expect(sent().some((m) => m.type === 'click' && m.kind === 'task' && m.id === 'tenx/cloud-tasks')).toBe(true);
+  expect(sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(false);
+  expect(new URL(page.url()).search).toBe('');
+  // A phone can only raise its keyboard from a tap: it's offered one.
+  if (isMobile) {
+    const prompt = page.getByText('tap here to answer');
+    await expect(prompt).toBeVisible();
+    await prompt.tap();
+    await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  }
+});
+
+test('unlock from the row menu hands the keyboard to the terminal in the same tap', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'the tap is what matters on a phone');
+  await page.goto('/');
+  await page.getByTestId('toggle').tap();
+  const row = page.locator('[data-id="tenx/cloud-tasks"]');
+  const b = (await row.boundingBox())!;
+  const at = { pointerType: 'touch', pointerId: 91, isPrimary: true, bubbles: true, clientX: b.x + 40, clientY: b.y + 10 };
+  await row.dispatchEvent('pointerdown', at);
+  await expect(page.getByTestId('sheet')).toBeVisible({ timeout: 2000 });
+  await row.dispatchEvent('pointerup', at);
+  await page.getByTestId('sheet').getByRole('menuitem', { name: /unlock/ }).tap();
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+});

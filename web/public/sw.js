@@ -40,7 +40,7 @@ self.addEventListener('notificationclick', (event) => {
       const open = windows.find((c) => new URL(c.url).origin === self.location.origin);
       if (open) {
         await open.focus();
-        if (task) open.postMessage({ type: 'open-task', task });
+        if (task) open.postMessage({ type: 'open-task', task, unlock: url.searchParams.get('unlock') === '1' });
         return;
       }
       await self.clients.openWindow(url.href);

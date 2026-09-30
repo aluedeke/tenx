@@ -211,7 +211,8 @@ pub(super) fn notifier(push: std::sync::Arc<Push>) {
                 title: note.task.clone(),
                 body: format!("{reason} · {}", note.workspace),
                 tag: note.id.clone(),
-                url: format!("/?task={}", note.id),
+                // A secrets request opens its unlock prompt, not just the task.
+                url: if note.secrets { format!("/?task={}&unlock=1", note.id) } else { format!("/?task={}", note.id) },
             };
             push.send_all(&msg);
         }

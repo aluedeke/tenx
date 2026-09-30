@@ -70,6 +70,9 @@ export function App() {
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
   const wantTask = useRef<string | null>(null);
+  /** The wanted task came from a secrets notification: answer it (unlock)
+   * rather than just switch to it. */
+  const wantUnlock = useRef(false);
   /** The last task to go back to once a new session sends its first view. */
   const restoreTask = useRef<string | null>(null);
   const lastView = useRef<ColumnView | null>(null);
@@ -243,10 +246,18 @@ export function App() {
     const id = wantTask.current;
     if (!id || !v.items.some((i) => i.kind === 'task' && i.id === id)) return;
     wantTask.current = null;
+    const unlock = wantUnlock.current;
+    wantUnlock.current = false;
     conn.current?.send({ type: 'click', kind: 'task', id });
-    conn.current?.send({ type: 'action', name: 'open' });
+    conn.current?.send({ type: 'action', name: unlock ? 'unlock' : 'open' });
     setFocus('terminal');
     if (state.current.narrow) setVisible(false);
+    // The unlock prompt wants typing, and a phone raises its keyboard only
+    // for a focus inside a tap — this runs from a notification, not a tap.
+    if (unlock && state.current.touch) {
+      setPastingTap(true);
+      setPasting('secrets requested · tap here to answer');
+    }
   };
 
   // Coming back to the last task: only one whose window is open — switching
@@ -279,13 +290,16 @@ export function App() {
     const task = url.searchParams.get('task');
     if (task) {
       wantTask.current = task;
+      wantUnlock.current = url.searchParams.get('unlock') === '1';
       url.searchParams.delete('task');
+      url.searchParams.delete('unlock');
       history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
     }
     push.register().then(() => push.state()).then(setPushState);
     const onMessage = (ev: MessageEvent) => {
       if (ev.data?.type === 'open-task' && typeof ev.data.task === 'string') {
         wantTask.current = ev.data.task;
+        wantUnlock.current = ev.data.unlock === true;
         if (lastView.current) openWanted(lastView.current);
       }
     };
@@ -463,7 +477,16 @@ export function App() {
 
   const onAction = useCallback(
     (name: Action) => {
-      setFocus('column');
+      if (name === 'unlock') {
+        // The unlock prompt opens in the terminal and wants typing: move the
+        // keyboard there now, inside this tap — the server's own request to
+        // do so arrives too late for a phone to raise its keyboard.
+        setFocus('terminal');
+        term.current?.focus();
+        if (state.current.narrow) setVisible(false);
+      } else {
+        setFocus('column');
+      }
       send({ type: 'action', name });
     },
     [send],
