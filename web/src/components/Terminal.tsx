@@ -431,6 +431,9 @@ function catchImages(el: HTMLElement, onImages: (files: File[]) => void) {
  * of xterm, and sent as the edit since the field's last state (lib/textdiff):
  * backspaces, then the new characters. Keys typed on a keyboard, and IME
  * composition, still go to xterm as before. */
+/** The input kinds dictation, a suggestion pick and autocorrect produce. */
+const KEYLESS_REWRITES = new Set(['insertText', 'insertReplacementText', 'deleteContentBackward']);
+
 function keylessText(host: HTMLElement, ta: HTMLTextAreaElement, send: (data: string) => void) {
   let lastKey = 0;
   let before = '';
@@ -448,6 +451,13 @@ function keylessText(host: HTMLElement, ta: HTMLTextAreaElement, send: (data: st
       if (e.target !== ta) return;
       const ev = e as InputEvent;
       if (ev.isComposing || performance.now() - lastKey < 100) return;
+      // Only rewrites of the field: dictation and suggestions insert or
+      // replace text. A paste or a drop is xterm's own (its `paste` handler
+      // already sent the text), and taking it here too would type it twice.
+      if (!KEYLESS_REWRITES.has(ev.inputType)) {
+        before = ta.value;
+        return;
+      }
       const edit = textEdit(before, ta.value);
       before = ta.value;
       e.stopImmediatePropagation();

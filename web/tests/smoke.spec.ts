@@ -560,3 +560,50 @@ test('a link in the terminal opens outside the app', async ({ page, isMobile }) 
     .poll(() => page.evaluate(() => (window as unknown as { opened: unknown[] }).opened))
     .toEqual([['https://github.com/aluedeke/tenx/pull/42', '_blank', 'noopener,noreferrer']]);
 });
+
+test('a paste into the terminal is typed once', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'same code path; the DOM renderer check is desktop');
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/?renderer=dom');
+  await expect(page.locator('.xterm-rows')).toBeVisible();
+  await page.locator('.xterm-helper-textarea').focus();
+  // What a browser does on a paste with no key press (the iPad's Paste
+  // menu): a paste event, then the text lands in the field as an input.
+  await page.evaluate(() => {
+    const ta = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'pasted-once');
+    ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    ta.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertFromPaste', data: 'pasted-once', bubbles: true, cancelable: true }));
+    ta.value += 'pasted-once';
+    ta.dispatchEvent(new InputEvent('input', { inputType: 'insertFromPaste', data: 'pasted-once', bubbles: true }));
+  });
+  await page.waitForTimeout(500);
+  const sent = binary.join('');
+  expect(sent.split('pasted-once').length - 1).toBe(1);
+});
+
+test('dictation sends each revision as an edit, not a repeat', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'same code path');
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/?renderer=dom');
+  await expect(page.locator('.xterm-rows')).toBeVisible();
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.evaluate(async () => {
+    const ta = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+    const say = (text: string) => {
+      ta.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: text, bubbles: true, cancelable: true }));
+      ta.value = text;
+      ta.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: text, bubbles: true }));
+    };
+    say('Fix');
+    await new Promise((r) => setTimeout(r, 150));
+    say('Fix the log in');
+    await new Promise((r) => setTimeout(r, 150));
+    say('Fix the login timeout');
+  });
+  await page.waitForTimeout(500);
+  expect(binary.join('')).toBe('Fix' + ' the log in' + '\x7f\x7f\x7f' + 'in timeout');
+});
