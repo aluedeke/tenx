@@ -138,6 +138,8 @@ const WORKSPACES = [
   { name: 'acme', color: '#5eb4aa', repos: ['api', 'web', 'infra'] },
   { name: 'notes', color: '#ce86a8', repos: ['notes'] },
   { name: 'tenx', color: '#78b4ce', repos: ['tenx'] },
+  // tenx's own detached workspace: sessions without repos (`tenx ask`).
+  { name: 'detached', color: '#aab064', repos: [] },
 ];
 const AGENTS = ['default', 'claude', 'codex', 'pi'];
 const repoChecks = (ws) => WORKSPACES[ws].repos.map((name) => ({ name, checked: true }));

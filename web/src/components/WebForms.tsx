@@ -330,7 +330,7 @@ function CreateForm({ mode, send, error, touch, progress }: { mode: Extract<Form
         }
       >
         {mode.repos.length === 0 ? (
-          <span className="wf-hint">this workspace has no repos yet</span>
+          <span className="wf-hint">none — the agent runs on its own and can read the workspace</span>
         ) : (
           <div className="wf-chips" aria-label="repos">
             {mode.repos.map((r, i) => (

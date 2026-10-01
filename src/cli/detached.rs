@@ -55,8 +55,9 @@ pub fn ensure() -> Result<Workspace> {
     Ok(ws)
 }
 
-/// [`ensure`] for a launch path that must not fail because of it (the client):
-/// the detached workspace is a convenience, not a precondition.
+/// [`ensure`] for a launch path that must not fail because of it (the client,
+/// and `tenx web`): the detached workspace is a convenience, not a
+/// precondition.
 pub fn ensure_quiet() {
     if let Err(e) = ensure() {
         eprintln!("tenx: couldn't set up the detached workspace: {e:#}");

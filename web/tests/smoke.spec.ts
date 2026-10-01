@@ -658,3 +658,16 @@ test('a wrong prediction is corrected by the server’s view', async ({ page, is
   await expect(selected).toContainText('Better loading indicators', { timeout: 150 });
   await expect(selected).toContainText('web version', { timeout: 2000 });
 });
+
+test('a workspace without repos creates a task the agent runs on its own', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
+  const tap = (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
+  await page.goto('/');
+  if (isMobile) await page.getByTestId('toggle').tap();
+  await tap(page.getByTestId('add'));
+  await tap(page.locator('.wf-chip', { hasText: /^\W*detached/ }));
+  await expect(page.getByText('none — the agent runs on its own and can read the workspace')).toBeVisible();
+  await page.locator('input[data-field=name]').fill('how does sweep work');
+  await tap(page.getByRole('button', { name: /Create task/ }));
+  await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'submit')).toBe(true);
+});
