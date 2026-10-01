@@ -671,3 +671,26 @@ test('a workspace without repos creates a task the agent runs on its own', async
   await tap(page.getByRole('button', { name: /Create task/ }));
   await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'submit')).toBe(true);
 });
+
+for (const [name, parts, expected] of [
+  ['plain text', { 'text/plain': 'npm run build' }, 'npm run build'],
+  ['HTML only (a page selection)', { 'text/html': '<p>Fix <b>login</b> timeout</p>' }, 'Fix login timeout'],
+] as const) {
+  test(`the paste key pastes ${name}`, async ({ page, context, isMobile }) => {
+    test.skip(!isMobile, 'the key bar is for touch');
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const binary: string[] = [];
+    page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+    await page.goto('/');
+    await page.locator('.xterm-helper-textarea').focus();
+    await page.evaluate(async (parts) => {
+      const blobs = Object.fromEntries(Object.entries(parts).map(([t, v]) => [t, new Blob([v], { type: t })]));
+      await navigator.clipboard.write([new ClipboardItem(blobs)]);
+      const vv = window.visualViewport!;
+      Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
+      vv.dispatchEvent(new Event('resize'));
+    }, parts as Record<string, string>);
+    await page.getByTestId('paste').tap();
+    await expect.poll(() => binary.join('')).toContain(expected);
+  });
+}

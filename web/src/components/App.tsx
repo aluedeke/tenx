@@ -15,6 +15,7 @@ import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
+import { choose, htmlText } from '@/lib/clipboard';
 import { textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { predict, unacked, type Pending } from '@/lib/predict';
@@ -573,30 +574,34 @@ export function App() {
    * like a picked one, text is pasted as typed. The Clipboard API only
    * exists on HTTPS (or localhost), so over plain http this can only say so. */
   const pasteClipboard = useCallback(async () => {
-    if (!navigator.clipboard?.read) {
+    const typeText = (text: string) => {
+      setFocus('terminal');
+      term.current?.paste(text);
+    };
+    if (!navigator.clipboard?.read && !navigator.clipboard?.readText) {
       notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
       return;
     }
+    // The full read first (text, HTML or an image — lib/clipboard), then the
+    // plain-text read some browsers allow when the full one isn't.
+    let failure: unknown = null;
     try {
-      const images: File[] = [];
-      let text = '';
-      for (const item of await navigator.clipboard.read()) {
-        const image = item.types.find((t) => t.startsWith('image/'));
-        if (image) {
-          const blob = await item.getType(image);
-          images.push(new File([blob], 'clipboard', { type: image }));
-        } else if (item.types.includes('text/plain')) {
-          text += await (await item.getType('text/plain')).text();
-        }
+      if (navigator.clipboard.read) {
+        const clip = await choose(await navigator.clipboard.read(), htmlText);
+        if (clip?.kind === 'text') return typeText(clip.text);
+        if (clip?.kind === 'images') return void (await pasteImages(clip.files));
       }
-      if (images.length) await pasteImages(images);
-      else if (text) {
-        setFocus('terminal');
-        term.current?.paste(text);
-      } else notice('the clipboard is empty');
     } catch (e) {
-      notice(`couldn't read the clipboard: ${e instanceof Error ? e.message : String(e)}`);
+      failure = e;
     }
+    try {
+      const text = navigator.clipboard.readText ? await navigator.clipboard.readText() : '';
+      if (text) return typeText(text);
+    } catch (e) {
+      failure ??= e;
+    }
+    if (failure) notice(`couldn't read the clipboard: ${failure instanceof Error ? failure.message : String(failure)}`);
+    else notice('nothing to paste: the clipboard has no text or image');
   }, [notice, pasteImages]);
 
   const togglePush = useCallback(() => {
