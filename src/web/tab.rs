@@ -39,6 +39,11 @@ pub(super) enum PageMsg {
     Viewport { cols: u16 },
     Focus { column: bool },
     Visible,
+    /// A line for the server's log (`~/.config/tenx/web.log` under the
+    /// service): what the page saw where only the device can see it — e.g.
+    /// which clipboard types a paste found, or the error it got. Never
+    /// content; trimmed to one short line.
+    Log { message: String },
 }
 
 /// A page message and its `seq`, if the page numbered it: inputs that change
@@ -348,6 +353,10 @@ impl Driver {
             PageMsg::Focus { column: true } => self.column.select_current(),
             PageMsg::Focus { column: false } => self.column.blur(),
             PageMsg::Visible => self.column.maybe_sweep(),
+            PageMsg::Log { message } => {
+                let line: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
+                eprintln!("page {}: {line}", self.session);
+            }
             PageMsg::Viewport { cols } => {
                 let configured = crate::workspace::load_global().map(|g| g.column_width).unwrap_or(0);
                 let (column_cols, narrow) =

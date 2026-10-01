@@ -245,7 +245,9 @@ export type ClientMessage =
   | { type: 'resize'; cols: number; rows: number }
   | { type: 'viewport'; cols: number }
   | { type: 'focus'; column: boolean }
-  | { type: 'visible' };
+  | { type: 'visible' }
+  /** A diagnostic line for the server's log (never content). */
+  | { type: 'log'; message: string };
 
 /** An edit from a web form (view.rs `FormOp`), applied to the open form. */
 export type FormOp =

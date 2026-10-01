@@ -20,6 +20,8 @@ interface Props {
    * column's text input) — called inside the tap, the only place iOS lets a
    * focus keep its on-screen keyboard up. */
   onRefocus(): void;
+  /** A diagnostic line for the server's log. */
+  onDiag?(message: string): void;
 }
 
 const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
@@ -32,7 +34,7 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, onRefocus }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, onRefocus, onDiag }: Props) {
   const bar = useRef<HTMLDivElement>(null);
   // iOS moves focus off the terminal — and closes the keyboard — on a tap
   // anywhere else, whatever pointerdown does. Cancelling the touch itself
@@ -94,7 +96,10 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, o
           data-testid="paste"
           // No default on the press: the terminal keeps focus, and with it
           // the on-screen keyboard. The paste itself runs on the click.
-          onPointerDown={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            onDiag?.('paste: pointerdown');
+          }}
           onClick={() => {
             onRefocus();
             onPaste();

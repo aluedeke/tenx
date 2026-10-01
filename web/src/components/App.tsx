@@ -541,9 +541,12 @@ export function App() {
   const pasteImages = useCallback(async (files: File[]) => {
     setFocus('terminal');
     setPasting(files.length > 1 ? `uploading ${files.length} images…` : 'uploading image…');
+    const diag = (message: string) => conn.current?.send({ type: 'log', message: `paste: ${message}` });
+    diag(`uploading ${files.map((f) => `${f.type || '?'} ${f.size}B`).join(', ')}`);
     try {
       const paths: string[] = [];
       for (const f of files) paths.push(asTyped(await upload(f)));
+      diag(`uploaded ${paths.length}`);
       term.current?.paste(paths.join(' ') + ' ');
       term.current?.focus();
       setPasting(null);
@@ -560,6 +563,7 @@ export function App() {
         }
       }, 400);
     } catch (e) {
+      diag(`upload failed: ${e instanceof Error ? e.message : String(e)}`);
       setPasting(`paste failed: ${e instanceof Error ? e.message : String(e)}`);
       setTimeout(() => setPasting(null), 4000);
     }
@@ -574,10 +578,17 @@ export function App() {
    * like a picked one, text is pasted as typed. The Clipboard API only
    * exists on HTTPS (or localhost), so over plain http this can only say so. */
   const pasteClipboard = useCallback(async () => {
+    // What happened, for the server's log: only the device can see it, and
+    // iOS differs from every desktop browser here. Types and errors, never
+    // the clipboard's content.
+    const diag = (message: string) => send({ type: 'log', message: `paste: ${message}` });
     const typeText = (text: string) => {
+      diag(`typed ${text.length} chars`);
       setFocus('terminal');
       term.current?.paste(text);
     };
+    diag(`tapped; read=${!!navigator.clipboard?.read} readText=${!!navigator.clipboard?.readText} secure=${window.isSecureContext}`);
+    setPasting('reading the clipboard…');
     if (!navigator.clipboard?.read && !navigator.clipboard?.readText) {
       notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
       return;
@@ -587,22 +598,29 @@ export function App() {
     let failure: unknown = null;
     try {
       if (navigator.clipboard.read) {
-        const clip = await choose(await navigator.clipboard.read(), htmlText);
+        const items = await navigator.clipboard.read();
+        diag(`read ${items.length} item(s): ${items.map((i) => `[${i.types.join(',')}]`).join(' ')}`);
+        setPasting(null);
+        const clip = await choose(items, htmlText);
         if (clip?.kind === 'text') return typeText(clip.text);
         if (clip?.kind === 'images') return void (await pasteImages(clip.files));
       }
     } catch (e) {
       failure = e;
+      diag(`read failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
     }
     try {
       const text = navigator.clipboard.readText ? await navigator.clipboard.readText() : '';
+      diag(`readText gave ${text.length} chars`);
       if (text) return typeText(text);
     } catch (e) {
       failure ??= e;
+      diag(`readText failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
     }
+    setPasting(null);
     if (failure) notice(`couldn't read the clipboard: ${failure instanceof Error ? failure.message : String(failure)}`);
     else notice('nothing to paste: the clipboard has no text or image');
-  }, [notice, pasteImages]);
+  }, [notice, pasteImages, send]);
 
   const togglePush = useCallback(() => {
     // Straight from the click: the permission prompt needs the gesture.
@@ -779,6 +797,7 @@ export function App() {
           onCtrl={() => setCtrlSticky((s) => !s)}
           onImages={pasteImages}
           onPaste={pasteClipboard}
+          onDiag={(message) => send({ type: 'log', message })}
           onRefocus={() => {
             // A web form's field keeps the keyboard it has.
             if (document.activeElement?.closest('.webform')) return;
