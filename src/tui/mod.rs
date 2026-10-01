@@ -28,6 +28,7 @@ pub fn dump_json() -> anyhow::Result<()> {
         workspaces.push(serde_json::json!({
             "name": ws.config.name,
             "dir": ws.dir,
+            "detached": ws.is_detached(),
             "repos": ws
                 .config
                 .repos

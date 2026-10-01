@@ -149,7 +149,7 @@ pub fn run(f: Follow) -> Result<()> {
 /// Find the agent's transcript file for `cwd`. Each harness stores it
 /// differently; within a store, prefer the file matching the session id, else
 /// the newest.
-fn locate_transcript(agent: &str, cwd: &str, session: Option<&str>) -> Option<PathBuf> {
+pub(crate) fn locate_transcript(agent: &str, cwd: &str, session: Option<&str>) -> Option<PathBuf> {
     match agent {
         "codex" => {
             // ~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<id>.jsonl — the id is in

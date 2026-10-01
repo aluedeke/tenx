@@ -99,6 +99,9 @@ If you no longer need something you asked for, withdraw it so nobody is chased f
 
     tenx task new "<title>" [--description …] [--link "Label: value"]…
                                create task with worktrees + TASK.md
+    tenx task new "<title>" --no-repos
+                               a task without worktrees: its agent can read the whole workspace
+    tenx ask "<question>"      a session of its own for a question, outside any workspace
     tenx task open <name>      switch to the task's window
     tenx task list             list all tasks and open tabs
     tenx task rm <name>        remove task and worktrees

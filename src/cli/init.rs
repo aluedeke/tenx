@@ -126,7 +126,7 @@ pub fn init_in(
     Ok(ws)
 }
 
-fn install_skills(ws_dir: &Path) -> Result<()> {
+pub(crate) fn install_skills(ws_dir: &Path) -> Result<()> {
     for (path, content) in skill_files(ws_dir) {
         if path.exists() {
             continue;
@@ -144,13 +144,28 @@ fn install_skills(ws_dir: &Path) -> Result<()> {
 /// the portable shape Codex and pi read (`.agents/skills`, see
 /// [`portable_skill`]), and `AGENTS.md`. The one list installing,
 /// refreshing and `doctor` all work from.
+///
+/// The detached workspace also gets `/orchestrate`, which only makes sense
+/// from a session that has no repos of its own.
 fn skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
-    vec![
+    let mut files = vec![
         (ws_dir.join(".claude/skills/tenx/SKILL.md"), TENX_SKILL_MD.to_string()),
         (ws_dir.join(".claude/skills/standup/SKILL.md"), STANDUP_SKILL_MD.to_string()),
         (ws_dir.join(".agents/skills/tenx/SKILL.md"), portable_skill("tenx", TENX_SKILL_MD)),
         (ws_dir.join(".agents/skills/standup/SKILL.md"), portable_skill("standup", STANDUP_SKILL_MD)),
         (ws_dir.join("AGENTS.md"), AGENTS_MD.to_string()),
+    ];
+    if crate::workspace::load(ws_dir).is_ok_and(|ws| ws.is_detached()) {
+        files.extend(detached_skill_files(ws_dir));
+    }
+    files
+}
+
+/// The files only the detached workspace gets (see [`skill_files`]).
+fn detached_skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
+    vec![
+        (ws_dir.join(".claude/skills/orchestrate/SKILL.md"), ORCHESTRATE_SKILL_MD.to_string()),
+        (ws_dir.join(".agents/skills/orchestrate/SKILL.md"), portable_skill("orchestrate", ORCHESTRATE_SKILL_MD)),
     ]
 }
 
@@ -227,6 +242,10 @@ const SHIPPED_SKILLS: &[u64] = &[
     0xb6dd288de89a9683, // tenx: `need --why`
     0x980d762777468b70, // tenx: `need --why` portable
     0x646c555ee28e1303, // agentsmd: `need`
+    0x006b7517d1241562, // tenx: `ask`, `--no-repos`
+    0xeeb3eac70a44d93b, // tenx: `ask`, `--no-repos` portable
+    0x3135b92d7ac011bd, // orchestrate (detached workspace)
+    0x00830c2006515923, // orchestrate portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
@@ -235,6 +254,7 @@ fn prompt_yes_no(question: &str) -> Result<bool> {
 }
 
 const TENX_SKILL_MD: &str = include_str!("skills/tenx.md");
+const ORCHESTRATE_SKILL_MD: &str = include_str!("skills/orchestrate.md");
 
 /// Rewrite a Claude skill into the portable Agent-Skills shape: a `name:` +
 /// `description:` header (dropping `allowed-tools`, which not every agent
@@ -419,6 +439,7 @@ mod tests {
         // files as its own, and would leave them stale forever.
         let missing: Vec<String> = skill_files(Path::new("/ws"))
             .into_iter()
+            .chain(detached_skill_files(Path::new("/ws")))
             .map(|(path, content)| (path, content_hash(content.as_bytes())))
             .filter(|(_, hash)| !SHIPPED_SKILLS.contains(hash))
             .map(|(path, hash)| format!("    0x{hash:016x}, // {}", path.display()))

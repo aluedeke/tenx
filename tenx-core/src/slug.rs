@@ -23,9 +23,31 @@ pub fn slugify(name: &str) -> String {
     out
 }
 
+/// The first of `base`, `base-2`, `base-3`, … that `taken` doesn't claim —
+/// how a detached session gets a slug of its own when its title repeats an
+/// earlier one ("question" twice). Workspaces with repos never take this
+/// path: their slug is a branch name, and a duplicate there is an error the
+/// user should see.
+pub fn unique_slug(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(base) {
+        return base.to_string();
+    }
+    (2..)
+        .map(|n| format!("{base}-{n}"))
+        .find(|s| !taken(s))
+        .expect("an unbounded range always finds a free slug")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::slugify;
+    use super::{slugify, unique_slug};
+
+    #[test]
+    fn unique_slug_counts_up_from_two() {
+        assert_eq!(unique_slug("q", |_| false), "q");
+        assert_eq!(unique_slug("q", |s| s == "q"), "q-2");
+        assert_eq!(unique_slug("q", |s| ["q", "q-2", "q-3"].contains(&s)), "q-4");
+    }
 
     #[test]
     fn spaces_and_underscores_become_dashes() {

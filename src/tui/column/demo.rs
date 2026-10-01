@@ -90,6 +90,7 @@ impl Scene {
             config: crate::workspace::WorkspaceConfig {
                 schema_version: crate::workspace::CURRENT_SCHEMA,
                 name: "ledger".into(),
+                kind: String::new(),
                 layout: String::new(),
                 repos: ["api", "web", "infra"]
                     .iter()

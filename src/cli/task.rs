@@ -11,12 +11,42 @@ pub struct TaskMd<'a> {
     pub description: &'a str,
     /// `(label, value)` rows for `## Links`; see `tenx_core::taskmd::merge_links`.
     pub links: &'a [(String, String)],
+    /// Not part of `TASK.md`: the agent's first message (`--prompt`, `tenx
+    /// ask`). Empty = none. Kept in [`PROMPT_FILE`] until the window opens.
+    pub prompt: &'a str,
 }
 
-pub fn new(name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd, agent: Option<crate::agent::AgentKind>) -> Result<()> {
-    let cwd = env::current_dir()?;
-    let ws = crate::workspace::find(&cwd)?;
-    new_with(&ws, name, repos, no_open, md, agent, crate::progress::for_cli().as_ref())
+/// A new task's first message, waiting for its window: written at creation,
+/// handed to the agent as its launch argument by the first window open, and
+/// deleted then. A file and not a parameter because the column creates on a
+/// worker and opens on the UI thread later, and a closed task's `task send`
+/// opens the window the same way.
+pub const PROMPT_FILE: &str = ".tenx-prompt";
+
+/// What task creation does about the new task's window.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OpenMode {
+    /// No window; `task open` or the column's ⏎ makes one later.
+    Closed,
+    /// Open it and make it the session's current window — a person typing
+    /// `tenx task new` wants to land on it.
+    Focus,
+    /// Open it with its agent running, but leave every terminal where it is
+    /// — an agent creating tasks for others must not drag your screen away.
+    Background,
+}
+
+impl OpenMode {
+    /// The CLI's choice: `--no-open` wins over `--no-focus`.
+    pub fn for_cli(no_open: bool, no_focus: bool) -> OpenMode {
+        if no_open {
+            OpenMode::Closed
+        } else if no_focus {
+            OpenMode::Background
+        } else {
+            OpenMode::Focus
+        }
+    }
 }
 
 /// Create a task in an explicit workspace (no cwd dependency), with an empty
@@ -26,10 +56,10 @@ pub fn new_in(
     ws: &crate::workspace::Workspace,
     name: &str,
     repos: Option<&[String]>,
-    no_open: bool,
+    open: OpenMode,
     rep: &dyn crate::progress::Reporter,
-) -> Result<()> {
-    new_with(ws, name, repos, no_open, &TaskMd::default(), None, rep)
+) -> Result<String> {
+    new_with(ws, name, repos, open, &TaskMd::default(), None, rep)
 }
 
 /// The steps `new_in` will report, in order, for a plan built before the work
@@ -45,31 +75,28 @@ pub fn new_steps(ws: &crate::workspace::Workspace, repos: Option<&[String]>) -> 
     }
 }
 
-/// Create a task in an explicit workspace with a pre-filled `TASK.md`. `agent`
-/// pins the task's coding agent via a `.tenx-agent` override; `None` inherits
-/// the workspace default.
-pub fn new_with(
-    ws: &crate::workspace::Workspace,
-    name: &str,
-    repos: Option<&[String]>,
-    no_open: bool,
-    md: &TaskMd,
-    agent: Option<crate::agent::AgentKind>,
-    rep: &dyn crate::progress::Reporter,
-) -> Result<()> {
-    let display_name = name.to_string();
+/// The slug a new task called `name` gets in `ws`, or why it can't be made.
+///
+/// In an ordinary workspace the slug is a branch name, so a taken one is an
+/// error the user should see. In the detached workspace nothing is a branch
+/// and titles repeat ("question"), so a taken slug just counts up
+/// (`tenx_core::slug::unique_slug`). The column calls this before starting
+/// its job, so its ghost row and the task the job creates agree.
+pub fn plan_slug(ws: &crate::workspace::Workspace, name: &str) -> Result<String> {
     let slug = crate::workspace::slugify(name);
-    let slug = slug.as_str();
     if slug.is_empty() {
         bail!("task name {name:?} has no letters or digits to make a slug from");
     }
-    if crate::tmux::is_reserved_slug(slug) {
+    if ws.is_detached() {
+        let tasks = ws.tasks_dir();
+        return Ok(tenx_core::slug::unique_slug(&slug, |s| {
+            crate::tmux::is_reserved_slug(s) || tasks.join(s).exists()
+        }));
+    }
+    if crate::tmux::is_reserved_slug(&slug) {
         bail!("task name {name:?} slugs to {slug:?}, which is tenx's own window — pick another name");
     }
-
-    let global = crate::workspace::load_global()?;
-
-    ws.check_task_new(slug)?;
+    ws.check_task_new(&slug)?;
     // A task created before `slugify` tightened up may live at a directory
     // the new slug doesn't match ("v1.2 hotfix" → `v1.2-hotfix` then,
     // `v1-2-hotfix` now); catch the duplicate by title so it isn't cloned
@@ -77,15 +104,37 @@ pub fn new_with(
     if let Some(existing) = ws.tasks()?.into_iter().find(|t| t.display_name.eq_ignore_ascii_case(name)) {
         bail!(crate::workspace::WorkspaceError::TaskExists(existing.name));
     }
+    Ok(slug)
+}
+
+/// Create a task in an explicit workspace with a pre-filled `TASK.md`, and
+/// return its slug. `agent` pins the task's coding agent via a `.tenx-agent`
+/// override; `None` inherits the workspace default. `repos` is the picked
+/// subset (`None` = all of the workspace's); an empty set — or a workspace
+/// with no repos, the detached one always — makes a task without worktrees,
+/// whose agent runs in the bare task directory.
+pub fn new_with(
+    ws: &crate::workspace::Workspace,
+    name: &str,
+    repos: Option<&[String]>,
+    open: OpenMode,
+    md: &TaskMd,
+    agent: Option<crate::agent::AgentKind>,
+    rep: &dyn crate::progress::Reporter,
+) -> Result<String> {
+    let display_name = name.to_string();
+    let slug = plan_slug(ws, name)?;
+    let slug = slug.as_str();
+
+    let global = crate::workspace::load_global()?;
 
     // Determine which repos to include
     let repo_names: Vec<String> = match repos {
         Some(r) => r.to_vec(),
         None => ws.config.repos.iter().map(|r| r.name.clone()).collect(),
     };
-
-    if repo_names.is_empty() {
-        bail!("no repos in workspace — run: tenx repo add <url>");
+    if ws.is_detached() && !repo_names.is_empty() {
+        bail!("the detached workspace has no repos — create the task in a workspace that does");
     }
 
     let bare_dir = ws.bare_dir(&global);
@@ -98,38 +147,23 @@ pub fn new_with(
     if let Some(a) = agent {
         crate::agent::set_task_agent(&task_dir, Some(a))?;
     }
+    if !md.prompt.trim().is_empty() {
+        std::fs::write(task_dir.join(PROMPT_FILE), md.prompt)?;
+    }
 
     for (step, repo_name) in repo_names.iter().enumerate() {
         ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, slug, rep, step)?;
     }
 
-    if !no_open {
+    if open != OpenMode::Closed {
         if !crate::tmux::server_running() {
             eprintln!("! the '{}' session isn't running — run: tenx", crate::tmux::SESSION);
             eprintln!("  to open later: tenx task open {}", slug);
-            return Ok(());
+            return Ok(slug.to_string());
         }
-        let layout = ws.config.layout.as_str();
-        let agent = crate::agent::agent_for(ws, &task_dir);
-        agent.prepare(&task_dir);
-        let agent_cmd = crate::agent::launch(ws, agent, slug, &task_dir);
-        let opts = crate::tmux::TaskWindow {
-            // Name the window by the immutable slug, not the editable title.
-            // Window names are never shown (tabless) and only correlate
-            // task↔window; the slug can't drift or collide.
-            slug,
-            title: name,
-            task_dir: &task_dir.to_string_lossy(),
-            workspace_dir: &ws.dir.to_string_lossy(),
-            layout_script: if layout.is_empty() { None } else { Some(layout) },
-            agent: agent.as_str(),
-            agent_cmd: &agent_cmd,
-            detached: false,
-        };
-        let id = crate::tmux::open_task_window(&opts)?;
-        std::fs::write(task_dir.join(crate::tmux::WINDOW_ID_FILE), &id)?;
+        open_window(ws, slug, open == OpenMode::Background)?;
     }
-    Ok(())
+    Ok(slug.to_string())
 }
 
 /// Clone-or-fetch one repo and create the task's worktree for it, on a branch
@@ -323,9 +357,8 @@ pub fn set_repos_in(
     force: bool,
     rep: &dyn crate::progress::Reporter,
 ) -> Result<()> {
-    if repos.is_empty() {
-        bail!("a task must keep at least one repo — delete the task instead");
-    }
+    // An empty set is allowed: a task without worktrees is still a session
+    // (and its TASK.md), just one that runs in the bare task directory.
     let task = ws.find_task(slug)?;
     let add: Vec<String> = repos
         .iter()
@@ -346,15 +379,29 @@ pub fn set_repos_in(
 /// Resolve a workspace (explicit dir, else cwd) and a task slug. An explicit
 /// `ws_dir` means the caller is a UI passing an exact slug; from cwd the name
 /// is resolved with [`slug_for`].
-fn resolve_task(ws_dir: Option<&str>, task: &str) -> Result<(crate::workspace::Workspace, String)> {
+pub(crate) fn resolve_task(ws_dir: Option<&str>, task: &str) -> Result<(crate::workspace::Workspace, String)> {
     match ws_dir {
-        Some(dir) => Ok((crate::workspace::load(Path::new(dir))?, task.to_string())),
+        Some(dir) => Ok((load_ws_arg(dir)?, task.to_string())),
         None => {
             let ws = crate::workspace::find(&env::current_dir()?)?;
             let slug = slug_for(&ws, task);
             Ok((ws, slug))
         }
     }
+}
+
+/// A `--ws-dir` value: a workspace directory, or — what an orchestrating
+/// agent reads off `task list --json` and finds easier to say — the name of a
+/// registered workspace.
+pub fn load_ws_arg(arg: &str) -> Result<crate::workspace::Workspace> {
+    let path = Path::new(arg);
+    if path.join("config.toml").is_file() {
+        return crate::workspace::load(path);
+    }
+    if let Some(ws) = crate::workspace::registered_workspaces().into_iter().find(|w| w.config.name == arg) {
+        return Ok(ws);
+    }
+    crate::workspace::load(path).with_context(|| format!("no workspace at or named {arg:?}"))
 }
 
 /// The slug a user-typed task name refers to: the name itself if a task
@@ -378,15 +425,8 @@ pub fn open(name: &str) -> Result<()> {
 /// Open a task given an explicit workspace directory and exact slug. Used by
 /// the column (cross-workspace, no meaningful cwd, slug already known).
 pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
-    let ws = crate::workspace::load(Path::new(ws_dir))?;
+    let ws = load_ws_arg(ws_dir)?;
     open_in(&ws, slug)
-}
-
-/// Create a task in an explicit workspace directory (for scripts and front
-/// ends). `repos` is the picked subset (None = all).
-pub fn new_by_dir(ws_dir: &str, name: &str, repos: Option<&[String]>, no_open: bool, md: &TaskMd, agent: Option<crate::agent::AgentKind>) -> Result<()> {
-    let ws = crate::workspace::load(Path::new(ws_dir))?;
-    new_with(&ws, name, repos, no_open, md, agent, crate::progress::for_cli().as_ref())
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).
@@ -423,7 +463,7 @@ pub fn open_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<()> {
 /// Find-or-create a task's window. `detached` keeps the session's current
 /// window where it is, both when the window already exists and when it is
 /// created here.
-fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached: bool) -> Result<()> {
+pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached: bool) -> Result<()> {
     let task = ws.find_task(slug)?;
 
     if !crate::tmux::server_running() {
@@ -454,7 +494,12 @@ fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached: bool) -> 
     let layout = ws.config.layout.as_str();
     let agent = crate::agent::agent_for(ws, &task.path);
     agent.prepare(&task.path);
-    let agent_cmd = crate::agent::launch(ws, agent, slug, &task.path);
+    // A first message left by `--prompt`/`tenx ask`/`task send` rides in on
+    // the launch, once: read now, removed only after the window exists, so a
+    // failed open keeps it for the next try.
+    let prompt_file = task.path.join(PROMPT_FILE);
+    let prompt = std::fs::read_to_string(&prompt_file).ok().filter(|p| !p.trim().is_empty());
+    let agent_cmd = crate::agent::launch(ws, agent, slug, &task.path, &readable_dirs(ws, &task), prompt.as_deref());
     let opts = crate::tmux::TaskWindow {
         slug,
         title: &task.display_name,
@@ -464,10 +509,33 @@ fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached: bool) -> 
         agent: agent.as_str(),
         agent_cmd: &agent_cmd,
         detached,
+        agent_only: task.repos.is_empty(),
     };
     let id = crate::tmux::open_task_window(&opts)?;
+    let _ = std::fs::remove_file(&prompt_file);
     std::fs::write(&id_file, &id)?;
     Ok(())
+}
+
+/// Directories outside a task its agent may read without asking, recomputed
+/// at every open: none for a task with worktrees (its code is in its own
+/// directory); its workspace for a repo-less task in an ordinary workspace,
+/// so a question about the workspace can see every task's code; and every
+/// other registered workspace for a detached session, which is how an
+/// orchestrator reads the tasks it drives. A workspace registered later is
+/// readable from the next reopen.
+fn readable_dirs(ws: &crate::workspace::Workspace, task: &crate::workspace::Task) -> Vec<PathBuf> {
+    if !task.repos.is_empty() {
+        return Vec::new();
+    }
+    if !ws.is_detached() {
+        return vec![ws.dir.clone()];
+    }
+    crate::workspace::registered_workspaces()
+        .into_iter()
+        .filter(|w| !w.is_detached())
+        .map(|w| w.dir)
+        .collect()
 }
 
 /// Give a task a window without going to it: the agent starts, the task reads

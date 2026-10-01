@@ -140,9 +140,9 @@ The column lists every task from every registered workspace, sectioned by attent
 
 The column opens in the search field (`Ctrl+w` lands in the list instead). Typing filters the list; `Backspace` edits the filter; `Esc` or `↓` leaves the field for the list. `↓` and `↑` from the field land next to the task you are in, not at the top, and `Ctrl+j`/`Ctrl+k` do the same. `Enter` in the field opens the top match. In the list, `↑` from the first row goes back to the field. `Ctrl+w` lands in the list, so `Ctrl+w` `n` from any task reaches the next one that needs you, and `A` or `Enter` deals with it.
 
-The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task, starting in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else. `W` (or `:init [path]`), from either tab, creates a whole new workspace: a path, a name, a first repo URL and whether to install the skills, the same questions `tenx init` asks. The column then lands on the new workspace's repo in the Repos tab, where `Ctrl+n` creates its first task; given no repo, it opens the add-repo form for it instead, since a task needs one.
+The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task, starting in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else. `W` (or `:init [path]`), from either tab, creates a whole new workspace: a path, a name, a first repo URL and whether to install the skills, the same questions `tenx init` asks. The column then lands on the new workspace's repo in the Repos tab, where `Ctrl+n` creates its first task; given no repo, it opens the add-repo form for it instead, since a task with no repo to work on is rarely what a new workspace is for.
 
-The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`, `:init [path]`. The rest have no key: `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:reject` rejects a pending secrets request (what `D` does on a secrets row), `:cancel` withdraws one, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:help` lists every key, `:q` quits the client.
+The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`, `:init [path]`. The rest have no key: `:ask <question>` starts a detached session on the question (see [Sessions outside a repo](#sessions-outside-a-repo)), `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:reject` rejects a pending secrets request (what `D` does on a secrets row), `:cancel` withdraws one, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:help` lists every key, `:q` quits the client.
 
 The **forms** (new task, new workspace, add repo, edit repos, rename, delete) are keyboard-only. `Tab`/`↓` and `Shift+Tab`/`↑` move between fields, `Space` toggles a repo, `Enter` submits, `Esc` cancels. In the new-task form, the workspace starts as the selected item's and `←`/`→` on that field move it to another registered workspace (the repo list follows), and `←`/`→` on the agent field cycle the choice; in the new-workspace form, `Space` on the skills field toggles it. In the edit-repos form, `j`/`k` also move, `x` also toggles, `a` picks every repo and `n` none. Deleting a task, or removing a worktree from the edit-repos form, asks once more; `y` or `Enter` confirms, any other key cancels.
 
@@ -162,8 +162,13 @@ tenx                     the column beside the session, creating the session if 
 tenx init [NAME]         create a workspace here (or in NAME/)
 tenx repo add <URL>      add a repo to the workspace (bare clone)
 tenx repo list|fetch
-tenx task new <TITLE>    create a task [--repos a,b] [--description ..] [--link "Label: value"] [--no-open]
+tenx task new <TITLE>    create a task [--repos a,b | --no-repos | --detached] [--prompt ..] [--description ..]
+                         [--link "Label: value"] [--no-open | --no-focus]
+tenx ask <QUESTION>      a session of its own for a question, outside any workspace
 tenx task open <NAME>    open or switch to a task's window
+tenx task send <SLUG> <TEXT>   message a task's agent, as if typed into its pane
+tenx task wait <SLUG>    until its turn is over [--timeout 10m]; exits 2 if it needs you, 3 on timeout
+tenx task output <SLUG>  what its agent said since the last prompt [--json]
 tenx task list
 tenx task rename <SLUG> <TITLE>
 tenx task add-repo|rm-repo|set-repos <SLUG> <REPOS..>
@@ -175,7 +180,29 @@ tenx standup             summarize recent activity across tasks
 tenx secrets ...         per-task encrypted secrets, see below
 ```
 
-Every mutating command accepts `--ws-dir` so scripts and other front ends can run it from anywhere. `tenx task list --json` is the same data the column renders.
+Every mutating command accepts `--ws-dir` (a workspace directory, or a registered workspace's name) so scripts and other front ends can run it from anywhere. `tenx task list --json` is the same data the column renders.
+
+## Sessions outside a repo
+
+Not every session is about one task's code. Two kinds don't need worktrees:
+
+- **A task without repos.** `tenx task new "Why is CI slow" --no-repos` (or untick every repo in the column's new-task form) makes a task whose agent runs in the bare task directory, in a window of its own with no editor or shell beside it, and can read the whole workspace — every other task's code included.
+- **A detached session.** `tenx ask "how do I rebase onto a moved branch?"`, or `:ask …` in the column, starts a session titled after the question, with the question as its first message, in the **detached** workspace — one tenx creates for itself at `~/.local/share/tenx/detached` (`detached_dir` in the global config moves it). It has no repos, and its sessions can read every registered workspace. Asking the same thing twice gives a second session (`-2`) rather than an error.
+
+Both are ordinary tasks everywhere else: listed in the column, with status, notifications, sweep and secrets. Sweep only closes their windows; nothing deletes them but you.
+
+### Orchestrating other tasks
+
+A detached session can drive tasks in other workspaces. It gets an `/orchestrate` skill and permission to run the commands that do it, without asking:
+
+```sh
+tenx task new "Bump the SDK" --ws-dir work --no-focus --prompt "Upgrade to SDK 5, fix what breaks, open a PR"
+tenx task send bump-the-sdk --ws-dir work "Also update the changelog"
+tenx task wait bump-the-sdk --ws-dir work      # 0 done · 2 needs you (prints why) · 3 timed out
+tenx task output bump-the-sdk --ws-dir work    # what it said since the last prompt
+```
+
+A message is pasted into the task's live agent, so every exchange is visible in its window and you can take over at any point. `send` opens a closed task with the message as its first prompt, and refuses to type into an agent that is waiting on a dialog (`--force` overrides). It never answers a permission prompt; that stays with you. The permission rules are seeded once into `~/.local/share/tenx/detached/.claude/settings.json`, which you can edit.
 
 ## From a phone or tablet
 
@@ -257,6 +284,7 @@ Global `~/.config/tenx/config.toml`:
 bare_dir = ""        # optional override for where bare clones live
 column_width = 0     # the task column, in cells; 0 = a fifth of the terminal, between 30 and 48
 agent = "codex"      # optional default agent for every workspace
+detached_dir = ""    # where the detached workspace lives; default ~/.local/share/tenx/detached
 # [agents.pi]        # optional global per-agent launch override (a workspace's wins)
 # args = ["--provider", "openai"]
 ```

@@ -41,6 +41,10 @@ pub struct GlobalConfig {
     /// A workspace's `[agents.<kind>]` overrides the same key here.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub agents: HashMap<String, AgentConfig>,
+    /// Where the detached workspace lives (`~` expanded); empty =
+    /// `~/.local/share/tenx/detached`. See [`detached_dir`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detached_dir: String,
 }
 
 /// How to launch one agent: an alternate binary and/or extra arguments. Lets a
@@ -72,6 +76,11 @@ pub struct WorkspaceConfig {
     #[serde(default)]
     pub schema_version: u32,
     pub name: String,
+    /// Empty for an ordinary workspace; [`DETACHED_KIND`] for the one tenx
+    /// creates itself to hold sessions that belong to no repo (`tenx ask`,
+    /// an orchestrator). See [`Workspace::is_detached`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub kind: String,
     /// Executable run to lay out a new task window (see `tmux::TaskWindow`);
     /// empty = the built-in claude/nvim/shell layout.
     #[serde(default)]
@@ -127,6 +136,30 @@ pub fn load_global() -> Result<GlobalConfig> {
         .with_context(|| format!("read global config {}", path.display()))?;
     let cfg: GlobalConfig = toml::from_str(&text).context("parse global config")?;
     Ok(cfg)
+}
+
+// ── The detached workspace ────────────────────────────────────────────────────
+//
+// Sessions that belong to no repo — a quick question, an orchestrator driving
+// tasks in several workspaces — are ordinary tasks in one workspace tenx owns:
+// no repos, a single-pane window, and slugs that never collide (a repeated
+// title gets `-2`, since nothing here is a branch name). Being a real,
+// registered workspace is the point: windows, status, bells, sweep, secrets
+// and every front end work on it unchanged. `cli::detached::ensure` creates
+// and registers it.
+
+/// `WorkspaceConfig::kind` of the detached workspace.
+pub const DETACHED_KIND: &str = "detached";
+/// Its `config.toml` name — what the column shows where a workspace name goes.
+pub const DETACHED_NAME: &str = "detached";
+
+/// Where the detached workspace lives: the global `detached_dir`, else
+/// `~/.local/share/tenx/detached`.
+pub fn detached_dir(global: &GlobalConfig) -> Result<PathBuf> {
+    if !global.detached_dir.is_empty() {
+        return Ok(PathBuf::from(expand_home(&global.detached_dir)));
+    }
+    Ok(home_dir()?.join(".local/share/tenx/detached"))
 }
 
 // ── Workspace registry ────────────────────────────────────────────────────────
@@ -361,11 +394,21 @@ pub fn init(dir: &Path, name: &str) -> Result<Workspace> {
 // ── Workspace methods ─────────────────────────────────────────────────────────
 
 impl Workspace {
+    /// The workspace tenx keeps for repo-less sessions (see [`DETACHED_KIND`]).
+    /// It never has repos: adding one is refused, and the column leaves it
+    /// off the Repos tab.
+    pub fn is_detached(&self) -> bool {
+        self.config.kind == DETACHED_KIND
+    }
+
     pub fn save_config(&self) -> Result<()> {
         atomic_write_toml(&self.dir.join("config.toml"), &self.config)
     }
 
     pub fn add_repo(&mut self, repo: RepoConfig) -> Result<()> {
+        if self.is_detached() {
+            bail!("the detached workspace holds sessions without repos — add the repo to another workspace");
+        }
         if self.config.repos.iter().any(|r| r.name == repo.name) {
             return Err(WorkspaceError::RepoExists(repo.name).into());
         }

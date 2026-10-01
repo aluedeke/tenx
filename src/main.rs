@@ -27,6 +27,12 @@ fn run() -> Result<()> {
     match cli.command {
         None => open()?,
 
+        Some(Commands::Ask { prompt, agent, ws_dir, no_focus }) => {
+            let agent = agent.as_deref().map(agent::AgentKind::from_token);
+            let open = cli::task::OpenMode::for_cli(false, no_focus);
+            cli::detached::ask(&prompt.join(" "), ws_dir.as_deref(), agent, open)?;
+        }
+
         Some(Commands::Init { name }) => {
             cli::init::run(name.as_deref())?;
         }
@@ -105,17 +111,50 @@ fn run() -> Result<()> {
 
 
         Some(Commands::Task { command }) => match command {
-            TaskCommands::New { name, repos, description, links, no_open, agent, ws_dir } => {
+            TaskCommands::New { name, repos, description, links, no_open, no_focus, no_repos, detached, prompt, agent, ws_dir } => {
                 let links = links
                     .iter()
                     .map(|l| tenx_core::taskmd::parse_link(l).ok_or_else(|| anyhow::anyhow!("--link wants \"Label: value\", got {l:?}")))
                     .collect::<Result<Vec<_>>>()?;
-                let md = cli::task::TaskMd { description: description.as_deref().unwrap_or(""), links: &links };
+                let md = cli::task::TaskMd {
+                    description: description.as_deref().unwrap_or(""),
+                    links: &links,
+                    prompt: prompt.as_deref().unwrap_or(""),
+                };
                 let agent = agent.as_deref().map(agent::AgentKind::from_token);
-                match ws_dir {
-                    Some(dir) => cli::task::new_by_dir(&dir, &name, repos.as_deref(), no_open, &md, agent)?,
-                    None => cli::task::new(&name, repos.as_deref(), no_open, &md, agent)?,
+                let open = cli::task::OpenMode::for_cli(no_open, no_focus);
+                let none: Vec<String> = Vec::new();
+                let repos = if no_repos || detached { Some(none.as_slice()) } else { repos.as_deref() };
+                let ws = match (detached, ws_dir.as_deref()) {
+                    (true, _) => cli::detached::ensure()?,
+                    (false, Some(dir)) => cli::task::load_ws_arg(dir)?,
+                    (false, None) => workspace::find(&env::current_dir()?)?,
+                };
+                let slug = cli::task::new_with(&ws, &name, repos, open, &md, agent, progress::for_cli().as_ref())?;
+                // The slug is what `send`/`wait`/`output` take; a detached
+                // one may have been counted up from the title.
+                println!("{slug}");
+                // Return once the first turn is under way, so a `task wait`
+                // right after waits for it rather than for nothing.
+                if !md.prompt.is_empty() && open != cli::task::OpenMode::Closed && tmux::server_running() {
+                    cli::drive::await_turn(&ws.tasks_dir().join(&slug), cli::drive::TURN_LIMIT);
                 }
+            }
+            TaskCommands::Send { name, text, force, ws_dir } => {
+                let text = if text.len() == 1 && text[0] == "-" {
+                    let mut buf = String::new();
+                    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
+                    buf
+                } else {
+                    text.join(" ")
+                };
+                cli::drive::send(ws_dir.as_deref(), &name, &text, force)?;
+            }
+            TaskCommands::Wait { name, timeout, ws_dir } => {
+                cli::drive::wait(ws_dir.as_deref(), &name, cli::task::parse_duration(&timeout)?)?;
+            }
+            TaskCommands::Output { name, json, ws_dir } => {
+                cli::drive::output(ws_dir.as_deref(), &name, json)?;
             }
             TaskCommands::AddRepo { name, repos, ws_dir } => {
                 cli::task::add_repo(ws_dir.as_deref(), &name, &repos)?;
@@ -204,6 +243,10 @@ fn open() -> Result<()> {
     // step. Sentinel-guarded (see `auto_setup`), so it runs once and never
     // fights a user who later removes an integration.
     cli::session_event::auto_setup();
+
+    // The detached workspace (sessions outside any repo) exists and is
+    // registered before the column first lists workspaces.
+    cli::detached::ensure_quiet();
 
     // Skills `tenx init` installed are refreshed to this binary's version,
     // in every registered workspace — untouched ones only; an edited file is

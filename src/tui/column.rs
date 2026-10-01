@@ -1591,6 +1591,12 @@ impl Column {
     /// Run a `:` command against the selected task. Returns `Ok(true)` to close
     /// the column. Commands that open a sub-view set `self.mode` themselves.
     fn run_command(&mut self, cmd: &str) -> Result<bool> {
+        // `:ask <question>` — a detached session started on the question,
+        // from either tab.
+        if cmd == "ask" || cmd.starts_with("ask ") {
+            self.ask(cmd["ask".len()..].trim());
+            return Ok(false);
+        }
         // `:init [path]` — the new-workspace form, from either tab.
         if cmd == "init" || cmd.starts_with("init ") {
             self.start_new_workspace(cmd["init".len()..].trim());
@@ -2096,17 +2102,24 @@ impl Column {
         if name.is_empty() {
             return Err("task name cannot be empty".into());
         }
+        // None ticked is a task without worktrees: its agent runs in the
+        // task directory and can read the whole workspace.
         let repos: Vec<String> = form
             .repos
             .iter()
             .filter(|(_, on)| *on)
             .map(|(n, _)| n.clone())
             .collect();
-        if repos.is_empty() {
-            return Err("select at least one repo".into());
-        }
         let ws_idx = form.ws_idx;
-        let slug = crate::workspace::slugify(&name);
+        // The same slug the job's `new_in` will pick — counted up in the
+        // detached workspace — so the ghost row and `OpenTask` name the task
+        // the job creates. Its refusals (a taken name) surface here, before
+        // anything starts.
+        let slug = if self.offline {
+            crate::workspace::slugify(&name)
+        } else {
+            crate::cli::task::plan_slug(&self.workspaces[ws_idx], &name).map_err(|e| e.to_string())?
+        };
         if self.offline {
             // The demo: the task appears as a row, its agent already at work.
             let ws = &self.workspaces[ws_idx];
@@ -2167,7 +2180,7 @@ impl Column {
                 // no_open=true: the window is opened by the `jump` that
                 // follows the job landing, not from the worker — tmux calls
                 // belong on the thread that owns the terminal.
-                crate::cli::task::new_in(&ws, &job_name, Some(&repos), true, rep).map_err(|e| e.to_string())?;
+                crate::cli::task::new_in(&ws, &job_name, Some(&repos), crate::cli::task::OpenMode::Closed, rep).map_err(|e| e.to_string())?;
                 // Pin the chosen agent before anything opens the window;
                 // `None` inherits the workspace/global default.
                 if let Some(kind) = agent {
@@ -2244,6 +2257,56 @@ impl Column {
             section: TaskStatus::Working.group(),
             subagents: vec![],
         }
+    }
+
+    /// `:ask <question>`: a session in the detached workspace, titled after
+    /// the question, that starts working on it the moment its window opens.
+    /// Nothing is cloned, but it runs as a job like any creation so the row,
+    /// the window and the selection land the same way.
+    fn ask(&mut self, prompt: &str) {
+        if prompt.is_empty() {
+            self.status_msg = Some(":ask <question>".into());
+            return;
+        }
+        let Some(ws_idx) = self.workspaces.iter().position(|w| w.is_detached()) else {
+            self.status_msg = Some("no detached workspace — restart tenx to create it".into());
+            return;
+        };
+        let mut title = tenx_core::orchestrate::ask_title(prompt);
+        if crate::workspace::slugify(&title).is_empty() {
+            title = "question".into();
+        }
+        let slug = match crate::cli::task::plan_slug(&self.workspaces[ws_idx], &title) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status_msg = Some(e.to_string());
+                return;
+            }
+        };
+        let mut ghost = self.ghost_row(ws_idx, &slug, &title, &[], None);
+        // The demo never touches disk: the session is just there, at work.
+        ghost.pending = !self.offline;
+        self.rows.push(ghost);
+        self.filter.clear();
+        self.sort_rows();
+        self.apply_filter();
+        if self.offline {
+            self.select_task(ws_idx, &slug);
+            self.status_msg = Some(format!("asked '{title}'"));
+            return;
+        }
+        let ws_dir = self.workspaces[ws_idx].dir.clone();
+        let prompt = prompt.to_string();
+        let plan = tenx_core::progress::Plan::new(format!("asking '{title}'"), Vec::new());
+        self.start_job(plan, super::job::Then::OpenTask(ws_idx, slug.clone()), move |rep| {
+            let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
+            let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
+            let none: [String; 0] = [];
+            crate::cli::task::new_with(&ws, &title, Some(&none), crate::cli::task::OpenMode::Closed, &md, None, rep)
+                .map_err(|e| e.to_string())?;
+            Ok(format!("asked '{title}'"))
+        });
+        self.select_task(ws_idx, &slug);
     }
 
     // ── Add repo (Repos tab) ──────────────────────────────────────────────────
@@ -2499,7 +2562,11 @@ impl Column {
             }
         }
         if picks.is_empty() {
-            self.status_msg = Some("no repos in workspace — add one on the Repos tab".into());
+            self.status_msg = Some(if self.workspaces.get(ws_idx).is_some_and(|w| w.is_detached()) {
+                "a detached session has no repos — create a task in a workspace for code".into()
+            } else {
+                "no repos in workspace — add one on the Repos tab".into()
+            });
             return;
         }
         self.status_msg = None;
@@ -2537,11 +2604,6 @@ impl Column {
             KeyCode::Enter => {
                 if form.added().is_empty() && form.removed().is_empty() {
                     self.status_msg = Some("no repo changes".into());
-                    return Ok(false);
-                }
-                if form.desired().is_empty() {
-                    self.status_msg = Some("a task must keep at least one repo".into());
-                    self.mode = Mode::EditRepos(form);
                     return Ok(false);
                 }
                 // Detaching drops a worktree and its branch — confirm first.
@@ -3381,6 +3443,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
         "commands",
         &[
             (":n", "new task (:new)"),
+            (":ask", "ask a question, detached"),
             (":o", "open task (:open)"),
             (":r", "rename"),
             (":e", "edit repos (:edit-repos)"),
@@ -4061,6 +4124,12 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         Line::from(""),
         Line::from(Span::styled("  repos", Style::default().fg(palette::MUTED.color()))),
     ];
+    if form.repos.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  none — the agent runs on its own and can read the workspace",
+            Style::default().fg(palette::MUTED.color()),
+        )));
+    }
     for (i, (name, on)) in form.repos.iter().enumerate() {
         let focused = form.repo_field() == Some(i);
         let check = if *on { "[x]" } else { "[ ]" };
@@ -4347,6 +4416,7 @@ mod tests {
             config: crate::workspace::WorkspaceConfig {
                 schema_version: crate::workspace::CURRENT_SCHEMA,
                 name: name.into(),
+                kind: String::new(),
                 layout: String::new(),
                 repos: repos
                     .iter()
@@ -4397,6 +4467,50 @@ mod tests {
         let row = c.rows.iter().find(|r| r.slug == "rotate-certs").expect("created");
         assert_eq!((row.ws_idx, row.ws_name.as_str()), (1, "infra"));
         assert_eq!(row.repos, vec!["terraform".to_string()]);
+    }
+
+    /// No repo ticked makes a task without worktrees, not an error.
+    #[test]
+    fn create_form_allows_a_task_without_repos() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.workspaces = vec![ws("ledger", &["api", "web"])];
+        c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+        let Mode::Create(f) = &mut c.mode else { panic!("create form") };
+        f.repos.iter_mut().for_each(|r| r.1 = false);
+        for ch in "a question".chars() {
+            c.handle_key(plain(ch)).unwrap();
+        }
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert!(matches!(c.mode, Mode::List), "{:?}", c.status_msg);
+        let row = c.rows.iter().find(|r| r.slug == "a-question").expect("created");
+        assert!(row.repos.is_empty());
+    }
+
+    /// `:ask` makes a session in the detached workspace, titled after the
+    /// question, and selects it; without that workspace it says so.
+    #[test]
+    fn ask_command_creates_a_detached_session() {
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.workspaces = vec![ws("ledger", &["api"])];
+        c.focus_list();
+        for ch in ":ask why?".chars() {
+            c.handle_key(plain(ch)).unwrap();
+        }
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert!(c.status_msg.as_deref().is_some_and(|m| m.contains("no detached workspace")), "{:?}", c.status_msg);
+
+        let mut detached = ws("detached", &[]);
+        detached.config.kind = crate::workspace::DETACHED_KIND.into();
+        c.workspaces.push(detached);
+        for ch in ":ask how does sweep work?".chars() {
+            c.handle_key(plain(ch)).unwrap();
+        }
+        c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        let row = c.selected_row().expect("selected");
+        assert_eq!((row.slug.as_str(), row.title.as_str(), row.ws_idx), ("how-does-sweep-work", "how does sweep work?", 1));
+        assert!(row.repos.is_empty());
     }
 
     /// With no selection but a registered workspace, the form still opens

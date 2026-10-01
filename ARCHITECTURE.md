@@ -6,7 +6,7 @@ A map of the code for someone getting oriented. `CLAUDE.md` covers the same grou
 
 Two crates in one Cargo workspace:
 
-- **`tenx-core/`** holds pure logic: no `std::process::Command`, no filesystem access beyond data a caller hands in. Everything tenx *decides* lives here, as functions over plain values, with unit tests. Modules: `status` (what a task's state is), `dialog` (recognising and answering a permission prompt), `session_event` (what an agent's hook event does to a session record, and the hooks-config merge), `transcript` (one line of any agent's transcript → a normalized entry), `codex` (reading a Codex rollout's cwd), `slug`, `time`, `sweep`, `taskmd` (`TASK.md` rendering and parsing), `live` (parsing the per-task cache of ports and PRs).
+- **`tenx-core/`** holds pure logic: no `std::process::Command`, no filesystem access beyond data a caller hands in. Everything tenx *decides* lives here, as functions over plain values, with unit tests. Modules: `status` (what a task's state is), `dialog` (recognising and answering a permission prompt), `session_event` (what an agent's hook event does to a session record, and the hooks-config merge), `transcript` (one line of any agent's transcript → a normalized entry), `codex` (reading a Codex rollout's cwd), `slug`, `time`, `sweep`, `taskmd` (`TASK.md` rendering and parsing), `live` (parsing the per-task cache of ports and PRs), `orchestrate` (when a `task wait` is over, when `task send` must not type, which transcript lines answer the last prompt).
 - **`tenx`** (the root package) is the binary. It does I/O: shells out to `git`, `tmux`, `gh`, `age` and `sops`, reads tenx's session registry (fed by every agent's hooks), and renders the column.
 Inside the binary the layers are independent and wired together by the CLI dispatch in `main.rs`. Each layer only knows about the layers below it.
 
@@ -24,7 +24,7 @@ live.rs      the per-task cache of external facts (ports, PRs)
 
 A **workspace** is a directory with a `config.toml` and a `tasks/` subdirectory. `workspace::find()` walks up from the current directory looking for the config. Bare clones live under `<workspace>/.bare/<name>.git` by default.
 
-A **task** is a subdirectory under `tasks/`. Its repo set is never recorded: `discover_task` scans for subdirectories containing a `.git` *file*, which is what a worktree has. The task's display name is the first heading of `TASK.md`; its slug is the directory, branch and tmux window name.
+A **task** is a subdirectory under `tasks/`. Its repo set is never recorded: `discover_task` scans for subdirectories containing a `.git` *file*, which is what a worktree has. The set may be empty: a task without worktrees is a session in the bare task directory. The task's display name is the first heading of `TASK.md`; its slug is the directory, branch and tmux window name.
 
 The only per-task files tenx owns:
 
@@ -33,6 +33,7 @@ The only per-task files tenx owns:
 | `TASK.md` | The task's notes. Rendered on creation, heading rewritten on rename. |
 | `.tenx-window-id` | Cache of the tmux window id. A fast path only; the window is always looked up by slug. |
 | `.tenx-pinned` | Marker that exempts the task from sweep. |
+| `.tenx-prompt` | A new task's first message, until the window that launches the agent with it opens. |
 
 A task's window is additionally tagged, on the tmux side, with the `@tenx_task_dir` window option — the identity `find_task_window` correlates on. Unlike `.tenx-window-id` (a cache that a server restart can alias onto another task's window) it is written by the server that owns the window, so it cannot go stale without the window going with it.
 | `.tenx-live.json` | Cache of ports and PR facts, written only by the watcher. |
@@ -92,9 +93,17 @@ This is also why nothing on this path prints to stdout. The client owns the alte
 
 A blocked task's permission prompt can be answered from the column with `A` or `D`. Claude Code has no API for this, so the answer is a keystroke sent into the pane, guarded twice right before sending: the registry must still say the session waits on a permission prompt (not a question, which `Enter` would answer wrongly), and the captured pane must still show the dialog. The check is `tenx_core::dialog`.
 
+## Sessions outside a repo
+
+A task's worktrees are optional. Without any, its agent runs in the task directory, in a window holding only the agent, and is launched with `--add-dir` for its workspace so it can read every task's code.
+
+Sessions that belong to no workspace at all live in the **detached** workspace, which tenx creates and registers for itself (`cli::detached::ensure`, on every launch) at `~/.local/share/tenx/detached`: `kind = "detached"` in its `config.toml`, never any repos. It is a real workspace on purpose, so the column, the watcher, sweep and secrets handle its sessions without knowing about it. What differs is small. A repeated title counts up (`-2`) instead of being refused, because nothing there is a branch name. Its sessions get `--add-dir` for every other registered workspace, an `/orchestrate` skill, and a seeded `settings.json` allowing the commands that drive other tasks.
+
+Driving a task from outside is three commands in `cli::drive`. `task send` pastes a message into the agent's pane (bracketed, then Enter), or opens a closed task with the message as its launch prompt. `task wait` polls the resolved status. `task output` reads the replies since the last prompt from the agent's transcript. The agent is not run headless beside the window: every message goes through the live session, where you can watch it and take over. `send` refuses to type into an agent that is waiting on a dialog, because typed text would answer it.
+
 ## Task lifecycle
 
-**Create** slugifies the title, writes `TASK.md`, symlinks `.claude` (and `AGENTS.md`, when present) to the workspace's shared ones, pre-approves Claude Code's trust dialog for the task directory in `~/.claude.json`, then for each repo fetches the bare clone and adds a worktree on a fresh branch off the default branch. Then, if the server is running, it opens the window.
+**Create** slugifies the title (counting up in the detached workspace), writes `TASK.md` (and `.tenx-prompt` when given a first message), symlinks `.claude` (and `AGENTS.md`, when present) to the workspace's shared ones, pre-approves Claude Code's trust dialog for the task directory in `~/.claude.json`, then for each repo fetches the bare clone and adds a worktree on a fresh branch off the default branch. Then, if the server is running, it opens the window.
 **Open** looks the window up by slug and selects it, or creates it. The window runs the task's agent (`AgentKind::launch`), which supplies any resume flag itself — `--continue` for Claude only when a transcript for that exact directory exists (it exits otherwise), `codex resume --last` when a Codex thread for the cwd exists, `pi -c` always.
 
 **Repo changes** share one function with creation. Detaching removes the worktree and its branch and does not force unless asked, so git's refusal to drop a dirty worktree is the safety net.

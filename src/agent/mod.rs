@@ -98,6 +98,31 @@ impl AgentKind {
 
     /// Whether the agent has a stored conversation for `task_dir`, so a resume
     /// flag will continue rather than error.
+    /// What [`launch`] appends after the configured args: an `--add-dir` per
+    /// directory for Claude, then the quoted first prompt. Starts with a space
+    /// when non-empty. Only Claude: its sandbox confines reads to its working
+    /// directories, while Codex already reads anywhere and its `--add-dir`
+    /// would grant *writes* there instead; pi has no such flag.
+    pub fn session_args(self, add_dirs: &[std::path::PathBuf], prompt: Option<&str>) -> String {
+        let mut out = String::new();
+        if self == AgentKind::Claude {
+            // `--add-dir=<dir>`, never `--add-dir <dir>`: the flag is
+            // variadic, and in the spaced form it swallows the prompt that
+            // follows as one more directory.
+            for d in add_dirs {
+                out.push_str(&format!(" {}", crate::tmux::shell_quote(&format!("--add-dir={}", d.to_string_lossy()))));
+            }
+        }
+        if let Some(p) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
+            // A prompt starting with `-` would read as a flag; a leading space
+            // keeps it an argument without relying on every agent's parser
+            // honouring `--`.
+            let p = if p.starts_with('-') { format!(" {p}") } else { p.to_string() };
+            out.push_str(&format!(" {}", crate::tmux::shell_quote(&p)));
+        }
+        out
+    }
+
     pub fn has_conversation(self, task_dir: &Path) -> bool {
         match self {
             AgentKind::Claude => claude_has_conversation(task_dir),
@@ -214,7 +239,20 @@ fn ensure_codex_trust(task_dir: &Path) -> std::io::Result<()> {
 /// Build a task's launch command, honouring `[agents.<kind>]` overrides: the
 /// workspace config wins over the global config, and either supplies an
 /// alternate binary and/or extra args around tenx's per-agent session flags.
-pub fn launch(ws: &crate::workspace::Workspace, kind: AgentKind, slug: &str, task_dir: &Path) -> String {
+///
+/// `add_dirs` are directories outside the task the agent may read without
+/// asking (`--add-dir`; see [`AgentKind::session_args`]) — what a
+/// repo-less task gets so it can look at the code it is asked about.
+/// `prompt` is the session's first message, passed as the positional
+/// argument every agent takes for it.
+pub fn launch(
+    ws: &crate::workspace::Workspace,
+    kind: AgentKind,
+    slug: &str,
+    task_dir: &Path,
+    add_dirs: &[std::path::PathBuf],
+    prompt: Option<&str>,
+) -> String {
     let key = kind.as_str();
     let global = crate::workspace::load_global().ok();
     let ws_cfg = ws.config.agents.get(key);
@@ -224,7 +262,9 @@ pub fn launch(ws: &crate::workspace::Workspace, kind: AgentKind, slug: &str, tas
     let bin = cfg.and_then(|c| c.command.as_deref()).unwrap_or_else(|| kind.default_bin());
     let empty: Vec<String> = Vec::new();
     let args = cfg.map(|c| &c.args).unwrap_or(&empty);
-    kind.launch_command_with(bin, slug, task_dir, args)
+    let mut cmd = kind.launch_command_with(bin, slug, task_dir, args);
+    cmd.push_str(&kind.session_args(add_dirs, prompt));
+    cmd
 }
 
 /// The agent a task runs, most specific first: its own `.tenx-agent` override,
@@ -276,6 +316,19 @@ mod tests {
         assert_eq!(AgentKind::from_token(""), AgentKind::Claude);
         assert_eq!(AgentKind::from_token("nonsense"), AgentKind::Claude);
         assert_eq!(AgentKind::from_token(" codex\n"), AgentKind::Codex);
+    }
+
+    #[test]
+    fn session_args_add_dirs_where_supported_and_quote_the_prompt() {
+        let dirs = vec![std::path::PathBuf::from("/ws/a b")];
+        assert_eq!(
+            AgentKind::Claude.session_args(&dirs, Some("it's -x")),
+            " '--add-dir=/ws/a b' 'it'\\''s -x'"
+        );
+        assert_eq!(AgentKind::Claude.session_args(&[], Some("-v?")), " ' -v?'");
+        assert_eq!(AgentKind::Codex.session_args(&dirs, None), "");
+        assert_eq!(AgentKind::Pi.session_args(&dirs, Some("hi")), " 'hi'");
+        assert_eq!(AgentKind::Claude.session_args(&[], Some("  ")), "");
     }
 
     #[test]

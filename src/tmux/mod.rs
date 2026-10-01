@@ -587,6 +587,27 @@ pub fn send_keys(target: &str, key: &str) -> Result<()> {
     run(&["send-keys", "-t", target, key]).map(drop)
 }
 
+/// Paste `text` into a pane as one bracketed paste (`-p`, when the program
+/// asked for bracketed paste — every agent's TUI does), so its newlines stay
+/// part of the message instead of each submitting a line. The caller presses
+/// Enter afterwards. Goes through a buffer named for this process, deleted
+/// by the paste (`-d`), so concurrent senders can't swap texts.
+pub fn paste_text(target: &str, text: &str) -> Result<()> {
+    use std::io::Write;
+    let buffer = format!("tenx-send-{}", std::process::id());
+    let mut child = cmd()
+        .args(["load-buffer", "-b", &buffer, "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .context("run tmux load-buffer")?;
+    child.stdin.take().context("tmux load-buffer stdin")?.write_all(text.as_bytes())?;
+    if !child.wait()?.success() {
+        bail!("tmux load-buffer failed");
+    }
+    run(&["paste-buffer", "-p", "-d", "-b", &buffer, "-t", target]).map(drop)
+}
+
 pub fn kill_window(id: &str) -> Result<()> {
     run(&["kill-window", "-t", id]).map(drop)
 }
@@ -725,6 +746,11 @@ pub struct TaskWindow<'a> {
     /// way drags every terminal to it. A task created from the column wants
     /// its window (and its agent) running, but not your screen.
     pub detached: bool,
+    /// Just the agent, full-window: no nvim on `TASK.md`, no shell. For a
+    /// task without worktrees (a detached session, a question about a
+    /// workspace) there is no code to edit beside it. Ignored when
+    /// `layout_script` is set — the script decides everything.
+    pub agent_only: bool,
 }
 
 /// Create a task's window and its panes, returning the window's stable id.
@@ -771,6 +797,10 @@ pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
         if !status.success() {
             bail!("layout script {script} exited with {status}");
         }
+        return Ok(id);
+    }
+
+    if opts.agent_only {
         return Ok(id);
     }
 

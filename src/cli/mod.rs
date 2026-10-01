@@ -2,6 +2,8 @@ pub mod agentlog;
 pub mod agentview;
 pub mod doctor;
 pub mod hooks;
+pub mod detached;
+pub mod drive;
 pub mod init;
 pub mod notify;
 pub mod repo;
@@ -36,6 +38,26 @@ pub enum Commands {
     Task {
         #[command(subcommand)]
         command: TaskCommands,
+    },
+    /// Ask an agent a question in a session of its own
+    ///
+    /// Creates a session in the detached workspace (no repos; it can read
+    /// every registered workspace) titled after the question, with the
+    /// question as its first message, and prints its slug. `--ws-dir` asks in
+    /// a workspace instead, as a task without worktrees.
+    Ask {
+        /// The question; several words are joined with spaces
+        #[arg(required = true, num_args = 1..)]
+        prompt: Vec<String>,
+        /// Coding agent (`claude`, `codex`, `pi`); default as for any task
+        #[arg(long)]
+        agent: Option<String>,
+        /// Ask in this workspace (directory or registered name)
+        #[arg(long)]
+        ws_dir: Option<String>,
+        /// Open the window without switching to it
+        #[arg(long)]
+        no_focus: bool,
     },
     /// Watch tasks and notify when one starts waiting on you
     ///
@@ -351,6 +373,22 @@ pub enum TaskCommands {
         /// Create worktrees but don't open a window in the tenx session
         #[arg(long)]
         no_open: bool,
+        /// Open the window without switching to it — what an agent creating
+        /// tasks for others should pass, so your screen stays put
+        #[arg(long)]
+        no_focus: bool,
+        /// A task without worktrees: the agent runs in the task directory and
+        /// may read the whole workspace
+        #[arg(long, conflicts_with = "repos")]
+        no_repos: bool,
+        /// Create it in the detached workspace (no repos; for questions and
+        /// for orchestrating other workspaces' tasks)
+        #[arg(long, conflicts_with_all = ["repos", "ws_dir"])]
+        detached: bool,
+        /// The agent's first message; it starts working on it when the
+        /// window opens
+        #[arg(long)]
+        prompt: Option<String>,
         /// Coding agent for this task (`claude`, `codex`, `pi`); default is the
         /// workspace's `agent`. Writes the task's `.tenx-agent`.
         #[arg(long)]
@@ -384,6 +422,49 @@ pub enum TaskCommands {
         /// other front ends.
         #[arg(long)]
         json: bool,
+    },
+    /// Send a message to a task's agent, as if typed into its pane
+    ///
+    /// Opens the task's window first if it's closed. Refuses while the agent
+    /// sits on a dialog (a permission prompt, a question) unless `--force`.
+    /// Returns once the agent has started the turn — follow with `task wait`.
+    Send {
+        /// Exact task slug
+        name: String,
+        /// The message; several words are joined with spaces; `-` reads stdin
+        #[arg(required = true, num_args = 1..)]
+        text: Vec<String>,
+        /// Paste even though the agent is waiting on a dialog
+        #[arg(long)]
+        force: bool,
+        /// The task's workspace (directory or registered name) instead of cwd's
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Wait until a task's agent has finished its turn
+    ///
+    /// Exits 0 when the turn is over, 2 when the agent stopped on something
+    /// that needs an answer (the reason is printed), 3 on timeout.
+    Wait {
+        /// Exact task slug
+        name: String,
+        /// Give up after this long: "90s", "10m", "2h"
+        #[arg(long, default_value = "10m")]
+        timeout: String,
+        /// The task's workspace (directory or registered name) instead of cwd's
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Print what a task's agent said since the last prompt
+    Output {
+        /// Exact task slug
+        name: String,
+        /// The prompt, the replies and the task's status as JSON
+        #[arg(long)]
+        json: bool,
+        /// The task's workspace (directory or registered name) instead of cwd's
+        #[arg(long)]
+        ws_dir: Option<String>,
     },
     /// Add repos (worktrees on the task's branch) to an existing task
     AddRepo {

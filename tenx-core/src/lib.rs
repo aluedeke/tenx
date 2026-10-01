@@ -10,6 +10,7 @@ pub mod codex;
 pub mod dialog;
 pub mod keyboard;
 pub mod live;
+pub mod orchestrate;
 pub mod progress;
 pub mod agent_panel;
 pub mod column;
