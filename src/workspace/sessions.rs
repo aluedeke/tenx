@@ -396,7 +396,7 @@ struct PaneScope {
 /// state.
 pub fn project_dir(cwd: &std::path::Path) -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
-    let encoded = cwd.to_string_lossy().replace('/', "-");
+    let encoded = tenx_core::transcript::claude_project_dirname(&cwd.to_string_lossy());
     Some(PathBuf::from(home).join(".claude/projects").join(encoded))
 }
 

@@ -65,6 +65,15 @@ pub fn parse_line(agent: &str, line: &str) -> Option<Entry> {
     }
 }
 
+/// Claude Code's name for a cwd's directory under `~/.claude/projects`: every
+/// character outside `[A-Za-z0-9]` becomes `-` — not just the separators, so
+/// `/home/me/.local/x` is `-home-me--local-x`. Getting this wrong is silent:
+/// the transcript just isn't found, and a reopened task starts a fresh
+/// conversation instead of continuing.
+pub fn claude_project_dirname(cwd: &str) -> String {
+    cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
 /// pi encodes a session directory as `--<cwd>--`, the cwd with its leading
 /// separator dropped and every `/`, `\` and `:` turned into `-` (mirrors pi's
 /// own `getDefaultSessionDir`).
@@ -267,6 +276,12 @@ fn ms_to_iso(ms: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_project_dirname_dashes_every_non_alphanumeric() {
+        assert_eq!(claude_project_dirname("/Users/me/ws/tasks/a-b"), "-Users-me-ws-tasks-a-b");
+        assert_eq!(claude_project_dirname("/Users/me/.local/share/x_y.git"), "-Users-me--local-share-x-y-git");
+    }
 
     #[test]
     fn claude_user_assistant_and_title() {

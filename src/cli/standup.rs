@@ -290,7 +290,7 @@ fn claude_projects_dir() -> Result<PathBuf> {
 
 fn path_to_slug(path: &Path) -> String {
     let home = env::var("HOME").unwrap_or_default();
-    path.to_string_lossy().replace(&home, "").replace('/', "-")
+    tenx_core::transcript::claude_project_dirname(&path.to_string_lossy().replace(&home, ""))
 }
 
 fn truncate(s: &str, max: usize) -> &str {
