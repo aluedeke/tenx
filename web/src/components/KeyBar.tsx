@@ -37,7 +37,7 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, o
   // iOS moves focus off the terminal — and closes the keyboard — on a tap
   // anywhere else, whatever pointerdown does. Cancelling the touch itself
   // stops that; it has to be a native, non-passive listener (React's are
-  // passive). Not for 📋 and 📎, which need their click.
+  // passive). Not for paste and 📎, which need their click.
   useEffect(() => {
     const el = bar.current;
     if (!el) return;
@@ -100,7 +100,7 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, o
             onPaste();
           }}
         >
-          📋
+          <PasteIcon />
         </button>
       )}
       {!column && (
@@ -122,5 +122,18 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, o
         </label>
       )}
     </div>
+  );
+}
+
+/** Paste, not copy: a clipboard with an arrow going into it. Drawn rather
+ * than an emoji — 📋 alone reads as "copy". */
+function PasteIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" />
+      <rect x="9" y="2.5" width="6" height="3.5" rx="1" />
+      <path d="M12 9.5v7" />
+      <path d="M9 13.5l3 3 3-3" />
+    </svg>
   );
 }

@@ -569,7 +569,7 @@ export function App() {
     setTimeout(() => setPasting(null), 4000);
   }, []);
 
-  /** The 📋 key: whatever is on the phone's clipboard — an image goes up
+  /** The paste key: whatever is on the phone's clipboard — an image goes up
    * like a picked one, text is pasted as typed. The Clipboard API only
    * exists on HTTPS (or localhost), so over plain http this can only say so. */
   const pasteClipboard = useCallback(async () => {
