@@ -103,6 +103,17 @@ impl Row {
         tenx_core::column::section(self.status, secrets)
     }
 
+    /// Whether the task's secrets queues on disk differ from the ones this
+    /// row was built with — a request an agent queued (`secrets need`) or
+    /// another client answered since. The fields stay frozen (see
+    /// `secrets_pending`); the caller rebuilds the rows instead. Two small
+    /// reads.
+    pub(crate) fn secrets_changed_on_disk(&self) -> bool {
+        !self.pending
+            && (workspace::secrets_pending(&self.path) != self.secrets_pending
+                || workspace::secrets_pending_set(&self.path) != self.secrets_pending_set)
+    }
+
     /// What the filter matches against: the workspace and the title.
     pub(crate) fn matches(&self, needle: &str) -> bool {
         needle.is_empty() || tenx_core::column::filter_matches(needle, &format!("{} {}", self.ws_name, self.title))

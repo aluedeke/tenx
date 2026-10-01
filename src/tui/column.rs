@@ -757,6 +757,14 @@ impl Column {
                 self.tidy();
                 return;
             }
+            // A secrets request queued (an agent's `secrets need`) or answered
+            // (another client, the CLI) since the rows were built: rebuild, so
+            // the task moves into or out of SECRETS PENDING in every client —
+            // the row's frozen queue fields never update on their own.
+            if self.rows.iter().any(|r| r.secrets_changed_on_disk()) {
+                self.tidy();
+                return;
+            }
         }
         let windows = slow.then_some(&self.windows);
         for r in self.rows.iter_mut() {

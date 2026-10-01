@@ -708,3 +708,29 @@ mod shared_jobs {
         assert_eq!(b.active_jobs(), 0);
     }
 }
+
+#[cfg(test)]
+mod secrets_on_disk {
+    use super::*;
+
+    /// A request an agent queues while the list is open is noticed (the
+    /// rows are rebuilt from it), and so is one answered elsewhere.
+    #[test]
+    fn a_queued_or_answered_request_is_seen_on_disk() {
+        let dir = std::env::temp_dir().join(format!("tenx-secrets-on-disk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut r = row(fx("Release hardening", "mealstack", TaskStatus::Working));
+        r.path = dir.clone();
+        assert!(!r.secrets_changed_on_disk(), "nothing queued, nothing in the row");
+
+        std::fs::write(dir.join(crate::workspace::SECRETS_PENDING_SET_FILE), "SENTRY_DSN\n").unwrap();
+        assert!(r.secrets_changed_on_disk(), "an agent asked for a value");
+
+        r.secrets_pending_set = vec!["SENTRY_DSN".into()];
+        assert!(!r.secrets_changed_on_disk(), "the rebuilt row matches the disk");
+
+        std::fs::remove_file(dir.join(crate::workspace::SECRETS_PENDING_SET_FILE)).unwrap();
+        assert!(r.secrets_changed_on_disk(), "answered from another client");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
