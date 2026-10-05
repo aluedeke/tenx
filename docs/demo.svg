@@ -342,10 +342,12 @@
 <text x="60.4" y="437.0" fill="#5eb4aa" textLength="117.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tenx-workspace</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="455.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="455.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="455.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails      </text>
 <text x="253.6" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="473.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="473.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="473.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="110.8" y="473.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="136.0" y="473.0" fill="#7ac27c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">#24 merged</text>
@@ -522,13 +524,16 @@
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="442.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="455.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="442.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="455.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <rect x="60.4" y="442.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="455.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails      </text>
 <text x="253.6" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="473.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="460.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="460.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="473.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="460.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="460.0" width="50.4" height="18.0" fill="#212734"/>
 <text x="60.4" y="473.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <rect x="110.8" y="460.0" width="25.2" height="18.0" fill="#212734"/>
@@ -697,13 +702,16 @@
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="406.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="406.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <rect x="60.4" y="406.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="419.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">column screenshot      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="424.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="424.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="424.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="424.0" width="117.6" height="18.0" fill="#212734"/>
 <text x="60.4" y="437.0" fill="#5eb4aa" textLength="117.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tenx-workspace</text>
 <rect x="178.0" y="424.0" width="75.6" height="18.0" fill="#212734"/>
@@ -856,13 +864,16 @@
 <text x="253.6" y="329.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="347.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="334.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="347.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="334.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="347.0" fill="#7ac27c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔  </text>
 <rect x="60.4" y="334.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="347.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">csv export             </text>
 <text x="253.6" y="347.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="365.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="352.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="352.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="365.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="352.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="352.0" width="50.4" height="18.0" fill="#212734"/>
 <text x="60.4" y="365.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <rect x="110.8" y="352.0" width="75.6" height="18.0" fill="#212734"/>
@@ -1031,10 +1042,12 @@
 <text x="144.4" y="329.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 2h</text>
 <text x="253.6" y="329.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="347.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="347.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="347.0" fill="#7ac27c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔  </text>
 <text x="60.4" y="347.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">csv export             </text>
 <text x="253.6" y="347.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="365.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="365.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="365.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="110.8" y="365.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 23h · </text>
 <text x="186.4" y="365.0" fill="#7ac27c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">#31 ✓</text>
@@ -1200,10 +1213,12 @@
 <text x="144.4" y="329.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 2h</text>
 <text x="253.6" y="329.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="347.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="347.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="347.0" fill="#7ac27c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔  </text>
 <text x="60.4" y="347.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">csv export             </text>
 <text x="253.6" y="347.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="365.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="365.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="365.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="110.8" y="365.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 23h · </text>
 <text x="186.4" y="365.0" fill="#7ac27c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">#31 ✓</text>
@@ -1361,10 +1376,12 @@
 <text x="144.4" y="293.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 2h</text>
 <text x="253.6" y="293.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="311.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="311.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="311.0" fill="#7ac27c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔  </text>
 <text x="60.4" y="311.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">csv export             </text>
 <text x="253.6" y="311.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="329.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="329.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="329.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="110.8" y="329.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 23h · </text>
 <text x="186.4" y="329.0" fill="#7ac27c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">#31 ✓</text>
@@ -1504,10 +1521,12 @@
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="1008.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3. PR #31 is open with the description from TASK.md.                                                                  </text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="203.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="203.0" fill="#7ac27c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔  </text>
 <text x="60.4" y="203.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">csv export             </text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="221.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="221.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="110.8" y="221.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 23h · </text>
 <text x="186.4" y="221.0" fill="#7ac27c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">#31 ✓</text>
@@ -1807,12 +1826,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -1981,12 +2002,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -2156,12 +2179,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -2331,12 +2356,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -2506,12 +2533,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -2681,12 +2710,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -2856,12 +2887,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -3031,12 +3064,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -3206,12 +3241,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -3381,12 +3418,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -3556,12 +3595,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -3731,12 +3772,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -3906,12 +3949,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -4081,12 +4126,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -4256,12 +4303,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -4431,12 +4480,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -4606,12 +4657,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -4781,12 +4834,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -4956,12 +5011,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -5131,12 +5188,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -5306,12 +5365,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -5481,12 +5542,14 @@
 <text x="211.6" y="221.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="239.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="239.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="239.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Done — the rotation is complete and verified. Say the word and I'll revoke the old key early.                         </text>
 <text x="10.0" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="257.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="257.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="257.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -5667,10 +5730,12 @@
 <text x="211.6" y="257.0" fill="#787f8c" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m</text>
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="275.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="275.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <text x="60.4" y="275.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="293.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="293.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="293.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <text x="102.4" y="293.0" fill="#787f8c" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 22h</text>
 <text x="253.6" y="293.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -5843,13 +5908,16 @@
 <text x="253.6" y="257.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="262.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="275.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="262.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="275.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▲  </text>
 <rect x="60.4" y="262.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="275.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rotate signing keys    </text>
 <text x="253.6" y="275.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="293.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="280.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="280.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="293.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="280.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="280.0" width="42.0" height="18.0" fill="#212734"/>
 <text x="60.4" y="293.0" fill="#ba92ce" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">infra</text>
 <rect x="102.4" y="280.0" width="50.4" height="18.0" fill="#212734"/>
@@ -5981,13 +6049,16 @@
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="118.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="131.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="118.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="131.0" fill="#a78bfa" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">🔒 </text>
 <rect x="60.4" y="118.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="131.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">stripe webhook signing </text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="136.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="136.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="149.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="136.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="136.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="149.0" fill="#a78bfa" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> wants STRIPE_WEBHOOK_…</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -6113,7 +6184,7 @@
 <text x="10.0" y="707.0" fill="#343a46" textLength="252.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└────────────────────────────┘</text>
 <rect x="10.0" y="712.0" width="67.2" height="18.0" fill="#6896dc"/>
 <text x="10.0" y="725.0" fill="#171820" textLength="67.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> NORMAL </text>
-<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> n needs you · ⏎ open </text>
+<text x="77.2" y="725.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> u unlock · D reject ·</text>
 <text x="270.4" y="725.0" fill="#606878" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· </text>
 <text x="287.2" y="725.0" fill="#d6dbe3" textLength="184.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">stripe webhook signing</text>
 <text x="480.4" y="725.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger </text>
@@ -6164,13 +6235,16 @@
 <text x="287.2" y="185.0" fill="#787f8c" textLength="386.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Send the welcome sequence to the sandbox inbox</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="190.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="203.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="190.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="203.0" fill="#e4a854" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●  </text>
 <rect x="60.4" y="190.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="203.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails      </text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="208.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="208.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="221.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="208.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="208.0" width="151.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="221.0" fill="#e4a854" textLength="151.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> permission: Bash </text>
 <rect x="211.6" y="208.0" width="42.0" height="18.0" fill="#212734"/>
@@ -6395,13 +6469,16 @@
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="406.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="406.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <rect x="60.4" y="406.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="419.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="424.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="424.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="424.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="424.0" width="50.4" height="18.0" fill="#212734"/>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <rect x="110.8" y="424.0" width="25.2" height="18.0" fill="#212734"/>
@@ -6574,10 +6651,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  2</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="110.8" y="437.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="136.0" y="437.0" fill="#7ac27c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">#24 merged</text>
@@ -6749,13 +6828,16 @@
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <rect x="18.4" y="406.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <rect x="35.2" y="406.0" width="25.2" height="18.0" fill="#212734"/>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <rect x="60.4" y="406.0" width="193.2" height="18.0" fill="#212734"/>
 <text x="60.4" y="419.0" fill="#eceff5" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">onboarding emails      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<rect x="18.4" y="424.0" width="42.0" height="18.0" fill="#212734"/>
+<rect x="18.4" y="424.0" width="16.8" height="18.0" fill="#212734"/>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
+<rect x="35.2" y="424.0" width="25.2" height="18.0" fill="#212734"/>
 <rect x="60.4" y="424.0" width="50.4" height="18.0" fill="#212734"/>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <rect x="110.8" y="424.0" width="25.2" height="18.0" fill="#212734"/>
@@ -9787,10 +9869,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -9966,10 +10050,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -10146,10 +10232,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -10326,10 +10414,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -10506,10 +10596,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -10686,10 +10778,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -10866,10 +10960,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -11046,10 +11142,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -11226,10 +11324,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -11406,10 +11506,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -11586,10 +11688,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -11766,10 +11870,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -11946,10 +12052,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -12126,10 +12234,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -12306,10 +12416,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -12486,10 +12598,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -12666,10 +12780,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -12846,10 +12962,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -13026,10 +13144,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -13206,10 +13326,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -13386,10 +13508,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -13566,10 +13690,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -13746,10 +13872,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -13926,10 +14054,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -14106,10 +14236,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -14286,10 +14418,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -14466,10 +14600,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -14646,10 +14782,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -14826,10 +14964,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -15006,10 +15146,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -15186,10 +15328,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -15366,10 +15510,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -15546,10 +15692,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -15726,10 +15874,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -15906,10 +16056,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -16086,10 +16238,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -16266,10 +16420,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -16446,10 +16602,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -16626,10 +16784,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -16806,10 +16966,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -16986,10 +17148,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -17166,10 +17330,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -17346,10 +17512,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -17526,10 +17694,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -17706,10 +17876,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -17886,10 +18058,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -18066,10 +18240,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -18246,10 +18422,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -18426,10 +18604,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -18606,10 +18786,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -18786,10 +18968,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -18966,10 +19150,12 @@
 <text x="77.2" y="401.0" fill="#787f8c" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  3</text>
 <text x="253.6" y="401.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="419.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="35.2" y="419.0" fill="#6896dc" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◐  </text>
 <text x="60.4" y="419.0" fill="#78a0e6" textLength="193.2" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">rate limit alerts      </text>
 <text x="253.6" y="419.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="437.0" fill="#78a0e6" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌ </text>
 <text x="60.4" y="437.0" fill="#78b4ce" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ledger</text>
 <text x="253.6" y="437.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="455.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
