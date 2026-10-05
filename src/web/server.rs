@@ -85,6 +85,15 @@ async fn page(State(app): State<Arc<App>>, uri: Uri, headers: HeaderMap) -> Resp
     let h = response.headers_mut();
     h.insert(header::X_CONTENT_TYPE_OPTIONS, header::HeaderValue::from_static("nosniff"));
     h.insert(header::REFERRER_POLICY, header::HeaderValue::from_static("no-referrer"));
+    // Every visit to the page starts the cookie's year again, so a page (or a
+    // Home Screen app) in use never signs out; the token itself is the same
+    // across restarts (`token::load_or_create`).
+    if web::renews_cookie(uri.path())
+        && web::cookie_ok(header_str(&headers, header::COOKIE), &app.token)
+        && let Ok(v) = header::HeaderValue::from_str(&web::set_cookie(&app.token))
+    {
+        h.insert(header::SET_COOKIE, v);
+    }
     response
 }
 

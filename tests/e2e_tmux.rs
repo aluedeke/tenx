@@ -874,6 +874,8 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
     assert!(head.to_lowercase().contains(&format!("set-cookie: tenx_web={token};")), "{head}");
     let (head, body) = http_get(port, "/", Some(&token));
     assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    // A signed-in visit renews the year-long cookie, so a page in use never signs out.
+    assert!(head.to_lowercase().contains(&format!("set-cookie: tenx_web={token};")), "{head}");
     assert!(body.contains("<html") || body.contains("<!DOCTYPE") || body.contains("<!doctype"));
 
     // A pasted image: saved for the agent, 600, under the config dir — and

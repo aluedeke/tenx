@@ -90,6 +90,14 @@ pub fn paste_ext(content_type: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether a signed-in request for `path` renews the cookie: loading the page
+/// itself (`/`, an `.html` page) does, so a page or an installed app that is
+/// used keeps its year-long sign-in for good — only `--rotate-token` ends it.
+/// Assets and API calls don't: once per visit is enough.
+pub fn renews_cookie(path: &str) -> bool {
+    path == "/" || path.ends_with(".html")
+}
+
 /// Whether a request's cookie header carries the token.
 pub fn cookie_ok(cookie_header: Option<&str>, token: &str) -> bool {
     cookie_header.and_then(|h| cookie_value(h, COOKIE)).is_some_and(|v| token_matches(v, token))
@@ -268,5 +276,14 @@ mod tests {
         assert_eq!(manifest_with_token("not json", "abc"), "not json");
         assert!(public_path("/sw.js"));
         assert!(public_path("/icon-maskable-512.png"));
+    }
+
+    #[test]
+    fn loading_the_page_renews_the_sign_in() {
+        assert!(renews_cookie("/"));
+        assert!(renews_cookie("/index.html"));
+        assert!(!renews_cookie("/_next/static/chunks/app.js"));
+        assert!(!renews_cookie("/manifest.webmanifest"));
+        assert!(!renews_cookie("/push/key"));
     }
 }

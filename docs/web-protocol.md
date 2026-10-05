@@ -21,7 +21,10 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 | `POST /paste` | cookie + Origin | An image (`Content-Type` PNG, JPEG, GIF or WebP; at most 25 MB) saved to `~/.config/tenx/web-paste/` (600, swept after a day). Answers `{"path": …}`; the page pastes that path into the terminal, which Claude Code attaches as an image. `415` for anything else. |
 
 The token lives in `~/.config/tenx/web-token` (mode 600), created on first
-start, replaced by `tenx web --rotate-token`. `--dev-origin
+start and the same across restarts, reinstalls and upgrades; only
+`tenx web --rotate-token` replaces it. The cookie lasts a year and every
+signed-in load of the page (`/`, an `.html` page) renews it, so a browser or
+an installed app in use stays signed in. `--dev-origin
 http://localhost:3000` lets `next dev` on another port connect; in dev the
 page passes the token as `?token=` on the WebSocket URL instead of the cookie
 (accepted only when the Origin is a `--dev-origin`).
