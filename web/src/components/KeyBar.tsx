@@ -36,6 +36,8 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
 
 export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, onRefocus, onDiag }: Props) {
   const bar = useRef<HTMLDivElement>(null);
+  /** A touch already pasted on lifting; the click after it, if any, mustn't. */
+  const pastedByTouch = useRef(false);
   // iOS moves focus off the terminal — and closes the keyboard — on a tap
   // anywhere else, whatever pointerdown does. Cancelling the touch itself
   // stops that; it has to be a native, non-passive listener (React's are
@@ -95,12 +97,25 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, o
           aria-label="paste"
           data-testid="paste"
           // No default on the press: the terminal keeps focus, and with it
-          // the on-screen keyboard. The paste itself runs on the click.
+          // the on-screen keyboard. That also means iOS fires no click for a
+          // touch, so a finger pastes on lifting — still the tap the
+          // clipboard read needs — and a mouse on the click.
           onPointerDown={(e) => {
             e.preventDefault();
-            onDiag?.('paste: pointerdown');
+            onDiag?.(`paste: pointerdown (${e.pointerType})`);
+          }}
+          onPointerUp={(e) => {
+            if (e.pointerType === 'mouse') return;
+            pastedByTouch.current = true;
+            onDiag?.(`paste: pointerup (${e.pointerType})`);
+            onPaste();
           }}
           onClick={() => {
+            // The click that may still follow a touch: already pasted.
+            if (pastedByTouch.current) {
+              pastedByTouch.current = false;
+              return;
+            }
             onRefocus();
             onPaste();
           }}

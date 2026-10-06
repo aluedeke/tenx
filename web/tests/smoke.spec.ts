@@ -692,5 +692,8 @@ for (const [name, parts, expected] of [
     }, parts as Record<string, string>);
     await page.getByTestId('paste').tap();
     await expect.poll(() => binary.join('')).toContain(expected);
+    // Pasted on the finger lifting, and not again by the click after it.
+    await page.waitForTimeout(400);
+    expect(binary.join('').split(expected).length - 1).toBe(1);
   });
 }
