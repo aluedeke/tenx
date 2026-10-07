@@ -219,16 +219,44 @@ fn registry_key(canon: &Path) -> String {
     format!("{name}-{:08x}", (hash >> 32) as u32)
 }
 
-/// Record `dir` in the global workspace registry (idempotent).
+/// Record `dir` in the global workspace registry (idempotent: a directory
+/// already registered, under any spelling of its path, is left alone, so
+/// calling this on every command is a read, not a write).
 pub fn register_workspace(dir: &Path) -> Result<()> {
     let canon = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
     let reg_dir = registry_dir()?;
-    fs::create_dir_all(&reg_dir).context("create tenx registry dir")?;
     let file = reg_dir.join(format!("{}.toml", registry_key(&canon)));
     let entry = RegistryEntry {
         path: canon.to_string_lossy().into_owned(),
     };
+    if registered_paths(&reg_dir).iter().any(|p| Path::new(p).canonicalize().is_ok_and(|p| p == canon)) {
+        return Ok(());
+    }
+    fs::create_dir_all(&reg_dir).context("create tenx registry dir")?;
     atomic_write_toml(&file, &entry)
+}
+
+/// Every path the registry holds, as written.
+fn registered_paths(reg_dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(reg_dir) else { return vec![] };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|f| f.extension().is_some_and(|e| e == "toml"))
+        .filter_map(|f| fs::read_to_string(f).ok())
+        .filter_map(|t| toml::from_str::<RegistryEntry>(&t).ok())
+        .map(|e| e.path)
+        .collect()
+}
+
+/// Register the workspace enclosing `cwd`, if there is one. The registry is
+/// pruned of paths that no longer resolve, so a workspace that was moved
+/// (`mv`) drops out of every column; any command run from inside it puts it
+/// back. Best-effort: a failure here never stops the command.
+pub fn register_enclosing(cwd: &Path) {
+    if let Ok(Some(ws)) = find_opt(cwd) {
+        let _ = register_workspace(&ws.dir);
+    }
 }
 
 /// Import the legacy single-file registry into `workspaces.d/`, then delete it.
@@ -260,6 +288,7 @@ pub fn registered_workspaces() -> Vec<Workspace> {
         return vec![];
     };
     let mut workspaces = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for entry in entries.flatten() {
         let file = entry.path();
         if file.extension().is_none_or(|e| e != "toml") {
@@ -270,6 +299,9 @@ pub fn registered_workspaces() -> Vec<Workspace> {
             .and_then(|t| toml::from_str::<RegistryEntry>(&t).ok())
             .and_then(|e| load(Path::new(&e.path)).ok());
         match ws {
+            // Two entries for one directory (one written by hand, or by
+            // another spelling of its path) list it once.
+            Some(ws) if !seen.insert(ws.dir.canonicalize().unwrap_or_else(|_| ws.dir.clone())) => {}
             Some(ws) => workspaces.push(ws),
             // Unparseable entry or dead workspace path — prune the file.
             None => {

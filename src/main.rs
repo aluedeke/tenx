@@ -26,6 +26,15 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
 
+    // A workspace command run from inside a workspace re-registers it: one
+    // that was moved after `tenx init` has lost its entry (see
+    // `register_enclosing`). Hooks (`internal`) run far too often for this.
+    if matches!(cli.command, None | Some(Commands::Repo { .. }) | Some(Commands::Task { .. })) {
+        if let Ok(cwd) = env::current_dir() {
+            workspace::register_enclosing(&cwd);
+        }
+    }
+
     match cli.command {
         None => open()?,
 
@@ -232,11 +241,6 @@ fn secrets_wait(no_wait: bool, timeout: Option<&str>) -> Result<Option<std::time
 }
 
 fn open() -> Result<()> {
-    let cwd = env::current_dir()?;
-    if let Some(ws) = workspace::find_opt(&cwd)? {
-        let _ = workspace::register_workspace(&ws.dir);
-    }
-
     let bin = tmux::self_bin()?;
 
     tmux::check_version()?;

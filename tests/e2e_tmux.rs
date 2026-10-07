@@ -31,6 +31,10 @@ impl Harness {
         fs::create_dir_all(root.join("bin")).unwrap();
         fs::create_dir_all(root.join("home")).unwrap();
         fs::create_dir_all(root.join("ws/tasks")).unwrap();
+        // One spelling of every path: on macOS the temp dir is behind a
+        // symlink (/var → /private/var), and a command run from inside the
+        // workspace registers its canonical path.
+        let root = root.canonicalize().unwrap();
         let h = Harness { root, socket: name, tmux };
 
         // Fake agents/editor: something that stays alive so the pane persists.
