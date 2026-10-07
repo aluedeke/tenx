@@ -168,7 +168,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       } catch {
         // No WebGL: xterm's DOM renderer draws instead.
       }
-      xterm.attachCustomKeyEventHandler((ev) => !propsRef.current.intercept(ev));
+      xterm.attachCustomKeyEventHandler((ev) => !composesDeadKey(ev) && !propsRef.current.intercept(ev));
       xterm.onData((d) => propsRef.current.onData(d));
       xterm.onBinary((d) => propsRef.current.onData(d));
       xterm.onResize(({ cols, rows }) => propsRef.current.onResize(cols, rows));
@@ -422,6 +422,18 @@ function catchImages(el: HTMLElement, onImages: (files: File[]) => void) {
     ev.preventDefault();
     onImages(files);
   });
+}
+
+/** The key after a dead key (US International `"` then `o`). Chrome on
+ * macOS delivers it as a keydown with its real keyCode while the dead key's
+ * composition is still open; xterm takes any such keydown as the end of the
+ * composition and sends what is composed so far — the bare accent — and then
+ * the result again when the composition ends: `"ö`, `''`. A printable key
+ * here only completes the composition, so it is left to the browser and
+ * xterm sends the result once, on compositionend. Enter, arrows and the like
+ * still go to xterm, which commits the accent first, as it should. */
+function composesDeadKey(ev: KeyboardEvent): boolean {
+  return ev.isComposing && ev.keyCode !== 229 && [...ev.key].length === 1 && !ev.ctrlKey && !ev.metaKey;
 }
 
 /** Text that reaches xterm's hidden textarea without a key press — iOS

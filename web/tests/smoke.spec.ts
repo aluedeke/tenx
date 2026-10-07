@@ -697,3 +697,44 @@ for (const [name, parts, expected] of [
     expect(binary.join('').split(expected).length - 1).toBe(1);
   });
 }
+
+test('a dead key (US International) types its composed character once', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a hardware keyboard layout');
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/?renderer=dom');
+  await expect(page.locator('.xterm-rows')).toBeVisible();
+  await page.locator('.xterm-helper-textarea').focus();
+  // Chrome on macOS: the dead key starts a composition holding the accent;
+  // the next key arrives as a keydown with its real keyCode (not 229) while
+  // still composing, and the composition then ends with the result.
+  const compose = async (accent: string, dead: number, next: string, nextCode: number, result: string) =>
+    page.evaluate(
+      async ([accent, dead, next, nextCode, result]) => {
+        const ta = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+        const tick = () => new Promise((r) => setTimeout(r, 20));
+        const key = (key: string, keyCode: number, isComposing: boolean) =>
+          ta.dispatchEvent(new KeyboardEvent('keydown', { key, keyCode, isComposing, bubbles: true, cancelable: true } as KeyboardEventInit));
+        const update = (data: string) => {
+          ta.dispatchEvent(new CompositionEvent('compositionupdate', { data, bubbles: true }));
+          ta.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertCompositionText', data, isComposing: true, bubbles: true }));
+          ta.value = data;
+          ta.dispatchEvent(new InputEvent('input', { inputType: 'insertCompositionText', data, isComposing: true, bubbles: true }));
+        };
+        ta.value = '';
+        key('Dead', dead as number, false);
+        ta.dispatchEvent(new CompositionEvent('compositionstart', { data: '', bubbles: true }));
+        update(accent as string);
+        await tick();
+        key(next as string, nextCode as number, true);
+        update(result as string);
+        ta.dispatchEvent(new CompositionEvent('compositionend', { data: result as string, bubbles: true }));
+        await tick();
+      },
+      [accent, dead, next, nextCode, result] as const,
+    );
+  await compose('"', 222, 'ö', 79, 'ö');
+  await compose("'", 222, ' ', 32, "'");
+  await page.waitForTimeout(300);
+  expect(binary.join('')).toBe("ö'");
+});
