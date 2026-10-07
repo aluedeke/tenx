@@ -19,6 +19,14 @@ pub fn run(name: Option<&str>) -> Result<()> {
         }
         Some(n) => {
             // Name given: create a new subdirectory
+            let here = cwd.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+            if tenx_core::init::nests_in_namesake(&here, n) {
+                anyhow::bail!(
+                    "already in a directory named '{n}': this would create {n}/{n}. \
+                     Run `tenx init` without a name to make this directory the workspace, \
+                     or run `tenx init {n}` from the parent directory"
+                );
+            }
             (cwd.join(n), n.to_string())
         }
     };

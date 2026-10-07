@@ -24,9 +24,10 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Initialize a new workspace in the current directory
+    /// Initialize a workspace: the current directory, or a new one inside it
     Init {
-        /// Workspace name (default: current directory name)
+        /// Create the workspace in a new subdirectory with this name (default:
+        /// the current directory, named after it)
         name: Option<String>,
     },
     /// Manage repos in the active workspace
