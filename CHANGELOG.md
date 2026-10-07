@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.3.0] - 2026-10-07
+
+### Added
+
+- **task:** Rename detached sessions to adhoc sessions (breaking)
+
+[0.3.0]: https://github.com/aluedeke/tenx/compare/v0.2.3...v0.3.0
+
 ## [0.2.3] - 2026-10-06
 
 ### Fixed
