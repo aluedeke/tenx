@@ -41,10 +41,11 @@ pub struct GlobalConfig {
     /// A workspace's `[agents.<kind>]` overrides the same key here.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub agents: HashMap<String, AgentConfig>,
-    /// Where the detached workspace lives (`~` expanded); empty =
-    /// `~/.local/share/tenx/detached`. See [`detached_dir`].
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub detached_dir: String,
+    /// Where the adhoc workspace lives (`~` expanded); empty =
+    /// `~/.local/share/tenx/adhoc`. See [`adhoc_dir`]. Read under its old
+    /// name, `detached_dir`, too.
+    #[serde(default, alias = "detached_dir", skip_serializing_if = "String::is_empty")]
+    pub adhoc_dir: String,
 }
 
 /// How to launch one agent: an alternate binary and/or extra arguments. Lets a
@@ -76,9 +77,9 @@ pub struct WorkspaceConfig {
     #[serde(default)]
     pub schema_version: u32,
     pub name: String,
-    /// Empty for an ordinary workspace; [`DETACHED_KIND`] for the one tenx
+    /// Empty for an ordinary workspace; [`ADHOC_KIND`] for the one tenx
     /// creates itself to hold sessions that belong to no repo (`tenx ask`,
-    /// an orchestrator). See [`Workspace::is_detached`].
+    /// an orchestrator). See [`Workspace::is_adhoc`].
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub kind: String,
     /// Executable run to lay out a new task window (see `tmux::TaskWindow`);
@@ -138,28 +139,41 @@ pub fn load_global() -> Result<GlobalConfig> {
     Ok(cfg)
 }
 
-// ── The detached workspace ────────────────────────────────────────────────────
+// ── The adhoc workspace ───────────────────────────────────────────────────────
 //
 // Sessions that belong to no repo — a quick question, an orchestrator driving
 // tasks in several workspaces — are ordinary tasks in one workspace tenx owns:
 // no repos, a single-pane window, and slugs that never collide (a repeated
 // title gets `-2`, since nothing here is a branch name). Being a real,
 // registered workspace is the point: windows, status, bells, sweep, secrets
-// and every front end work on it unchanged. `cli::detached::ensure` creates
+// and every front end work on it unchanged. `cli::adhoc::ensure` creates
 // and registers it.
+//
+// Releases up to 0.2.3 called it the *detached* workspace: `kind` and `name`
+// "detached", at `~/.local/share/tenx/detached`. `cli::adhoc::ensure` moves
+// one made then to the new place, transcripts and all, at the first launch
+// that finds none of its tasks open, and upgrades its config.
 
-/// `WorkspaceConfig::kind` of the detached workspace.
-pub const DETACHED_KIND: &str = "detached";
+/// `WorkspaceConfig::kind` of the adhoc workspace.
+pub const ADHOC_KIND: &str = "adhoc";
 /// Its `config.toml` name — what the column shows where a workspace name goes.
-pub const DETACHED_NAME: &str = "detached";
+pub const ADHOC_NAME: &str = "adhoc";
+/// [`ADHOC_KIND`] and [`ADHOC_NAME`] as releases up to 0.2.3 wrote them.
+pub const LEGACY_ADHOC_KIND: &str = "detached";
 
-/// Where the detached workspace lives: the global `detached_dir`, else
-/// `~/.local/share/tenx/detached`.
-pub fn detached_dir(global: &GlobalConfig) -> Result<PathBuf> {
-    if !global.detached_dir.is_empty() {
-        return Ok(PathBuf::from(expand_home(&global.detached_dir)));
+/// Where the adhoc workspace lives: the global `adhoc_dir`, else
+/// `~/.local/share/tenx/adhoc` — or `~/.local/share/tenx/detached` when only
+/// that one exists, made by an older release and not moved yet.
+pub fn adhoc_dir(global: &GlobalConfig) -> Result<PathBuf> {
+    if !global.adhoc_dir.is_empty() {
+        return Ok(PathBuf::from(expand_home(&global.adhoc_dir)));
     }
-    Ok(home_dir()?.join(".local/share/tenx/detached"))
+    let base = home_dir()?.join(".local/share/tenx");
+    let (dir, legacy) = (base.join("adhoc"), base.join("detached"));
+    if !dir.join("config.toml").is_file() && legacy.join("config.toml").is_file() {
+        return Ok(legacy);
+    }
+    Ok(dir)
 }
 
 // ── Workspace registry ────────────────────────────────────────────────────────
@@ -394,11 +408,12 @@ pub fn init(dir: &Path, name: &str) -> Result<Workspace> {
 // ── Workspace methods ─────────────────────────────────────────────────────────
 
 impl Workspace {
-    /// The workspace tenx keeps for repo-less sessions (see [`DETACHED_KIND`]).
+    /// The workspace tenx keeps for repo-less sessions (see [`ADHOC_KIND`]).
     /// It never has repos: adding one is refused, and the column leaves it
-    /// off the Repos tab.
-    pub fn is_detached(&self) -> bool {
-        self.config.kind == DETACHED_KIND
+    /// off the Repos tab. One an older release made counts too, until
+    /// `cli::adhoc::ensure` upgrades it.
+    pub fn is_adhoc(&self) -> bool {
+        self.config.kind == ADHOC_KIND || self.config.kind == LEGACY_ADHOC_KIND
     }
 
     pub fn save_config(&self) -> Result<()> {
@@ -406,8 +421,8 @@ impl Workspace {
     }
 
     pub fn add_repo(&mut self, repo: RepoConfig) -> Result<()> {
-        if self.is_detached() {
-            bail!("the detached workspace holds sessions without repos — add the repo to another workspace");
+        if self.is_adhoc() {
+            bail!("the adhoc workspace holds sessions without repos — add the repo to another workspace");
         }
         if self.config.repos.iter().any(|r| r.name == repo.name) {
             return Err(WorkspaceError::RepoExists(repo.name).into());

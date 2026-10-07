@@ -78,7 +78,7 @@ pub fn new_steps(ws: &crate::workspace::Workspace, repos: Option<&[String]>) -> 
 /// The slug a new task called `name` gets in `ws`, or why it can't be made.
 ///
 /// In an ordinary workspace the slug is a branch name, so a taken one is an
-/// error the user should see. In the detached workspace nothing is a branch
+/// error the user should see. In the adhoc workspace nothing is a branch
 /// and titles repeat ("question"), so a taken slug just counts up
 /// (`tenx_core::slug::unique_slug`). The column calls this before starting
 /// its job, so its ghost row and the task the job creates agree.
@@ -87,7 +87,7 @@ pub fn plan_slug(ws: &crate::workspace::Workspace, name: &str) -> Result<String>
     if slug.is_empty() {
         bail!("task name {name:?} has no letters or digits to make a slug from");
     }
-    if ws.is_detached() {
+    if ws.is_adhoc() {
         let tasks = ws.tasks_dir();
         return Ok(tenx_core::slug::unique_slug(&slug, |s| {
             crate::tmux::is_reserved_slug(s) || tasks.join(s).exists()
@@ -111,7 +111,7 @@ pub fn plan_slug(ws: &crate::workspace::Workspace, name: &str) -> Result<String>
 /// return its slug. `agent` pins the task's coding agent via a `.tenx-agent`
 /// override; `None` inherits the workspace default. `repos` is the picked
 /// subset (`None` = all of the workspace's); an empty set — or a workspace
-/// with no repos, the detached one always — makes a task without worktrees,
+/// with no repos, the adhoc one always — makes a task without worktrees,
 /// whose agent runs in the bare task directory.
 pub fn new_with(
     ws: &crate::workspace::Workspace,
@@ -133,8 +133,8 @@ pub fn new_with(
         Some(r) => r.to_vec(),
         None => ws.config.repos.iter().map(|r| r.name.clone()).collect(),
     };
-    if ws.is_detached() && !repo_names.is_empty() {
-        bail!("the detached workspace has no repos — create the task in a workspace that does");
+    if ws.is_adhoc() && !repo_names.is_empty() {
+        bail!("the adhoc workspace has no repos — create the task in a workspace that does");
     }
 
     let bare_dir = ws.bare_dir(&global);
@@ -537,19 +537,19 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
 /// at every open: none for a task with worktrees (its code is in its own
 /// directory); its workspace for a repo-less task in an ordinary workspace,
 /// so a question about the workspace can see every task's code; and every
-/// other registered workspace for a detached session, which is how an
+/// other registered workspace for an adhoc session, which is how an
 /// orchestrator reads the tasks it drives. A workspace registered later is
 /// readable from the next reopen.
 fn readable_dirs(ws: &crate::workspace::Workspace, task: &crate::workspace::Task) -> Vec<PathBuf> {
     if !task.repos.is_empty() {
         return Vec::new();
     }
-    if !ws.is_detached() {
+    if !ws.is_adhoc() {
         return vec![ws.dir.clone()];
     }
     crate::workspace::registered_workspaces()
         .into_iter()
-        .filter(|w| !w.is_detached())
+        .filter(|w| !w.is_adhoc())
         .map(|w| w.dir)
         .collect()
 }

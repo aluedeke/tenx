@@ -1,17 +1,17 @@
 ---
-description: Drive tenx tasks in other workspaces from this detached session — list them, start new ones with a prompt, message their agents, wait for their turns and read what they said. Use when the user asks you to coordinate, delegate to, check on, or collect results from tasks or agents in their tenx workspaces, or to fan a piece of work out over several repos.
+description: Drive tenx tasks in other workspaces from this adhoc session — list them, start new ones with a prompt, message their agents, wait for their turns and read what they said. Use when the user asks you to coordinate, delegate to, check on, or collect results from tasks or agents in their tenx workspaces, or to fan a piece of work out over several repos.
 allowed-tools: Bash Read
 ---
 
 ## Where you are
 
-This session runs in tenx's **detached workspace**: it has no repos of its own. The code lives in the user's other workspaces, each a set of tasks with their own git worktrees and their own agent session in a tmux window. You can **read** every workspace (they were added with `--add-dir`); you **change** code only by asking the task's own agent to — never edit files in another task's directory yourself.
+This session runs in tenx's **adhoc workspace**: it has no repos of its own. The code lives in the user's other workspaces, each a set of tasks with their own git worktrees and their own agent session in a tmux window. You can **read** every workspace (they were added with `--add-dir`); you **change** code only by asking the task's own agent to — never edit files in another task's directory yourself.
 
 ## What is going on
 
 !`tenx task list --json 2>/dev/null || echo '(tenx session not running)'`
 
-`workspaces[]` has each workspace's `name`, `dir` and repos; `tasks[]` each task's `ws` (workspace name), `ws_dir`, `slug`, `title`, `repos` and `status` (`working`, `blocked` = waiting on a dialog — `waiting_for` says which, `signaled`, `done` = turn over, `idle` = no agent running). Tasks of the `detached` workspace are sessions like this one. Run it again whenever you need fresh state.
+`workspaces[]` has each workspace's `name`, `dir` and repos; `tasks[]` each task's `ws` (workspace name), `ws_dir`, `slug`, `title`, `repos` and `status` (`working`, `blocked` = waiting on a dialog — `waiting_for` says which, `signaled`, `done` = turn over, `idle` = no agent running). Tasks of the `adhoc` workspace are sessions like this one. Run it again whenever you need fresh state.
 
 ## Driving a task
 

@@ -659,11 +659,11 @@ impl Column {
                 agent: f.agent_label(),
                 agent_inherits: f.agent.is_none(),
                 agent_default: f.inherited.as_str(),
-                // The slug creation will use: in the detached workspace a taken
+                // The slug creation will use: in the adhoc workspace a taken
                 // one counts up (`cli::task::plan_slug`, one `exists` per try),
                 // elsewhere it is the name's slug as is.
                 slug: match self.workspaces.get(f.ws_idx) {
-                    Some(ws) if ws.is_detached() && !f.name.trim().is_empty() => {
+                    Some(ws) if ws.is_adhoc() && !f.name.trim().is_empty() => {
                         crate::cli::task::plan_slug(ws, &f.name).unwrap_or_else(|_| tenx_core::slug::slugify(&f.name))
                     }
                     _ => tenx_core::slug::slugify(&f.name),

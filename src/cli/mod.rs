@@ -2,7 +2,7 @@ pub mod agentlog;
 pub mod agentview;
 pub mod doctor;
 pub mod hooks;
-pub mod detached;
+pub mod adhoc;
 pub mod drive;
 pub mod init;
 pub mod notify;
@@ -41,7 +41,7 @@ pub enum Commands {
     },
     /// Ask an agent a question in a session of its own
     ///
-    /// Creates a session in the detached workspace (no repos; it can read
+    /// Creates a session in the adhoc workspace (no repos; it can read
     /// every registered workspace) titled after the question, with the
     /// question as its first message, and prints its slug. `--ws-dir` asks in
     /// a workspace instead, as a task without worktrees.
@@ -407,10 +407,10 @@ pub enum TaskCommands {
         /// may read the whole workspace
         #[arg(long, conflicts_with = "repos")]
         no_repos: bool,
-        /// Create it in the detached workspace (no repos; for questions and
+        /// Create it in the adhoc workspace (no repos; for questions and
         /// for orchestrating other workspaces' tasks)
-        #[arg(long, conflicts_with_all = ["repos", "ws_dir"])]
-        detached: bool,
+        #[arg(long, alias = "detached", conflicts_with_all = ["repos", "ws_dir"])]
+        adhoc: bool,
         /// The agent's first message; it starts working on it when the
         /// window opens
         #[arg(long)]

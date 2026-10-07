@@ -32,7 +32,7 @@ fn run() -> Result<()> {
         Some(Commands::Ask { prompt, agent, ws_dir, no_focus }) => {
             let agent = agent.as_deref().map(agent::AgentKind::from_token);
             let open = cli::task::OpenMode::for_cli(false, no_focus);
-            cli::detached::ask(&prompt.join(" "), ws_dir.as_deref(), agent, open)?;
+            cli::adhoc::ask(&prompt.join(" "), ws_dir.as_deref(), agent, open)?;
         }
 
         Some(Commands::Init { name }) => {
@@ -123,7 +123,7 @@ fn run() -> Result<()> {
 
 
         Some(Commands::Task { command }) => match command {
-            TaskCommands::New { name, repos, description, links, no_open, no_focus, no_repos, detached, prompt, agent, ws_dir } => {
+            TaskCommands::New { name, repos, description, links, no_open, no_focus, no_repos, adhoc, prompt, agent, ws_dir } => {
                 let links = links
                     .iter()
                     .map(|l| tenx_core::taskmd::parse_link(l).ok_or_else(|| anyhow::anyhow!("--link wants \"Label: value\", got {l:?}")))
@@ -136,14 +136,14 @@ fn run() -> Result<()> {
                 let agent = agent.as_deref().map(agent::AgentKind::from_token);
                 let open = cli::task::OpenMode::for_cli(no_open, no_focus);
                 let none: Vec<String> = Vec::new();
-                let repos = if no_repos || detached { Some(none.as_slice()) } else { repos.as_deref() };
-                let ws = match (detached, ws_dir.as_deref()) {
-                    (true, _) => cli::detached::ensure()?,
+                let repos = if no_repos || adhoc { Some(none.as_slice()) } else { repos.as_deref() };
+                let ws = match (adhoc, ws_dir.as_deref()) {
+                    (true, _) => cli::adhoc::ensure()?,
                     (false, Some(dir)) => cli::task::load_ws_arg(dir)?,
                     (false, None) => workspace::find(&env::current_dir()?)?,
                 };
                 let slug = cli::task::new_with(&ws, &name, repos, open, &md, agent, progress::for_cli().as_ref())?;
-                // The slug is what `send`/`wait`/`output` take; a detached
+                // The slug is what `send`/`wait`/`output` take; an adhoc
                 // one may have been counted up from the title.
                 println!("{slug}");
                 // Return once the first turn is under way, so a `task wait`
@@ -256,9 +256,9 @@ fn open() -> Result<()> {
     // fights a user who later removes an integration.
     cli::session_event::auto_setup();
 
-    // The detached workspace (sessions outside any repo) exists and is
+    // The adhoc workspace (sessions outside any repo) exists and is
     // registered before the column first lists workspaces.
-    cli::detached::ensure_quiet();
+    cli::adhoc::ensure_quiet();
 
     // Skills `tenx init` installed are refreshed to this binary's version,
     // in every registered workspace — untouched ones only; an edited file is

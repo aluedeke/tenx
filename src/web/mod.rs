@@ -48,9 +48,9 @@ pub fn run(o: Options) -> Result<()> {
     if let Ok(bin) = crate::tmux::self_bin() {
         crate::cli::watch::ensure_running(&bin);
     }
-    // The detached workspace (`tenx ask`'s sessions) is listed in the column
+    // The adhoc workspace (`tenx ask`'s sessions) is listed in the column
     // here too, as the client's launch does.
-    crate::cli::detached::ensure_quiet();
+    crate::cli::adhoc::ensure_quiet();
     let token = token::load_or_create(o.rotate_token)?;
 
     let addr = (o.listen.trim_start_matches('[').trim_end_matches(']'), o.port)

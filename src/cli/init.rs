@@ -145,7 +145,7 @@ pub(crate) fn install_skills(ws_dir: &Path) -> Result<()> {
 /// [`portable_skill`]), and `AGENTS.md`. The one list installing,
 /// refreshing and `doctor` all work from.
 ///
-/// The detached workspace also gets `/orchestrate`, which only makes sense
+/// The adhoc workspace also gets `/orchestrate`, which only makes sense
 /// from a session that has no repos of its own.
 fn skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
     let mut files = vec![
@@ -155,14 +155,14 @@ fn skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
         (ws_dir.join(".agents/skills/standup/SKILL.md"), portable_skill("standup", STANDUP_SKILL_MD)),
         (ws_dir.join("AGENTS.md"), AGENTS_MD.to_string()),
     ];
-    if crate::workspace::load(ws_dir).is_ok_and(|ws| ws.is_detached()) {
-        files.extend(detached_skill_files(ws_dir));
+    if crate::workspace::load(ws_dir).is_ok_and(|ws| ws.is_adhoc()) {
+        files.extend(adhoc_skill_files(ws_dir));
     }
     files
 }
 
-/// The files only the detached workspace gets (see [`skill_files`]).
-fn detached_skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
+/// The files only the adhoc workspace gets (see [`skill_files`]).
+fn adhoc_skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
     vec![
         (ws_dir.join(".claude/skills/orchestrate/SKILL.md"), ORCHESTRATE_SKILL_MD.to_string()),
         (ws_dir.join(".agents/skills/orchestrate/SKILL.md"), portable_skill("orchestrate", ORCHESTRATE_SKILL_MD)),
@@ -246,6 +246,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0xeeb3eac70a44d93b, // tenx: `ask`, `--no-repos` portable
     0x3135b92d7ac011bd, // orchestrate (detached workspace)
     0x00830c2006515923, // orchestrate portable
+    0xc50677a36b5310f8, // orchestrate: detached → adhoc
+    0x40d44ff6a7fc8c16, // orchestrate: detached → adhoc portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
@@ -439,7 +441,7 @@ mod tests {
         // files as its own, and would leave them stale forever.
         let missing: Vec<String> = skill_files(Path::new("/ws"))
             .into_iter()
-            .chain(detached_skill_files(Path::new("/ws")))
+            .chain(adhoc_skill_files(Path::new("/ws")))
             .map(|(path, content)| (path, content_hash(content.as_bytes())))
             .filter(|(_, hash)| !SHIPPED_SKILLS.contains(hash))
             .map(|(path, hash)| format!("    0x{hash:016x}, // {}", path.display()))
