@@ -162,7 +162,7 @@ tenx                     the column beside the session, creating the session if 
 tenx init [NAME]         create a workspace here (or in NAME/)
 tenx repo add <URL>      add a repo to the workspace (bare clone)
 tenx repo list|fetch
-tenx task new <TITLE>    create a task [--repos a,b | --no-repos | --detached] [--prompt ..] [--description ..]
+tenx task new <TITLE>    create a task [--repos a,b | --no-repos | --adhoc] [--prompt ..] [--description ..]
                          [--link "Label: value"] [--no-open | --no-focus]
 tenx ask <QUESTION>      a session of its own for a question, outside any workspace
 tenx task open <NAME>    open or switch to a task's window
@@ -187,13 +187,13 @@ Every mutating command accepts `--ws-dir` (a workspace directory, or a registere
 Not every session is about one task's code. Two kinds don't need worktrees:
 
 - **A task without repos.** `tenx task new "Why is CI slow" --no-repos` (or untick every repo in the column's new-task form) makes a task whose agent runs in the bare task directory, in a window of its own with no editor or shell beside it, and can read the whole workspace — every other task's code included.
-- **A detached session.** `tenx ask "how do I rebase onto a moved branch?"`, or `:ask …` in the column, starts a session titled after the question, with the question as its first message, in the **detached** workspace — one tenx creates for itself at `~/.local/share/tenx/detached` (`detached_dir` in the global config moves it). It has no repos, and its sessions can read every registered workspace. Asking the same thing twice gives a second session (`-2`) rather than an error.
+- **An adhoc session.** `tenx ask "how do I rebase onto a moved branch?"`, or `:ask …` in the column, starts a session titled after the question, with the question as its first message, in the **adhoc** workspace — one tenx creates for itself at `~/.local/share/tenx/adhoc` (`adhoc_dir` in the global config moves it). tenx 0.2.3 and earlier called it *detached* and kept it at `~/.local/share/tenx/detached`; it moves to the new place, conversations included, the first time tenx starts with none of its sessions open. It has no repos, and its sessions can read every registered workspace. Asking the same thing twice gives a second session (`-2`) rather than an error.
 
 Both are ordinary tasks everywhere else: listed in the column, with status, notifications, sweep and secrets. Sweep only closes their windows; nothing deletes them but you.
 
 ### Orchestrating other tasks
 
-A detached session can drive tasks in other workspaces. It gets an `/orchestrate` skill and permission to run the commands that do it, without asking:
+An adhoc session can drive tasks in other workspaces. It gets an `/orchestrate` skill and permission to run the commands that do it, without asking:
 
 ```sh
 tenx task new "Bump the SDK" --ws-dir work --no-focus --prompt "Upgrade to SDK 5, fix what breaks, open a PR"
@@ -202,7 +202,7 @@ tenx task wait bump-the-sdk --ws-dir work      # 0 done · 2 needs you (prints w
 tenx task output bump-the-sdk --ws-dir work    # what it said since the last prompt
 ```
 
-A message is pasted into the task's live agent, so every exchange is visible in its window and you can take over at any point. `send` opens a closed task with the message as its first prompt, and refuses to type into an agent that is waiting on a dialog (`--force` overrides). It never answers a permission prompt; that stays with you. The permission rules are seeded once into `~/.local/share/tenx/detached/.claude/settings.json`, which you can edit.
+A message is pasted into the task's live agent, so every exchange is visible in its window and you can take over at any point. `send` opens a closed task with the message as its first prompt, and refuses to type into an agent that is waiting on a dialog (`--force` overrides). It never answers a permission prompt; that stays with you. The permission rules are seeded once into the adhoc workspace's `.claude/settings.json`, which you can edit.
 
 ## From a phone or tablet
 
@@ -305,7 +305,7 @@ Global `~/.config/tenx/config.toml`:
 bare_dir = ""        # optional override for where bare clones live
 column_width = 0     # the task column, in cells; 0 = a fifth of the terminal, between 30 and 48
 agent = "codex"      # optional default agent for every workspace
-detached_dir = ""    # where the detached workspace lives; default ~/.local/share/tenx/detached
+adhoc_dir = ""       # where the adhoc workspace lives; default ~/.local/share/tenx/adhoc
 # [agents.pi]        # optional global per-agent launch override (a workspace's wins)
 # args = ["--provider", "openai"]
 ```

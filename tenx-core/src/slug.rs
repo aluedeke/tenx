@@ -24,7 +24,7 @@ pub fn slugify(name: &str) -> String {
 }
 
 /// The first of `base`, `base-2`, `base-3`, … that `taken` doesn't claim —
-/// how a detached session gets a slug of its own when its title repeats an
+/// how an adhoc session gets a slug of its own when its title repeats an
 /// earlier one ("question" twice). Workspaces with repos never take this
 /// path: their slug is a branch name, and a duplicate there is an error the
 /// user should see.

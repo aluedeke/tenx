@@ -1,7 +1,7 @@
 //! Driving another task's agent from the outside: `task send` types a message
 //! into its pane, `task wait` blocks until its turn is over, `task output`
 //! prints what it said. Together with `task new --prompt` these are what an
-//! orchestrating session (the `/orchestrate` skill, in the detached
+//! orchestrating session (the `/orchestrate` skill, in the adhoc
 //! workspace) is made of — and they work the same typed by a person.
 //!
 //! A message is pasted into the live agent, not handed to a second headless

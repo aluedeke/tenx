@@ -31,8 +31,8 @@ pub fn add_in(
     rep: &dyn crate::progress::Reporter,
 ) -> Result<()> {
     use crate::progress::Event;
-    if ws.is_detached() {
-        bail!("the detached workspace holds sessions without repos — add the repo to another workspace");
+    if ws.is_adhoc() {
+        bail!("the adhoc workspace holds sessions without repos — add the repo to another workspace");
     }
     let global = crate::workspace::load_global()?;
 

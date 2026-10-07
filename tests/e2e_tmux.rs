@@ -631,11 +631,11 @@ fn opening_a_task_never_raises_a_namesake_window_from_another_workspace() {
 }
 
 /// Sessions outside a repo: a task with no worktrees in an ordinary
-/// workspace, `tenx ask` in the detached workspace tenx creates for itself,
+/// workspace, `tenx ask` in the adhoc workspace tenx creates for itself,
 /// and driving a session from outside — `task send` / `wait` / `output`.
 #[test]
-fn repo_less_and_detached_sessions_are_tasks_that_can_be_driven() {
-    let Some(h) = Harness::named("-detached") else {
+fn repo_less_and_adhoc_sessions_are_tasks_that_can_be_driven() {
+    let Some(h) = Harness::named("-adhoc") else {
         eprintln!("tmux not installed — skipping e2e");
         return;
     };
@@ -643,7 +643,7 @@ fn repo_less_and_detached_sessions_are_tasks_that_can_be_driven() {
     // typed into it, so a test can see both the first prompt and a `send`.
     let claude = h.root.join("bin/claude");
     fs::write(&claude, "#!/bin/sh\nprintf '%s\\n' \"$@\" > .agent-args\nexec cat > .agent-input\n").unwrap();
-    // Registered, so the detached session gets it as a readable directory.
+    // Registered, so the adhoc session gets it as a readable directory.
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
     let wait_file = |p: &Path, what: &str, pred: &dyn Fn(&str) -> bool| -> String {
@@ -672,37 +672,37 @@ fn repo_less_and_detached_sessions_are_tasks_that_can_be_driven() {
     let current = h.tmux_out(&["display-message", "-p", "-t", "tenx", "#{window_name}"]);
     assert_ne!(current, "plain-q", "--no-focus leaves the current window alone");
 
-    // `tenx ask`: the detached workspace appears, registered, with its skills.
+    // `tenx ask`: the adhoc workspace appears, registered, with its skills.
     let out = h.tenx().args(["ask", "--no-focus", "how", "does", "sweep", "work?"]).output().unwrap();
     assert!(out.status.success(), "ask: {}", String::from_utf8_lossy(&out.stderr));
     let slug = String::from_utf8_lossy(&out.stdout).trim().to_string();
     assert_eq!(slug, "how-does-sweep-work");
-    let detached = h.root.join("home/.local/share/tenx/detached");
-    let cfg = fs::read_to_string(detached.join("config.toml")).unwrap();
-    assert!(cfg.contains("kind = \"detached\""), "config: {cfg}");
-    assert!(detached.join(".claude/skills/orchestrate/SKILL.md").is_file(), "orchestrate skill");
-    assert!(fs::read_to_string(detached.join(".claude/settings.json")).unwrap().contains("tenx task send"));
+    let adhoc = h.root.join("home/.local/share/tenx/adhoc");
+    let cfg = fs::read_to_string(adhoc.join("config.toml")).unwrap();
+    assert!(cfg.contains("kind = \"adhoc\""), "config: {cfg}");
+    assert!(adhoc.join(".claude/skills/orchestrate/SKILL.md").is_file(), "orchestrate skill");
+    assert!(fs::read_to_string(adhoc.join(".claude/settings.json")).unwrap().contains("tenx task send"));
     // Canonical, as the registry (and a real agent's reported cwd) has it.
-    let task = detached.join("tasks").join(&slug).canonicalize().unwrap();
+    let task = adhoc.join("tasks").join(&slug).canonicalize().unwrap();
     assert_eq!(fs::read_to_string(task.join("TASK.md")).unwrap().lines().next(), Some("# how does sweep work?"));
     let args = wait_file(&task.join(".agent-args"), "ask args", &|t| t.contains("how does sweep work?"));
     assert!(args.contains(&h.ws()), "every registered workspace is readable: {args}");
     assert!(!task.join(".tenx-prompt").exists(), "the prompt is consumed by the launch");
     assert_eq!(panes(&slug), 1, "agent-only window");
     let json: serde_json::Value = serde_json::from_slice(&h.tenx().args(["task", "list", "--json"]).output().unwrap().stdout).unwrap();
-    assert!(json["workspaces"].as_array().unwrap().iter().any(|w| w["detached"] == true), "listed as detached");
-    assert!(json["tasks"].as_array().unwrap().iter().any(|t| t["slug"] == slug.as_str() && t["ws"] == "detached"));
+    assert!(json["workspaces"].as_array().unwrap().iter().any(|w| w["adhoc"] == true), "listed as adhoc");
+    assert!(json["tasks"].as_array().unwrap().iter().any(|t| t["slug"] == slug.as_str() && t["ws"] == "adhoc"));
 
     // The same question again counts up instead of failing.
     let out = h.tenx().args(["ask", "--no-focus", "how does sweep work?"]).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), format!("{slug}-2"));
 
-    // No repos in the detached workspace.
-    let out = h.tenx().args(["repo", "add", "file:///nowhere.git", "--ws-dir", "detached"]).output().unwrap();
-    assert!(!out.status.success(), "repo add into the detached workspace is refused");
+    // No repos in the adhoc workspace.
+    let out = h.tenx().args(["repo", "add", "file:///nowhere.git", "--ws-dir", "adhoc"]).output().unwrap();
+    assert!(!out.status.success(), "repo add into the adhoc workspace is refused");
 
     // send: typed into the agent's pane, addressed by workspace name.
-    let out = h.tenx().args(["task", "send", &slug, "--ws-dir", "detached", "and", "idle", "windows?"]).output().unwrap();
+    let out = h.tenx().args(["task", "send", &slug, "--ws-dir", "adhoc", "and", "idle", "windows?"]).output().unwrap();
     assert!(out.status.success(), "send: {}", String::from_utf8_lossy(&out.stderr));
     wait_file(&task.join(".agent-input"), "sent text", &|t| t.contains("and idle windows?"));
 
@@ -744,7 +744,7 @@ fn repo_less_and_detached_sessions_are_tasks_that_can_be_driven() {
         .join("\n"),
     )
     .unwrap();
-    let out = h.tenx().args(["task", "output", &slug, "--ws-dir", "detached"]).output().unwrap();
+    let out = h.tenx().args(["task", "output", &slug, "--ws-dir", "adhoc"]).output().unwrap();
     assert!(out.status.success(), "output: {}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "After 15 minutes.");
 }

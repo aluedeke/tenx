@@ -665,7 +665,7 @@ test('a workspace without repos creates a task the agent runs on its own', async
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
   await tap(page.getByTestId('add'));
-  await tap(page.locator('.wf-chip', { hasText: /^\W*detached/ }));
+  await tap(page.locator('.wf-chip', { hasText: /^\W*adhoc/ }));
   await expect(page.getByText('none — the agent runs on its own and can read the workspace')).toBeVisible();
   await page.locator('input[data-field=name]').fill('how does sweep work');
   await tap(page.getByRole('button', { name: /Create task/ }));

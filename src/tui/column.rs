@@ -1466,7 +1466,7 @@ impl Column {
     /// Run a `:` command against the selected task. Returns `Ok(true)` to close
     /// the column. Commands that open a sub-view set `self.mode` themselves.
     fn run_command(&mut self, cmd: &str) -> Result<bool> {
-        // `:ask <question>` — a detached session started on the question,
+        // `:ask <question>` — an adhoc session started on the question,
         // from either tab.
         if cmd == "ask" || cmd.starts_with("ask ") {
             self.ask(cmd["ask".len()..].trim());
@@ -2013,7 +2013,7 @@ impl Column {
             .collect();
         let ws_idx = form.ws_idx;
         // The same slug the job's `new_in` will pick — counted up in the
-        // detached workspace — so the ghost row and `OpenTask` name the task
+        // adhoc workspace — so the ghost row and `OpenTask` name the task
         // the job creates. Its refusals (a taken name) surface here, before
         // anything starts.
         let slug = if self.offline {
@@ -2160,7 +2160,7 @@ impl Column {
         }
     }
 
-    /// `:ask <question>`: a session in the detached workspace, titled after
+    /// `:ask <question>`: a session in the adhoc workspace, titled after
     /// the question, that starts working on it the moment its window opens.
     /// Nothing is cloned, but it runs as a job like any creation so the row,
     /// the window and the selection land the same way.
@@ -2169,8 +2169,8 @@ impl Column {
             self.status_msg = Some(":ask <question>".into());
             return;
         }
-        let Some(ws_idx) = self.workspaces.iter().position(|w| w.is_detached()) else {
-            self.status_msg = Some("no detached workspace — restart tenx to create it".into());
+        let Some(ws_idx) = self.workspaces.iter().position(|w| w.is_adhoc()) else {
+            self.status_msg = Some("no adhoc workspace — restart tenx to create it".into());
             return;
         };
         let mut title = tenx_core::orchestrate::ask_title(prompt);
@@ -2463,8 +2463,8 @@ impl Column {
             }
         }
         if picks.is_empty() {
-            self.status_msg = Some(if self.workspaces.get(ws_idx).is_some_and(|w| w.is_detached()) {
-                "a detached session has no repos — create a task in a workspace for code".into()
+            self.status_msg = Some(if self.workspaces.get(ws_idx).is_some_and(|w| w.is_adhoc()) {
+                "an adhoc session has no repos — create a task in a workspace for code".into()
             } else {
                 "no repos in workspace — add one on the Repos tab".into()
             });
@@ -3265,7 +3265,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
         "commands",
         &[
             (":n", "new task (:new)"),
-            (":ask", "ask a question, detached"),
+            (":ask", "ask in an adhoc session"),
             (":o", "open task (:open)"),
             (":r", "rename"),
             (":e", "edit repos (:edit-repos)"),
@@ -4328,10 +4328,10 @@ mod tests {
         assert!(row.repos.is_empty());
     }
 
-    /// `:ask` makes a session in the detached workspace, titled after the
+    /// `:ask` makes a session in the adhoc workspace, titled after the
     /// question, and selects it; without that workspace it says so.
     #[test]
-    fn ask_command_creates_a_detached_session() {
+    fn ask_command_creates_an_adhoc_session() {
         let mut c = screenshot::fixture_column();
         c.offline = true;
         c.workspaces = vec![ws("ledger", &["api"])];
@@ -4340,11 +4340,11 @@ mod tests {
             c.handle_key(plain(ch)).unwrap();
         }
         c.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
-        assert!(c.status_msg.as_deref().is_some_and(|m| m.contains("no detached workspace")), "{:?}", c.status_msg);
+        assert!(c.status_msg.as_deref().is_some_and(|m| m.contains("no adhoc workspace")), "{:?}", c.status_msg);
 
-        let mut detached = ws("detached", &[]);
-        detached.config.kind = crate::workspace::DETACHED_KIND.into();
-        c.workspaces.push(detached);
+        let mut adhoc = ws("adhoc", &[]);
+        adhoc.config.kind = crate::workspace::ADHOC_KIND.into();
+        c.workspaces.push(adhoc);
         for ch in ":ask how does sweep work?".chars() {
             c.handle_key(plain(ch)).unwrap();
         }

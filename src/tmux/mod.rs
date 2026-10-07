@@ -827,7 +827,7 @@ pub struct TaskWindow<'a> {
     /// its window (and its agent) running, but not your screen.
     pub detached: bool,
     /// Just the agent, full-window: no nvim on `TASK.md`, no shell. For a
-    /// task without worktrees (a detached session, a question about a
+    /// task without worktrees (an adhoc session, a question about a
     /// workspace) there is no code to edit beside it. Ignored when
     /// `layout_script` is set — the script decides everything.
     pub agent_only: bool,
