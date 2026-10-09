@@ -349,6 +349,11 @@ set -g allow-passthrough on
 # this a link printed in a pane reaches the client as plain text.
 set -as terminal-features ",*:hyperlinks"
 set -g mouse on
+# OSC 52 copies from programs in a pane (nvim with its osc52 clipboard, a
+# remote shell) reach the attached terminal — for `tenx web`, the browser's
+# clipboard on whatever device it runs. The default (`external`) lets only
+# tmux's own copy-mode copies out.
+set -s set-clipboard on
 set -g history-limit 50000
 set -g renumber-windows on
 set -g set-titles on
@@ -1070,6 +1075,7 @@ mod tests {
         assert!(c.contains("set -s extended-keys on"));
         assert!(c.contains("set -g allow-passthrough on"));
         assert!(c.contains(",*:hyperlinks"));
+        assert!(c.contains("set -s set-clipboard on"));
         assert!(c.contains("#{?#{@tenx_status},#{E:@tenx_status},"));
         assert!(c.contains(",*:dim@"));
         assert!(c.contains("set -g window-style \"fg="));
