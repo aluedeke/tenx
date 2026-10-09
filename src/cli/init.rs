@@ -148,7 +148,7 @@ pub(crate) fn install_skills(ws_dir: &Path) -> Result<()> {
 }
 
 /// Every file `install_skills` writes, with what this binary writes there:
-/// the `/tenx` and `/standup` skills for Claude (`.claude/skills`) and in
+/// the `/tenx`, `/standup` and `/pr-watch` skills for Claude (`.claude/skills`) and in
 /// the portable shape Codex and pi read (`.agents/skills`, see
 /// [`portable_skill`]), and `AGENTS.md`. The one list installing,
 /// refreshing and `doctor` all work from.
@@ -162,6 +162,8 @@ fn skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
         (ws_dir.join(".agents/skills/tenx/SKILL.md"), portable_skill("tenx", TENX_SKILL_MD)),
         (ws_dir.join(".agents/skills/standup/SKILL.md"), portable_skill("standup", STANDUP_SKILL_MD)),
         (ws_dir.join("AGENTS.md"), AGENTS_MD.to_string()),
+        (ws_dir.join(".claude/skills/pr-watch/SKILL.md"), PR_WATCH_SKILL_MD.to_string()),
+        (ws_dir.join(".agents/skills/pr-watch/SKILL.md"), portable_skill("pr-watch", PR_WATCH_SKILL_MD)),
     ];
     if crate::workspace::load(ws_dir).is_ok_and(|ws| ws.is_adhoc()) {
         files.extend(adhoc_skill_files(ws_dir));
@@ -178,19 +180,39 @@ fn adhoc_skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
 }
 
 /// Bring a workspace's installed skills up to date (`tenx_core::skills` has
-/// the rule): only files that exist are looked at — installing them is
-/// `tenx init`'s opt-in — a stale one is rewritten, an edited one is left
-/// alone. Returns each file's state as found, for `doctor`. Best-effort: a
-/// file that can't be rewritten stays `Stale` in the result.
+/// the rule): a stale file is rewritten, an edited one is left alone. A
+/// missing one is added only to a skills directory that already holds the
+/// `/tenx` skill — installing skills at all is `tenx init`'s opt-in, so a
+/// skill a newer tenx ships reaches workspaces that took the others, and no
+/// one else. Returns each file's state as found (an added one as `Current`,
+/// updated), for `doctor`. Best-effort: a file that can't be rewritten stays
+/// `Stale` in the result, one that can't be added is left out.
 pub fn refresh_skills(ws_dir: &Path) -> Vec<(PathBuf, SkillState, bool)> {
     let mut found = Vec::new();
     for (path, current) in skill_files(ws_dir) {
-        let Ok(installed) = std::fs::read_to_string(&path) else { continue };
+        let Ok(installed) = std::fs::read_to_string(&path) else {
+            if skills_opted_in(&path) && write_new(&path, &current).is_ok() {
+                found.push((path, SkillState::Current, true));
+            }
+            continue;
+        };
         let state = skill_state(&installed, &current, SHIPPED_SKILLS);
         let updated = state == SkillState::Stale && std::fs::write(&path, &current).is_ok();
         found.push((path, state, updated));
     }
     found
+}
+
+/// Whether the skills directory `skill` (`<dir>/<name>/SKILL.md`) belongs to
+/// has the `/tenx` skill — the sign the workspace took tenx's skills there.
+fn skills_opted_in(skill: &Path) -> bool {
+    skill.parent().and_then(Path::parent).is_some_and(|dir| dir.join("tenx/SKILL.md").is_file())
+}
+
+fn write_new(path: &Path, content: &str) -> Result<()> {
+    std::fs::create_dir_all(path.parent().context("no parent")?)?;
+    std::fs::write(path, content)?;
+    Ok(())
 }
 
 /// [`refresh_skills`] over every registered workspace — what launching
@@ -256,6 +278,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x00830c2006515923, // orchestrate portable
     0xc50677a36b5310f8, // orchestrate: detached → adhoc
     0x40d44ff6a7fc8c16, // orchestrate: detached → adhoc portable
+    0xa70ba7c18cccfd27, // pr-watch
+    0x7d1faf924cac587f, // pr-watch portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
@@ -265,6 +289,7 @@ fn prompt_yes_no(question: &str) -> Result<bool> {
 
 const TENX_SKILL_MD: &str = include_str!("skills/tenx.md");
 const ORCHESTRATE_SKILL_MD: &str = include_str!("skills/orchestrate.md");
+const PR_WATCH_SKILL_MD: &str = include_str!("skills/pr-watch.md");
 
 /// Rewrite a Claude skill into the portable Agent-Skills shape: a `name:` +
 /// `description:` header (dropping `allowed-tools`, which not every agent
@@ -471,11 +496,17 @@ mod tests {
         std::fs::write(stale, old).unwrap();
         std::fs::write(edited, "my own AGENTS.md\n").unwrap();
 
-        // Not shipped → both edited, nothing touched; missing files not created.
+        // Not shipped → both edited, nothing touched. The `/tenx` skill is
+        // there (`files[0]`), so its directory's missing skills are added;
+        // `.agents/skills` has none, so nothing is added there.
         let found = refresh_skills(&ws);
-        assert_eq!(found.len(), 2);
-        assert!(found.iter().all(|(_, s, updated)| *s == SkillState::Edited && !updated));
-        assert!(!files[1].0.exists());
+        let edited_found: Vec<_> = found.iter().filter(|(_, s, _)| *s == SkillState::Edited).collect();
+        assert_eq!(edited_found.len(), 2);
+        assert!(edited_found.iter().all(|(_, _, updated)| !updated));
+        let pr_watch = ws.join(".claude/skills/pr-watch/SKILL.md");
+        assert_eq!(std::fs::read_to_string(&pr_watch).unwrap(), PR_WATCH_SKILL_MD);
+        assert!(files[1].0.exists(), "standup sits next to /tenx, so it is added too");
+        assert!(!ws.join(".agents/skills/pr-watch/SKILL.md").exists());
 
         // Reset takes tenx's version and keeps the edited copy.
         let replaced = reset_skills(&ws).unwrap();

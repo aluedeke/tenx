@@ -12,7 +12,7 @@ mod workspace;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, RepoCommands, SecretsCommands, TaskCommands};
+use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, PrCommands, RepoCommands, SecretsCommands, TaskCommands};
 use std::env;
 
 fn main() {
@@ -61,6 +61,14 @@ fn run() -> Result<()> {
             }
             RepoCommands::Fetch { name } => {
                 cli::repo::fetch(name.as_deref())?;
+            }
+        },
+
+        Some(Commands::Pr { command }) => match command {
+            PrCommands::Wait { pr, since, interval, timeout } => {
+                let interval = cli::task::parse_duration(&interval)?;
+                let timeout = cli::task::parse_duration(&timeout)?;
+                cli::prwatch::wait(pr.as_deref(), since.as_deref(), interval, timeout)?;
             }
         },
 
