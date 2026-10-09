@@ -738,3 +738,17 @@ test('a dead key (US International) types its composed character once', async ({
   await page.waitForTimeout(300);
   expect(binary.join('')).toBe("ö'");
 });
+
+test('a tmux copy (OSC 52 with no target) reaches the browser clipboard', async ({ page, context, isMobile }) => {
+  test.skip(isMobile, 'same code path');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/');
+  await expect(page.locator('.xterm')).toBeVisible();
+  await page.locator('.xterm-helper-textarea').focus();
+  // The mock echoes what is typed, so the terminal receives what tmux sends
+  // when a selection is copied: ESC ]52;;<base64> BEL, the target left empty.
+  await page.keyboard.press('Escape');
+  await page.keyboard.insertText(`]52;;${Buffer.from('from nvim').toString('base64')}`);
+  await page.keyboard.press('Control+g');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('from nvim');
+});

@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { imagesIn } from '@/lib/paste';
+import { TerminalClipboard } from '@/lib/clipboard';
 import { openExternal } from '@/lib/links';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
@@ -145,7 +146,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.loadAddon(fit);
       // URLs spotted in the text: same.
       xterm.loadAddon(new WebLinksAddon((_ev, uri) => openExternal(uri)));
-      xterm.loadAddon(new ClipboardAddon());
+      // Programs' OSC 52 copies (tmux's selection, an agent's copy): the
+      // browser clipboard, whatever target they name (lib/clipboard).
+      xterm.loadAddon(new ClipboardAddon(undefined, new TerminalClipboard()));
       xterm.open(host.current);
       // WebGL on desktops only: a phone's grid is small enough for the DOM
       // renderer, and mobile GPUs are where WebGL draws nothing. `?renderer=`
