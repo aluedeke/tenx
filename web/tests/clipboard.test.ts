@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { choose, type ClipItem } from '../src/lib/clipboard.ts';
+import { choose, TerminalClipboard, type ClipItem } from '../src/lib/clipboard.ts';
 
 const item = (parts: Record<string, string>): ClipItem => ({
   types: Object.keys(parts),
@@ -32,4 +32,28 @@ test('an image alone is uploaded', async () => {
 test('nothing usable is nothing', async () => {
   assert.equal(await choose([item({ 'text/plain': '   ' })], strip), null);
   assert.equal(await choose([], strip), null);
+});
+
+const fakeClipboard = (initial = '') => {
+  const state = { text: initial };
+  return { state, clipboard: { readText: async () => state.text, writeText: async (t: string) => void (state.text = t) } };
+};
+
+test('a copy with no target (how tmux copies) reaches the clipboard', async () => {
+  const { state, clipboard } = fakeClipboard();
+  await new TerminalClipboard(() => clipboard).writeText('', 'from nvim');
+  assert.equal(state.text, 'from nvim');
+});
+
+test('a copy to the clipboard target still reaches it', async () => {
+  const { state, clipboard } = fakeClipboard();
+  await new TerminalClipboard(() => clipboard).writeText('c', 'from claude');
+  assert.equal(state.text, 'from claude');
+});
+
+test('a program reads the clipboard only when it asks for c', async () => {
+  const { clipboard } = fakeClipboard('secret');
+  const provider = new TerminalClipboard(() => clipboard);
+  assert.equal(await provider.readText('c'), 'secret');
+  assert.equal(await provider.readText(''), '');
 });
