@@ -345,8 +345,8 @@ pub enum PrCommands {
     /// Block until the PR has news, print it and exit
     ///
     /// News is any review or comment, from a person or a bot, and any check
-    /// that finished failing — newer than `--since`, or everything already
-    /// there without it. Comments containing `<!-- tenx:agent -->` (an
+    /// that finished failing — newer than `--since`, or than the last
+    /// `--since` given for this PR, or everything already there. Comments containing `<!-- tenx:agent -->` (an
     /// agent's own replies) are skipped. The output ends with the `next:`
     /// command that continues from here. Exits 0 with news, 10 when the PR
     /// was merged, 11 when it was closed, 3 on timeout.
@@ -354,7 +354,8 @@ pub enum PrCommands {
         /// PR URL or number (default: the PR of the current branch, or of
         /// the one repo in the current task that has one)
         pr: Option<String>,
-        /// Only news after this GitHub timestamp, as the last wait printed it
+        /// Only news after this GitHub timestamp, as the last wait printed it.
+        /// Saved per PR: a wait without it resumes from the last one given
         #[arg(long)]
         since: Option<String>,
         /// Time between checks: "30s", "2m"
