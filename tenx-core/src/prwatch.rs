@@ -114,6 +114,19 @@ pub fn parse_pr_url(url: &str) -> Option<(String, u64)> {
     }
 }
 
+/// Where a wait starts: the `--since` it was given, else the one saved for
+/// the PR. The second value is whether to save the first: a wait started
+/// with `--since` means the agent handled everything up to it, so that
+/// point is safe to resume from after a restart that lost the `next:` line.
+/// A cursor saved when news is *printed* would not be: an agent that died
+/// while handling it would skip it.
+pub fn start_cursor(arg: Option<&str>, saved: Option<&str>) -> (Option<String>, bool) {
+    match arg {
+        Some(a) => (Some(a.to_string()), true),
+        None => (saved.filter(|s| valid_cursor(s)).map(str::to_string), false),
+    }
+}
+
 /// Whether `s` looks like a GitHub timestamp, the only form a cursor takes.
 pub fn valid_cursor(s: &str) -> bool {
     let b = s.as_bytes();
@@ -142,7 +155,10 @@ pub fn poll(view: &Value, lines: &[Value], since: Option<&str>) -> Option<Poll> 
         // A draft review isn't sent yet; a dismissed one no longer counts;
         // an empty "commented" review only wraps line comments, reported
         // on their own below.
-        if state == "PENDING" || state == "DISMISSED" || (state == "COMMENTED" && body.trim().is_empty()) {
+        // An approval without words asks for nothing — and some bots approve
+        // every push.
+        let empty = body.trim().is_empty();
+        if state == "PENDING" || state == "DISMISSED" || (empty && (state == "COMMENTED" || state == "APPROVED")) {
             continue;
         }
         seen.push(at.to_string());
@@ -410,6 +426,27 @@ mod tests {
         assert_eq!(p.events[0].body.chars().count(), BODY_LIMIT + 1);
         assert_eq!(clip("<!-- state {} -->\nPlan: 1 to change <!-- x -->ok"), "Plan: 1 to change ok");
         assert_eq!(clip("open <!-- never closed"), "open");
+    }
+
+    #[test]
+    fn empty_approvals_are_not_news() {
+        let mut v = view();
+        v["reviews"] = json!([{"author": {"login": "github-actions"}, "state": "APPROVED", "body": "", "submittedAt": "2026-10-09T12:00:00Z"}]);
+        assert!(poll(&v, &[], Some("2026-10-09T11:59:00Z")).unwrap().events.is_empty());
+        v["reviews"][0]["body"] = json!("LGTM, one nit inline");
+        assert_eq!(poll(&v, &[], Some("2026-10-09T11:59:00Z")).unwrap().events.len(), 1);
+    }
+
+    #[test]
+    fn the_start_cursor_survives_a_lost_next_line() {
+        let a = "2026-10-09T10:00:00Z";
+        let b = "2026-10-09T11:00:00Z";
+        assert_eq!(start_cursor(Some(a), None), (Some(a.into()), true));
+        assert_eq!(start_cursor(None, Some(a)), (Some(a.into()), false));
+        assert_eq!(start_cursor(None, None), (None, false));
+        assert_eq!(start_cursor(None, Some("garbage")), (None, false));
+        // An explicit --since wins, earlier or later than the saved one.
+        assert_eq!(start_cursor(Some(a), Some(b)), (Some(a.into()), true));
     }
 
     #[test]

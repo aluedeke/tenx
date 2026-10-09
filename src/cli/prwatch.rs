@@ -27,6 +27,16 @@ pub fn wait(pr: Option<&str>, since: Option<&str>, interval: Duration, timeout: 
     }
     let url = resolve(pr)?;
     let (repo, number) = prwatch::parse_pr_url(&url).with_context(|| format!("not a pull request URL: {url}"))?;
+    let saved_at = cursor_file(&repo, number);
+    let saved = saved_at.as_deref().and_then(|p| std::fs::read_to_string(p).ok());
+    let (since, save) = prwatch::start_cursor(since, saved.as_deref().map(str::trim));
+    let since = since.as_deref();
+    if save
+        && let (Some(path), Some(at)) = (&saved_at, since)
+    {
+        // Best-effort: without it a restart only repeats news, never loses it.
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(path)).and_then(|_| std::fs::write(path, at));
+    }
 
     let start = Instant::now();
     let mut first = true;
@@ -61,6 +71,14 @@ fn finish(outcome: Outcome, number: u64) -> Result<()> {
         Outcome::TimedOut => format!("no news on PR #{number} yet — run the `next:` command to keep waiting"),
     };
     Err(crate::cli::secrets::Exit { code: outcome.exit_code(), message }.into())
+}
+
+/// Where the point a PR's agent has handled up to is kept between waits:
+/// `~/.config/tenx/pr-cursors/<owner>-<repo>-<n>`. Outside the task, since
+/// it belongs to the PR, not to a task directory.
+fn cursor_file(repo: &str, number: u64) -> Option<std::path::PathBuf> {
+    let name = format!("{}-{number}", repo.replace('/', "-"));
+    Some(crate::workspace::home_dir().ok()?.join(".config").join("tenx").join("pr-cursors").join(name))
 }
 
 /// The PR document and its inline review comments, one JSON object each.
