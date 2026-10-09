@@ -3599,7 +3599,10 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
             pieces.push(Span::styled(workspace::format_age(changed), dim));
         }
         for pr in &row.live.prs {
-            pieces.push(Span::styled(pr.chip(), Style::default().fg(pr_rgb(&pr.checks).color())));
+            pieces.push(Span::styled(row.live.chip(pr), Style::default().fg(pr_rgb(&pr.checks).color())));
+        }
+        for chip in row.live.watch_only_chips() {
+            pieces.push(Span::styled(chip, Style::default().fg(pr_rgb("").color())));
         }
         if !row.live.ports.is_empty() {
             let ports: Vec<String> = row.live.ports.iter().map(|p| format!(":{p}")).collect();

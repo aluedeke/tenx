@@ -405,12 +405,16 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
 
     // A task with no window (closed, swept, server gone) has no ports — clear
     // them, don't keep showing the last observed set.
+    // Same for the PRs a `tenx pr wait` in the task is waiting on.
     let ports = crate::live::ports_by_window();
+    let waits = crate::cli::prwatch::waits();
     for t in targets {
         let new_ports = ports.get(&t.slug).cloned().unwrap_or_default();
+        let watching = crate::cli::prwatch::watched_in(&waits, &t.path);
         let mut live = crate::live::read(&t.path);
-        if live.ports != new_ports {
+        if live.ports != new_ports || live.watching != watching {
             live.ports = new_ports;
+            live.watching = watching;
             changed |= crate::live::write(&t.path, &live).is_ok();
         }
     }

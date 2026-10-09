@@ -521,7 +521,13 @@ impl Column {
                     .collect(),
                 agent: (row.agent != crate::agent::AgentKind::Claude).then(|| row.agent.as_str().to_string()),
                 age: row.changed.filter(|_| rested).map(workspace::format_age),
-                prs: row.live.prs.iter().map(|pr| Chip { label: pr.chip(), fg: pr_rgb(&pr.checks).hex(), bg: None }).collect(),
+                prs: row
+                    .live
+                    .prs
+                    .iter()
+                    .map(|pr| Chip { label: row.live.chip(pr), fg: pr_rgb(&pr.checks).hex(), bg: None })
+                    .chain(row.live.watch_only_chips().into_iter().map(|label| Chip { label, fg: pr_rgb("").hex(), bg: None }))
+                    .collect(),
                 ports: row.live.ports.clone(),
             })));
             for (k, a) in row.subagents.iter().enumerate() {

@@ -84,6 +84,7 @@ fn row(f: Fx) -> Row {
             ports: f.ports,
             prs: f.prs,
             pr_checked: 0,
+            watching: vec![],
         },
         repos: vec![],
         agent: crate::agent::AgentKind::Claude,

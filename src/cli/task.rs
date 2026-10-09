@@ -718,6 +718,7 @@ pub fn sweep_candidates(after: Duration, idle_after: Duration) -> Vec<SweepActio
     let sessions = crate::workspace::sessions::sessions();
     let signals = crate::tmux::signals_from(&live);
     let pane_paths = crate::tmux::pane_paths_by_window().unwrap_or_default();
+    let waits = crate::cli::prwatch::waits();
     for ws in crate::workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
             if crate::tmux::is_reserved_slug(&task.name) {
@@ -745,6 +746,7 @@ pub fn sweep_candidates(after: Duration, idle_after: Duration) -> Vec<SweepActio
                 quiet_since: w.last_activity,
                 active: w.active,
                 pinned: is_pinned(&task.path),
+                watching: !crate::cli::prwatch::watched_in(&waits, &task.path).is_empty(),
             };
             let Some(reason) = tenx_core::sweep::sweep_reason(&input, after, idle_after, std::time::SystemTime::now()) else {
                 continue;

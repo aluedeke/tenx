@@ -366,6 +366,12 @@ pub enum PrCommands {
         #[arg(long, default_value = "25m")]
         timeout: String,
     },
+    /// List the PR waits running now, and the task each runs in
+    List {
+        /// One JSON array, for scripts
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

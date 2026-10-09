@@ -10,12 +10,40 @@
 //! clock. GitHub writes every timestamp as `YYYY-MM-DDTHH:MM:SSZ`, which
 //! orders correctly as a string.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 /// What an agent puts in every comment it posts on a watched PR, so the
 /// watch doesn't report the agent's own replies as feedback. An HTML
 /// comment: invisible on GitHub.
 pub const AGENT_MARKER: &str = "<!-- tenx:agent -->";
+
+/// A running `tenx pr wait`, as it registers itself
+/// (`~/.config/tenx/pr-waits/<pid>.json`) for the column, `tenx pr list` and
+/// sweep. Written at start, removed at exit; one left by a killed wait is
+/// recognised by its dead pid.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitRecord {
+    pub pid: u32,
+    pub url: String,
+    pub number: u64,
+    /// Where the wait was started — the agent's directory, inside its task.
+    pub cwd: PathBuf,
+    /// The cursor it waits from.
+    #[serde(default)]
+    pub since: Option<String>,
+    /// Unix seconds.
+    pub started: u64,
+}
+
+/// The PR numbers waited on from inside `task_dir`, sorted, once each.
+pub fn watched_in(records: &[WaitRecord], task_dir: &Path) -> Vec<u64> {
+    let mut out: Vec<u64> = records.iter().filter(|r| r.cwd.starts_with(task_dir)).map(|r| r.number).collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
 
 /// How much of a comment body is printed; the URL has the rest.
 const BODY_LIMIT: usize = 1500;
@@ -447,6 +475,14 @@ mod tests {
         assert_eq!(start_cursor(None, Some("garbage")), (None, false));
         // An explicit --since wins, earlier or later than the saved one.
         assert_eq!(start_cursor(Some(a), Some(b)), (Some(a.into()), true));
+    }
+
+    #[test]
+    fn waits_belong_to_the_task_they_run_in() {
+        let rec = |cwd: &str, number| WaitRecord { pid: 1, url: String::new(), number, cwd: cwd.into(), since: None, started: 0 };
+        let recs = vec![rec("/ws/tasks/a/api", 12), rec("/ws/tasks/a", 12), rec("/ws/tasks/a", 3), rec("/ws/tasks/ab", 9)];
+        assert_eq!(watched_in(&recs, Path::new("/ws/tasks/a")), vec![3, 12]);
+        assert!(watched_in(&recs, Path::new("/ws/tasks/b")).is_empty());
     }
 
     #[test]

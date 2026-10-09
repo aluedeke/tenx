@@ -20,6 +20,30 @@ pub struct Live {
     /// When the PRs were last looked up (unix seconds); 0 = never.
     #[serde(default)]
     pub pr_checked: u64,
+    /// PR numbers a `tenx pr wait` started in this task is waiting on right
+    /// now (`prwatch::watched_in`), refreshed every watcher tick.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub watching: Vec<u64>,
+}
+
+/// What a PR chip gains while a wait is running on it.
+pub const WATCHING: &str = "👀";
+
+impl Live {
+    /// `pr`'s chip, marked when a wait is running on it.
+    pub fn chip(&self, pr: &PrInfo) -> String {
+        if self.watching.contains(&pr.number) { format!("{} {WATCHING}", pr.chip()) } else { pr.chip() }
+    }
+
+    /// Chips for waits on PRs the PR lookup hasn't found for this task (a
+    /// repo it doesn't know, or not looked up yet): `#12 👀`.
+    pub fn watch_only_chips(&self) -> Vec<String> {
+        self.watching
+            .iter()
+            .filter(|n| !self.prs.iter().any(|p| p.number == **n))
+            .map(|n| format!("#{n} {WATCHING}"))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,6 +193,18 @@ mod tests {
     }
 
     #[test]
+    fn watched_prs_are_marked() {
+        let json = serde_json::json!({"number": 12, "state": "OPEN", "url": "u", "statusCheckRollup": []});
+        let pr = summarize_pr("api", &json).unwrap();
+        let mut l = Live { prs: vec![pr.clone()], watching: vec![12, 30], ..Default::default() };
+        assert_eq!(l.chip(&pr), "#12 👀");
+        assert_eq!(l.watch_only_chips(), vec!["#30 👀".to_string()]);
+        l.watching.clear();
+        assert_eq!(l.chip(&pr), "#12");
+        assert!(l.watch_only_chips().is_empty());
+    }
+
+    #[test]
     fn pr_summary_and_chip() {
         let json = serde_json::json!({
             "number": 12, "state": "OPEN", "url": "https://x/pull/12", "isDraft": false,
@@ -196,7 +232,7 @@ mod tests {
     fn live_roundtrips_and_defaults() {
         let l: Live = serde_json::from_str("{}").unwrap();
         assert_eq!(l, Live::default());
-        let l = Live { ports: vec![3000], prs: vec![], pr_checked: 5 };
+        let l = Live { ports: vec![3000], prs: vec![], pr_checked: 5, watching: vec![] };
         let back: Live = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
         assert_eq!(back, l);
     }
