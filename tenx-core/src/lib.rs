@@ -14,6 +14,7 @@ pub mod keyboard;
 pub mod live;
 pub mod orchestrate;
 pub mod progress;
+pub mod prwatch;
 pub mod agent_panel;
 pub mod column;
 pub mod secrets;

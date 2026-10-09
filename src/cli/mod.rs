@@ -6,6 +6,7 @@ pub mod adhoc;
 pub mod drive;
 pub mod init;
 pub mod notify;
+pub mod prwatch;
 pub mod repo;
 pub mod secrets;
 pub mod session_event;
@@ -97,6 +98,11 @@ pub enum Commands {
         /// Collect activity since this ISO timestamp (default: last standup, or start of yesterday)
         #[arg(long)]
         since: Option<String>,
+    },
+    /// Wait for news on a pull request: reviews, comments, failed checks
+    Pr {
+        #[command(subcommand)]
+        command: PrCommands,
     },
     /// Manage Claude Code hooks for the active workspace
     Hooks {
@@ -332,6 +338,33 @@ pub enum SecretsCommands {
     /// Show sealed/unlocked/pending state across all tasks (metadata only —
     /// never secret values)
     Status,
+}
+
+#[derive(Subcommand)]
+pub enum PrCommands {
+    /// Block until the PR has news, print it and exit
+    ///
+    /// News is any review or comment, from a person or a bot, and any check
+    /// that finished failing — newer than `--since`, or everything already
+    /// there without it. Comments containing `<!-- tenx:agent -->` (an
+    /// agent's own replies) are skipped. The output ends with the `next:`
+    /// command that continues from here. Exits 0 with news, 10 when the PR
+    /// was merged, 11 when it was closed, 3 on timeout.
+    Wait {
+        /// PR URL or number (default: the PR of the current branch, or of
+        /// the one repo in the current task that has one)
+        pr: Option<String>,
+        /// Only news after this GitHub timestamp, as the last wait printed it
+        #[arg(long)]
+        since: Option<String>,
+        /// Time between checks: "30s", "2m"
+        #[arg(long, default_value = "60s")]
+        interval: String,
+        /// Give up after this long: "10m", "2h". The default fits a 30-minute
+        /// limit on background commands (Claude Code's)
+        #[arg(long, default_value = "25m")]
+        timeout: String,
+    },
 }
 
 #[derive(Subcommand)]
