@@ -5,6 +5,16 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.4.0] - 2026-10-09
+
+### Added
+
+- **pr:** Wake agents on PR feedback with `tenx pr wait`
+- **pr:** Resume `tenx pr wait` from the last point the agent handled
+- **pr:** Show running PR waits in the column and keep their windows
+
+[0.4.0]: https://github.com/aluedeke/tenx/compare/v0.3.3...v0.4.0
+
 ## [0.3.3] - 2026-10-09
 
 ### Fixed
