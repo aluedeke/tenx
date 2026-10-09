@@ -278,8 +278,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x00830c2006515923, // orchestrate portable
     0xc50677a36b5310f8, // orchestrate: detached → adhoc
     0x40d44ff6a7fc8c16, // orchestrate: detached → adhoc portable
-    0xdbba5d9e1db56dfa, // pr-watch
-    0xf6e22e941f864e12, // pr-watch portable
+    0x8998d209f9f59751, // pr-watch
+    0xb8458f20bb5a69d9, // pr-watch portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {

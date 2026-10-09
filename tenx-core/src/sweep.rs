@@ -47,13 +47,16 @@ pub struct SweepInput {
     pub active: bool,
     /// Explicit opt-out.
     pub pinned: bool,
+    /// A `tenx pr wait` is running in the task: its agent looks done but is
+    /// waiting for PR feedback, and closing the window would end the wait.
+    pub watching: bool,
 }
 
 /// `Some(reason)` if this window should be closed now, `None` to leave it.
-/// Never closes: the active window, a pinned task, or a `Blocked`/`Working`
-/// task — those are exactly the windows a prompt or an agent is waiting on.
+/// Never closes: the active window, a pinned task, one with a running
+/// `tenx pr wait`, or a `Blocked`/`Working` task — those are exactly the windows a prompt or an agent is waiting on.
 pub fn sweep_reason(input: &SweepInput, after: Duration, idle_after: Duration, now: SystemTime) -> Option<String> {
-    if input.active || input.pinned {
+    if input.active || input.pinned || input.watching {
         return None;
     }
     match input.status {
@@ -89,7 +92,7 @@ mod tests {
     }
 
     fn input(status: TaskStatus, changed: Option<u64>) -> SweepInput {
-        SweepInput { status, changed: changed.map(at), quiet_since: Some(at(0)), active: false, pinned: false }
+        SweepInput { status, changed: changed.map(at), quiet_since: Some(at(0)), active: false, pinned: false, watching: false }
     }
 
     const NOW: u64 = 100_000;
@@ -102,6 +105,14 @@ mod tests {
         let mut i = input(TaskStatus::Idle, None);
         i.pinned = true;
         assert!(sweep_reason(&i, DEFAULT_SWEEP_AFTER, DEFAULT_IDLE_GRACE, at(NOW)).is_none());
+    }
+
+    #[test]
+    fn a_task_waiting_on_its_pr_is_never_swept() {
+        let mut i = input(TaskStatus::Done, Some(0));
+        assert!(sweep_reason(&i, Duration::ZERO, Duration::ZERO, at(NOW)).is_some());
+        i.watching = true;
+        assert!(sweep_reason(&i, Duration::ZERO, Duration::ZERO, at(NOW)).is_none());
     }
 
     #[test]

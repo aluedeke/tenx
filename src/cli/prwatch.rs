@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use tenx_core::prwatch::{self, Outcome};
+use tenx_core::prwatch::{self, Outcome, WaitRecord};
 
 /// `tenx pr wait`. `pr` is a URL or number; without it, the PR of the
 /// current directory's branch, or of the one repo in the current task that
@@ -37,6 +37,9 @@ pub fn wait(pr: Option<&str>, since: Option<&str>, interval: Duration, timeout: 
         // Best-effort: without it a restart only repeats news, never loses it.
         let _ = std::fs::create_dir_all(path.parent().unwrap_or(path)).and_then(|_| std::fs::write(path, at));
     }
+
+    // Seen by the column, `tenx pr list` and sweep for as long as it runs.
+    let _registered = register(&url, number, since);
 
     let start = Instant::now();
     let mut first = true;
@@ -144,4 +147,109 @@ fn pr_url(args: &[&str], dir: Option<&Path>) -> Result<String> {
         bail!("no pull request");
     }
     Ok(url)
+}
+
+/// `~/.config/tenx/pr-waits/`: one `<pid>.json` per running wait.
+fn waits_dir() -> Option<std::path::PathBuf> {
+    Some(crate::workspace::home_dir().ok()?.join(".config").join("tenx").join("pr-waits"))
+}
+
+/// A wait's registration; removing the file when it drops covers every
+/// ordinary exit. A wait killed by a signal leaves it behind for [`waits`]
+/// to prune.
+struct Registered(std::path::PathBuf);
+
+impl Drop for Registered {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn register(url: &str, number: u64, since: Option<&str>) -> Option<Registered> {
+    let dir = waits_dir()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    let cwd = std::env::current_dir().ok()?;
+    let rec = WaitRecord {
+        pid: std::process::id(),
+        url: url.to_string(),
+        number,
+        cwd: cwd.canonicalize().unwrap_or(cwd),
+        since: since.map(str::to_string),
+        started: crate::live::now_secs(),
+    };
+    let path = dir.join(format!("{}.json", rec.pid));
+    std::fs::write(&path, serde_json::to_vec(&rec).ok()?).ok()?;
+    Some(Registered(path))
+}
+
+/// Every wait running now. A record whose process is gone — or is no longer
+/// a `tenx pr wait`, its pid reused — is deleted on the way.
+pub fn waits() -> Vec<WaitRecord> {
+    let Some(entries) = waits_dir().and_then(|d| std::fs::read_dir(d).ok()) else { return Vec::new() };
+    let mut out = Vec::new();
+    for path in entries.flatten().map(|e| e.path()) {
+        let rec: Option<WaitRecord> = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok());
+        match rec {
+            Some(rec) if is_wait(rec.pid) => out.push(rec),
+            _ => {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+    out.sort_by_key(|r| r.started);
+    out
+}
+
+fn is_wait(pid: u32) -> bool {
+    crate::workspace::sessions::pid_alive(pid)
+        && crate::live::run_capture("ps", &["-o", "command=", "-p", &pid.to_string()]).contains(" pr wait")
+}
+
+/// The PR numbers waited on from inside `task_dir`.
+pub fn watched_in(records: &[WaitRecord], task_dir: &Path) -> Vec<u64> {
+    if records.is_empty() {
+        return Vec::new();
+    }
+    let dir = task_dir.canonicalize().unwrap_or_else(|_| task_dir.to_path_buf());
+    prwatch::watched_in(records, &dir)
+}
+
+/// `tenx pr list`: every running wait, with the task it runs in.
+pub fn list(json: bool) -> Result<()> {
+    let waits = waits();
+    let tasks: Vec<(String, std::path::PathBuf)> = crate::workspace::registered_workspaces()
+        .iter()
+        .flat_map(|ws| {
+            let name = ws.config.name.clone();
+            ws.tasks().unwrap_or_default().into_iter().map(move |t| {
+                let path = t.path.canonicalize().unwrap_or(t.path);
+                (format!("{name}/{}", t.name), path)
+            })
+        })
+        .collect();
+    let task_of = |w: &WaitRecord| tasks.iter().find(|(_, p)| w.cwd.starts_with(p)).map(|(n, _)| n.clone());
+    if json {
+        let rows: Vec<Value> = waits
+            .iter()
+            .map(|w| {
+                serde_json::json!({
+                    "pid": w.pid, "url": w.url, "number": w.number, "task": task_of(w),
+                    "cwd": w.cwd, "since": w.since, "started": w.started,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    if waits.is_empty() {
+        println!("no PR waits running");
+        return Ok(());
+    }
+    let now = crate::live::now_secs();
+    for w in &waits {
+        let age = tenx_core::time::format_duration(Duration::from_secs(now.saturating_sub(w.started)));
+        let task = task_of(w).unwrap_or_else(|| w.cwd.display().to_string());
+        println!("{}  {task}  waiting {age}  pid {}", w.url, w.pid);
+    }
+    Ok(())
 }

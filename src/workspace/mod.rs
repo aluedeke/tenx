@@ -620,8 +620,9 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "ports": live.ports,
         "prs": live.prs.iter().map(|p| serde_json::json!({
             "repo": p.repo, "number": p.number, "state": p.state, "url": p.url,
-            "draft": p.draft, "review": p.review, "checks": p.checks, "chip": p.chip(),
+            "draft": p.draft, "review": p.review, "checks": p.checks, "chip": live.chip(p),
         })).collect::<Vec<_>>(),
+        "watching": live.watching,
         "ws": ws.config.name,
         "ws_dir": ws.dir,
         "slug": task.name,

@@ -70,6 +70,7 @@ fn run() -> Result<()> {
                 let timeout = cli::task::parse_duration(&timeout)?;
                 cli::prwatch::wait(pr.as_deref(), since.as_deref(), interval, timeout)?;
             }
+            PrCommands::List { json } => cli::prwatch::list(json)?,
         },
 
         Some(Commands::Hooks { command }) => match command {

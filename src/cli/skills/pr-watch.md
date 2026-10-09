@@ -9,7 +9,7 @@ allowed-tools: Bash Read Edit Write
 
 1. **Find the PR**: the `PR:` line in `TASK.md`, else `gh pr view --json url` in the worktree. Without an argument `tenx pr wait` finds it the same way.
 2. **First wait without `--since`**: `tenx pr wait <url>`. It returns at once with any feedback you haven't handled yet — all of it on a new PR.
-3. **Run every wait in the background** so the session stays free: in Claude Code, the Bash tool with `run_in_background: true`; you are called back when it exits. A harness without background commands runs it in the foreground. Tell the user the wait is running, and on which PR.
+3. **Run every wait in the background** so the session stays free: in Claude Code, the Bash tool with `run_in_background: true`; you are called back when it exits. A harness without background commands runs it in the foreground. Tell the user the wait is running, and on which PR. They see it as 👀 on the PR's chip in the tenx column and in `tenx pr list`, and sweep leaves the task's window open while it runs.
 4. **On exit, act on the exit code**:
    - `0`: news. Handle each event (below), then run the `next:` command from the output's last line. It carries `--since`, so nothing is reported twice.
    - `3`: timeout, nothing new. Run the `next:` command again.
