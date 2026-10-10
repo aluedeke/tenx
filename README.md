@@ -76,7 +76,7 @@ Prebuilt binaries for macOS and Linux, both Intel and ARM, are on the [releases 
 cargo install --locked --git https://github.com/aluedeke/tenx --tag v0.1.0
 ```
 
-The package is `tenx-cli` (the crates.io name `tenx` belongs to an unrelated project); the binary is `tenx` either way. From a checkout, `make install` does the same.
+The package is `tenx-cli` (the crates.io name `tenx` belongs to an unrelated project); the binary is `tenx` either way. On a Mac with Apple silicon it also builds `tenx-whisper` (speech to text for `tenx web`), which compiles whisper.cpp and so needs `cmake` (`brew install cmake`). From a checkout, `make install` does the same.
 
 Nothing else to place. tenx generates its own tmux config at `~/.config/tenx/tmux.conf` and runs its own tmux server on a dedicated socket, so your `~/.tmux.conf` is untouched.
 
@@ -234,6 +234,20 @@ To keep it running without a terminal — started at login, restarted if it exit
 Behind `tailscale serve` (HTTPS), the page installs as an app: on an iPhone or iPad, Safari's Share → **Add to Home Screen**; on Android or a desktop Chrome/Edge, the install button in the address bar. The installed app signs itself in on first launch and opens full screen.
 
 Tap the bell (🔕) in the column's top bar to get a notification whenever a task starts needing you — the same prompts `tenx` raises desktop notifications for, and never for a finished turn. Tapping one opens that task. On iPhone and iPad, notifications only work in the Home Screen app (iOS 16.4 or newer), not in a Safari tab, and need HTTPS. The app icon's badge counts the tasks waiting on you. Notifications are Web Push: the browser's push service (Apple, Google, Mozilla) carries them, encrypted end to end with keys only the browser and `tenx web` hold (`~/.config/tenx/web-push-vapid` and `web-push-subs.json`, readable only by you); `tenx web` must be running for them to be sent.
+
+### Speaking instead of typing
+
+Tap the microphone in the header (or in the key bar above a phone's keyboard, or press `Option+M`, `Alt+M` off a Mac), talk, and tap it again: what you said is typed into the terminal at the cursor, not sent, so you can read it before pressing Enter. The page only records; `tenx web` turns the recording into text on its own machine with [whisper.cpp](https://github.com/ggml-org/whisper.cpp), through `tenx-whisper`, a program that ships next to `tenx` on Macs with Apple silicon (Homebrew, the install script and `make install` all include it). Point it at a Whisper model in `~/.config/tenx/config.toml`:
+
+```toml
+[speech]
+model = "~/models/ggml-large-v3-turbo.bin"   # any whisper.cpp ggml model, e.g. one tuned on your voice
+prompt_file = "~/models/glossary.txt"        # optional: names and jargon to expect
+language = "auto"                            # optional: a code (en, de) or auto, the default
+idle_minutes = 10                            # optional: unload the model after this long unused
+```
+
+Download a model from [ggerganov/whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (`ggml-large-v3-turbo.bin` is a good start). `tenx web` starts `tenx-whisper` on the first recording (loading a large model takes a few seconds), restarts it if it dies, and stops it after `idle_minutes`, which gives its memory back; a changed `[speech]` applies to the next recording. Without a model the microphone says how to set one; nothing is transcribed in the browser. On Linux and Intel Macs `tenx-whisper` isn't included; there, and to use a `whisper-server` instead on any machine, set `TENX_WEB_STT_URL` (e.g. `http://127.0.0.1:8178/inference`). A recording without speech is not sent, since Whisper invents text for silence. The microphone needs HTTPS (`tailscale serve`). To choose the language on one device, set `localStorage['tenx.stt.language']` to a code (`de`) or `auto`.
 
 ## Sweep and pin
 

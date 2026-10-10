@@ -32,6 +32,12 @@ export function isFocusCycle(ev: KeyboardEvent, mac: boolean): boolean {
   return (ev.ctrlKey && !ev.altKey) || (!mac && ev.altKey && !ev.ctrlKey);
 }
 
+/** Option+M (Alt+M): start or stop the microphone, wherever the keyboard
+ * is. By the physical key — on a Mac layout Option+M types `µ`. */
+export function isMicToggle(ev: KeyboardEvent): boolean {
+  return ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && baseLetter(ev) === 'm';
+}
+
 /** Alt+n off macOS: ^n for the column. */
 export function isNewTaskAlias(ev: KeyboardEvent, mac: boolean): boolean {
   return !mac && ev.altKey && !ev.ctrlKey && !ev.metaKey && (baseLetter(ev) ?? ev.key.toLowerCase()) === 'n';

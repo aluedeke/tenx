@@ -31,3 +31,4 @@ pub mod service;
 pub mod trust;
 pub mod web;
 pub mod webpush;
+pub mod whisper;

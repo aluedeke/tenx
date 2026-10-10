@@ -31,6 +31,7 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
     let router = Router::new()
         .route("/ws", get(ws))
         .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
+        .route("/transcribe", post(transcribe).layer(DefaultBodyLimit::max(web::STT_MAX_BYTES)))
         .route("/push/key", get(push_key))
         .route("/push/subscribe", post(push_subscribe))
         .route("/push/unsubscribe", post(push_unsubscribe))
@@ -117,6 +118,8 @@ fn unauthorized(why: &str) -> Response {
 struct WsQuery {
     session: Option<String>,
     token: Option<String>,
+    /// `/transcribe`: the language spoken (a Whisper code or `auto`).
+    language: Option<String>,
 }
 
 async fn ws(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
@@ -149,7 +152,26 @@ async fn paste(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: H
     }
 }
 
-/// A request that changes something (`/paste`, `/push/*`): the cookie (or a
+/// `POST /transcribe[?language=]`: a recording (the body, its
+/// `Content-Type`) → `{"text": …}`, from the speech server on this machine
+/// (`transcribe.rs`). Guarded like `/paste`. `502` when the server is missing
+/// or fails.
+async fn transcribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let content_type = header_str(&headers, header::CONTENT_TYPE).unwrap_or("").to_string();
+    let language = q.language.as_deref().and_then(web::stt_language).map(str::to_string);
+    let done =
+        tokio::task::spawn_blocking(move || super::transcribe::transcribe(&content_type, &body, language.as_deref())).await;
+    match done {
+        Ok(Ok(text)) => json(serde_json::json!({ "text": text })),
+        Ok(Err(e)) => (StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// A request that changes something (`/paste`, `/push/*`, `/transcribe`): the cookie (or a
 /// dev origin's token) and an allowed `Origin`, as for `/ws` — so another
 /// site can't make this server write files or send pushes.
 fn authorize(app: &App, q: &WsQuery, headers: &HeaderMap) -> Result<(), Box<Response>> {

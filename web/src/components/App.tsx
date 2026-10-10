@@ -8,16 +8,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Column } from './Column';
-import { Header } from './Header';
+import { Header, type MicState } from './Header';
 import { KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
-import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
+import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isMicToggle, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText } from '@/lib/clipboard';
 import { textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
+import { Recording, hasSpeech, sttUnsupported, transcribe } from '@/lib/stt';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
 
@@ -69,6 +70,9 @@ export function App() {
   /** The notice is a button that brings the keyboard back (after 📎). */
   const [pastingTap, setPastingTap] = useState(false);
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
+  const [mic, setMic] = useState<MicState>('idle');
+  const [micSeconds, setMicSeconds] = useState(0);
+  const recording = useRef<Recording | null>(null);
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
   const wantTask = useRef<string | null>(null);
@@ -129,8 +133,8 @@ export function App() {
   }, []);
 
   // Latest state for the listeners registered once.
-  const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen });
-  state.current = { focus, visible, narrow, ctrlSticky, touch, kbOpen };
+  const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen, mic });
+  state.current = { focus, visible, narrow, ctrlSticky, touch, kbOpen, mic };
 
   // Inputs that change the column are numbered and kept until a view
   // acknowledges them, so the column can be drawn with their effect before
@@ -459,6 +463,12 @@ export function App() {
         cycle();
         return;
       }
+      if (isMicToggle(ev)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (!ev.repeat && state.current.mic !== 'transcribing') void toggleMicRef.current();
+        return;
+      }
       // A web form's own inputs type natively; the form handles Enter
       // (submit) and Escape (cancel) itself.
       if ((ev.target as Element | null)?.closest?.('.webform')) return;
@@ -635,6 +645,60 @@ export function App() {
       .catch((e) => notice(`test failed: ${e instanceof Error ? e.message : String(e)}`));
   }, [notice]);
 
+  /** The header's microphone: a tap starts recording, the next one stops it,
+   * and what was said is typed into the terminal (not sent: no Enter).
+   * `tenx web` transcribes it on its machine (lib/stt). */
+  const toggleMic = useCallback(async () => {
+    const diag = (message: string) => send({ type: 'log', message: `stt: ${message}` });
+    if (recording.current) {
+      const rec = recording.current;
+      recording.current = null;
+      setMic('transcribing');
+      try {
+        const audio = await rec.stop();
+        const seconds = audio.length / 16_000;
+        if (!hasSpeech(audio)) {
+          diag(`no speech in ${seconds.toFixed(1)} s`);
+          return notice('heard no speech');
+        }
+        const started = performance.now();
+        const text = await transcribe(audio);
+        diag(`${seconds.toFixed(1)} s → ${text.length} chars in ${Math.round(performance.now() - started)} ms`);
+        if (!text) return notice('heard nothing to type');
+        setFocus('terminal');
+        term.current?.paste(text + ' ');
+        term.current?.focus();
+      } catch (e) {
+        diag(`failed: ${e instanceof Error ? e.message : String(e)}`);
+        notice(`speech: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setMic('idle');
+      }
+      return;
+    }
+    const why = sttUnsupported();
+    if (why) return notice(why);
+    try {
+      // Straight from the tap: iOS asks for the microphone only inside one.
+      recording.current = await Recording.start();
+    } catch (e) {
+      diag(`no microphone: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+      return notice(`no microphone: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setMicSeconds(0);
+    setMic('recording');
+  }, [send, notice]);
+
+  const toggleMicRef = useRef(toggleMic);
+  toggleMicRef.current = toggleMic;
+
+  useEffect(() => {
+    if (mic !== 'recording') return;
+    const started = Date.now();
+    const t = setInterval(() => setMicSeconds(Math.floor((Date.now() - started) / 1000)), 250);
+    return () => clearInterval(t);
+  }, [mic]);
+
   /** The header's ☰ / ⟨: show the column with the keyboard in it, or hide
    * it and give the keyboard back to the terminal. */
   const toggleColumn = useCallback(() => {
@@ -707,6 +771,9 @@ export function App() {
         push={pushState}
         onPushToggle={togglePush}
         onPushTest={testPush}
+        mic={mic}
+        micSeconds={micSeconds}
+        onMic={toggleMic}
       />
       <div className="main">
         {visible && (
@@ -733,7 +800,7 @@ export function App() {
             onData={onTerminalData}
             onResize={(cols, rows) => send({ type: 'resize', cols, rows })}
             onBell={bell}
-            intercept={(ev) => isFocusCycle(ev, mac.current)}
+            intercept={(ev) => isFocusCycle(ev, mac.current) || isMicToggle(ev)}
             onFocus={() => {
               if (!state.current.narrow || !state.current.visible) setFocus('terminal');
             }}
@@ -755,6 +822,11 @@ export function App() {
               <button type="button" className="closed-open">
                 <span className="accent bold">⏎</span> open it here
               </button>
+            </div>
+          )}
+          {mic === 'transcribing' && (
+            <div className="toast" role="status" data-testid="mic-status">
+              turning speech into text…
             </div>
           )}
           {pasting && (
@@ -789,8 +861,10 @@ export function App() {
         }}
       />
       {/* The special keys only while the on-screen keyboard is up: they're for
-          typing, and a hardware keyboard (which never raises it) has them. */}
-      {touch && kbOpen && (
+          typing, and a hardware keyboard (which never raises it) has them.
+          And while the microphone is on: its stop button is here, even if
+          iOS took the keyboard down (asking for the microphone does). */}
+      {touch && (kbOpen || mic !== 'idle') && (
         <KeyBar
           column={columnHasKeys}
           ctrlSticky={ctrlSticky}
@@ -798,6 +872,9 @@ export function App() {
           onImages={pasteImages}
           onPaste={pasteClipboard}
           onDiag={(message) => send({ type: 'log', message })}
+          mic={mic}
+          micSeconds={micSeconds}
+          onMic={toggleMic}
           onRefocus={() => {
             // A web form's field keeps the keyboard it has.
             if (document.activeElement?.closest('.webform')) return;

@@ -23,6 +23,17 @@ categories = ["command-line-utilities", "development-tools"]
 name = "tenx"
 path = "src/main.rs"
 
+# Speech to text for `tenx web`'s microphone: a whisper.cpp model behind
+# stdin/stdout, started and stopped by `tenx web` (src/web/whisper.rs). A
+# program of its own, not code inside `tenx`: a crash in whisper.cpp can't
+# take `tenx web` down, and the model's gigabytes go back to the system when
+# it is stopped. Only Apple silicon has whisper.cpp in it (Metal, below);
+# elsewhere it builds to a stub that says so, and releases leave it out
+# (dist-workspace.toml `[dist.binaries]`).
+[[bin]]
+name = "tenx-whisper"
+path = "src/bin/tenx-whisper.rs"
+
 [dependencies]
 tenx-core = { version = "0.4.0", path = "tenx-core" }
 clap = { version = "4", features = ["derive"] }
@@ -48,6 +59,11 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "ws",
 # The page (`web/out`, a static Next.js export) baked into the binary; build.rs
 # points it at a stub page when the frontend hasn't been built.
 rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-guess"] }
+
+# tenx-whisper only (the `tenx` binary doesn't use it, so doesn't link it).
+# whisper.cpp is C++: building it needs cmake and a C/C++ compiler.
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }

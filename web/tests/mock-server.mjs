@@ -165,6 +165,17 @@ const SCREEN = [
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  // `tenx web` hands this to its machine's speech server; here, a fixed
+  // answer for any WAV, so the page's mic path can be driven end to end.
+  if (req.method === 'POST' && url.pathname === '/transcribe') {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = Buffer.concat(chunks);
+    const isWav = req.headers['content-type'] === 'audio/wav' && body.subarray(0, 4).toString() === 'RIFF';
+    res.writeHead(isWav ? 200 : 502, { 'content-type': isWav ? 'application/json' : 'text/plain' });
+    res.end(isWav ? JSON.stringify({ text: `heard ${url.searchParams.get('language') ?? 'default'}` }) : 'not a WAV');
+    return;
+  }
   let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
   if (path.endsWith('/')) path += 'index.html';
   let file = join(root, path);
