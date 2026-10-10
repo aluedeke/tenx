@@ -8,7 +8,7 @@ members = ["tenx-core"]
 
 [package]
 name = "tenx-cli"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.87"
 description = "Work on many tasks in parallel, each with its own git worktrees and its own Claude Code agent, and always know which one needs you"
@@ -35,7 +35,7 @@ name = "tenx-whisper"
 path = "src/bin/tenx-whisper.rs"
 
 [dependencies]
-tenx-core = { version = "0.4.0", path = "tenx-core" }
+tenx-core = { version = "0.5.0", path = "tenx-core" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
