@@ -17,6 +17,8 @@ mod server;
 pub mod service;
 mod tab;
 mod token;
+mod transcribe;
+mod whisper;
 
 use anyhow::{bail, Context, Result};
 use std::net::ToSocketAddrs;

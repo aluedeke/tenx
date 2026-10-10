@@ -5,7 +5,11 @@ test('the column renders the view and the terminal mounts', async ({ page, isMob
   await expect(page.locator('.xterm')).toBeVisible();
   // A phone starts on the terminal; the header's toggle opens the column.
   if (isMobile) await page.getByTestId('toggle').tap();
-  await expect(page.getByTestId('conn')).toContainText('mock');
+  if (!isMobile) await expect(page.getByTestId('conn-dot')).toBeVisible();
+  await (isMobile ? page.getByTestId('hmore').tap() : page.getByTestId('hmore').click());
+  await expect(page.getByTestId('conn')).toContainText('connected · mock');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('hmenu')).toHaveCount(0);
   await expect(page.getByTestId('task')).toHaveCount(8);
   await expect(page.getByTestId('task').first()).toContainText('Cloud tasks');
   await expect(page.getByText('WAITING FOR INPUT')).toBeVisible();
@@ -71,7 +75,8 @@ test('the mouse alone shows and hides the column and drives it', async ({ page, 
   const i = sent().findIndex((m) => m.type === 'action' && m.name === 'approve');
   expect(sent()[i - 1]).toMatchObject({ type: 'click', kind: 'task', id: 'acme/fix-login-timeout' });
 
-  // ? in the header opens the keys; a tap closes them.
+  // keys, in the header's ⋯ menu, opens them; a tap closes them.
+  await tap(page.getByTestId('hmore'));
   await tap(page.getByTestId('keys'));
   await expect(page.getByTestId('help')).toBeVisible();
   await tap(page.getByTestId('help'));
@@ -157,6 +162,7 @@ test('on touch, a swipe uncovers allow / deny and a long-press opens the sheet',
 test('the bell turns notifications on; an iPhone outside the Home Screen is told to install first', async ({ page, browser, isMobile }) => {
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
+  await (isMobile ? page.getByTestId('hmore').tap() : page.getByTestId('hmore').click());
   const bell = page.getByTestId('push');
   await expect(bell).toBeVisible();
   // Chromium on http://127.0.0.1 (a secure context) has Web Push: off until
@@ -177,6 +183,7 @@ test('the bell turns notifications on; an iPhone outside the Home Screen is told
   const phone = await ios.newPage();
   await phone.goto('/');
   await phone.getByTestId('toggle').tap();
+  await phone.getByTestId('hmore').tap();
   await expect(phone.getByTestId('push-hint')).toContainText('Add to Home Screen');
   await expect(phone.getByTestId('push')).toHaveAttribute('data-state', 'needs-install');
   await ios.close();
@@ -258,8 +265,9 @@ test('the header names the task you are in and drives the column', async ({ page
   await expect(page.getByTestId('column')).toBeVisible();
   await expect.poll(() => sent().some((m) => m.type === 'click' && m.kind === 'task' && m.id === 'acme/fix-login-timeout')).toBe(true);
 
-  // + and ? are the new-task and keys actions.
-  await tap(header.getByTestId('keys'));
+  // + and ⋯ → keys are the new-task and keys actions.
+  await tap(header.getByTestId('hmore'));
+  await tap(page.getByTestId('keys'));
   await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'help')).toBe(true);
   await tap(page.getByTestId('help'));
   await tap(header.getByTestId('add'));
@@ -751,4 +759,149 @@ test('a tmux copy (OSC 52 with no target) reaches the browser clipboard', async 
   await page.keyboard.insertText(`]52;;${Buffer.from('from nvim').toString('base64')}`);
   await page.keyboard.press('Control+g');
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('from nvim');
+});
+
+test('the microphone says why it cannot listen, and stays off', async ({ page }) => {
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));
+  });
+  await page.goto('/');
+  const mic = page.getByTestId('mic');
+  await expect(mic).toHaveAttribute('data-state', 'idle');
+  await mic.click();
+  await expect(page.getByRole('status')).toContainText('no microphone');
+  await expect(mic).toHaveAttribute('data-state', 'idle');
+});
+
+test('speech is recorded, sent to the server and typed at the cursor', async ({ page }) => {
+  // A tone stands in for a voice: loud enough to count as speech.
+  await page.addInitScript(() => {
+    localStorage.setItem('tenx.stt.language', 'de');
+    navigator.mediaDevices.getUserMedia = async () => {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const out = ctx.createMediaStreamDestination();
+      osc.connect(out);
+      osc.start();
+      return out.stream;
+    };
+  });
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/');
+  const mic = page.getByTestId('mic');
+  await mic.click();
+  await expect(mic).toHaveAttribute('data-state', 'recording');
+  await page.waitForTimeout(1200);
+  await mic.click();
+  await expect(mic).toHaveAttribute('data-state', 'idle');
+  // Typed as a paste, without Enter.
+  await expect.poll(() => binary.join('')).toContain('heard de ');
+  expect(binary.join('')).not.toContain('\r');
+});
+
+test('Option+M starts and stops the microphone from the terminal and the column', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'keyboard');
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const out = ctx.createMediaStreamDestination();
+      osc.connect(out);
+      osc.start();
+      return out.stream;
+    };
+  });
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/');
+  const mic = page.getByTestId('mic');
+  await expect(page.getByTestId('task')).toHaveCount(8);
+
+  // The column has the keyboard.
+  await page.keyboard.press('Alt+KeyM');
+  await expect(mic).toHaveAttribute('data-state', 'recording');
+  await page.waitForTimeout(800);
+  await page.keyboard.press('Alt+KeyM');
+  await expect.poll(() => binary.join('')).toContain('heard default ');
+
+  // Typing the text moved the keyboard to the terminal; there the key
+  // never reaches the shell as `µ`.
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  binary.length = 0;
+  await page.keyboard.press('Alt+KeyM');
+  await expect(mic).toHaveAttribute('data-state', 'recording');
+  await page.waitForTimeout(800);
+  await page.keyboard.press('Alt+KeyM');
+  await expect.poll(() => binary.join('')).toContain('heard default ');
+  expect(binary.join('')).not.toMatch(/µ|\x1bm/);
+});
+
+test('on a phone, the key bar has the microphone and it keeps the keyboard', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const out = ctx.createMediaStreamDestination();
+      osc.connect(out);
+      osc.start();
+      return out.stream;
+    };
+  });
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/');
+  const textarea = page.locator('.xterm-helper-textarea');
+  await textarea.focus();
+  await page.evaluate(() => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
+    vv.dispatchEvent(new Event('resize'));
+  });
+  const mic = page.getByTestId('keybar').getByTestId('kb-mic');
+  await mic.tap();
+  await expect(mic).toHaveAttribute('aria-pressed', 'true');
+  await expect(textarea).toBeFocused();
+  await page.waitForTimeout(800);
+  await mic.tap();
+  await expect.poll(() => binary.join('')).toContain('heard default ');
+  await expect(textarea).toBeFocused();
+});
+
+test('on a phone, the key bar stays while recording even when the keyboard goes down', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const out = ctx.createMediaStreamDestination();
+      osc.connect(out);
+      osc.start();
+      return out.stream;
+    };
+  });
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/');
+  const textarea = page.locator('.xterm-helper-textarea');
+  await textarea.focus();
+  const keyboard = (up: boolean) =>
+    page.evaluate((up) => {
+      const vv = window.visualViewport!;
+      const h = up ? 500 : window.innerHeight;
+      Object.defineProperty(vv, 'height', { configurable: true, get: () => h });
+      if (!up) (document.activeElement as HTMLElement | null)?.blur();
+      vv.dispatchEvent(new Event('resize'));
+    }, up);
+  await keyboard(true);
+  const mic = page.getByTestId('keybar').getByTestId('kb-mic');
+  await mic.tap();
+  await expect(mic).toHaveAttribute('aria-pressed', 'true');
+  // iOS took the keyboard down (its microphone question does that).
+  await keyboard(false);
+  await page.waitForTimeout(800);
+  await expect(mic).toBeVisible();
+  await mic.tap();
+  await expect.poll(() => binary.join('')).toContain('heard default ');
 });

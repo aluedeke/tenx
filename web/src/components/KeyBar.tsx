@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { MicIcon, formatSeconds, type MicState } from './Header';
 
 // The keys a phone keyboard lacks, above it: Esc, a sticky Ctrl for the next
 // key, Tab, arrows, Enter, and A/D to answer the task in front of you. They go
@@ -22,6 +23,10 @@ interface Props {
   onRefocus(): void;
   /** A diagnostic line for the server's log. */
   onDiag?(message: string): void;
+  mic: MicState;
+  micSeconds: number;
+  /** Start or stop the recording (the header's microphone). */
+  onMic(): void;
 }
 
 const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
@@ -34,10 +39,12 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, onRefocus, onDiag }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, onRefocus, onDiag, mic, micSeconds, onMic }: Props) {
   const bar = useRef<HTMLDivElement>(null);
   /** A touch already pasted on lifting; the click after it, if any, mustn't. */
   const pastedByTouch = useRef(false);
+  /** The same for the microphone. */
+  const micByTouch = useRef(false);
   // iOS moves focus off the terminal — and closes the keyboard — on a tap
   // anywhere else, whatever pointerdown does. Cancelling the touch itself
   // stops that; it has to be a native, non-passive listener (React's are
@@ -121,6 +128,46 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, o
           }}
         >
           <PasteIcon />
+        </button>
+      )}
+      {!column && (
+        // Keeps the keyboard like the keys around it (data-keep-focus: the
+        // touch is cancelled, so iOS moves no focus), so the same button
+        // stops the recording. A finger acts on lifting — a completed tap,
+        // which iOS wants before it opens the microphone.
+        <button
+          type="button"
+          className={`key mic ${mic}`}
+          data-keep-focus
+          aria-label={mic === 'recording' ? 'stop and type what you said' : 'speak instead of typing'}
+          aria-pressed={mic === 'recording'}
+          data-testid="kb-mic"
+          disabled={mic === 'transcribing'}
+          onPointerDown={(e) => e.preventDefault()}
+          onPointerUp={(e) => {
+            if (e.pointerType === 'mouse') return;
+            micByTouch.current = true;
+            onRefocus();
+            onMic();
+          }}
+          onClick={() => {
+            if (micByTouch.current) {
+              micByTouch.current = false;
+              return;
+            }
+            onMic();
+          }}
+        >
+          {mic === 'recording' ? (
+            <>
+              <span className="micdot" />
+              {formatSeconds(micSeconds)}
+            </>
+          ) : mic === 'transcribing' ? (
+            '…'
+          ) : (
+            <MicIcon />
+          )}
         </button>
       )}
       {!column && (

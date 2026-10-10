@@ -541,6 +541,15 @@ a:hover {
 .key.warn {
   color: var(--warn);
 }
+.key.mic {
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.key.mic.recording {
+  flex: 1.6;
+  background: #2a1717;
+  box-shadow: inset 0 0 0 1px #5a2a2a;
+}
 
 /* ── Pointer controls ─────────────────────────────────────────────────── */
 
@@ -1005,9 +1014,6 @@ a:hover {
   color: var(--bright);
   background: var(--hover-bg);
 }
-.hbtn.box {
-  border-color: var(--border);
-}
 .hbtn.hot {
   color: var(--warn);
   border-color: #4a3c22;
@@ -1018,15 +1024,165 @@ a:hover {
   color: var(--text);
   font-size: 14px;
 }
-.hbtn.small {
-  font-size: 11px;
+.hbtn.primary {
+  color: var(--bright);
+  border-color: var(--border);
+  background: var(--key-bg);
 }
-.hbtn.bell:disabled {
-  opacity: 0.45;
-  cursor: default;
+.hotdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
 }
-.hbtn.bell.on {
+.hsep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}
+/* The connection: a dot on the wordmark; words in the header only when lost. */
+.cdot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--success);
+}
+.cdot.connecting,
+.cdot.reconnecting,
+.hmconn.connecting .dot,
+.hmconn.reconnecting .dot {
+  background: var(--warn);
+}
+.hstatus {
+  padding: 0 6px;
   color: var(--warn);
+  font-size: 11.5px;
+}
+/* ⋯: what you set once. */
+.hmenu {
+  position: fixed;
+  z-index: 21;
+  top: calc(env(safe-area-inset-top) + 40px);
+  width: 270px;
+  max-width: calc(100vw - 16px);
+  padding: 5px;
+  border-radius: 9px;
+  background: #1d2029;
+  border: 1px solid var(--border-active);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.touch .hmenu {
+  top: calc(env(safe-area-inset-top) + 46px);
+}
+.hmi {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.touch .hmi {
+  min-height: 44px;
+}
+.hmi svg {
+  flex: none;
+  color: var(--muted);
+}
+.hmi:hover:not(:disabled),
+.hmi:focus-visible {
+  background: #2a3040;
+  color: var(--bright);
+  outline: none;
+}
+.hmi:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+.hmlabel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hmwhy {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: normal;
+}
+.hmi .k {
+  color: var(--muted);
+}
+.switch {
+  flex: none;
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--key-bg);
+  border: 1px solid var(--border);
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.switch.on {
+  background: #2f4a31;
+  border-color: #3f6a42;
+}
+.switch.on::after {
+  left: auto;
+  right: 2px;
+  background: var(--success);
+}
+.hmconn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: normal;
+  word-break: break-all;
+}
+.hbtn.mic.recording {
+  color: var(--bright);
+  border-color: #5a2a2a;
+  background: #2a1717;
+  font-variant-numeric: tabular-nums;
+}
+.hbtn.mic:disabled {
+  cursor: progress;
+}
+.micdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: micpulse 1.2s ease-in-out infinite;
+}
+@keyframes micpulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 .touch .hbtn {
   min-width: 40px;
@@ -1089,20 +1245,19 @@ a:hover {
   align-items: center;
   gap: 4px;
 }
-.header .conn {
-  padding: 0 4px;
-}
 
-/* Narrow: the host label goes first, then the workspace; the toggle, next,
-   the bell and ? stay. */
-@media (max-width: 720px) {
-  .header .clabel {
+/* Narrow: next loses its word, then the workspace and the wordmark go — and
+   with it the connection dot while all is well (beside the task's own dot it
+   reads as a second status; "reconnecting…" still shows). */
+@media (max-width: 480px) {
+  .header .nlabel {
     display: none;
   }
 }
 @media (max-width: 480px) {
   .cws,
-  .header .wordmark {
+  .header .wtext,
+  .cdot.open {
     display: none;
   }
 }

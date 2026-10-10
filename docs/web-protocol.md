@@ -19,6 +19,7 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 | `POST /push/test` | cookie + Origin | Push a test message to every subscription: `{sent, subscriptions}`. |
 | `GET /manifest.webmanifest` | — | Public (browsers fetch it without cookies). With the cookie — the page links it `crossorigin="use-credentials"` — its `start_url` is `/?token=…`, so an app installed to an iOS Home Screen, which has cookies of its own, signs itself in on first launch. |
 | `POST /paste` | cookie + Origin | An image (`Content-Type` PNG, JPEG, GIF or WebP; at most 25 MB) saved to `~/.config/tenx/web-paste/` (600, swept after a day). Answers `{"path": …}`; the page pastes that path into the terminal, which Claude Code attaches as an image. `415` for anything else. |
+| `POST /transcribe[?language=]` | cookie + Origin | A recording (`Content-Type` `audio/wav`, `audio/mp4`, `audio/webm` or `audio/ogg`; at most 25 MB), turned into text on this machine: by `tenx-whisper` with `[speech] model` from the config (16 kHz mono 16-bit WAV only — what the page sends), or by the whisper.cpp `whisper-server` at `TENX_WEB_STT_URL` when that is set (any of the formats). `language`: a Whisper code or `auto`, anything else dropped. Answers `{"text": …}`, trimmed; `502` with the reason when no model is set, or the program or server fails. |
 
 The token lives in `~/.config/tenx/web-token` (mode 600), created on first
 start and the same across restarts, reinstalls and upgrades; only

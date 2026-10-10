@@ -173,6 +173,27 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The largest recording `/transcribe` takes: some 13 minutes of the page's
+/// 16 kHz WAV.
+pub const STT_MAX_BYTES: usize = 25 * 1024 * 1024;
+
+/// A language the page may ask for: a Whisper code (`en`, `de`, `haw`) or
+/// `auto`. Anything else is dropped rather than passed to the server.
+pub fn stt_language(lang: &str) -> Option<&str> {
+    let ok = lang == "auto" || ((2..=3).contains(&lang.len()) && lang.bytes().all(|b| b.is_ascii_lowercase()));
+    ok.then_some(lang)
+}
+
+/// The text in a `whisper-server` answer (`response_format=json`:
+/// `{"text": " …"}`), trimmed; or the server's `error`.
+pub fn stt_text(body: &str) -> Result<String, String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|_| format!("not JSON: {}", body.chars().take(200).collect::<String>()))?;
+    if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
+        return Ok(text.trim().to_string());
+    }
+    Err(v.get("error").and_then(|e| e.as_str()).unwrap_or("no text in the answer").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,5 +306,23 @@ mod tests {
         assert!(!renews_cookie("/_next/static/chunks/app.js"));
         assert!(!renews_cookie("/manifest.webmanifest"));
         assert!(!renews_cookie("/push/key"));
+    }
+
+    #[test]
+    fn stt_language_takes_codes_and_auto_only() {
+        assert_eq!(stt_language("de"), Some("de"));
+        assert_eq!(stt_language("haw"), Some("haw"));
+        assert_eq!(stt_language("auto"), Some("auto"));
+        assert_eq!(stt_language("DE"), None);
+        assert_eq!(stt_language("en-US"), None);
+        assert_eq!(stt_language("x"), None);
+        assert_eq!(stt_language("de;rm"), None);
+    }
+
+    #[test]
+    fn stt_text_trims_whisper_servers_leading_space() {
+        assert_eq!(stt_text(r#"{"text":" Fix the login timeout.\n"}"#), Ok("Fix the login timeout.".into()));
+        assert_eq!(stt_text(r#"{"error":"failed to read audio"}"#), Err("failed to read audio".into()));
+        assert!(stt_text("<html>").unwrap_err().starts_with("not JSON"));
     }
 }

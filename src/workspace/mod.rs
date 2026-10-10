@@ -46,6 +46,39 @@ pub struct GlobalConfig {
     /// name, `detached_dir`, too.
     #[serde(default, alias = "detached_dir", skip_serializing_if = "String::is_empty")]
     pub adhoc_dir: String,
+    /// `tenx web`'s microphone: the model `tenx-whisper` runs.
+    #[serde(default, skip_serializing_if = "SpeechConfig::is_empty")]
+    pub speech: SpeechConfig,
+}
+
+/// `[speech]`: speech to text for `tenx web` (`web::whisper`). Without a
+/// `model` the microphone says how to set one.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct SpeechConfig {
+    /// A whisper.cpp `ggml-*.bin` model (`~` expanded).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
+    /// Words the model should expect — names, jargon — as Whisper's initial
+    /// prompt, from this file (`~` expanded).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub prompt_file: String,
+    /// The language spoken when the page doesn't say: a Whisper code (`en`,
+    /// `de`) or `auto` (the default).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub language: String,
+    /// Minutes unused before the model is unloaded; 0 = 10.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub idle_minutes: u32,
+}
+
+impl SpeechConfig {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// How to launch one agent: an alternate binary and/or extra arguments. Lets a
