@@ -818,7 +818,7 @@ test('speech streams to the server and is typed at the cursor as it is heard', a
   await expect(mic).toHaveAttribute('data-state', 'recording');
   // Live: the text so far is typed while recording, revised in place.
   await expect.poll(term.line).toMatch(/^heard \d+ bytes$/);
-  expect(term.raw()).toContain('\x7f');
+  await expect.poll(term.raw).toContain('\x7f');
   await page.waitForTimeout(600);
   await mic.click();
   await expect(mic).toHaveAttribute('data-state', 'idle');
