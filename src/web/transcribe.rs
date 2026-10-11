@@ -17,6 +17,8 @@ use std::sync::Mutex;
 use anyhow::{bail, Context, Result};
 use tenx_core::web;
 
+use crate::workspace::SpeechConfig;
+
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 /// An outside server's URL, when one is set.
@@ -24,10 +26,17 @@ fn url() -> Option<String> {
     std::env::var("TENX_WEB_STT_URL").ok().map(|u| u.trim().to_string()).filter(|u| !u.is_empty())
 }
 
-/// The text of one recording (`content_type` as the browser recorded it).
-pub(super) fn transcribe(content_type: &str, audio: &[u8], language: Option<&str>) -> Result<String> {
+/// Who turns speech into text here.
+pub(super) enum Engine {
+    /// A `whisper-server` at this URL.
+    Server(String),
+    /// `tenx-whisper` with this `[speech]`.
+    Local(SpeechConfig),
+}
+
+pub(super) fn engine() -> Result<Engine> {
     if let Some(url) = url() {
-        return from_server(&url, content_type, audio, language);
+        return Ok(Engine::Server(url));
     }
     if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         bail!("tenx-whisper needs a Mac with Apple silicon; here, set TENX_WEB_STT_URL to a whisper.cpp server");
@@ -36,12 +45,22 @@ pub(super) fn transcribe(content_type: &str, audio: &[u8], language: Option<&str
     if speech.model.is_empty() {
         bail!("no speech model: set [speech] model = \"…/ggml-….bin\" in ~/.config/tenx/config.toml");
     }
-    let samples = tenx_core::whisper::wav_samples(audio).map_err(anyhow::Error::msg)?;
-    super::whisper::transcribe(&speech, &samples, language)
+    Ok(Engine::Local(speech))
+}
+
+/// The text of one recording (`content_type` as the browser recorded it).
+pub(super) fn transcribe(content_type: &str, audio: &[u8], language: Option<&str>) -> Result<String> {
+    match engine()? {
+        Engine::Server(url) => from_server(&url, content_type, audio, language),
+        Engine::Local(speech) => {
+            let samples = tenx_core::whisper::wav_samples(audio).map_err(anyhow::Error::msg)?;
+            super::whisper::transcribe(&speech, &samples, language)
+        }
+    }
 }
 
 /// The same from a `whisper-server`, which reads any format it can convert.
-fn from_server(url: &str, content_type: &str, audio: &[u8], language: Option<&str>) -> Result<String> {
+pub(super) fn from_server(url: &str, content_type: &str, audio: &[u8], language: Option<&str>) -> Result<String> {
     let mime = content_type.split(';').next().unwrap_or("").trim();
     let ext = match mime {
         "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",

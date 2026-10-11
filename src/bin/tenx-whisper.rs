@@ -122,28 +122,38 @@ mod engine {
             let mut bytes = vec![0u8; req.samples * 4];
             input.read_exact(&mut bytes).context("the request's samples")?;
             let audio = whisper::bytes_samples(&bytes);
-            let reply = match transcribe(&mut state, &args, req.language.as_deref(), &audio) {
-                Ok(text) => Reply::Text { text },
+            let reply = match transcribe(&mut state, &args, &req, &audio) {
+                Ok(reply) => reply,
                 Err(e) => Reply::Error { error: format!("{e:#}") },
             };
             send(out, reply)?;
         }
     }
 
-    fn transcribe(state: &mut WhisperState, args: &Args, language: Option<&str>, audio: &[f32]) -> Result<String> {
+    fn transcribe(state: &mut WhisperState, args: &Args, req: &Request, audio: &[f32]) -> Result<Reply> {
         let mut p = FullParams::new(SamplingStrategy::Greedy { best_of: 2 });
-        p.set_language(Some(language.unwrap_or(&args.language)));
+        p.set_language(Some(req.language.as_deref().unwrap_or(&args.language)));
+        if req.fallback == Some(false) {
+            p.set_temperature_inc(0.0);
+        }
         p.set_n_threads(args.threads);
-        p.set_no_timestamps(true);
+        // Timestamps are what splits the text into segments with end times.
+        p.set_no_timestamps(!req.segments);
         p.set_print_special(false);
         p.set_print_progress(false);
         p.set_print_realtime(false);
         p.set_print_timestamps(false);
-        if !args.prompt.is_empty() {
-            p.set_initial_prompt(&args.prompt);
+        // The glossary, then what was said before this audio (live dictation).
+        let prompt = whisper::join_segments([args.prompt.as_str(), req.prompt.as_deref().unwrap_or("")]);
+        if !prompt.is_empty() {
+            p.set_initial_prompt(&prompt);
         }
         state.full(p, audio).map_err(|e| anyhow::anyhow!("transcribe: {e}"))?;
-        let segments: Vec<String> = state.as_iter().map(|s| s.to_string()).collect();
-        Ok(whisper::join_segments(segments.iter().map(String::as_str)))
+        let segments: Vec<whisper::Segment> = state
+            .as_iter()
+            .map(|s| whisper::Segment { text: s.to_string().trim().to_string(), end: s.end_timestamp() as f32 / 100.0 })
+            .collect();
+        let text = whisper::join_segments(segments.iter().map(|s| s.text.as_str()));
+        Ok(Reply::Text { text, segments: if req.segments { segments } else { vec![] } })
     }
 }

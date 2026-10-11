@@ -16,9 +16,9 @@ import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isMicToggle, isModifierO
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText } from '@/lib/clipboard';
-import { textEdit } from '@/lib/textdiff';
+import { keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
-import { Recording, hasSpeech, sttUnsupported, transcribe } from '@/lib/stt';
+import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
 
@@ -72,7 +72,11 @@ export function App() {
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
   const [mic, setMic] = useState<MicState>('idle');
   const [micSeconds, setMicSeconds] = useState(0);
-  const recording = useRef<Recording | null>(null);
+  const recording = useRef<Dictation | null>(null);
+  /** What live dictation has typed into the terminal so far, and how much
+   * of it is the user's now (they typed after it): never erased. */
+  const liveTyped = useRef('');
+  const liveKeep = useRef(0);
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
   const wantTask = useRef<string | null>(null);
@@ -502,6 +506,8 @@ export function App() {
       conn.current?.input(ctrlChar(data));
       return;
     }
+    // Typing during dictation: what it typed so far stays as it is.
+    if (recording.current) liveKeep.current = Array.from(liveTyped.current).length;
     conn.current?.input(data);
   }, []);
 
@@ -647,26 +653,31 @@ export function App() {
 
   /** The header's microphone: a tap starts recording, the next one stops it,
    * and what was said is typed into the terminal (not sent: no Enter).
-   * `tenx web` transcribes it on its machine (lib/stt). */
+   * `tenx web` transcribes it on its machine while the user talks; the text
+   * so far shows above the terminal (lib/stt). */
   const toggleMic = useCallback(async () => {
     const diag = (message: string) => send({ type: 'log', message: `stt: ${message}` });
+    // The text so far, typed at the cursor as iOS dictation types: the edit
+    // since what was typed last (backspaces, then the new characters).
+    const typeLive = (target: string) => {
+      const edit = keptEdit(liveTyped.current, target, liveKeep.current);
+      if (!edit.erase && !edit.insert) return;
+      conn.current?.input('\x7f'.repeat(edit.erase) + edit.insert);
+      const kept = Array.from(liveTyped.current);
+      liveTyped.current = kept.slice(0, kept.length - edit.erase).join('') + edit.insert;
+    };
+    const joined = (t: LiveText) => [t.done, t.committed, t.tentative].filter(Boolean).join(' ');
     if (recording.current) {
       const rec = recording.current;
       recording.current = null;
       setMic('transcribing');
       try {
-        const audio = await rec.stop();
-        const seconds = audio.length / 16_000;
-        if (!hasSpeech(audio)) {
-          diag(`no speech in ${seconds.toFixed(1)} s`);
-          return notice('heard no speech');
-        }
         const started = performance.now();
-        const text = await transcribe(audio);
-        diag(`${seconds.toFixed(1)} s → ${text.length} chars in ${Math.round(performance.now() - started)} ms`);
-        if (!text) return notice('heard nothing to type');
+        const text = await rec.stop();
+        diag(`final ${text.length} chars ${Math.round(performance.now() - started)} ms after stop`);
+        typeLive(text ? text + ' ' : '');
+        if (!text) return notice('heard no speech');
         setFocus('terminal');
-        term.current?.paste(text + ' ');
         term.current?.focus();
       } catch (e) {
         diag(`failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -680,7 +691,18 @@ export function App() {
     if (why) return notice(why);
     try {
       // Straight from the tap: iOS asks for the microphone only inside one.
-      recording.current = await Recording.start();
+      liveTyped.current = '';
+      liveKeep.current = 0;
+      const rec = await Dictation.start((t) => typeLive(joined(t)), (message) => {
+        // tenx web gave up mid-recording: the microphone off, the reason shown.
+        if (recording.current !== rec) return;
+        recording.current = null;
+        rec.cancel();
+        diag(`failed: ${message}`);
+        notice(`speech: ${message}`);
+        setMic('idle');
+      });
+      recording.current = rec;
     } catch (e) {
       diag(`no microphone: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
       return notice(`no microphone: ${e instanceof Error ? e.message : String(e)}`);

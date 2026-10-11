@@ -30,6 +30,7 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
     let tabs = app.tabs.clone();
     let router = Router::new()
         .route("/ws", get(ws))
+        .route("/speech", get(speech))
         .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
         .route("/transcribe", post(transcribe).layer(DefaultBodyLimit::max(web::STT_MAX_BYTES)))
         .route("/push/key", get(push_key))
@@ -132,6 +133,16 @@ async fn ws(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: Head
         return if allowed { StatusCode::UNAUTHORIZED } else { StatusCode::FORBIDDEN }.into_response();
     }
     upgrade.on_upgrade(move |socket| connection(app, socket, q.session))
+}
+
+/// `/speech[?language=]`: live dictation, one socket per recording
+/// (`dictate.rs`). Guarded like `/ws`.
+async fn speech(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let language = q.language.as_deref().and_then(web::stt_language).map(str::to_string);
+    upgrade.on_upgrade(move |socket| super::dictate::session(socket, language))
 }
 
 /// `POST /paste[?token=]`: an image for the agent (`paste.rs`). Guarded like

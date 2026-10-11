@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { textEdit } from '../src/lib/textdiff.ts';
+import { keptEdit, textEdit } from '../src/lib/textdiff.ts';
 
 test('dictation growing its guess only sends the new words', () => {
   assert.deepEqual(textEdit('', 'Fix'), { erase: 0, insert: 'Fix' });
@@ -21,4 +21,13 @@ test('an unchanged field sends nothing', () => {
 
 test('an emoji is one character to erase', () => {
   assert.deepEqual(textEdit('ok 👍', 'ok'), { erase: 2, insert: '' });
+});
+
+test('a kept start is never erased: later text is edited after it', () => {
+  // Live dictation: "the" was typed and the user typed after it; a later
+  // correction of "the" can't reach back there.
+  assert.deepEqual(keptEdit('fix the log', 'fix the login', 7), { erase: 0, insert: 'in' });
+  assert.deepEqual(keptEdit('fix the log', 'fix a login', 7), { erase: 4, insert: ' login' });
+  assert.deepEqual(keptEdit('fix the log', 'fix', 7), { erase: 4, insert: '' });
+  assert.deepEqual(keptEdit('fix the', 'fix the', 7), { erase: 0, insert: '' });
 });

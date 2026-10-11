@@ -194,7 +194,35 @@ const server = createServer(async (req, res) => {
   res.end(await readFile(file));
 });
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+// Two socket paths on one server: `ws` answers a path it doesn't own with
+// 400, so both take their upgrades from here.
+const wss = new WebSocketServer({ noServer: true });
+const speech = new WebSocketServer({ noServer: true });
+server.on('upgrade', (req, socket, head) => {
+  const path = new URL(req.url, 'http://x').pathname;
+  const to = path === '/ws' ? wss : path === '/speech' ? speech : null;
+  if (!to) return socket.destroy();
+  to.handleUpgrade(req, socket, head, (ws) => to.emit('connection', ws, req));
+});
+
+// Live dictation (`tenx web`'s dictate.rs): text so far while audio comes
+// in, a fixed answer on stop — or an error with `?language=fail`.
+speech.on('connection', (ws, req) => {
+  const language = new URL(req.url, 'http://x').searchParams.get('language');
+  let bytes = 0;
+  ws.on('message', (data, binary) => {
+    if (binary) {
+      bytes += data.length;
+      if (language === 'fail' && bytes > 16_000) ws.send(JSON.stringify({ type: 'error', error: 'model went away' }));
+      else ws.send(JSON.stringify({ type: 'live', done: '', committed: 'heard', tentative: `${bytes} bytes`, corrected: false }));
+      return;
+    }
+    if (JSON.parse(data.toString()).type === 'stop') {
+      ws.send(JSON.stringify({ type: 'text', text: bytes ? `heard ${language ?? 'default'}` : '' }));
+      ws.close();
+    }
+  });
+});
 let sessions = 0;
 wss.on('connection', (ws, req) => {
   let jobIds = 0;

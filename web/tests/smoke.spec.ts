@@ -571,8 +571,7 @@ test('a link in the terminal opens outside the app', async ({ page, isMobile }) 
 
 test('a paste into the terminal is typed once', async ({ page, isMobile }) => {
   test.skip(isMobile, 'same code path; the DOM renderer check is desktop');
-  const binary: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  const term = terminalInput(page);
   await page.goto('/?renderer=dom');
   await expect(page.locator('.xterm-rows')).toBeVisible();
   await page.locator('.xterm-helper-textarea').focus();
@@ -588,14 +587,13 @@ test('a paste into the terminal is typed once', async ({ page, isMobile }) => {
     ta.dispatchEvent(new InputEvent('input', { inputType: 'insertFromPaste', data: 'pasted-once', bubbles: true }));
   });
   await page.waitForTimeout(500);
-  const sent = binary.join('');
+  const sent = term.raw();
   expect(sent.split('pasted-once').length - 1).toBe(1);
 });
 
 test('dictation sends each revision as an edit, not a repeat', async ({ page, isMobile }) => {
   test.skip(isMobile, 'same code path');
-  const binary: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  const term = terminalInput(page);
   await page.goto('/?renderer=dom');
   await expect(page.locator('.xterm-rows')).toBeVisible();
   await page.locator('.xterm-helper-textarea').focus();
@@ -613,7 +611,7 @@ test('dictation sends each revision as an edit, not a repeat', async ({ page, is
     say('Fix the login timeout');
   });
   await page.waitForTimeout(500);
-  expect(binary.join('')).toBe('Fix' + ' the log in' + '\x7f\x7f\x7f' + 'in timeout');
+  expect(term.raw()).toBe('Fix' + ' the log in' + '\x7f\x7f\x7f' + 'in timeout');
 });
 
 // A slow connection: every view the mock sends arrives this late.
@@ -708,8 +706,7 @@ for (const [name, parts, expected] of [
 
 test('a dead key (US International) types its composed character once', async ({ page, isMobile }) => {
   test.skip(isMobile, 'a hardware keyboard layout');
-  const binary: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  const term = terminalInput(page);
   await page.goto('/?renderer=dom');
   await expect(page.locator('.xterm-rows')).toBeVisible();
   await page.locator('.xterm-helper-textarea').focus();
@@ -744,7 +741,7 @@ test('a dead key (US International) types its composed character once', async ({
   await compose('"', 222, 'ö', 79, 'ö');
   await compose("'", 222, ' ', 32, "'");
   await page.waitForTimeout(300);
-  expect(binary.join('')).toBe("ö'");
+  expect(term.raw()).toBe("ö'");
 });
 
 test('a tmux copy (OSC 52 with no target) reaches the browser clipboard', async ({ page, context, isMobile }) => {
@@ -773,10 +770,26 @@ test('the microphone says why it cannot listen, and stays off', async ({ page })
   await expect(mic).toHaveAttribute('data-state', 'idle');
 });
 
-test('speech is recorded, sent to the server and typed at the cursor', async ({ page }) => {
-  // A tone stands in for a voice: loud enough to count as speech.
-  await page.addInitScript(() => {
-    localStorage.setItem('tenx.stt.language', 'de');
+/** What the page types into the terminal (its `/ws`; not the audio it
+ * streams to `/speech`): `raw`, and `line` as a terminal shows it — a DEL
+ * erases the character before. */
+function terminalInput(page: import('@playwright/test').Page) {
+  let typed: string[] = [];
+  page.on('websocket', (ws) => {
+    if (!ws.url().includes('/speech')) ws.on('framesent', (f) => typeof f.payload !== 'string' && typed.push(f.payload.toString()));
+  });
+  const raw = () => typed.join('');
+  return {
+    raw,
+    line: () => raw().split('').reduce((l, c) => (c === '\x7f' ? l.slice(0, -1) : l + c), ''),
+    reset: () => (typed = []),
+  };
+}
+
+/** A tone stands in for a voice: loud enough to count as speech. */
+async function fakeMicrophone(page: import('@playwright/test').Page, language: string) {
+  await page.addInitScript((language) => {
+    localStorage.setItem('tenx.stt.language', language);
     navigator.mediaDevices.getUserMedia = async () => {
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
@@ -785,19 +798,45 @@ test('speech is recorded, sent to the server and typed at the cursor', async ({ 
       osc.start();
       return out.stream;
     };
+  }, language);
+}
+
+test('speech streams to the server and is typed at the cursor as it is heard', async ({ page }) => {
+  await fakeMicrophone(page, 'de');
+  const term = terminalInput(page);
+  // The audio it streams to `/speech`.
+  let audioBytes = 0;
+  let speechUrl = '';
+  page.on('websocket', (ws) => {
+    if (!ws.url().includes('/speech')) return;
+    speechUrl = ws.url();
+    ws.on('framesent', (f) => typeof f.payload !== 'string' && (audioBytes += f.payload.length));
   });
-  const binary: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
   await page.goto('/');
   const mic = page.getByTestId('mic');
   await mic.click();
   await expect(mic).toHaveAttribute('data-state', 'recording');
-  await page.waitForTimeout(1200);
+  // Live: the text so far is typed while recording, revised in place.
+  await expect.poll(term.line).toMatch(/^heard \d+ bytes$/);
+  expect(term.raw()).toContain('\x7f');
+  await page.waitForTimeout(600);
   await mic.click();
   await expect(mic).toHaveAttribute('data-state', 'idle');
-  // Typed as a paste, without Enter.
-  await expect.poll(() => binary.join('')).toContain('heard de ');
-  expect(binary.join('')).not.toContain('\r');
+  expect(speechUrl).toContain('language=de');
+  // 16 kHz 16-bit: about 32 kB a second.
+  expect(audioBytes).toBeGreaterThan(16_000);
+  // On stop, the final text replaces it; no Enter.
+  await expect.poll(term.line).toBe('heard de ');
+  expect(term.raw()).not.toContain('\r');
+});
+
+test('when the server gives up mid-recording, the microphone goes off and says why', async ({ page }) => {
+  await fakeMicrophone(page, 'fail');
+  await page.goto('/');
+  const mic = page.getByTestId('mic');
+  await mic.click();
+  await expect(page.getByRole('status').filter({ hasText: 'model went away' })).toBeVisible();
+  await expect(mic).toHaveAttribute('data-state', 'idle');
 });
 
 test('Option+M starts and stops the microphone from the terminal and the column', async ({ page, isMobile }) => {
@@ -812,8 +851,7 @@ test('Option+M starts and stops the microphone from the terminal and the column'
       return out.stream;
     };
   });
-  const binary: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  const term = terminalInput(page);
   await page.goto('/');
   const mic = page.getByTestId('mic');
   await expect(page.getByTestId('task')).toHaveCount(8);
@@ -823,18 +861,18 @@ test('Option+M starts and stops the microphone from the terminal and the column'
   await expect(mic).toHaveAttribute('data-state', 'recording');
   await page.waitForTimeout(800);
   await page.keyboard.press('Alt+KeyM');
-  await expect.poll(() => binary.join('')).toContain('heard default ');
+  await expect.poll(term.line).toMatch(/heard default $/);
 
   // Typing the text moved the keyboard to the terminal; there the key
   // never reaches the shell as `µ`.
   await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
-  binary.length = 0;
+  term.reset();
   await page.keyboard.press('Alt+KeyM');
   await expect(mic).toHaveAttribute('data-state', 'recording');
   await page.waitForTimeout(800);
   await page.keyboard.press('Alt+KeyM');
-  await expect.poll(() => binary.join('')).toContain('heard default ');
-  expect(binary.join('')).not.toMatch(/µ|\x1bm/);
+  await expect.poll(term.line).toMatch(/heard default $/);
+  expect(term.raw()).not.toMatch(/µ|\x1bm/);
 });
 
 test('on a phone, the key bar has the microphone and it keeps the keyboard', async ({ page, isMobile }) => {
@@ -849,8 +887,7 @@ test('on a phone, the key bar has the microphone and it keeps the keyboard', asy
       return out.stream;
     };
   });
-  const binary: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  const term = terminalInput(page);
   await page.goto('/');
   const textarea = page.locator('.xterm-helper-textarea');
   await textarea.focus();
@@ -865,7 +902,7 @@ test('on a phone, the key bar has the microphone and it keeps the keyboard', asy
   await expect(textarea).toBeFocused();
   await page.waitForTimeout(800);
   await mic.tap();
-  await expect.poll(() => binary.join('')).toContain('heard default ');
+  await expect.poll(term.line).toMatch(/heard default $/);
   await expect(textarea).toBeFocused();
 });
 
@@ -881,8 +918,7 @@ test('on a phone, the key bar stays while recording even when the keyboard goes 
       return out.stream;
     };
   });
-  const binary: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  const term = terminalInput(page);
   await page.goto('/');
   const textarea = page.locator('.xterm-helper-textarea');
   await textarea.focus();
@@ -903,5 +939,5 @@ test('on a phone, the key bar stays while recording even when the keyboard goes 
   await page.waitForTimeout(800);
   await expect(mic).toBeVisible();
   await mic.tap();
-  await expect.poll(() => binary.join('')).toContain('heard default ');
+  await expect.poll(term.line).toMatch(/heard default $/);
 });

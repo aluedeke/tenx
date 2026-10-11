@@ -137,6 +137,29 @@ fn start(config: &SpeechConfig) -> Result<Running> {
 /// The text of one recording (16 kHz mono samples); `language` overrides
 /// `[speech] language`.
 pub(super) fn transcribe(config: &SpeechConfig, audio: &[f32], language: Option<&str>) -> Result<String> {
+    let req = Request { samples: 0, language: language.map(str::to_string), prompt: None, fallback: None, segments: false };
+    Ok(run(config, audio, req)?.0)
+}
+
+/// Start the program now if it isn't running, so its model is loading while
+/// the user starts talking. Errors wait for the first real request.
+pub(super) fn warm(config: &SpeechConfig) {
+    let mut slot = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.as_ref().is_some_and(|r| r.config != *config)
+        && let Some(r) = slot.take()
+    {
+        r.stop();
+    }
+    if slot.is_none()
+        && let Ok(r) = start(config)
+    {
+        *slot = Some(r);
+    }
+}
+
+/// One request (`req.samples` is filled in): its text and, when asked
+/// for, its segments.
+pub(super) fn run(config: &SpeechConfig, audio: &[f32], req: Request) -> Result<(String, Vec<whisper::Segment>)> {
     let mut slot = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
     if slot.as_ref().is_some_and(|r| r.config != *config)
         && let Some(r) = slot.take()
@@ -149,10 +172,10 @@ pub(super) fn transcribe(config: &SpeechConfig, audio: &[f32], language: Option<
             *slot = Some(start(config)?);
         }
         let running = slot.as_mut().expect("just started");
-        match send(running, audio, language) {
-            Ok(Reply::Text { text }) => {
+        match send(running, audio, &req) {
+            Ok(Reply::Text { text, segments }) => {
                 running.last_used = Instant::now();
-                return Ok(text);
+                return Ok((text, segments));
             }
             Ok(Reply::Error { error }) => {
                 running.last_used = Instant::now();
@@ -172,8 +195,8 @@ pub(super) fn transcribe(config: &SpeechConfig, audio: &[f32], language: Option<
     unreachable!()
 }
 
-fn send(running: &mut Running, audio: &[f32], language: Option<&str>) -> Result<Reply> {
-    let req = Request { samples: audio.len(), language: language.map(str::to_string) };
+fn send(running: &mut Running, audio: &[f32], req: &Request) -> Result<Reply> {
+    let req = Request { samples: audio.len(), ..req.clone() };
     let mut msg = serde_json::to_vec(&req)?;
     msg.push(b'\n');
     msg.extend(whisper::samples_bytes(audio));

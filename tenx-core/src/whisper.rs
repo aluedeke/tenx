@@ -7,6 +7,12 @@
 //! `{"samples":N,"language":"de"}` (`language` optional: the program's
 //! default), followed by N little-endian `f32` samples, and reads one line
 //! back: `{"text":…}` or `{"error":…}`. EOF on stdin ends the program.
+//!
+//! Live dictation (`dictation`) adds to the header: `prompt` (text before
+//! this audio, after the program's glossary), `fallback: false` (no
+//! temperature fallback — for final passes, where it cut long text short)
+//! and `segments: true`, which adds `"segments":[{"text":…,"end":secs}]` to
+//! the reply.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +25,21 @@ pub struct Request {
     pub samples: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// Whisper's temperature fallback; on unless `false`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<bool>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub segments: bool,
+}
+
+/// One of Whisper's segments: its text and where it ends in the audio.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Segment {
+    pub text: String,
+    /// Seconds from the start of the request's audio.
+    pub end: f32,
 }
 
 /// The program's one-line answers: to starting, and to each recording.
@@ -26,7 +47,11 @@ pub struct Request {
 #[serde(untagged)]
 pub enum Reply {
     Ready { ready: bool },
-    Text { text: String },
+    Text {
+        text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        segments: Vec<Segment>,
+    },
     Error { error: String },
 }
 
@@ -72,6 +97,36 @@ pub fn wav_samples(wav: &[u8]) -> Result<Vec<f32>, String> {
         at = body.saturating_add(len + (len & 1));
     }
     Err("no audio in the WAV file".into())
+}
+
+/// Samples as a 16 kHz mono 16-bit WAV, what [`wav_samples`] reads — and a
+/// `whisper-server` (live dictation's audio, when one is set).
+pub fn wav(samples: &[f32]) -> Vec<u8> {
+    let data = (samples.len() * 2) as u32;
+    let mut v = Vec::with_capacity(44 + data as usize);
+    v.extend(b"RIFF");
+    v.extend((36 + data).to_le_bytes());
+    v.extend(b"WAVEfmt ");
+    v.extend(16u32.to_le_bytes());
+    v.extend(1u16.to_le_bytes()); // PCM
+    v.extend(1u16.to_le_bytes()); // mono
+    v.extend(RATE.to_le_bytes());
+    v.extend((RATE * 2).to_le_bytes());
+    v.extend(2u16.to_le_bytes());
+    v.extend(16u16.to_le_bytes());
+    v.extend(b"data");
+    v.extend(data.to_le_bytes());
+    for s in samples {
+        let s = s.clamp(-1.0, 1.0);
+        v.extend((if s < 0.0 { s * 32768.0 } else { s * 32767.0 } as i16).to_le_bytes());
+    }
+    v
+}
+
+/// The page's live audio frames (16-bit little-endian PCM at 16 kHz) as
+/// samples.
+pub fn pcm16_samples(bytes: &[u8]) -> Vec<f32> {
+    bytes.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0).collect()
 }
 
 /// Samples as the bytes that follow a [`Request`].
@@ -131,6 +186,12 @@ mod tests {
     }
 
     #[test]
+    fn wav_round_trips_and_pcm_frames_decode() {
+        assert_eq!(wav_samples(&super::wav(&[0.0, 0.5, -1.0])).unwrap(), vec![0.0, 16383.0 / 32768.0, -1.0]);
+        assert_eq!(pcm16_samples(&[0, 0x40, 0, 0x80, 7]), vec![0.5, -1.0]);
+    }
+
+    #[test]
     fn samples_round_trip_as_bytes() {
         let s = [0.25f32, -0.5, 1.0];
         assert_eq!(bytes_samples(&samples_bytes(&s)), s);
@@ -138,11 +199,13 @@ mod tests {
 
     #[test]
     fn requests_and_replies_are_one_json_line() {
-        let r = Request { samples: 3, language: None };
+        let r = Request { samples: 3, language: None, prompt: None, fallback: None, segments: false };
         assert_eq!(serde_json::to_string(&r).unwrap(), r#"{"samples":3}"#);
         let de: Request = serde_json::from_str(r#"{"samples":3,"language":"de"}"#).unwrap();
         assert_eq!(de.language.as_deref(), Some("de"));
-        assert_eq!(reply_line(&Reply::Text { text: "hi".into() }), "{\"text\":\"hi\"}\n");
+        assert_eq!(reply_line(&Reply::Text { text: "hi".into(), segments: vec![] }), "{\"text\":\"hi\"}\n");
+        let live: Reply = serde_json::from_str(r#"{"text":"a.","segments":[{"text":"a.","end":1.5}]}"#).unwrap();
+        assert_eq!(live, Reply::Text { text: "a.".into(), segments: vec![Segment { text: "a.".into(), end: 1.5 }] });
         assert_eq!(serde_json::from_str::<Reply>(r#"{"ready":true}"#).unwrap(), Reply::Ready { ready: true });
         assert_eq!(serde_json::from_str::<Reply>(r#"{"error":"x"}"#).unwrap(), Reply::Error { error: "x".into() });
     }

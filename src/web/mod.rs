@@ -18,6 +18,7 @@ pub mod service;
 mod tab;
 mod token;
 mod transcribe;
+mod dictate;
 mod whisper;
 
 use anyhow::{bail, Context, Result};

@@ -24,3 +24,25 @@ export function textEdit(before: string, after: string): Edit {
   while (common < a.length && common < b.length && a[common] === b[common]) common++;
   return { erase: a.length - common, insert: b.slice(common).join('') };
 }
+
+/** The same, but never erasing into the first `keep` characters of
+ * `before` — text the user has typed after since, or moved the cursor
+ * into. Words of `after` up to as many as that kept text has are taken as
+ * its version of it, and only what follows them is typed. */
+export function keptEdit(before: string, after: string, keep: number): Edit {
+  const edit = textEdit(before, after);
+  const a = Array.from(before);
+  if (a.length - edit.erase >= keep) return edit;
+  const words = a.slice(0, keep).join('').split(/\s+/).filter(Boolean).length;
+  // After's text from the end of its `words`-th word: " login".
+  let at = 0;
+  for (let n = 0; n < words; n++) {
+    const m = /\S+/.exec(after.slice(at));
+    if (!m) {
+      at = after.length;
+      break;
+    }
+    at += m.index + m[0].length;
+  }
+  return { erase: a.length - keep, insert: after.slice(at) };
+}

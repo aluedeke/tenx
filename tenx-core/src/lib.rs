@@ -7,6 +7,7 @@
 //! data, so it can be tested with fixtures and reused by any future front end.
 
 pub mod codex;
+pub mod dictation;
 pub mod dialog;
 pub mod edge;
 pub mod init;
