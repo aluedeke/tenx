@@ -10,7 +10,7 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 
 | Route | Auth | What |
 |---|---|---|
-| `GET /?token=<t>` | token | Sets the `tenx_web` cookie (HttpOnly, SameSite=Strict, Path=/) and redirects `303` to `/` without the query. A wrong token gets `401`. |
+| `GET /?token=<t>` | token | Sets the `tenx_web` cookie (HttpOnly, SameSite=Lax, Path=/, a year, renewed by every page load) and redirects `303` to `/` without the query. A wrong token gets `401` — unless the browser is signed in already (an old address), which is just redirected. |
 | `GET /<asset>` | cookie | The embedded static export of `web/` (`web/out`), `index.html` for `/`. Without the cookie: `401` with a short page telling you to open the URL `tenx web` printed. |
 | `GET /ws` | cookie + Origin | Upgrades to the WebSocket below. The `Origin` header must equal `http(s)://<Host>` or an origin passed with `--dev-origin`. |
 | `GET /push/key` | cookie | `{"key": …}`: the server's VAPID public key (base64url), the `applicationServerKey` a browser subscribes with. A same-origin GET carries no `Origin`, so only the cookie is checked. |

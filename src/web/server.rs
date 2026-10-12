@@ -62,16 +62,17 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
 /// is swapped for it and dropped from the address bar.
 async fn page(State(app): State<Arc<App>>, uri: Uri, headers: HeaderMap) -> Response {
     if let Some(given) = uri.query().and_then(|q| query_param(q, "token")) {
-        if !web::token_matches(given, &app.token) {
-            return unauthorized("That token isn't this server's (rotated?).");
-        }
-        return Response::builder()
+        let signed_in = web::cookie_ok(header_str(&headers, header::COOKIE), &app.token);
+        let mut redirect = Response::builder()
             .status(StatusCode::SEE_OTHER)
             .header(header::LOCATION, uri.path())
-            .header(header::SET_COOKIE, web::set_cookie(&app.token))
-            .header(header::REFERRER_POLICY, "no-referrer")
-            .body(axum::body::Body::empty())
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+            .header(header::REFERRER_POLICY, "no-referrer");
+        match web::token_query(given, &app.token, signed_in) {
+            web::TokenQuery::Refuse => return unauthorized("That token isn't this server's (rotated?)."),
+            web::TokenQuery::SignIn => redirect = redirect.header(header::SET_COOKIE, web::set_cookie(&app.token)),
+            web::TokenQuery::Ignore => {}
+        }
+        return redirect.body(axum::body::Body::empty()).unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
     if !web::public_path(uri.path()) && !web::cookie_ok(header_str(&headers, header::COOKIE), &app.token) {
         return unauthorized("Open the address <code>tenx web</code> printed (the one with <code>?token=</code>).");
