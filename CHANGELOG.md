@@ -5,6 +5,19 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.7.0] - 2026-10-12
+
+### Added
+
+- **web:** Key bar on iPad, Ctrl+V image paste and finger text selection
+- **web:** Enter ends a dictation and sends it; Ctrl+M toggles the mic
+
+### Fixed
+
+- **web:** Keep the sign-in when opened from a link or an old address
+
+[0.7.0]: https://github.com/aluedeke/tenx/compare/v0.6.0...v0.7.0
+
 ## [0.6.0] - 2026-10-11
 
 ### Added
