@@ -103,12 +103,38 @@ pub fn cookie_ok(cookie_header: Option<&str>, token: &str) -> bool {
     cookie_header.and_then(|h| cookie_value(h, COOKIE)).is_some_and(|v| token_matches(v, token))
 }
 
-/// The `Set-Cookie` that hands the page the token: only ever sent back to
-/// this server (`SameSite=Strict`), never readable by script (`HttpOnly`),
-/// for the whole site. No `Expires`: it lasts as long as the token does,
-/// which `--rotate-token` ends.
+/// The `Set-Cookie` that hands the page the token: never readable by script
+/// (`HttpOnly`), for the whole site, for a year that every visit renews.
+/// `SameSite=Lax`, not `Strict`: a `Strict` cookie is left off a page load
+/// that starts on another site or app (a link in a chat, a bookmark app), so
+/// the page said "signed out" with the cookie still there. `Lax` still keeps
+/// it off other sites' requests and form posts; the WebSocket has its own
+/// `Origin` check (`origin_allowed`).
 pub fn set_cookie(token: &str) -> String {
-    format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000")
+    format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000")
+}
+
+/// What a page load carrying `?token=` gets.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TokenQuery {
+    /// The right token: set the cookie, drop the query.
+    SignIn,
+    /// A wrong token (an old address, a Home Screen app installed before
+    /// `--rotate-token`) from a browser that is signed in anyway: drop the
+    /// query and carry on, rather than refuse a working sign-in.
+    Ignore,
+    /// A wrong token and no sign-in: refused.
+    Refuse,
+}
+
+pub fn token_query(given: &str, token: &str, cookie_ok: bool) -> TokenQuery {
+    if token_matches(given, token) {
+        TokenQuery::SignIn
+    } else if cookie_ok {
+        TokenQuery::Ignore
+    } else {
+        TokenQuery::Refuse
+    }
 }
 
 /// The `Origin` a WebSocket upgrade must come from: the page this server
@@ -220,7 +246,22 @@ mod tests {
     fn set_cookie_is_strict_and_http_only() {
         let c = set_cookie("t");
         assert!(c.starts_with("tenx_web=t;"));
-        assert!(c.contains("HttpOnly") && c.contains("SameSite=Strict") && c.contains("Path=/"));
+        assert!(c.contains("HttpOnly") && c.contains("SameSite=Lax") && c.contains("Path=/"));
+    }
+
+    #[test]
+    fn a_page_opened_from_another_site_keeps_its_cookie() {
+        // Strict drops the cookie on a load that starts elsewhere.
+        assert!(!set_cookie("t").contains("Strict"));
+        assert!(set_cookie("t").contains("Max-Age=31536000"));
+    }
+
+    #[test]
+    fn an_old_token_in_the_address_does_not_sign_a_signed_in_browser_out() {
+        assert_eq!(token_query("good", "good", false), TokenQuery::SignIn);
+        assert_eq!(token_query("good", "good", true), TokenQuery::SignIn);
+        assert_eq!(token_query("old", "good", true), TokenQuery::Ignore);
+        assert_eq!(token_query("old", "good", false), TokenQuery::Refuse);
     }
 
     #[test]
