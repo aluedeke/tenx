@@ -39,8 +39,18 @@ then `http://127.0.0.1:7071/?token=x`.
 
 ## TestFlight
 
-    ./testflight.sh
+    APP_STORE_CONNECT_API_KEY_ID=… APP_STORE_CONNECT_ISSUER_ID=… ./testflight.sh
 
-with `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`,
-`APP_STORE_CONNECT_API_KEY_BASE64` (role Admin) and `APPLE_TEAM_ID` in the
-environment. Bundle id `it.luedeke.mobile.tenx`.
+App "tenx terminal" in App Store Connect, bundle id `it.luedeke.mobile.tenx`,
+team `RUJR5DY35F`. The script signs by hand (why: its header comment) and
+needs, once per machine, in `~/.appstoreconnect/`:
+
+- `private_keys/AuthKey_<id>.p8`: an App Store Connect API key (role Admin
+  to create certificates and profiles; App Manager is enough to upload);
+- `tenx-signing/tenx-signing.keychain-db` holding an "Apple Distribution"
+  identity, with the keychain's password in `tenx-signing/kc.pass`;
+- the "tenx App Store" provisioning profile (type IOS_APP_STORE, that
+  certificate) in `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`.
+
+The certificate and the profile can be made with the API key
+(`POST /v1/certificates` with a CSR from a local key, `POST /v1/profiles`).
