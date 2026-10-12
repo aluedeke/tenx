@@ -4,12 +4,15 @@
 // notifications — this only turns them on and off for this browser.
 
 import { apiUrl } from './api';
+import { nativeApp } from './native';
 
 export type PushState =
   /** No service worker / Push API here (or not HTTPS). */
   | 'unsupported'
   /** iPhone / iPad Safari: Push only works in the Home Screen app. */
   | 'needs-install'
+  /** The tenx iOS app: a WKWebView has no Web Push (lib/native). */
+  | 'native-app'
   | 'off'
   | 'on'
   /** The browser (or the user, earlier) refused; only its settings undo it. */
@@ -54,6 +57,7 @@ async function post(path: string, body?: unknown): Promise<Response> {
 }
 
 export async function state(): Promise<PushState> {
+  if (nativeApp()) return 'native-app';
   if (!supported()) return isIos() && !standalone() ? 'needs-install' : 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
   const sub = await subscription();
