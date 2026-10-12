@@ -38,8 +38,8 @@ interface Props {
 export type MicState = 'idle' | 'recording' | 'transcribing';
 
 const MIC_TITLE: Record<MicState, string> = {
-  idle: 'speak instead of typing — tap (or ⌥M), talk, tap again',
-  recording: 'listening — tap (or ⌥M) to stop and type it',
+  idle: 'speak instead of typing — tap (or ⌃M), talk, tap again; ⏎ stops and sends',
+  recording: 'listening — tap (or ⌃M) to stop and type it, ⏎ to stop and send it',
   transcribing: 'turning speech into text…',
 };
 

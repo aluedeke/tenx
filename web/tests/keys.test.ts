@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isIPad, isImagePaste, isRemote, takesImagePaste } from '../src/lib/keys.ts';
+import { enterWhileDictating, isIPad, isMicToggle, isImagePaste, isRemote, takesImagePaste } from '../src/lib/keys.ts';
 
 const key = (code: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ code, key: code.slice(3).toLowerCase(), ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...mods }) as KeyboardEvent;
@@ -39,4 +39,21 @@ test('an iPad is iPad, or a "Mac" with a touch screen (iPadOS Safari)', () => {
   assert.equal(isIPad('MacIntel', 0), false, 'a Mac');
   assert.equal(isIPad('iPhone', 5), false);
   assert.equal(isIPad('Linux armv8l', 5), false);
+});
+
+test('Enter while recording stops it and sends after the final text', () => {
+  assert.equal(enterWhileDictating('\r', 'recording'), 'stop');
+  assert.equal(enterWhileDictating('\r', 'transcribing'), 'wait', 'the final text is on its way');
+  assert.equal(enterWhileDictating('\r', 'idle'), null);
+  assert.equal(enterWhileDictating('\x1b[13;2u', 'recording'), null, 'Shift+Enter is a new line, not a send');
+  assert.equal(enterWhileDictating('a', 'recording'), null);
+  assert.equal(enterWhileDictating('hello\r', 'recording'), null, 'a paste is no key press');
+});
+
+test('Ctrl+M toggles the microphone, by the physical key; Option+M no longer does', () => {
+  assert.equal(isMicToggle(key('KeyM', { ctrlKey: true })), true);
+  assert.equal(isMicToggle(key('KeyM', { ctrlKey: true, key: '\r' })), true, 'a browser may report the control character');
+  assert.equal(isMicToggle(key('KeyM', { altKey: true, key: 'µ' })), false);
+  assert.equal(isMicToggle(key('KeyM', { ctrlKey: true, shiftKey: true })), false);
+  assert.equal(isMicToggle(key('KeyM')), false);
 });
