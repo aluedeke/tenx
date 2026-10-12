@@ -125,6 +125,15 @@ a:hover {
   touch-action: none;
 }
 
+/* Press and hold selects through tmux (Terminal.tsx touchSelect), not with
+   iOS's own selection, loupe or callout. The drawn screen only: on the
+   hidden textarea this would stop typing on iOS. */
+.xterm-host .xterm-screen {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .xterm .xterm-viewport {
   background: var(--ground) !important;
 }

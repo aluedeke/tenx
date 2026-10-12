@@ -13,8 +13,9 @@ interface Props {
   ctrlSticky: boolean;
   onCtrl(): void;
   onKey(key: string, shift: boolean): void;
-  /** Images picked from the photo library or the camera. */
-  onImages(files: File[]): void;
+  /** The id of the page's file input for images from the photo library or
+   * the camera (kept outside the bar, which may go while picking). */
+  attachInput: string;
   /** Paste what's on the clipboard — an image or text. */
   onPaste(): void;
   /** Put the keyboard focus back where it was (the terminal, or the
@@ -29,6 +30,9 @@ interface Props {
   onMic(): void;
 }
 
+/** The page's file input the 📎 opens. */
+export const ATTACH_INPUT = 'kb-attach';
+
 const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'Escape', label: 'esc' },
   { key: 'Tab', label: '⇥' },
@@ -39,7 +43,7 @@ const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
   { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, onRefocus, onDiag, mic, micSeconds, onMic }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste, onRefocus, onDiag, mic, micSeconds, onMic }: Props) {
   const bar = useRef<HTMLDivElement>(null);
   /** A touch already pasted on lifting; the click after it, if any, mustn't. */
   const pastedByTouch = useRef(false);
@@ -173,19 +177,8 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, onImages, onPaste, o
       {!column && (
         // A label, not a pointer-down button: the file picker only opens from
         // a real click on its input.
-        <label className="key" aria-label="attach an image" data-testid="attach">
+        <label className="key" aria-label="attach an image" data-testid="attach" htmlFor={attachInput}>
           📎
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              const files = Array.from(e.currentTarget.files ?? []);
-              e.currentTarget.value = '';
-              if (files.length) onImages(files);
-            }}
-          />
         </label>
       )}
     </div>

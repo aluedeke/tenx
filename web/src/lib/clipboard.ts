@@ -1,6 +1,8 @@
 // What the key bar's paste key pastes from a clipboard read
 // (`navigator.clipboard.read()`): text when there is any — copied text or
-// a web page's selection — and an image only when nothing textual is there.
+// a web page's selection — and an image only when nothing textual is there,
+// or when the text only names the image (its address or file name: what
+// iOS's Copy puts next to an image from Safari or the share sheet).
 // A page selection on iOS can come as `text/html` alone, so HTML counts as
 // text (its readable text, not the markup). Pure apart from the HTML
 // conversion, which the caller supplies, so it tests without a DOM.
@@ -18,13 +20,26 @@ export async function choose(items: ClipItem[], htmlToText: (html: string) => st
     if (item.types.includes('text/plain')) text += await (await item.getType('text/plain')).text();
     else if (item.types.includes('text/html')) text += htmlToText(await (await item.getType('text/html')).text());
   }
-  if (text.trim()) return { kind: 'text', text };
+  const files = await images(items);
+  if (text.trim() && !(files.length && namesImage(text))) return { kind: 'text', text };
+  return files.length ? { kind: 'images', files } : null;
+}
+
+/** The images on a clipboard, whatever text came with them. */
+export async function images(items: ClipItem[]): Promise<File[]> {
   const files: File[] = [];
   for (const item of items) {
     const image = item.types.find((t) => t.startsWith('image/'));
     if (image) files.push(new File([await item.getType(image)], 'clipboard', { type: image }));
   }
-  return files.length ? { kind: 'images', files } : null;
+  return files;
+}
+
+/** One word that is a web address or an image's file name. */
+export function namesImage(text: string): boolean {
+  const t = text.trim();
+  if (!t || /\s/.test(t)) return false;
+  return /^[a-z][\w+.-]*:\/\//i.test(t) || /\.(png|jpe?g|gif|heic|heif|webp|tiff?|bmp)$/i.test(t);
 }
 
 /** A web page's HTML as the text it shows, for pasting into a terminal. */

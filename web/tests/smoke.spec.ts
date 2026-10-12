@@ -218,6 +218,27 @@ test('the key bar only shows with the on-screen keyboard up', async ({ page, isM
   await expect(bar.getByTestId('attach')).toBeVisible();
 });
 
+test('on an iPad the key bar shows while the terminal has the focus', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  // iPadOS Safari: a "Mac" with a touch screen.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
+    Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5 });
+  });
+  await page.goto('/');
+  const bar = page.getByTestId('keybar');
+  const textarea = page.locator('.xterm-helper-textarea');
+  await textarea.blur();
+  await expect(bar).toHaveCount(0);
+  // A hardware keyboard: the terminal has the focus, no on-screen keyboard.
+  await textarea.focus();
+  await expect(bar.getByTestId('attach')).toBeVisible();
+  await expect(bar.getByTestId('paste')).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
+  await textarea.blur();
+  await expect(bar).toHaveCount(0);
+});
+
 test('a sliver of a viewport while switching apps keeps the whole page', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'touch screens only');
   await page.goto('/');
@@ -768,6 +789,42 @@ test('the microphone says why it cannot listen, and stays off', async ({ page })
   await mic.click();
   await expect(page.getByRole('status')).toContainText('no microphone');
   await expect(mic).toHaveAttribute('data-state', 'idle');
+});
+
+test('on touch, press and hold then drag selects like a mouse', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  const term = terminalInput(page);
+  await page.goto('/?renderer=dom');
+  const screen = page.locator('.xterm-screen');
+  await expect(screen).toBeVisible();
+  const b = (await screen.boundingBox())!;
+  const touch = (x: number, y: number) => ({ pointerType: 'touch', pointerId: 31, isPrimary: true, bubbles: true, clientX: b.x + x, clientY: b.y + y });
+  const host = page.getByTestId('terminal');
+  await host.dispatchEvent('pointerdown', touch(5, 5));
+  await page.waitForTimeout(550);
+  await host.dispatchEvent('pointermove', touch(b.width / 2, 5));
+  await host.dispatchEvent('pointerup', touch(b.width / 2, 5));
+  // The left button pressed at the first cell, dragged, released: what tmux
+  // gets from a mouse drag. No wheel notches (a scroll), no arrows (a tap).
+  await expect.poll(() => term.raw()).toMatch(/\x1b\[<0;1;1M(\x1b\[<32;\d+;1M)+\x1b\[<0;\d+;1m/);
+  expect(term.raw()).not.toMatch(/\x1b\[<6[45];|\x1b\[[ABCD]|\x1bO[ABCD]/);
+});
+
+test('on touch, a quick drag still scrolls and does not select', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  const term = terminalInput(page);
+  await page.goto('/?renderer=dom');
+  const screen = page.locator('.xterm-screen');
+  await expect(screen).toBeVisible();
+  const b = (await screen.boundingBox())!;
+  const touch = (y: number) => ({ pointerType: 'touch', pointerId: 32, isPrimary: true, bubbles: true, clientX: b.x + 20, clientY: b.y + y });
+  const host = page.getByTestId('terminal');
+  await host.dispatchEvent('pointerdown', touch(20));
+  for (let y = 40; y <= 200; y += 20) await host.dispatchEvent('pointermove', touch(y));
+  await page.waitForTimeout(550);
+  await host.dispatchEvent('pointerup', touch(200));
+  await expect.poll(() => term.raw()).toContain('\x1b[<64;');
+  expect(term.raw()).not.toContain('\x1b[<0;');
 });
 
 /** What the page types into the terminal (its `/ws`; not the audio it

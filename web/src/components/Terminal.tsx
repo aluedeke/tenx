@@ -13,6 +13,7 @@ import { TerminalClipboard } from '@/lib/clipboard';
 import { openExternal } from '@/lib/links';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
+import { SELECT_HOLD_MS, SelectGesture } from '@/lib/touchselect';
 
 export interface TerminalHandle {
   write(bytes: Uint8Array): void;
@@ -177,8 +178,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.onResize(({ cols, rows }) => propsRef.current.onResize(cols, rows));
       xterm.onBell(() => propsRef.current.onBell());
       xterm.textarea?.addEventListener('focus', () => propsRef.current.onFocus());
-      const gesture = { scrolled: false };
+      // No suggestions over a terminal: iOS's predictions and Safari's inline
+      // writing suggestions (xterm turns off autocorrect and capitals itself).
+      xterm.textarea?.setAttribute('autocomplete', 'off');
+      xterm.textarea?.setAttribute('writingsuggestions', 'false');
+      const gesture = { scrolled: false, selecting: false };
       touchScroll(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
+      touchSelect(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       catchImages(host.current, (files) => propsRef.current.onImages(files));
       if (xterm.textarea) keylessText(host.current, xterm.textarea, (d) => propsRef.current.onData(d));
@@ -229,9 +235,11 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
 /** A tap — or an Alt/Option-click — in the text being edited walks the
  * cursor there with arrow keys (lib/tapcursor). The click still goes on to
  * tmux, which only selects the pane it is already in. */
-/** What the touch handlers share: a drag that scrolled is not a tap. */
+/** What the touch handlers share: a drag that scrolled (or selected) is not
+ * a tap, and a drag that selects doesn't scroll. */
 interface Gesture {
   scrolled: boolean;
+  selecting: boolean;
 }
 
 /** The cell under a point on the terminal, or null outside it. */
@@ -283,7 +291,7 @@ function touchScroll(xterm: XTerm, el: HTMLElement, send: (data: string) => void
   el.addEventListener(
     'pointermove',
     (ev) => {
-      if (!start || ev.pointerType !== 'touch') return;
+      if (!start || ev.pointerType !== 'touch' || gesture.selecting) return;
       if (!scrolling) {
         const dx = ev.clientX - start.x;
         const dy = ev.clientY - start.y;
@@ -321,6 +329,70 @@ function touchScroll(xterm: XTerm, el: HTMLElement, send: (data: string) => void
       fling = Math.abs(v) > FLING_STOP ? requestAnimationFrame(step) : 0;
     };
     if (Math.abs(v) > FLING_STOP * 4) fling = requestAnimationFrame(step);
+  };
+  el.addEventListener('pointerup', end, true);
+  el.addEventListener('pointercancel', end, true);
+}
+
+/** Press and hold, then drag: selects text the way a mouse drag does
+ * (lib/touchselect). */
+function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture) {
+  const select = new SelectGesture();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The cell under a point, held inside the screen: a drag past an edge
+   * keeps selecting up to it. */
+  const clamped = (clientX: number, clientY: number): Cell | null => {
+    const screen = el.querySelector('.xterm-screen');
+    if (!screen) return null;
+    const r = screen.getBoundingClientRect();
+    const x = Math.floor(((clientX - r.left) / r.width) * xterm.cols);
+    const y = Math.floor(((clientY - r.top) / r.height) * xterm.rows);
+    return { x: Math.min(Math.max(x, 0), xterm.cols - 1), y: Math.min(Math.max(y, 0), xterm.rows - 1) };
+  };
+  const cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+
+  el.addEventListener(
+    'pointerdown',
+    (ev) => {
+      if (ev.pointerType !== 'touch') return;
+      cancel();
+      gesture.selecting = false;
+      if (!select.down(ev.clientX, ev.clientY, cellAt(xterm, el, ev.clientX, ev.clientY))) return;
+      timer = setTimeout(() => {
+        timer = null;
+        send(select.hold());
+        gesture.selecting = true;
+        gesture.scrolled = true; // not a tap either
+      }, SELECT_HOLD_MS);
+    },
+    true,
+  );
+  el.addEventListener(
+    'pointermove',
+    (ev) => {
+      if (ev.pointerType !== 'touch') return;
+      const at = clamped(ev.clientX, ev.clientY);
+      if (!at) return;
+      if (select.selecting) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+      const { send: data, cancel: far } = select.move(ev.clientX, ev.clientY, at);
+      if (far) cancel();
+      if (data) send(data);
+    },
+    true,
+  );
+  const end = (ev: PointerEvent) => {
+    if (ev.pointerType !== 'touch') return;
+    cancel();
+    const data = select.up(clamped(ev.clientX, ev.clientY));
+    gesture.selecting = false;
+    if (data) send(data);
   };
   el.addEventListener('pointerup', end, true);
   el.addEventListener('pointercancel', end, true);

@@ -23,6 +23,17 @@ test('text wins over an image copied with it', async () => {
   assert.deepEqual(await choose([both], strip), { kind: 'text', text: 'caption' });
 });
 
+test('an image wins over its own address or file name', async () => {
+  for (const name of ['https://example.com/photo.jpg', 'IMG_0042.HEIC']) {
+    const clip = await choose([item({ 'text/plain': name, 'image/png': 'png-bytes' })], strip);
+    assert.equal(clip?.kind, 'images', name);
+  }
+});
+
+test('an address with no image is pasted as text', async () => {
+  assert.deepEqual(await choose([item({ 'text/plain': 'https://example.com' })], strip), { kind: 'text', text: 'https://example.com' });
+});
+
 test('an image alone is uploaded', async () => {
   const clip = await choose([item({ 'image/png': 'png-bytes' })], strip);
   assert.equal(clip?.kind, 'images');

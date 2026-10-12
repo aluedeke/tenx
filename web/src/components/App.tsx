@@ -9,13 +9,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Column } from './Column';
 import { Header, type MicState } from './Header';
-import { KeyBar } from './KeyBar';
+import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
-import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isMac, isMicToggle, isModifierOnly, isNewTaskAlias, keyMessage } from '@/lib/keys';
+import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isNewTaskAlias, keyMessage, takesImagePaste } from '@/lib/keys';
+import { keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
-import { choose, htmlText } from '@/lib/clipboard';
+import { choose, htmlText, images } from '@/lib/clipboard';
 import { keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -65,6 +66,12 @@ export function App() {
   /** The on-screen keyboard is up: the key bar sits on it, not above the
    * home indicator's inset. */
   const [kbOpen, setKbOpen] = useState(false);
+  /** An iPad: room for the key bar all the time, and often a hardware
+   * keyboard (or the floating one), which never shows as a keyboard here. */
+  const [ipad, setIpad] = useState(false);
+  /** A text field has the focus: the terminal's, the column's hidden input,
+   * a form's. */
+  const [typing, setTyping] = useState(false);
   /** A paste on its way up, or why it failed. */
   const [pasting, setPasting] = useState<string | null>(null);
   /** The notice is a button that brings the keyboard back (after 📎). */
@@ -173,6 +180,7 @@ export function App() {
     mac.current = isMac();
     const coarse = window.matchMedia('(pointer: coarse)');
     setTouch(coarse.matches);
+    setIpad(isIPad(navigator.platform, navigator.maxTouchPoints));
     const onCoarse = () => setTouch(coarse.matches);
     coarse.addEventListener('change', onCoarse);
 
@@ -370,11 +378,12 @@ export function App() {
     const apply = () => {
       if (Math.abs(vv.width - full.width) > 1) full = { width: vv.width, height: Math.max(vv.height, window.innerHeight) };
       else full.height = Math.max(full.height, vv.height, window.innerHeight);
-      const keyboard = editing() && vv.height >= window.innerHeight * 0.35 && full.height - vv.height > 120;
+      const page = layout({ editing: editing(), height: vv.height, top: vv.offsetTop, innerHeight: window.innerHeight, fullHeight: full.height });
       const root = document.documentElement.style;
-      root.setProperty('--vv-h', `${keyboard ? vv.height : window.innerHeight}px`);
-      root.setProperty('--vv-top', `${keyboard ? vv.offsetTop : 0}px`);
-      setKbOpen(keyboard);
+      root.setProperty('--vv-h', `${page.height}px`);
+      root.setProperty('--vv-top', `${page.top}px`);
+      setKbOpen(page.keyboard);
+      setTyping(editing());
     };
     // Back in front (or rotated, or resized in Split View): measure again,
     // and again shortly after — iOS settles the viewport over a few frames
@@ -477,6 +486,15 @@ export function App() {
       // (submit) and Escape (cancel) itself.
       if ((ev.target as Element | null)?.closest?.('.webform')) return;
       const { focus, visible, ctrlSticky } = state.current;
+      // ^V in the terminal from another Apple device: the image is on this
+      // device's clipboard, so it goes up from here (imagePaste). Elsewhere
+      // ^V is the browser's own paste, which catchImages already takes.
+      if (takesImagePaste(ev, { terminal: focus !== 'column' || !visible, mac: mac.current, hostname: location.hostname })) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        imagePasteRef.current();
+        return;
+      }
       if (focus !== 'column' || !visible) return; // xterm has it
       if (ev.metaKey) return; // the browser's own: Cmd+R, Cmd+C, …
       // A soft keyboard that doesn't name its keys (Android: 229 /
@@ -637,6 +655,34 @@ export function App() {
     if (failure) notice(`couldn't read the clipboard: ${failure instanceof Error ? failure.message : String(failure)}`);
     else notice('nothing to paste: the clipboard has no text or image');
   }, [notice, pasteImages, send]);
+
+  /** ^V in the terminal, from a browser on another device: Claude Code would
+   * look for an image on its own machine's clipboard and find none. An image
+   * on this device's clipboard goes up like the paste key's; with none, ^V
+   * goes on to the program as typed (a shell's quoted insert, nvim's block
+   * selection). Called inside the key press: reading the clipboard needs it. */
+  const imagePaste = useCallback(() => {
+    const diag = (message: string) => send({ type: 'log', message: `paste: ^V ${message}` });
+    if (!navigator.clipboard?.read) {
+      diag('no clipboard read; typed as is');
+      onTerminalData('\x16');
+      return;
+    }
+    navigator.clipboard
+      .read()
+      .then(async (items) => {
+        diag(`read ${items.length} item(s): ${items.map((i) => `[${i.types.join(',')}]`).join(' ')}`);
+        const files = await images(items);
+        if (files.length) await pasteImages(files);
+        else onTerminalData('\x16');
+      })
+      .catch((e) => {
+        diag(`read failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+        notice(`couldn't read the clipboard: ${e instanceof Error ? e.message : String(e)}`);
+      });
+  }, [notice, onTerminalData, pasteImages, send]);
+  const imagePasteRef = useRef(imagePaste);
+  imagePasteRef.current = imagePaste;
 
   const togglePush = useCallback(() => {
     // Straight from the click: the permission prompt needs the gesture.
@@ -875,6 +921,7 @@ export function App() {
         autoCapitalize="off"
         autoCorrect="off"
         autoComplete="off"
+        {...{ writingsuggestions: 'false' }}
         spellCheck={false}
         onInput={onKbdInput}
         onBlur={(e) => {
@@ -882,16 +929,34 @@ export function App() {
           kbdBefore.current = '';
         }}
       />
+      {/* The key bar's 📎 opens this. Outside the bar: picking takes the
+          focus from the terminal, which can take the bar away, and the pick
+          must still arrive. */}
+      <input
+        id={ATTACH_INPUT}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.currentTarget.files ?? []);
+          e.currentTarget.value = '';
+          if (files.length) void pasteImages(files);
+        }}
+      />
       {/* The special keys only while the on-screen keyboard is up: they're for
-          typing, and a hardware keyboard (which never raises it) has them.
+          typing, and a phone has no room for them otherwise. Always on an
+          iPad: it has the room, and with a hardware keyboard there is no
+          on-screen one to wait for — yet the 📎, the paste key and Esc
+          (missing on some iPad keyboards) are only here.
           And while the microphone is on: its stop button is here, even if
           iOS took the keyboard down (asking for the microphone does). */}
-      {touch && (kbOpen || mic !== 'idle') && (
+      {keyBarShown({ touch, ipad, typing, keyboard: kbOpen, recording: mic !== 'idle' }) && (
         <KeyBar
           column={columnHasKeys}
           ctrlSticky={ctrlSticky}
           onCtrl={() => setCtrlSticky((s) => !s)}
-          onImages={pasteImages}
+          attachInput={ATTACH_INPUT}
           onPaste={pasteClipboard}
           onDiag={(message) => send({ type: 'log', message })}
           mic={mic}
