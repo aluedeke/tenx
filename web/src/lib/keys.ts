@@ -11,6 +11,12 @@ export function isMac(): boolean {
   return /mac|iphone|ipad|ipod/i.test(platform);
 }
 
+/** An iPad. Safari there says it is a Mac (`MacIntel`); a Mac has no
+ * touch screen, though. */
+export function isIPad(platform: string, maxTouchPoints: number): boolean {
+  return /ipad/i.test(platform) || (platform === 'MacIntel' && maxTouchPoints > 1);
+}
+
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph', 'Fn', 'Dead', 'Unidentified', 'Process']);
 
 /** A lone modifier or composition key — nothing the column could act on. */
@@ -36,6 +42,26 @@ export function isFocusCycle(ev: KeyboardEvent, mac: boolean): boolean {
  * is. By the physical key — on a Mac layout Option+M types `µ`. */
 export function isMicToggle(ev: KeyboardEvent): boolean {
   return ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && baseLetter(ev) === 'm';
+}
+
+/** Ctrl+V, the key Claude Code pastes an image with. It reads the clipboard
+ * of the machine it runs on — not the one of a browser on another device,
+ * where the image is. By the physical key, like the others. */
+export function isImagePaste(ev: KeyboardEvent): boolean {
+  return ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && baseLetter(ev) === 'v';
+}
+
+/** Whether the page takes this ^V for an image paste: in the terminal, on an
+ * Apple device, away from the machine `tenx web` runs on. Off a Mac ^V is
+ * the browser's own paste, which reaches the page as a paste event. */
+export function takesImagePaste(ev: KeyboardEvent, s: { terminal: boolean; mac: boolean; hostname: string }): boolean {
+  return s.terminal && s.mac && isImagePaste(ev) && isRemote(s.hostname);
+}
+
+/** The browser runs on another machine than `tenx web` (a phone or a
+ * tablet, through `tailscale serve`): its clipboard isn't the agent's. */
+export function isRemote(hostname: string): boolean {
+  return !['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
 }
 
 /** Alt+n off macOS: ^n for the column. */

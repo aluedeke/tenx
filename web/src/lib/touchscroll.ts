@@ -22,6 +22,14 @@ export function wheelNotch(up: boolean, x: number, y: number): string {
   return `\x1b[<${up ? 64 : 65};${x + 1};${y + 1}M`;
 }
 
+/** The left button at a 0-based cell, as a mouse sends it in SGR: pressed
+ * (`CSI < 0 ; x ; y M`), dragged (32 + button), released (`m`). A finger's
+ * select drag sends exactly these, so tmux selects — and copies on release —
+ * as it does for a mouse. */
+export function leftButton(kind: 'press' | 'drag' | 'release', x: number, y: number): string {
+  return `\x1b[<${kind === 'drag' ? 32 : 0};${x + 1};${y + 1}${kind === 'release' ? 'm' : 'M'}`;
+}
+
 /**
  * Finger movement → notches. Dragging down pulls older lines into view, as a
  * touch list does, so it scrolls back (wheel up). Movement that doesn't add

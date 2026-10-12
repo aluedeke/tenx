@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Accumulator, FLING_STOP, decay, wheelNotch } from '../src/lib/touchscroll.ts';
+import { Accumulator, FLING_STOP, decay, leftButton, wheelNotch } from '../src/lib/touchscroll.ts';
 
 test('a notch is an SGR wheel report at the 1-based cell', () => {
   assert.equal(wheelNotch(true, 0, 0), '\x1b[<64;1;1M');
@@ -32,4 +32,10 @@ test('a flick slows down and stops', () => {
     frames++;
   }
   assert.ok(frames > 10 && frames < 200, `stopped after ${frames} frames`);
+});
+
+test('a select drag is the left button as SGR reports, 1-based', () => {
+  assert.equal(leftButton('press', 0, 0), '\x1b[<0;1;1M');
+  assert.equal(leftButton('drag', 4, 2), '\x1b[<32;5;3M');
+  assert.equal(leftButton('release', 4, 2), '\x1b[<0;5;3m');
 });
