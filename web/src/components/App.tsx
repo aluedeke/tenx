@@ -12,7 +12,7 @@ import { Header, type MicState } from './Header';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
-import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isNewTaskAlias, keyMessage, takesImagePaste } from '@/lib/keys';
+import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
 import { keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
@@ -84,6 +84,8 @@ export function App() {
    * of it is the user's now (they typed after it): never erased. */
   const liveTyped = useRef('');
   const liveKeep = useRef(0);
+  /** Enter was pressed while dictating: sent once the final text is typed. */
+  const enterAfterDictation = useRef(false);
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
   const wantTask = useRef<string | null>(null);
@@ -524,6 +526,13 @@ export function App() {
       conn.current?.input(ctrlChar(data));
       return;
     }
+    // Enter while dictating: stop, type the final text, then send it.
+    const enter = enterWhileDictating(data, recording.current ? 'recording' : state.current.mic);
+    if (enter) {
+      enterAfterDictation.current = true;
+      if (enter === 'stop') void toggleMicRef.current();
+      return;
+    }
     // Typing during dictation: what it typed so far stays as it is.
     if (recording.current) liveKeep.current = Array.from(liveTyped.current).length;
     conn.current?.input(data);
@@ -698,7 +707,8 @@ export function App() {
   }, [notice]);
 
   /** The header's microphone: a tap starts recording, the next one stops it,
-   * and what was said is typed into the terminal (not sent: no Enter).
+   * and what was said is typed into the terminal (not sent: no Enter —
+   * unless Enter is what stopped it, onTerminalData).
    * `tenx web` transcribes it on its machine while the user talks; the text
    * so far shows above the terminal (lib/stt). */
   const toggleMic = useCallback(async () => {
@@ -717,19 +727,26 @@ export function App() {
       const rec = recording.current;
       recording.current = null;
       setMic('transcribing');
+      // Enter that ends the dictation sends what it typed; a failed one
+      // sends nothing (the text may be half there).
+      let submit = false;
       try {
         const started = performance.now();
         const text = await rec.stop();
         diag(`final ${text.length} chars ${Math.round(performance.now() - started)} ms after stop`);
-        typeLive(text ? text + ' ' : '');
-        if (!text) return notice('heard no speech');
+        submit = enterAfterDictation.current;
+        // Sent with Enter: no trailing space before it.
+        typeLive(text ? (submit ? text : text + ' ') : '');
+        if (!text && !submit) return notice('heard no speech');
         setFocus('terminal');
         term.current?.focus();
       } catch (e) {
         diag(`failed: ${e instanceof Error ? e.message : String(e)}`);
         notice(`speech: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
+        enterAfterDictation.current = false;
         setMic('idle');
+        if (submit) conn.current?.input('\r');
       }
       return;
     }
@@ -743,6 +760,7 @@ export function App() {
         // tenx web gave up mid-recording: the microphone off, the reason shown.
         if (recording.current !== rec) return;
         recording.current = null;
+        enterAfterDictation.current = false;
         rec.cancel();
         diag(`failed: ${message}`);
         notice(`speech: ${message}`);

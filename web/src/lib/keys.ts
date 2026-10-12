@@ -38,10 +38,12 @@ export function isFocusCycle(ev: KeyboardEvent, mac: boolean): boolean {
   return (ev.ctrlKey && !ev.altKey) || (!mac && ev.altKey && !ev.ctrlKey);
 }
 
-/** Option+M (Alt+M): start or stop the microphone, wherever the keyboard
- * is. By the physical key — on a Mac layout Option+M types `µ`. */
+/** Ctrl+M: start or stop the microphone, wherever the keyboard is. By the
+ * physical key. In a terminal Ctrl+M is the same byte as Enter, which the
+ * page takes before xterm does: Enter itself stays Enter (and ends a
+ * dictation with a send, `enterWhileDictating`). */
 export function isMicToggle(ev: KeyboardEvent): boolean {
-  return ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && baseLetter(ev) === 'm';
+  return ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && baseLetter(ev) === 'm';
 }
 
 /** Ctrl+V, the key Claude Code pastes an image with. It reads the clipboard
@@ -74,6 +76,14 @@ export function keyMessage(ev: KeyboardEvent): KeyMessage {
   // layouts, a control character; the physical key is what a terminal sends.
   const key = ev.ctrlKey && baseLetter(ev) ? baseLetter(ev)! : ev.key;
   return { type: 'key', key, ctrl: ev.ctrlKey, alt: ev.altKey, shift: ev.shiftKey };
+}
+
+/** Enter (a lone `\r`: Shift+Enter is CSI u) while the microphone is on:
+ * the natural "send". `stop`: stop the recording, then send Enter after its
+ * final text; `wait`: the final text is on its way, send Enter after it. */
+export function enterWhileDictating(data: string, mic: 'idle' | 'recording' | 'transcribing'): 'stop' | 'wait' | null {
+  if (data !== '\r' || mic === 'idle') return null;
+  return mic === 'recording' ? 'stop' : 'wait';
 }
 
 /** The bytes a terminal sends for the key bar's keys. */
