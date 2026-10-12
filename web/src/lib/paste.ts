@@ -5,22 +5,6 @@
 
 import { apiUrl } from './api';
 
-/** The images among a clipboard's or a drop's items. */
-export function imagesIn(data: DataTransfer | null): File[] {
-  if (!data) return [];
-  const files: File[] = [];
-  for (const item of Array.from(data.items ?? [])) {
-    if (item.kind === 'file' && item.type.startsWith('image/')) {
-      const f = item.getAsFile();
-      if (f) files.push(f);
-    }
-  }
-  if (files.length === 0) {
-    for (const f of Array.from(data.files ?? [])) if (f.type.startsWith('image/')) files.push(f);
-  }
-  return files;
-}
-
 /** Upload one image; the path it was saved at on the agent's machine. */
 export async function upload(file: Blob): Promise<string> {
   const res = await fetch(apiUrl('/paste'), {

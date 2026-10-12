@@ -16,7 +16,7 @@ import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isIPad, isMac, isMicToggle, isM
 import { keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
-import { choose, htmlText, images } from '@/lib/clipboard';
+import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -836,6 +836,22 @@ export function App() {
     [sendKey],
   );
 
+  /** A paste while the column has the keyboard: for the agent, not the
+   * column. Typed into the column it would be one command key per character
+   * (`D` rejects pending secrets, `x` closes a window, `:` a command). */
+  const onKbdPaste = useCallback(
+    (ev: React.ClipboardEvent<HTMLInputElement>) => {
+      ev.preventDefault();
+      const clip = pasteOf(ev.clipboardData);
+      if (!clip) return;
+      setFocus('terminal');
+      if (clip.kind === 'images') return void pasteImages(clip.files);
+      term.current?.paste(clip.text);
+      term.current?.focus();
+    },
+    [pasteImages],
+  );
+
   const overlay = narrow;
   // The column as drawn: the last view with the inputs it doesn't reflect
   // yet replayed on it.
@@ -891,6 +907,7 @@ export function App() {
               if (!state.current.narrow || !state.current.visible) setFocus('terminal');
             }}
             onImages={pasteImages}
+            onPasteStart={() => send({ type: 'paste' })}
           />
           {view?.shown_closed && columnHasKeys && (
             // The cursor rests on a task with no window: its empty screen in
@@ -942,6 +959,7 @@ export function App() {
         {...{ writingsuggestions: 'false' }}
         spellCheck={false}
         onInput={onKbdInput}
+        onPaste={onKbdPaste}
         onBlur={(e) => {
           e.currentTarget.value = '';
           kbdBefore.current = '';

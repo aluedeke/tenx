@@ -590,6 +590,49 @@ test('a link in the terminal opens outside the app', async ({ page, isMobile }) 
     .toEqual([['https://github.com/aluedeke/tenx/pull/42', '_blank', 'noopener,noreferrer']]);
 });
 
+test('a paste while the column has the keyboard goes to the terminal, not to the column as keys', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'same code path');
+  const sent = sentMessages(page);
+  const term = terminalInput(page);
+  await page.goto('/?renderer=dom');
+  await expect(page.locator('.xterm-rows')).toBeVisible();
+  // The column's hidden input has the keyboard (as on a touch screen).
+  await page.locator('.kbd-sink').focus();
+  await page.evaluate(() => {
+    const sink = document.querySelector('.kbd-sink') as HTMLInputElement;
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'Deny xdd:q');
+    sink.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await expect.poll(term.raw).toContain('Deny xdd:q');
+  // Announced first, so the server takes the pane out of copy-mode.
+  expect(sent().some((m) => m.type === 'paste')).toBe(true);
+  // Not one column key: `D` would reject secrets, `x` close a window.
+  expect(sent().filter((m) => m.type === 'key')).toEqual([]);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+});
+
+test('a paste into the terminal is announced before it is sent', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'same code path');
+  const order: string[] = [];
+  page.on('websocket', (ws) => {
+    if (!ws.url().includes('/speech'))
+      ws.on('framesent', (f) => order.push(typeof f.payload === 'string' ? JSON.parse(f.payload).type : `bytes:${f.payload.toString()}`));
+  });
+  await page.goto('/?renderer=dom');
+  await expect(page.locator('.xterm-rows')).toBeVisible();
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.evaluate(() => {
+    const ta = document.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'from-the-menu');
+    ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => order.findIndex((o) => o.includes('from-the-menu'))).toBeGreaterThan(-1);
+  const bytes = order.findIndex((o) => o.includes('from-the-menu'));
+  expect(order.slice(0, bytes)).toContain('paste');
+});
+
 test('a paste into the terminal is typed once', async ({ page, isMobile }) => {
   test.skip(isMobile, 'same code path; the DOM renderer check is desktop');
   const term = terminalInput(page);

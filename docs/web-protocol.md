@@ -122,6 +122,10 @@ without `seq` work as before.
 // The tab became visible / the window regained focus → sweep, as the TUI does
 // on FocusGained.
 { "type": "visible" }
+
+// The next terminal bytes are a paste: the pane leaves copy-mode first (a
+// touch scroll leaves it there, and tmux drops a paste that reaches it).
+{ "type": "paste" }
 ```
 
 ## Keys the browser keeps

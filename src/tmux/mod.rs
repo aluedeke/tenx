@@ -658,6 +658,26 @@ pub fn focus_pane_in(session: &str, pane: &str) -> Result<()> {
     run(&["select-pane", "-t", pane]).map(drop)
 }
 
+/// The tmux arguments that take `session`'s pane out of copy-mode (or any
+/// other mode), and do nothing when it isn't in one.
+pub fn leave_mode_args(session: &str) -> Vec<String> {
+    vec![
+        "if-shell".into(),
+        "-F".into(),
+        "-t".into(),
+        session.into(),
+        "#{pane_in_mode}".into(),
+        format!("send-keys -X -t {} cancel", shell_quote(session)),
+    ]
+}
+
+/// Before a paste: tmux drops a paste that reaches a pane in copy-mode — which
+/// a touch scroll (wheel notches) leaves it in until scrolled back down.
+pub fn leave_mode_in(session: &str) -> Result<()> {
+    let args = leave_mode_args(session);
+    run(&args.iter().map(String::as_str).collect::<Vec<_>>()).map(drop)
+}
+
 /// The visible contents of a pane, with its colours (`-e` keeps the SGR
 /// sequences) — what `A`/`D` check before answering a permission prompt.
 pub fn capture_pane(target: &str) -> Result<String> {
@@ -924,6 +944,13 @@ pub fn shell_quote(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn leaving_a_mode_cancels_only_a_pane_in_one() {
+        let a = leave_mode_args("tenx-web-ab12");
+        assert_eq!(a[..5], ["if-shell", "-F", "-t", "tenx-web-ab12", "#{pane_in_mode}"]);
+        assert_eq!(a[5], "send-keys -X -t 'tenx-web-ab12' cancel");
+    }
+
     use super::*;
 
     #[test]

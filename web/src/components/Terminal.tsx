@@ -8,8 +8,7 @@ import type { Terminal as XTerm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
-import { imagesIn } from '@/lib/paste';
-import { TerminalClipboard } from '@/lib/clipboard';
+import { TerminalClipboard, imagesIn } from '@/lib/clipboard';
 import { openExternal } from '@/lib/links';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
@@ -39,6 +38,9 @@ interface Props {
   onFocus(): void;
   /** Images pasted or dropped on the terminal. */
   onImages(files: File[]): void;
+  /** A paste is about to go to the terminal (the server takes the pane out
+   * of copy-mode, where tmux would drop it). */
+  onPasteStart(): void;
 }
 
 // The ANSI colours agg renders the demo with (Makefile `demo-gif`): the
@@ -102,6 +104,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       return term.current ? { cols: term.current.cols, rows: term.current.rows } : null;
     },
     paste(text) {
+      propsRef.current.onPasteStart();
       term.current?.paste(text);
     },
   }));
@@ -186,7 +189,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       touchScroll(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       touchSelect(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
-      catchImages(host.current, (files) => propsRef.current.onImages(files));
+      catchImages(host.current, (files) => propsRef.current.onImages(files), () => propsRef.current.onPasteStart());
       if (xterm.textarea) keylessText(host.current, xterm.textarea, (d) => propsRef.current.onData(d));
       term.current = xterm;
       fitRef.current = fit;
@@ -475,13 +478,14 @@ async function walk(xterm: XTerm, target: Cell, vertical: boolean, send: (data: 
 
 /** A paste or a drop that carries an image goes to `onImages` instead of
  * xterm (which would paste nothing, or the file's name). Text pastes are
- * left alone. Capture phase, ahead of xterm's own paste handler. */
-function catchImages(el: HTMLElement, onImages: (files: File[]) => void) {
+ * left to xterm, announced first (`onText`). Capture phase, ahead of xterm's
+ * own paste handler. */
+function catchImages(el: HTMLElement, onImages: (files: File[]) => void, onText: () => void) {
   el.addEventListener(
     'paste',
     (ev) => {
       const files = imagesIn(ev.clipboardData);
-      if (files.length === 0) return;
+      if (files.length === 0) return onText();
       ev.preventDefault();
       ev.stopPropagation();
       onImages(files);

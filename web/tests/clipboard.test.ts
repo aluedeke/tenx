@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { choose, TerminalClipboard, type ClipItem } from '../src/lib/clipboard.ts';
+import { choose, pasteOf, TerminalClipboard, type ClipItem } from '../src/lib/clipboard.ts';
 
 const item = (parts: Record<string, string>): ClipItem => ({
   types: Object.keys(parts),
@@ -67,4 +67,28 @@ test('a program reads the clipboard only when it asks for c', async () => {
   const provider = new TerminalClipboard(() => clipboard);
   assert.equal(await provider.readText('c'), 'secret');
   assert.equal(await provider.readText(''), '');
+});
+
+/** Enough of a DataTransfer for a paste event's clipboardData. */
+const transfer = (text: string, files: File[] = []) =>
+  ({
+    items: files.map((f) => ({ kind: 'file', type: f.type, getAsFile: () => f })),
+    files,
+    getData: (t: string) => (t === 'text/plain' ? text : ''),
+  }) as unknown as DataTransfer;
+
+test('a pasted text is text', () => {
+  assert.deepEqual(pasteOf(transfer('Deny xdd')), { kind: 'text', text: 'Deny xdd' });
+});
+
+test('a pasted image is an image, whatever text came with it', () => {
+  const png = new File(['png-bytes'], 'shot.png', { type: 'image/png' });
+  const clip = pasteOf(transfer('shot.png', [png]));
+  assert.equal(clip?.kind, 'images');
+  assert.equal(clip?.kind === 'images' && clip.files[0], png);
+});
+
+test('an empty paste is nothing', () => {
+  assert.equal(pasteOf(transfer('')), null);
+  assert.equal(pasteOf(null), null);
 });

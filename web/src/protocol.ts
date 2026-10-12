@@ -246,6 +246,7 @@ export type ClientMessage =
   | { type: 'viewport'; cols: number }
   | { type: 'focus'; column: boolean }
   | { type: 'visible' }
+  | { type: 'paste' }
   /** A diagnostic line for the server's log (never content). */
   | { type: 'log'; message: string };
 

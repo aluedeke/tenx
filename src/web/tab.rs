@@ -39,6 +39,9 @@ pub(super) enum PageMsg {
     Viewport { cols: u16 },
     Focus { column: bool },
     Visible,
+    /// What the page sends next on the terminal is a paste: out of copy-mode
+    /// first, where tmux would drop it.
+    Paste,
     /// A line for the server's log (`~/.config/tenx/web.log` under the
     /// service): what the page saw where only the device can see it — e.g.
     /// which clipboard types a paste found, or the error it got. Never
@@ -353,6 +356,9 @@ impl Driver {
             PageMsg::Focus { column: true } => self.column.select_current(),
             PageMsg::Focus { column: false } => self.column.blur(),
             PageMsg::Visible => self.column.maybe_sweep(),
+            PageMsg::Paste => {
+                let _ = crate::tmux::leave_mode_in(&self.session);
+            }
             PageMsg::Log { message } => {
                 let line: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
                 eprintln!("page {}: {line}", self.session);
@@ -457,6 +463,7 @@ mod tests {
         let resize: PageMsg = serde_json::from_str(r#"{"type":"resize","cols":120,"rows":40}"#).unwrap();
         assert!(matches!(resize, PageMsg::Resize { cols: 120, rows: 40 }));
         assert!(matches!(serde_json::from_str(r#"{"type":"visible"}"#).unwrap(), PageMsg::Visible));
+        assert!(matches!(serde_json::from_str(r#"{"type":"paste"}"#).unwrap(), PageMsg::Paste));
         let set: PageMsg = serde_json::from_str(r#"{"type":"form","op":"set","field":"name","value":"Fix"}"#).unwrap();
         assert!(matches!(set, PageMsg::Form(crate::tui::column::view::FormOp::Set { ref field, ref value }) if field == "name" && value == "Fix"));
         let pick: PageMsg = serde_json::from_str(r#"{"type":"form","op":"pick","field":"agent","index":2}"#).unwrap();

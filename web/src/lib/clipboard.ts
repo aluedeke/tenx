@@ -42,6 +42,31 @@ export function namesImage(text: string): boolean {
   return /^[a-z][\w+.-]*:\/\//i.test(t) || /\.(png|jpe?g|gif|heic|heif|webp|tiff?|bmp)$/i.test(t);
 }
 
+/** The images among a clipboard's or a drop's items. */
+export function imagesIn(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const files: File[] = [];
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  if (files.length === 0) {
+    for (const f of Array.from(data.files ?? [])) if (f.type.startsWith('image/')) files.push(f);
+  }
+  return files;
+}
+
+/** What a paste event carries: its images (uploaded, their paths typed),
+ * else its text, else nothing. */
+export function pasteOf(data: DataTransfer | null): { kind: 'images'; files: File[] } | { kind: 'text'; text: string } | null {
+  const files = imagesIn(data);
+  if (files.length) return { kind: 'images', files };
+  const text = data?.getData('text/plain') ?? '';
+  return text ? { kind: 'text', text } : null;
+}
+
 /** A web page's HTML as the text it shows, for pasting into a terminal. */
 export function htmlText(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
