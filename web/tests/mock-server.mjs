@@ -206,10 +206,17 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 // Live dictation (`tenx web`'s dictate.rs): text so far while audio comes
-// in, a fixed answer on stop — or an error with `?language=fail`.
+// in, a fixed answer on stop — or an error with `?language=fail`, or at
+// once with `?language=nomodel`.
 speech.on('connection', (ws, req) => {
   const language = new URL(req.url, 'http://x').searchParams.get('language');
   let bytes = 0;
+  // No model set: tenx web says so as soon as the socket opens.
+  if (language === 'nomodel') {
+    ws.send(JSON.stringify({ type: 'error', error: 'no speech model set' }));
+    ws.close();
+    return;
+  }
   ws.on('message', (data, binary) => {
     if (binary) {
       bytes += data.length;

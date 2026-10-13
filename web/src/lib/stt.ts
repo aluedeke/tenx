@@ -139,6 +139,7 @@ export class Dictation {
     onText: (t: LiveText) => void,
     onError: (message: string) => void,
     log: (message: string) => void,
+    timing: () => string,
   ) {
     let stopping = false;
     this.finished = new Promise((resolve, reject) => {
@@ -165,7 +166,7 @@ export class Dictation {
     node.port.onmessage = (e: MessageEvent<Float32Array>) => {
       if (speakFrom === Infinity) {
         speakFrom = chime(ctx);
-        log(`chime: context ${ctx.state} at ${ctx.sampleRate} Hz, audio session ${audioSession()?.type ?? 'none'}`);
+        log(`chime: ${timing()}; context ${ctx.state} at ${ctx.sampleRate} Hz, audio session ${audioSession()?.type ?? 'none'}`);
       }
       if (ctx.currentTime < speakFrom) return;
       for (const piece of this.down.push(e.data)) this.send(piece);
@@ -193,25 +194,49 @@ export class Dictation {
     if (session) session.type = 'play-and-record';
     const ctx = new AudioContext();
     void ctx.resume();
+    // Microphone, socket and worklet all at once: each takes a while on a
+    // phone, and none needs another. `ready` says how long each took.
+    const t0 = performance.now();
+    const ready: Record<string, number> = {};
+    const mark = (step: string) => (ready[step] = Math.round(performance.now() - t0));
+    const ws = new WebSocket(speechUrl());
+    ws.binaryType = 'arraybuffer';
+    const open = new Promise<void>((resolve, reject) => {
+      ws.onopen = () => resolve(void mark('socket'));
+      ws.onerror = () => reject(new Error('cannot reach tenx web for speech'));
+    });
+    // What the server says before the microphone is ready: only an error
+    // (no model set), as it says nothing else before audio comes in.
+    let early: string | null = null;
+    ws.onmessage = (e) => {
+      const m = JSON.parse(String(e.data));
+      if (m.type === 'error') early ??= m.error;
+    };
+    const worklet = ctx.audioWorklet.addModule('/pcm-worklet.js').then(() => void mark('worklet'));
+    // Awaited below; until then a failure must not count as unhandled.
+    open.catch(() => {});
+    worklet.catch(() => {});
     let stream: MediaStream | undefined;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
       });
-      const ws = new WebSocket(speechUrl());
-      ws.binaryType = 'arraybuffer';
-      const open = new Promise<void>((resolve, reject) => {
-        ws.onopen = () => resolve();
-        ws.onerror = () => reject(new Error('cannot reach tenx web for speech'));
-      });
-      await ctx.audioWorklet.addModule('/pcm-worklet.js');
+      mark('microphone');
+      await worklet;
       const node = new AudioWorkletNode(ctx, 'pcm');
       ctx.createMediaStreamSource(stream).connect(node);
       node.connect(ctx.destination); // it outputs silence; connected, it runs
       await open;
-      return new Dictation(ctx, stream, node, ws, new Downsampler(ctx.sampleRate / RATE), onText, onError, log);
+      if (early) throw new Error(early);
+      if (ws.readyState !== WebSocket.OPEN) throw new Error('the connection to tenx web closed');
+      const timing = () =>
+        `${Math.round(performance.now() - t0)} ms after the tap (${Object.entries(ready)
+          .map(([step, ms]) => `${step} ${ms}`)
+          .join(', ')})`;
+      return new Dictation(ctx, stream, node, ws, new Downsampler(ctx.sampleRate / RATE), onText, onError, log, timing);
     } catch (e) {
       for (const t of stream?.getTracks() ?? []) t.stop();
+      ws.close();
       void ctx.close();
       if (session) session.type = 'auto';
       throw e;

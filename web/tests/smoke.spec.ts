@@ -968,6 +968,15 @@ test('a chime says when the microphone records, and is not sent as speech', asyn
   expect(await sessionType()).toBe('auto');
 });
 
+test('an error from the server before the microphone is ready is shown, and the microphone stays off', async ({ page }) => {
+  await fakeMicrophone(page, 'nomodel');
+  await page.goto('/');
+  const mic = page.getByTestId('mic');
+  await mic.click();
+  await expect(page.getByRole('status')).toContainText('no speech model set');
+  await expect(mic).toHaveAttribute('data-state', 'idle');
+});
+
 test('when the server gives up mid-recording, the microphone goes off and says why', async ({ page }) => {
   await fakeMicrophone(page, 'fail');
   await page.goto('/');
@@ -997,7 +1006,7 @@ test('Ctrl+M starts and stops the microphone from the terminal and the column', 
   // The column has the keyboard.
   await page.keyboard.press('Control+KeyM');
   await expect(mic).toHaveAttribute('data-state', 'recording');
-  await page.waitForTimeout(800);
+  await expect.poll(term.line).toMatch(/heard \d+ bytes$/);
   await page.keyboard.press('Control+KeyM');
   await expect.poll(term.line).toMatch(/heard default $/);
 
@@ -1007,7 +1016,7 @@ test('Ctrl+M starts and stops the microphone from the terminal and the column', 
   term.reset();
   await page.keyboard.press('Control+KeyM');
   await expect(mic).toHaveAttribute('data-state', 'recording');
-  await page.waitForTimeout(800);
+  await expect.poll(term.line).toMatch(/heard \d+ bytes$/);
   await page.keyboard.press('Control+KeyM');
   await expect.poll(term.line).toMatch(/heard default $/);
   expect(term.raw()).not.toContain('\r');
@@ -1016,7 +1025,7 @@ test('Ctrl+M starts and stops the microphone from the terminal and the column', 
   term.reset();
   await page.keyboard.press('Control+KeyM');
   await expect(mic).toHaveAttribute('data-state', 'recording');
-  await page.waitForTimeout(800);
+  await expect.poll(term.line).toMatch(/heard \d+ bytes$/);
   await page.keyboard.press('Enter');
   // The line as the terminal shows it: the live text corrected, no space
   // before the Enter.
@@ -1050,7 +1059,8 @@ test('on a phone, the key bar has the microphone and it keeps the keyboard', asy
   await mic.tap();
   await expect(mic).toHaveAttribute('aria-pressed', 'true');
   await expect(textarea).toBeFocused();
-  await page.waitForTimeout(800);
+  // Stopped once audio has reached the server (the text so far).
+  await expect.poll(term.line).toMatch(/^heard \d+ bytes$/);
   await mic.tap();
   await expect.poll(term.line).toMatch(/heard default $/);
   await expect(textarea).toBeFocused();
@@ -1088,6 +1098,7 @@ test('on a phone, the key bar stays while recording even when the keyboard goes 
   await keyboard(false);
   await page.waitForTimeout(800);
   await expect(mic).toBeVisible();
+  await expect.poll(term.line).toMatch(/^heard \d+ bytes$/);
   await mic.tap();
   await expect.poll(term.line).toMatch(/heard default $/);
 });
