@@ -940,7 +940,7 @@ export function App() {
             fontSize={fontSize}
             fontWeight={fontWeight}
             onData={onTerminalData}
-            onResize={(cols, rows) => send({ type: 'resize', cols, rows })}
+            onResize={(size) => send({ type: 'resize', ...size })}
             onBell={bell}
             intercept={(ev) => isFocusCycle(ev, mac.current) || isMicToggle(ev)}
             onFocus={() => {

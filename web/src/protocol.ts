@@ -242,7 +242,7 @@ export type ClientMessage =
   | ({ type: 'click'; seq?: number } & Click)
   | { type: 'action'; name: Action; seq?: number }
   | ({ type: 'form'; seq?: number } & FormOp)
-  | { type: 'resize'; cols: number; rows: number }
+  | { type: 'resize'; cols: number; rows: number; width?: number; height?: number }
   | { type: 'viewport'; cols: number }
   | { type: 'focus'; column: boolean }
   | { type: 'visible' }

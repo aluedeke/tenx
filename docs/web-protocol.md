@@ -112,8 +112,12 @@ without `seq` work as before.
 { "type": "form", "op": "pick", "field": "workspace", "index": 0 }
 { "type": "form", "op": "submit" }
 
-// The terminal's size in cells (xterm fit addon) → PTY resize.
-{ "type": "resize", "cols": 120, "rows": 40 }
+// The terminal's size in cells (xterm fit addon) → PTY resize. `width` /
+// `height` (optional) are its size in CSS pixels, the pty's pixel size: tmux
+// passes the cell size on to the panes, where an image program (image.nvim's
+// Sixel output) sizes its pictures by it. xterm's image addon draws one
+// Sixel pixel per CSS pixel.
+{ "type": "resize", "cols": 120, "rows": 40, "width": 1010, "height": 748 }
 
 // The page's whole width in cells, for tenx_core::column::width → `layout`.
 { "type": "viewport", "cols": 180 }

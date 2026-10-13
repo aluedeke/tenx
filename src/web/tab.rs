@@ -35,7 +35,16 @@ pub(super) enum PageMsg {
     Click(Click),
     Action { name: crate::tui::column::view::Action },
     Form(crate::tui::column::view::FormOp),
-    Resize { cols: u16, rows: u16 },
+    /// `width` / `height`: the terminal's size in CSS pixels, so programs
+    /// that draw images (Sixel) can size them to the cells; 0 when unknown.
+    Resize {
+        cols: u16,
+        rows: u16,
+        #[serde(default)]
+        width: u16,
+        #[serde(default)]
+        height: u16,
+    },
     Viewport { cols: u16 },
     Focus { column: bool },
     Visible,
@@ -208,10 +217,14 @@ struct Pty {
 }
 
 impl Pty {
-    fn spawn(session: &str, cols: u16, rows: u16, out: UnboundedSender<Output>) -> Result<Pty> {
-        let pair = native_pty_system().openpty(size(cols, rows)).context("open pty")?;
+    fn spawn(session: &str, at: PtySize, out: UnboundedSender<Output>) -> Result<Pty> {
+        let pair = native_pty_system().openpty(at).context("open pty")?;
         let (tmux, args) = crate::tmux::attach_command_to(session);
         let mut cmd = CommandBuilder::new(tmux);
+        // xterm.js draws Sixel (its image addon): say so, or tmux shows a
+        // picture a program draws as a box of `+`. tmux only finds this out
+        // by itself from 3.8 on.
+        cmd.args(["-T", "sixel"]);
         cmd.args(&args);
         // Not nested, whatever started `tenx web`; and the terminal is
         // xterm.js, whatever this process's own is.
@@ -253,8 +266,10 @@ impl Pty {
     }
 }
 
-fn size(cols: u16, rows: u16) -> PtySize {
-    PtySize { rows: rows.max(1), cols: cols.max(1), pixel_width: 0, pixel_height: 0 }
+/// The pty's size; tmux hands the pixels (its cell size) on to the panes,
+/// where an image program reads them with TIOCGWINSZ.
+fn size(cols: u16, rows: u16, width: u16, height: u16) -> PtySize {
+    PtySize { rows: rows.max(1), cols: cols.max(1), pixel_width: width, pixel_height: height }
 }
 
 /// The tab's thread: everything that touches the column or the pty.
@@ -369,11 +384,11 @@ impl Driver {
                     tenx_core::web::layout(cols, configured, crate::tmux::SMALL_CLIENT_COLS as u16);
                 self.send_json(serde_json::json!({ "type": "layout", "column_cols": column_cols, "narrow": narrow }));
             }
-            PageMsg::Resize { cols, rows } => match &mut self.pty {
+            PageMsg::Resize { cols, rows, width, height } => match &mut self.pty {
                 Some(pty) => {
-                    let _ = pty.master.resize(size(cols, rows));
+                    let _ = pty.master.resize(size(cols, rows, width, height));
                 }
-                None => match Pty::spawn(&self.session, cols, rows, self.out.clone()) {
+                None => match Pty::spawn(&self.session, size(cols, rows, width, height), self.out.clone()) {
                     Ok(pty) => self.pty = Some(pty),
                     Err(e) => self.send_json(serde_json::json!({ "type": "error", "message": format!("{e:#}") })),
                 },
@@ -461,7 +476,9 @@ mod tests {
         let tab: PageMsg = serde_json::from_str(r#"{"type":"click","kind":"tab","index":1}"#).unwrap();
         assert!(matches!(tab, PageMsg::Click(Click::Tab { index: 1 })));
         let resize: PageMsg = serde_json::from_str(r#"{"type":"resize","cols":120,"rows":40}"#).unwrap();
-        assert!(matches!(resize, PageMsg::Resize { cols: 120, rows: 40 }));
+        assert!(matches!(resize, PageMsg::Resize { cols: 120, rows: 40, width: 0, height: 0 }));
+        let pixels: PageMsg = serde_json::from_str(r#"{"type":"resize","cols":120,"rows":40,"width":1000,"height":700}"#).unwrap();
+        assert!(matches!(pixels, PageMsg::Resize { width: 1000, height: 700, .. }));
         assert!(matches!(serde_json::from_str(r#"{"type":"visible"}"#).unwrap(), PageMsg::Visible));
         assert!(matches!(serde_json::from_str(r#"{"type":"paste"}"#).unwrap(), PageMsg::Paste));
         let set: PageMsg = serde_json::from_str(r#"{"type":"form","op":"set","field":"name","value":"Fix"}"#).unwrap();

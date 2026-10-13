@@ -14,13 +14,22 @@ import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
 import { SELECT_HOLD_MS, SelectGesture } from '@/lib/touchselect';
 
+/** The grid in cells, and its size in CSS pixels (0 before it is laid out):
+ * the pty's pixel size, which image programs size their pictures by. */
+export interface TermSize {
+  cols: number;
+  rows: number;
+  width: number;
+  height: number;
+}
+
 export interface TerminalHandle {
   write(bytes: Uint8Array): void;
   reset(): void;
   focus(): void;
   blur(): void;
   fit(): void;
-  size(): { cols: number; rows: number } | null;
+  size(): TermSize | null;
   /** Paste text as the terminal would (bracketed when the program asked). */
   paste(text: string): void;
 }
@@ -31,7 +40,7 @@ interface Props {
   fontWeight: number;
   /** Keyboard input, as the string xterm produced for it. */
   onData(data: string): void;
-  onResize(cols: number, rows: number): void;
+  onResize(size: TermSize): void;
   onBell(): void;
   /** A key the page keeps (^w) — xterm must not see it. */
   intercept(ev: KeyboardEvent): boolean;
@@ -77,6 +86,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
   const pending = useRef<Uint8Array[]>([]);
   const propsRef = useRef(props);
   propsRef.current = props;
+  // Sends the size when it changed — in cells or only in pixels (a new font
+  // size can keep the grid and change the cells).
+  const reportRef = useRef<() => void>(() => {});
 
   useImperativeHandle(ref, () => ({
     write(bytes) {
@@ -99,9 +111,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       } catch {
         // Not laid out yet.
       }
+      reportRef.current();
     },
     size() {
-      return term.current ? { cols: term.current.cols, rows: term.current.rows } : null;
+      return term.current ? sizeOf(term.current) : null;
     },
     paste(text) {
       propsRef.current.onPasteStart();
@@ -114,11 +127,12 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
     let observer: ResizeObserver | null = null;
     let xterm: XTerm | null = null;
     (async () => {
-      const [{ Terminal: XTermCtor }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }] = await Promise.all([
+      const [{ Terminal: XTermCtor }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }, { ImageAddon }] = await Promise.all([
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
         import('@xterm/addon-web-links'),
         import('@xterm/addon-clipboard'),
+        import('@xterm/addon-image'),
       ]);
       // Both weights before the first glyph: the WebGL renderer rasterizes a
       // glyph once into its atlas, so bold drawn before the 700 face arrives
@@ -153,6 +167,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       // Programs' OSC 52 copies (tmux's selection, an agent's copy): the
       // browser clipboard, whatever target they name (lib/clipboard).
       xterm.loadAddon(new ClipboardAddon(undefined, new TerminalClipboard()));
+      // Pictures programs draw in the terminal (Sixel, iTerm2's inline
+      // images): image.nvim's Sixel output, through tmux's passthrough.
+      xterm.loadAddon(new ImageAddon());
       xterm.open(host.current);
       // WebGL on desktops only: a phone's grid is small enough for the DOM
       // renderer, and mobile GPUs are where WebGL draws nothing. `?renderer=`
@@ -178,7 +195,16 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.attachCustomKeyEventHandler((ev) => !composesDeadKey(ev) && !propsRef.current.intercept(ev));
       xterm.onData((d) => propsRef.current.onData(d));
       xterm.onBinary((d) => propsRef.current.onData(d));
-      xterm.onResize(({ cols, rows }) => propsRef.current.onResize(cols, rows));
+      let last = '';
+      reportRef.current = () => {
+        if (!xterm) return;
+        const size = sizeOf(xterm);
+        const key = `${size.cols}x${size.rows}/${size.width}x${size.height}`;
+        if (key === last) return;
+        last = key;
+        propsRef.current.onResize(size);
+      };
+      xterm.onResize(() => reportRef.current());
       xterm.onBell(() => propsRef.current.onBell());
       xterm.textarea?.addEventListener('focus', () => propsRef.current.onFocus());
       // No suggestions over a terminal: iOS's predictions and Safari's inline
@@ -196,13 +222,14 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       for (const b of pending.current) xterm.write(b);
       pending.current = [];
       fit.fit();
-      propsRef.current.onResize(xterm.cols, xterm.rows);
+      reportRef.current();
       observer = new ResizeObserver(() => {
         try {
           fit.fit();
         } catch {
           // Hidden (display: none) while the column overlays it.
         }
+        reportRef.current();
       });
       observer.observe(host.current);
     })();
@@ -229,6 +256,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       } catch {
         // Not laid out.
       }
+      reportRef.current();
     });
   }, [props.fontSize, props.fontWeight]);
 
@@ -243,6 +271,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
 interface Gesture {
   scrolled: boolean;
   selecting: boolean;
+}
+
+/** The grid and the pixels it covers (the screen element is exactly the
+ * cells: xterm sizes it to cols × cell width). */
+function sizeOf(xterm: XTerm): TermSize {
+  const r = xterm.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+  return { cols: xterm.cols, rows: xterm.rows, width: Math.round(r?.width ?? 0), height: Math.round(r?.height ?? 0) };
 }
 
 /** The cell under a point on the terminal, or null outside it. */
