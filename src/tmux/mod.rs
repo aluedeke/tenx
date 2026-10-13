@@ -549,6 +549,24 @@ pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
         .collect())
 }
 
+/// Every pane in the session mapped to the task its window was opened for
+/// (`TASK_DIR_OPTION`), keyed by pane id (`%40`). Panes of untagged windows
+/// are left out. Empty when the server is down.
+pub fn pane_task_dirs() -> Result<HashMap<String, PathBuf>> {
+    if !server_running() {
+        return Ok(HashMap::new());
+    }
+    let format = format!("#{{pane_id}}\t#{{{TASK_DIR_OPTION}}}");
+    let text = run(&["list-panes", "-s", "-t", SESSION, "-F", &format])?;
+    Ok(text
+        .lines()
+        .filter_map(|l| {
+            let (pane, dir) = l.split_once('\t')?;
+            (!dir.is_empty()).then(|| (pane.to_string(), PathBuf::from(dir)))
+        })
+        .collect())
+}
+
 /// Every window's panes and where each one currently sits, keyed by window id.
 /// Empty when the server is down.
 ///

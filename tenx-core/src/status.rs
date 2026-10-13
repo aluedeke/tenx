@@ -65,6 +65,13 @@ pub struct Session {
     /// The tmux pane the session runs in (`%40`), from the registry's own
     /// `tmux` field. What the column previews and sends keys to.
     pub pane: Option<String>,
+    /// The task whose window holds `pane` (the window's `@tenx_task_dir`).
+    /// When set, it decides which task the session belongs to, not `cwd`:
+    /// an agent's cwd follows every `cd` it runs, and Claude Code resets it to
+    /// the launch directory on each prompt, so an agent that works in another
+    /// task's tree flips between the two on every hook. `None` for a session
+    /// outside a stamped window (background agents, old windows).
+    pub task_dir: Option<PathBuf>,
     /// A parked turn: the interactive session hands its running turn to a
     /// worker hosted by Claude Code's daemon (`claude bg-spare`) and records
     /// the worker's job here (`parkedJobId`). The worker keeps its own
@@ -276,15 +283,24 @@ pub fn fold_parked(sessions: Vec<Session>) -> Vec<Session> {
         .collect()
 }
 
-/// Sessions running in `task_dir` or anywhere beneath it. Background agents get
-/// their own subdirectory (`tasks/<slug>/ios-agent`), so this is a prefix
-/// match on path components, not on the string — `tasks/foo` never claims
-/// `tasks/foobar`.
+/// Sessions that belong to `task_dir`: those in its window (see
+/// [`Session::task_dir`]), plus those without a window running in `task_dir` or
+/// anywhere beneath it. Background agents get their own subdirectory
+/// (`tasks/<slug>/ios-agent`), so this is a prefix match on path components,
+/// not on the string — `tasks/foo` never claims `tasks/foobar`.
 pub fn sessions_for<'a>(sessions: &'a [Session], task_dir: &Path) -> Vec<&'a Session> {
-    sessions
-        .iter()
-        .filter(|s| s.cwd == task_dir || s.cwd.starts_with(task_dir))
-        .collect()
+    sessions.iter().filter(|s| s.belongs_to(task_dir)).collect()
+}
+
+impl Session {
+    /// Whether this session is `task_dir`'s: by its window when it has one,
+    /// else by cwd (see [`sessions_for`]).
+    pub fn belongs_to(&self, task_dir: &Path) -> bool {
+        match &self.task_dir {
+            Some(dir) => dir == task_dir,
+            None => self.cwd.starts_with(task_dir),
+        }
+    }
 }
 
 /// Only the sessions running inside tenx's own multiplexer: those whose pid is
@@ -583,6 +599,7 @@ mod tests {
             status_updated_at: Some(at(updated)),
             kind: kind.to_string(),
             pane: None,
+            task_dir: None,
             parked_job_id: None,
             job_id: None,
             agent: "claude".to_string(),
@@ -859,6 +876,16 @@ mod tests {
         assert_eq!(resolve_task_state(Path::new(TASK), &s, QUIET).status, TaskStatus::Idle);
         let s = [session("/ws/tasks/foo/repo/sub", SessionStatus::Busy, "interactive", 1)];
         assert_eq!(resolve_task_state(Path::new(TASK), &s, QUIET).status, TaskStatus::Working);
+    }
+
+    #[test]
+    fn a_sessions_window_decides_its_task_not_its_cwd() {
+        // Launched in task foo's window, now cd'd into task bar's tree.
+        let mut s = session("/ws/tasks/bar/repo", SessionStatus::Busy, "interactive", 1);
+        s.task_dir = Some(PathBuf::from(TASK));
+        let s = [s];
+        assert_eq!(resolve_task_state(Path::new(TASK), &s, QUIET).status, TaskStatus::Working);
+        assert_eq!(resolve_task_state(Path::new("/ws/tasks/bar"), &s, QUIET).status, TaskStatus::Idle);
     }
 
     #[test]

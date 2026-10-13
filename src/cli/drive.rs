@@ -139,7 +139,10 @@ pub fn output(ws_dir: Option<&str>, task: &str, json: bool) -> Result<()> {
     // agent in a subdirectory — and its agent; with none live, the newest
     // transcript for the directory, in the task's configured agent's format.
     let sessions = workspace::sessions::sessions();
-    let live = sessions.iter().find(|s| s.cwd == task.path && s.kind != "bg");
+    let live = sessions.iter().find(|s| match &s.task_dir {
+        Some(dir) => *dir == task.path,
+        None => s.cwd == task.path && s.kind != "bg",
+    });
     let agent = match live {
         Some(s) if !s.agent.is_empty() => s.agent.clone(),
         _ => crate::agent::agent_for(&ws, &task.path).as_str().to_string(),

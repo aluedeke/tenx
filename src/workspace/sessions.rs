@@ -36,6 +36,7 @@ pub use tenx_core::subagent::{Subagent, SubagentStatus};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -169,6 +170,7 @@ pub fn sessions() -> Vec<Session> {
             kind: if raw.kind.is_empty() { "interactive".to_string() } else { raw.kind },
             agent: raw.agent.unwrap_or_else(|| DEFAULT_AGENT.to_string()),
             pane: raw.tmux.as_deref().and_then(tenx_core::dialog::pane_id),
+            task_dir: None,
             parked_job_id: raw.parked_job_id,
             job_id: raw.job_id,
             permission_mode: raw.permission_mode,
@@ -181,6 +183,10 @@ pub fn sessions() -> Vec<Session> {
     }
     let scope = pane_scope();
     let mut out = fold_parked(in_panes(out, &scope.pane_pids, &scope.tree));
+    // The window a session runs in names its task; its cwd wanders.
+    for s in &mut out {
+        s.task_dir = s.pane.as_ref().and_then(|p| scope.task_dirs.get(p).cloned());
+    }
     // A pi subagent is a child `pi` process reporting as a session of its
     // own: list it under the session it runs beneath.
     out = tenx_core::status::nest_child_sessions(out, &scope.tree, &|s| s.agent == "pi");
@@ -377,7 +383,8 @@ fn pane_scope() -> PaneScope {
     } else {
         tenx_core::live::parse_ps(&crate::live::run_capture("ps", &["-axo", "pid=,ppid="]))
     };
-    let scope = PaneScope { pane_pids, tree };
+    let task_dirs = crate::tmux::pane_task_dirs().unwrap_or_default();
+    let scope = PaneScope { pane_pids, tree, task_dirs };
     *cache = Some((Instant::now(), scope.clone()));
     scope
 }
@@ -388,6 +395,8 @@ const SCOPE_TTL: Duration = Duration::from_secs(2);
 struct PaneScope {
     pane_pids: Vec<u32>,
     tree: Vec<(u32, u32)>,
+    /// Pane id → the task its window was opened for.
+    task_dirs: HashMap<String, PathBuf>,
 }
 
 /// Where Claude Code keeps a directory's transcripts: `~/.claude/projects/`
