@@ -744,6 +744,42 @@ pub fn set_global_option(option: &str, value: &str) -> Result<()> {
     run(&["set-option", "-g", option, value]).map(drop)
 }
 
+/// Set several user options in one tmux call: `(Some(window id), …)` per
+/// window, `(None, …)` global. tmux redraws every client after each
+/// `set-option` — pictures (Sixel) included, which is a visible flicker — but
+/// commands in one call share a single redraw. A value ending in `;` would
+/// read as a command separator, so such a batch goes one call per option.
+pub fn set_options(sets: &[(Option<&str>, &str, &str)]) -> Result<()> {
+    if sets.is_empty() {
+        return Ok(());
+    }
+    if sets.iter().any(|(_, _, value)| value.ends_with(';')) {
+        for (window, option, value) in sets {
+            match window {
+                Some(id) => set_window_option(id, option, value)?,
+                None => set_global_option(option, value)?,
+            }
+        }
+        return Ok(());
+    }
+    run(&set_options_args(sets)).map(drop)
+}
+
+fn set_options_args<'a>(sets: &[(Option<&'a str>, &'a str, &'a str)]) -> Vec<&'a str> {
+    let mut args = Vec::new();
+    for (i, (window, option, value)) in sets.iter().enumerate() {
+        if i > 0 {
+            args.push(";");
+        }
+        match window {
+            Some(id) => args.extend(["set-option", "-w", "-t", id]),
+            None => args.extend(["set-option", "-g"]),
+        }
+        args.extend([*option, *value]);
+    }
+    args
+}
+
 /// Read an option's value from the running server, trying global then server
 /// scope (`allow-passthrough` is `-g`, `extended-keys` is `-s`). `None` if
 /// unset or unreadable. For `tenx doctor`.
@@ -962,6 +998,12 @@ pub fn shell_quote(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn set_options_is_one_command_list() {
+        let args = set_options_args(&[(Some("@1"), "@tenx_status", "a b"), (None, "@tenx_right", "")]);
+        assert_eq!(args, ["set-option", "-w", "-t", "@1", "@tenx_status", "a b", ";", "set-option", "-g", "@tenx_right", ""]);
+    }
+
     #[test]
     fn leaving_a_mode_cancels_only_a_pane_in_one() {
         let a = leave_mode_args("tenx-web-ab12");

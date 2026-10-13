@@ -34,7 +34,7 @@
 //! not to poll less often.
 
 use anyhow::{Context, Result};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -91,6 +91,9 @@ pub fn run() -> Result<()> {
     // receive a push yet. Starting empty means the first tick always publishes,
     // which is what gives a freshly opened session its initial state.
     let mut published = String::new();
+    // What tmux holds already, per option (`push_status`): only real changes
+    // are set, since every `set-option` redraws every client.
+    let mut pushed = Pushed::new();
 
     loop {
         std::thread::sleep(POLL);
@@ -115,7 +118,7 @@ pub fn run() -> Result<()> {
         let current = digest(&snapshot.tasks);
         if current != published || live_changed {
             published = current;
-            push_status(&snapshot.tasks, &snapshot.windows);
+            push_status(&snapshot.tasks, &snapshot.windows, &mut pushed);
         }
 
         if tick.is_multiple_of(SESSION_CHECK_POLLS) {
@@ -502,10 +505,15 @@ const RIGHT_WAIT_GATE_SECS: u64 = 60;
 /// (what *else* is waiting on you). Called only on a real change, so a quiet
 /// session costs nothing. Rows are `workspace::task_json`, which already
 /// carries the live chips — this doesn't re-read anything.
-fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window]) {
+/// The values last set in tmux: `Some(window id)` → `@tenx_status`, `None`
+/// → `@tenx_right`.
+type Pushed = HashMap<Option<String>, String>;
+
+fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window], pushed: &mut Pushed) {
     if windows.is_empty() {
         return;
     }
+    let mut want: Vec<(Option<String>, String)> = Vec::new();
     let current = windows.iter().find(|w| w.active).map(|w| w.name.as_str());
     for w in windows.iter().filter(|w| w.name != crate::tmux::HOME_WINDOW) {
         let task = tasks.iter().find(|t| t["slug"].as_str() == Some(w.name.as_str()));
@@ -513,7 +521,7 @@ fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window]) {
             Some(t) => status_line(t, &w.name),
             None => String::new(), // idle: the format falls back to the window name
         };
-        let _ = crate::tmux::set_window_option(&w.id, "@tenx_status", &text);
+        want.push((Some(w.id.clone()), text));
     }
 
     // The corner is about the tasks you are *not* looking at.
@@ -544,7 +552,22 @@ fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window]) {
     if !right.is_empty() {
         right.push_str("#[default]");
     }
-    let _ = crate::tmux::set_global_option("@tenx_right", &right);
+    want.push((None, right));
+
+    // Closed windows' entries go; then only what differs from tmux is set,
+    // in one call — each `set-option` redraws every client, which makes a
+    // picture on screen (Sixel) flicker.
+    pushed.retain(|k, _| k.as_ref().is_none_or(|id| windows.iter().any(|w| &w.id == id)));
+    let changed: Vec<&(Option<String>, String)> = want.iter().filter(|(k, v)| pushed.get(k) != Some(v)).collect();
+    let sets: Vec<(Option<&str>, &str, &str)> = changed
+        .iter()
+        .map(|(k, v)| (k.as_deref(), if k.is_some() { "@tenx_status" } else { "@tenx_right" }, v.as_str()))
+        .collect();
+    if crate::tmux::set_options(&sets).is_ok() {
+        for (k, v) in changed {
+            pushed.insert(k.clone(), v.clone());
+        }
+    }
 }
 
 fn has_secrets_pending(t: &serde_json::Value) -> bool {
