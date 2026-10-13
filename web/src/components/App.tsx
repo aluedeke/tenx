@@ -765,7 +765,7 @@ export function App() {
         diag(`failed: ${message}`);
         notice(`speech: ${message}`);
         setMic('idle');
-      });
+      }, diag);
       recording.current = rec;
     } catch (e) {
       diag(`no microphone: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);

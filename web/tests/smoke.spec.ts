@@ -936,6 +936,8 @@ test('a chime says when the microphone records, and is not sent as speech', asyn
   await page.addInitScript(() => {
     const w = window as unknown as { tones: number[] };
     w.tones = [];
+    // Safari's Audio Session API, which Chromium lacks.
+    Object.defineProperty(navigator, 'audioSession', { value: { type: 'auto' } });
     const start = OscillatorNode.prototype.start;
     OscillatorNode.prototype.start = function (...args) {
       w.tones.push(this.frequency.value);
@@ -955,11 +957,15 @@ test('a chime says when the microphone records, and is not sent as speech', asyn
   await mic.click();
   await expect(mic).toHaveAttribute('data-state', 'recording');
   await expect.poll(tones).toEqual([880, 1320]);
+  const sessionType = () => page.evaluate(() => (navigator as unknown as { audioSession: { type: string } }).audioSession.type);
+  // So iOS plays the chime on the speaker while the microphone is on.
+  expect(await sessionType()).toBe('play-and-record');
   // What the microphone heard during the chime is dropped.
   await expect.poll(() => firstAudio).toBeGreaterThan(0);
   expect(firstAudio - tapped).toBeGreaterThan(200);
   await mic.click();
   await expect(mic).toHaveAttribute('data-state', 'idle');
+  expect(await sessionType()).toBe('auto');
 });
 
 test('when the server gives up mid-recording, the microphone goes off and says why', async ({ page }) => {

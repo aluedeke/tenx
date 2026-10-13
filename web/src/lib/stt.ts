@@ -99,8 +99,14 @@ class Downsampler {
   }
 }
 
+/** Safari's Audio Session API (16.4+): how iOS mixes and routes this page's
+ * sound. Missing from TypeScript's DOM types and from other browsers. */
+type AudioSession = { type: string };
+const audioSession = (): AudioSession | undefined =>
+  typeof navigator === 'undefined' ? undefined : (navigator as unknown as { audioSession?: AudioSession }).audioSession;
+
 /** Plays the "speak now" chime now; returns when it has ended, on the
- * context's clock. Quiet, so it doesn't startle in a meeting. */
+ * context's clock. */
 function chime(ctx: AudioContext): number {
   const t = ctx.currentTime;
   const gain = ctx.createGain();
@@ -112,7 +118,7 @@ function chime(ctx: AudioContext): number {
     osc.type = 'sine';
     osc.frequency.value = hz;
     osc.connect(gain);
-    gain.gain.setTargetAtTime(0.15, at, 0.005);
+    gain.gain.setTargetAtTime(0.5, at, 0.005);
     gain.gain.setTargetAtTime(0, at + CHIME / 2 - 0.03, 0.01);
     osc.start(at);
     osc.stop(at + CHIME / 2);
@@ -132,6 +138,7 @@ export class Dictation {
     private down: Downsampler,
     onText: (t: LiveText) => void,
     onError: (message: string) => void,
+    log: (message: string) => void,
   ) {
     let stopping = false;
     this.finished = new Promise((resolve, reject) => {
@@ -156,7 +163,10 @@ export class Dictation {
     // until the chime has ended is dropped, not sent to Whisper.
     let speakFrom = Infinity;
     node.port.onmessage = (e: MessageEvent<Float32Array>) => {
-      if (speakFrom === Infinity) speakFrom = chime(ctx);
+      if (speakFrom === Infinity) {
+        speakFrom = chime(ctx);
+        log(`chime: context ${ctx.state} at ${ctx.sampleRate} Hz, audio session ${audioSession()?.type ?? 'none'}`);
+      }
       if (ctx.currentTime < speakFrom) return;
       for (const piece of this.down.push(e.data)) this.send(piece);
     };
@@ -169,8 +179,18 @@ export class Dictation {
   }
 
   /** Straight from a tap: iOS lets audio start only inside one, so the
-   * audio context is made before anything is awaited. */
-  static async start(onText: (t: LiveText) => void, onError: (message: string) => void): Promise<Dictation> {
+   * audio context is made before anything is awaited. `log` gets
+   * diagnostics for the server's log. */
+  static async start(
+    onText: (t: LiveText) => void,
+    onError: (message: string) => void,
+    log: (message: string) => void = () => {},
+  ): Promise<Dictation> {
+    // iOS: with the microphone on, the page's sound would go to the earpiece
+    // or be muted, and the chime unheard. Play-and-record sends it to the
+    // speaker, also with the ringer switched to silent.
+    const session = audioSession();
+    if (session) session.type = 'play-and-record';
     const ctx = new AudioContext();
     void ctx.resume();
     let stream: MediaStream | undefined;
@@ -189,10 +209,11 @@ export class Dictation {
       ctx.createMediaStreamSource(stream).connect(node);
       node.connect(ctx.destination); // it outputs silence; connected, it runs
       await open;
-      return new Dictation(ctx, stream, node, ws, new Downsampler(ctx.sampleRate / RATE), onText, onError);
+      return new Dictation(ctx, stream, node, ws, new Downsampler(ctx.sampleRate / RATE), onText, onError, log);
     } catch (e) {
       for (const t of stream?.getTracks() ?? []) t.stop();
       void ctx.close();
+      if (session) session.type = 'auto';
       throw e;
     }
   }
@@ -224,5 +245,7 @@ export class Dictation {
     this.node.disconnect();
     for (const t of this.stream.getTracks()) t.stop();
     void this.ctx.close();
+    const session = audioSession();
+    if (session) session.type = 'auto';
   }
 }
