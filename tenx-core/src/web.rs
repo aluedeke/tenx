@@ -72,6 +72,10 @@ pub fn manifest_with_token(manifest: &str, token: &str) -> String {
 /// anything bigger is refused before it is written.
 pub const PASTE_MAX_BYTES: usize = 25 * 1024 * 1024;
 
+/// The most text `/clipboard/set` takes: far more than anyone copies by
+/// hand, small enough that a mistake can't fill the Mac's memory.
+pub const CLIPBOARD_MAX_BYTES: usize = 4 * 1024 * 1024;
+
 /// How long a pasted image is kept. It only has to outlive the agent reading
 /// it; older ones are swept on the next paste.
 pub const PASTE_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);

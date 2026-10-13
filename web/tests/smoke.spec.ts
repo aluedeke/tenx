@@ -768,6 +768,32 @@ for (const [name, parts, expected] of [
   });
 }
 
+test('the clipboard keys copy text to the Mac and back', async ({ page, context, isMobile }) => {
+  test.skip(!isMobile, 'the key bar is for touch');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/');
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.evaluate(() => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
+    vv.dispatchEvent(new Event('resize'));
+  });
+  const bar = page.getByTestId('keybar');
+  // The approve/deny keys are gone; the column still has its own.
+  await expect(bar.getByRole('button', { name: 'A', exact: true })).toHaveCount(0);
+  await expect(bar.getByRole('button', { name: 'D', exact: true })).toHaveCount(0);
+  // The Mac's clipboard onto the phone's.
+  await bar.getByTestId('from-mac').tap();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('from the mac ✓');
+  // The phone's onto the Mac's, and back again.
+  await page.evaluate(() => navigator.clipboard.writeText('from the phone'));
+  await bar.getByTestId('to-mac').tap();
+  await expect(page.getByText('copied to the Mac')).toBeVisible();
+  await page.evaluate(() => navigator.clipboard.writeText(''));
+  await bar.getByTestId('from-mac').tap();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('from the phone');
+});
+
 test('a dead key (US International) types its composed character once', async ({ page, isMobile }) => {
   test.skip(isMobile, 'a hardware keyboard layout');
   const term = terminalInput(page);

@@ -4,8 +4,9 @@ import { useEffect, useRef } from 'react';
 import { MicIcon, formatSeconds, type MicState } from './Header';
 
 // The keys a phone keyboard lacks, above it: Esc, a sticky Ctrl for the next
-// key, Tab, arrows, Enter, and A/D to answer the task in front of you. They go
-// wherever the keyboard is — the column as key messages, the terminal as bytes.
+// key, Tab, arrows, Enter. They go wherever the keyboard is — the column as
+// key messages, the terminal as bytes. Then the clipboard: this device's to
+// the Mac's (→⌘), the Mac's to this device's (←⌘), paste into the terminal.
 
 interface Props {
   /** The column has the keyboard (adds `?`, drops the sticky Ctrl). */
@@ -18,6 +19,10 @@ interface Props {
   attachInput: string;
   /** Paste what's on the clipboard — an image or text. */
   onPaste(): void;
+  /** This device's clipboard onto the Mac's. */
+  onToMac(): void;
+  /** The Mac's clipboard onto this device's. */
+  onFromMac(): void;
   /** Put the keyboard focus back where it was (the terminal, or the
    * column's text input) — called inside the tap, the only place iOS lets a
    * focus keep its on-screen keyboard up. */
@@ -33,21 +38,17 @@ interface Props {
 /** The page's file input the 📎 opens. */
 export const ATTACH_INPUT = 'kb-attach';
 
-const KEYS: { key: string; label: string; shift?: boolean; cls?: string }[] = [
+const KEYS: { key: string; label: string }[] = [
   { key: 'Escape', label: 'esc' },
   { key: 'Tab', label: '⇥' },
   { key: 'ArrowUp', label: '↑' },
   { key: 'ArrowDown', label: '↓' },
   { key: 'Enter', label: '⏎' },
-  { key: 'A', label: 'A', shift: true, cls: 'warn' },
-  { key: 'D', label: 'D', shift: true, cls: 'warn' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste, onRefocus, onDiag, mic, micSeconds, onMic }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste, onToMac, onFromMac, onRefocus, onDiag, mic, micSeconds, onMic }: Props) {
   const bar = useRef<HTMLDivElement>(null);
-  /** A touch already pasted on lifting; the click after it, if any, mustn't. */
-  const pastedByTouch = useRef(false);
-  /** The same for the microphone. */
+  /** The microphone was started by a touch; the click after it, if any, mustn't. */
   const micByTouch = useRef(false);
   // iOS moves focus off the terminal — and closes the keyboard — on a tap
   // anywhere else, whatever pointerdown does. Cancelling the touch itself
@@ -84,13 +85,7 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste
         </button>
       )}
       {KEYS.slice(1).map((k) => (
-        <button
-          key={k.key}
-          type="button"
-          className={k.cls ? `key ${k.cls}` : 'key'}
-          data-keep-focus
-          onPointerDown={press(() => onKey(k.key, !!k.shift))}
-        >
+        <button key={k.key} type="button" className="key" data-keep-focus onPointerDown={press(() => onKey(k.key, false))}>
           {k.label}
         </button>
       ))}
@@ -99,40 +94,16 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste
           ?
         </button>
       )}
+      <ClipboardKey label="copy to the Mac" testId="to-mac" onDiag={onDiag} onRefocus={onRefocus} onTap={onToMac}>
+        →⌘
+      </ClipboardKey>
+      <ClipboardKey label="copy from the Mac" testId="from-mac" onDiag={onDiag} onRefocus={onRefocus} onTap={onFromMac}>
+        ←⌘
+      </ClipboardKey>
       {!column && (
-        // A click, not a pointer-down: reading the clipboard needs the
-        // gesture to have completed (iOS then shows its own Paste bubble).
-        <button
-          type="button"
-          className="key"
-          aria-label="paste"
-          data-testid="paste"
-          // No default on the press: the terminal keeps focus, and with it
-          // the on-screen keyboard. That also means iOS fires no click for a
-          // touch, so a finger pastes on lifting — still the tap the
-          // clipboard read needs — and a mouse on the click.
-          onPointerDown={(e) => {
-            e.preventDefault();
-            onDiag?.(`paste: pointerdown (${e.pointerType})`);
-          }}
-          onPointerUp={(e) => {
-            if (e.pointerType === 'mouse') return;
-            pastedByTouch.current = true;
-            onDiag?.(`paste: pointerup (${e.pointerType})`);
-            onPaste();
-          }}
-          onClick={() => {
-            // The click that may still follow a touch: already pasted.
-            if (pastedByTouch.current) {
-              pastedByTouch.current = false;
-              return;
-            }
-            onRefocus();
-            onPaste();
-          }}
-        >
+        <ClipboardKey label="paste" testId="paste" onDiag={onDiag} onRefocus={onRefocus} onTap={onPaste}>
           <PasteIcon />
-        </button>
+        </ClipboardKey>
       )}
       {!column && (
         // Keeps the keyboard like the keys around it (data-keep-focus: the
@@ -182,6 +153,59 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste
         </label>
       )}
     </div>
+  );
+}
+
+/** A key that reads or writes the clipboard, which needs a completed tap —
+ * a click, not a pointer-down (iOS then shows its own Paste bubble). No
+ * default on the press: the terminal keeps focus, and with it the on-screen
+ * keyboard. That also means iOS fires no click for a touch, so a finger acts
+ * on lifting — still the tap the clipboard wants — and a mouse on the click. */
+function ClipboardKey({
+  label,
+  testId,
+  onTap,
+  onRefocus,
+  onDiag,
+  children,
+}: {
+  label: string;
+  testId: string;
+  onTap(): void;
+  onRefocus(): void;
+  onDiag?(message: string): void;
+  children: React.ReactNode;
+}) {
+  /** A touch already acted on lifting; the click after it, if any, mustn't. */
+  const byTouch = useRef(false);
+  return (
+    <button
+      type="button"
+      className="key"
+      aria-label={label}
+      title={label}
+      data-testid={testId}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        onDiag?.(`${testId}: pointerdown (${e.pointerType})`);
+      }}
+      onPointerUp={(e) => {
+        if (e.pointerType === 'mouse') return;
+        byTouch.current = true;
+        onDiag?.(`${testId}: pointerup (${e.pointerType})`);
+        onTap();
+      }}
+      onClick={() => {
+        if (byTouch.current) {
+          byTouch.current = false;
+          return;
+        }
+        onRefocus();
+        onTap();
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

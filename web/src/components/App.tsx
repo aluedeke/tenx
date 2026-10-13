@@ -17,6 +17,7 @@ import { keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
+import { EmptyClipboard, copyFromMac, sendToMac } from '@/lib/macclip';
 import { keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -665,6 +666,45 @@ export function App() {
     else notice('nothing to paste: the clipboard has no text or image');
   }, [notice, pasteImages, send]);
 
+  /** The key bar's `→⌘`: this device's clipboard onto the Mac's, so ⌘V
+   * there pastes it. Text only. Called inside the tap: the read needs it. */
+  const clipboardToMac = useCallback(async () => {
+    const diag = (message: string) => send({ type: 'log', message: `clipboard: to mac: ${message}` });
+    if (!navigator.clipboard?.readText) {
+      notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return notice('nothing to send: the clipboard has no text');
+      await sendToMac(text);
+      diag(`sent ${text.length} chars`);
+      notice('copied to the Mac');
+    } catch (e) {
+      diag(`failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+      notice(`couldn't copy to the Mac: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [notice, send]);
+
+  /** The key bar's `←⌘`: the Mac's clipboard onto this device's. Called
+   * inside the tap: the write needs it (lib/macclip). */
+  const clipboardFromMac = useCallback(async () => {
+    const diag = (message: string) => send({ type: 'log', message: `clipboard: from mac: ${message}` });
+    if (!navigator.clipboard?.writeText) {
+      notice('writing the clipboard needs HTTPS — open tenx web through `tailscale serve`');
+      return;
+    }
+    try {
+      const chars = await copyFromMac();
+      diag(`copied ${chars} chars`);
+      notice('copied from the Mac');
+    } catch (e) {
+      if (e instanceof EmptyClipboard) return notice(e.message);
+      diag(`failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+      notice(`couldn't copy from the Mac: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [notice, send]);
+
   /** ^V in the terminal, from a browser on another device: Claude Code would
    * look for an image on its own machine's clipboard and find none. An image
    * on this device's clipboard goes up like the paste key's; with none, ^V
@@ -994,6 +1034,8 @@ export function App() {
           onCtrl={() => setCtrlSticky((s) => !s)}
           attachInput={ATTACH_INPUT}
           onPaste={pasteClipboard}
+          onToMac={clipboardToMac}
+          onFromMac={clipboardFromMac}
           onDiag={(message) => send({ type: 'log', message })}
           mic={mic}
           micSeconds={micSeconds}
@@ -1008,12 +1050,6 @@ export function App() {
             if (columnHasKeys) {
               sendKey({ key, ctrl: state.current.ctrlSticky, alt: false, shift });
               setCtrlSticky(false);
-            } else if (key === 'A' || key === 'D') {
-              // Answer the task in front of you: the column's A/D act on its
-              // selection, and focusing the column selects the current task.
-              send({ type: 'focus', column: true });
-              sendKey({ key, ctrl: false, alt: false, shift: true });
-              send({ type: 'focus', column: false });
             } else {
               onTerminalData(TERMINAL_BYTES[key] ?? key);
             }

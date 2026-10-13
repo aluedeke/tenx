@@ -163,6 +163,8 @@ const SCREEN = [
   `${E}32mapi${E}0m ${E}35mfix-login-timeout${E}0m ❯ `,
 ].join('\r\n');
 
+let macClipboard = 'from the mac ✓';
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   // `tenx web` hands this to its machine's speech server; here, a fixed
@@ -174,6 +176,19 @@ const server = createServer(async (req, res) => {
     const isWav = req.headers['content-type'] === 'audio/wav' && body.subarray(0, 4).toString() === 'RIFF';
     res.writeHead(isWav ? 200 : 502, { 'content-type': isWav ? 'application/json' : 'text/plain' });
     res.end(isWav ? JSON.stringify({ text: `heard ${url.searchParams.get('language') ?? 'default'}` }) : 'not a WAV');
+    return;
+  }
+  // The Mac's clipboard, kept in memory: what /clipboard/set put there,
+  // /clipboard/get hands back.
+  if (req.method === 'POST' && url.pathname === '/clipboard/set') {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    macClipboard = Buffer.concat(chunks).toString('utf8');
+    res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/clipboard/get') {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ text: macClipboard }));
     return;
   }
   let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');

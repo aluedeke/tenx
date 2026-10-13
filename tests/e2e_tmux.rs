@@ -850,6 +850,7 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         .tenx()
         .args(["web", "--port", &port.to_string()])
         .env("TENX_WEB_GRACE_MS", "800")
+        .env("TENX_WEB_CLIPBOARD", h.root.join("clipboard.txt"))
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -900,6 +901,22 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(fs::metadata(&saved).unwrap().permissions().mode() & 0o777, 0o600);
     }
+
+    // The Mac's clipboard (a file here): set from the page, read back — and
+    // refused without the cookie or from another origin, since it holds
+    // passwords.
+    let text = "kopiert · ✓".as_bytes();
+    assert!(http_post(port, "/clipboard/get", &page_origin, None, "text/plain", b"").0.starts_with("HTTP/1.1 401"));
+    assert!(http_post(port, "/clipboard/get", "http://evil.example", Some(&token), "text/plain", b"").0.starts_with("HTTP/1.1 403"));
+    assert!(http_post(port, "/clipboard/set", "http://evil.example", Some(&token), "text/plain", text).0.starts_with("HTTP/1.1 403"));
+    assert!(http_post(port, "/clipboard/set", &page_origin, Some(&token), "text/plain", b"\xff").0.starts_with("HTTP/1.1 400"));
+    let (head, _) = http_post(port, "/clipboard/set", &page_origin, Some(&token), "text/plain; charset=utf-8", text);
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert_eq!(fs::read(h.root.join("clipboard.txt")).unwrap(), text);
+    let (head, body) = http_post(port, "/clipboard/get", &page_origin, Some(&token), "text/plain", b"");
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    let got: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+    assert_eq!(got["text"], "kopiert · ✓");
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let request = |origin: &str, cookie: Option<&str>, session: Option<&str>| {
