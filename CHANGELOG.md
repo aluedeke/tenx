@@ -5,6 +5,18 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.10.0] - 2026-10-13
+
+### Added
+
+- **web:** Show pictures programs draw in the terminal (Sixel)
+
+### Fixed
+
+- **watch:** Stop pictures in the terminal flickering
+
+[0.10.0]: https://github.com/aluedeke/tenx/compare/v0.9.0...v0.10.0
+
 ## [0.9.0] - 2026-10-13
 
 ### Added
