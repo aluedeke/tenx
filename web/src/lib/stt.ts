@@ -14,6 +14,8 @@
 const RATE = 16_000;
 /** Audio goes out in pieces this long (samples): 100 ms. */
 const CHUNK = RATE / 10;
+/** The "speak now" chime: two short rising tones, in seconds. */
+const CHIME = 0.18;
 
 export function sttLanguage(): string {
   try {
@@ -97,6 +99,28 @@ class Downsampler {
   }
 }
 
+/** Plays the "speak now" chime now; returns when it has ended, on the
+ * context's clock. Quiet, so it doesn't startle in a meeting. */
+function chime(ctx: AudioContext): number {
+  const t = ctx.currentTime;
+  const gain = ctx.createGain();
+  gain.connect(ctx.destination);
+  gain.gain.setValueAtTime(0, t);
+  for (const [i, hz] of [880, 1320].entries()) {
+    const at = t + i * (CHIME / 2);
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = hz;
+    osc.connect(gain);
+    gain.gain.setTargetAtTime(0.15, at, 0.005);
+    gain.gain.setTargetAtTime(0, at + CHIME / 2 - 0.03, 0.01);
+    osc.start(at);
+    osc.stop(at + CHIME / 2);
+  }
+  // A little after the last tone, for the room's echo of it.
+  return t + CHIME + 0.05;
+}
+
 /** One dictation: started on a tap, stopped on the next. */
 export class Dictation {
   private finished: Promise<string>;
@@ -127,7 +151,13 @@ export class Dictation {
     });
     this.finished.catch(() => {});
     this.stopping = () => (stopping = true);
+    // The first block from the microphone means it records: the chime says
+    // "speak now". The microphone hears the chime too, so what it records
+    // until the chime has ended is dropped, not sent to Whisper.
+    let speakFrom = Infinity;
     node.port.onmessage = (e: MessageEvent<Float32Array>) => {
+      if (speakFrom === Infinity) speakFrom = chime(ctx);
+      if (ctx.currentTime < speakFrom) return;
       for (const piece of this.down.push(e.data)) this.send(piece);
     };
   }

@@ -930,6 +930,38 @@ test('speech streams to the server and is typed at the cursor as it is heard', a
   expect(term.raw()).not.toContain('\r');
 });
 
+test('a chime says when the microphone records, and is not sent as speech', async ({ page }) => {
+  await fakeMicrophone(page, 'de');
+  // The tones the page plays: the fake microphone's own is 440 Hz.
+  await page.addInitScript(() => {
+    const w = window as unknown as { tones: number[] };
+    w.tones = [];
+    const start = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (...args) {
+      w.tones.push(this.frequency.value);
+      return start.apply(this, args);
+    };
+  });
+  let firstAudio = 0;
+  page.on('websocket', (ws) => {
+    if (!ws.url().includes('/speech')) return;
+    ws.on('framesent', (f) => typeof f.payload !== 'string' && (firstAudio ||= Date.now()));
+  });
+  await page.goto('/');
+  const tones = () => page.evaluate(() => (window as unknown as { tones: number[] }).tones.filter((hz) => hz !== 440));
+  expect(await tones()).toEqual([]);
+  const mic = page.getByTestId('mic');
+  const tapped = Date.now();
+  await mic.click();
+  await expect(mic).toHaveAttribute('data-state', 'recording');
+  await expect.poll(tones).toEqual([880, 1320]);
+  // What the microphone heard during the chime is dropped.
+  await expect.poll(() => firstAudio).toBeGreaterThan(0);
+  expect(firstAudio - tapped).toBeGreaterThan(200);
+  await mic.click();
+  await expect(mic).toHaveAttribute('data-state', 'idle');
+});
+
 test('when the server gives up mid-recording, the microphone goes off and says why', async ({ page }) => {
   await fakeMicrophone(page, 'fail');
   await page.goto('/');
