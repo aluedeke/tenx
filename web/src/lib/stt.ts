@@ -14,7 +14,7 @@
 const RATE = 16_000;
 /** Audio goes out in pieces this long (samples): 100 ms. */
 const CHUNK = RATE / 10;
-/** The "speak now" chime: two short rising tones, in seconds. */
+/** The "speak now" chime: two short rising tones (C5, G5), in seconds. */
 const CHIME = 0.18;
 
 export function sttLanguage(): string {
@@ -112,7 +112,7 @@ function chime(ctx: AudioContext): number {
   const gain = ctx.createGain();
   gain.connect(ctx.destination);
   gain.gain.setValueAtTime(0, t);
-  for (const [i, hz] of [880, 1320].entries()) {
+  for (const [i, hz] of [523, 784].entries()) {
     const at = t + i * (CHIME / 2);
     const osc = ctx.createOscillator();
     osc.type = 'sine';

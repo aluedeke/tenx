@@ -956,7 +956,7 @@ test('a chime says when the microphone records, and is not sent as speech', asyn
   const tapped = Date.now();
   await mic.click();
   await expect(mic).toHaveAttribute('data-state', 'recording');
-  await expect.poll(tones).toEqual([880, 1320]);
+  await expect.poll(tones).toEqual([523, 784]);
   const sessionType = () => page.evaluate(() => (navigator as unknown as { audioSession: { type: string } }).audioSession.type);
   // So iOS plays the chime on the speaker while the microphone is on.
   expect(await sessionType()).toBe('play-and-record');
