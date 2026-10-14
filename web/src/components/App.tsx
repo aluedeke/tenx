@@ -22,6 +22,7 @@ import { keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
 import { predict, unacked, type Pending } from '@/lib/predict';
+import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
@@ -111,6 +112,9 @@ export function App() {
   /** The size for code that runs outside a render (layout messages). */
   const fontRef = useRef(fontSize);
   fontRef.current = fontSize;
+
+  // When the page last came back to the screen, for the clipboard keys' log.
+  useEffect(trackShown, []);
 
   // The column is drawn in the terminal's font, as in the TUI, where both
   // share one grid: same size, same weight for plain text (bold stays bold).
@@ -631,14 +635,19 @@ export function App() {
       setFocus('terminal');
       term.current?.paste(text);
     };
-    diag(`tapped; read=${!!navigator.clipboard?.read} readText=${!!navigator.clipboard?.readText} secure=${window.isSecureContext}`);
+    const started = performance.now();
+    diag(
+      `tapped; read=${!!navigator.clipboard?.read} readText=${!!navigator.clipboard?.readText} secure=${window.isSecureContext} ${describe(pageState())}`,
+    );
     setPasting('reading the clipboard…');
     if (!navigator.clipboard?.read && !navigator.clipboard?.readText) {
       notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
       return;
     }
     // The full read first (text, HTML or an image — lib/clipboard), then the
-    // plain-text read some browsers allow when the full one isn't.
+    // plain-text read some browsers allow when the full one isn't — only
+    // then: Safari allows one read per tap, so a second read after a full
+    // one that worked is refused and would hide what the first one found.
     let failure: unknown = null;
     try {
       if (navigator.clipboard.read) {
@@ -648,10 +657,12 @@ export function App() {
         const clip = await choose(items, htmlText);
         if (clip?.kind === 'text') return typeText(clip.text);
         if (clip?.kind === 'images') return void (await pasteImages(clip.files));
+        diag('read: no text or image in it');
+        return notice('nothing to paste: the clipboard has no text or image');
       }
     } catch (e) {
       failure = e;
-      diag(`read failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+      diag(`read failed: ${failed(e, started)}`);
     }
     try {
       const text = navigator.clipboard.readText ? await navigator.clipboard.readText() : '';
@@ -659,7 +670,7 @@ export function App() {
       if (text) return typeText(text);
     } catch (e) {
       failure ??= e;
-      diag(`readText failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+      diag(`readText failed: ${failed(e, started)}`);
     }
     setPasting(null);
     if (failure) notice(`couldn't read the clipboard: ${failure instanceof Error ? failure.message : String(failure)}`);
@@ -670,6 +681,8 @@ export function App() {
    * there pastes it. Text only. Called inside the tap: the read needs it. */
   const clipboardToMac = useCallback(async () => {
     const diag = (message: string) => send({ type: 'log', message: `clipboard: to mac: ${message}` });
+    const started = performance.now();
+    diag(`tapped; ${describe(pageState())}`);
     if (!navigator.clipboard?.readText) {
       notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
       return;
@@ -681,7 +694,7 @@ export function App() {
       diag(`sent ${text.length} chars`);
       notice('copied to the Mac');
     } catch (e) {
-      diag(`failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+      diag(`failed: ${failed(e, started)}`);
       notice(`couldn't copy to the Mac: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [notice, send]);
@@ -690,6 +703,8 @@ export function App() {
    * inside the tap: the write needs it (lib/macclip). */
   const clipboardFromMac = useCallback(async () => {
     const diag = (message: string) => send({ type: 'log', message: `clipboard: from mac: ${message}` });
+    const started = performance.now();
+    diag(`tapped; ${describe(pageState())}`);
     if (!navigator.clipboard?.writeText) {
       notice('writing the clipboard needs HTTPS — open tenx web through `tailscale serve`');
       return;
@@ -700,7 +715,7 @@ export function App() {
       notice('copied from the Mac');
     } catch (e) {
       if (e instanceof EmptyClipboard) return notice(e.message);
-      diag(`failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+      diag(`failed: ${failed(e, started)}`);
       notice(`couldn't copy from the Mac: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [notice, send]);
@@ -712,6 +727,7 @@ export function App() {
    * selection). Called inside the key press: reading the clipboard needs it. */
   const imagePaste = useCallback(() => {
     const diag = (message: string) => send({ type: 'log', message: `paste: ^V ${message}` });
+    const started = performance.now();
     if (!navigator.clipboard?.read) {
       diag('no clipboard read; typed as is');
       onTerminalData('\x16');
@@ -726,7 +742,7 @@ export function App() {
         else onTerminalData('\x16');
       })
       .catch((e) => {
-        diag(`read failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+        diag(`read failed: ${failed(e, started)}`);
         notice(`couldn't read the clipboard: ${e instanceof Error ? e.message : String(e)}`);
       });
   }, [notice, onTerminalData, pasteImages, send]);
