@@ -175,6 +175,7 @@ tenx task add-repo|rm-repo|set-repos <SLUG> <REPOS..>
 tenx task rm <NAME>
 tenx task pin|unpin <NAME>
 tenx task sweep          close windows nobody is waiting on [--after 8h] [--idle-after 15m] [--dry-run]
+tenx agent restart       restart every open task's agent in place [TASK..] [--now] [--timeout 30m] [--dry-run]
 tenx watch               the attention watcher (started automatically)
 tenx standup             summarize recent activity across tasks
 tenx secrets ...         per-task encrypted secrets, see below
@@ -273,6 +274,8 @@ The voice's first letter is its language, and Kokoro has no German voice. A chan
 ## Sweep and pin
 
 Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks once they have been quiet for `--idle-after` (default 15m), finished tasks after `--after` (default 8h). A task's window is the one its panes are actually in, never just one that shares its slug — the same task name in two workspaces must not close the wrong session. It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
+
+After an agent update, or a change to its config, `tenx agent restart` restarts the agent in every open task window without losing anything tenx shows. Only the agent's pane is replaced (`tmux respawn-pane`), so the window, its other panes and its layout stay. The conversation is resumed by its session id (`claude --resume`, `codex resume`, `pi --session`), not "the newest one in this folder". Each task is restarted as soon as it is quiet: a running turn or an open permission prompt is waited out, up to `--timeout`, and `--now` skips the wait and tells the interrupted agents to continue. A task that was done keeps its age. An agent that asks for the restart itself is restarted last and continues on its own. Closed tasks are left alone; they start the new version when opened.
 
 ## Agent integration
 

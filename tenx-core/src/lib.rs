@@ -16,6 +16,7 @@ pub mod live;
 pub mod orchestrate;
 pub mod progress;
 pub mod readaloud;
+pub mod restart;
 pub mod prwatch;
 pub mod agent_panel;
 pub mod column;

@@ -8,6 +8,7 @@ pub mod init;
 pub mod notify;
 pub mod prwatch;
 pub mod repo;
+pub mod restart;
 pub mod secrets;
 pub mod session_event;
 pub mod standup;
@@ -188,6 +189,12 @@ pub enum InternalCommands {
         /// process exits.
         #[arg(long)]
         viewer: bool,
+    },
+    /// Respawn one agent's pane from a `tenx agent restart` plan (JSON) and
+    /// follow it up. Run through `tmux run-shell` for the agent that asked
+    /// for the restart, whose own pane the respawn ends.
+    RespawnAgent {
+        plan: String,
     },
     /// Open a Claude Code subagent in Claude's own agent view, in its
     /// session's pane (what ⏎ on a subagent line in the column does).
@@ -392,6 +399,28 @@ pub enum AgentCommands {
         /// Only report whether the integration is installed; change nothing.
         #[arg(long)]
         check: bool,
+    },
+    /// Restart the agent in every open task window (after an agent update or a
+    /// config change), keeping each window, its panes and its conversation
+    ///
+    /// Each agent is restarted as soon as its task is quiet: a running turn or
+    /// an open permission prompt is waited out. The conversation is resumed
+    /// by its session id. A task that was done keeps its age; an agent cut
+    /// off mid-turn is told to continue. Closed tasks are left alone — they
+    /// start the new version when opened. Exits 3 if `--timeout` passes with
+    /// tasks still busy.
+    Restart {
+        /// Only these tasks (slug or title); default: every open task
+        tasks: Vec<String>,
+        /// Don't wait: restart busy agents too and tell them to continue
+        #[arg(long)]
+        now: bool,
+        /// Give up waiting for busy tasks after this long: "10m", "1h"
+        #[arg(long, default_value = restart::DEFAULT_TIMEOUT)]
+        timeout: String,
+        /// Print what would be restarted, and when, without restarting
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 

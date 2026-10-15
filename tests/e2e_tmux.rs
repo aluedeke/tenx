@@ -1179,3 +1179,83 @@ fn web_pushes_a_blocked_task_to_subscribed_browsers() {
     let _ = server.kill();
     let _ = server.wait();
 }
+
+/// `tenx agent restart` swaps the agent in a task's pane for a fresh process
+/// resuming the same conversation: the window, its panes and the task's
+/// "done since" time survive, and a task mid-turn is waited out.
+#[test]
+fn agent_restart_resumes_the_session_in_place() {
+    let Some(h) = Harness::named("-restart") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+
+    // A fake claude that logs its arguments and reports in through the same
+    // hook path a real one takes, under its own pid, then stays alive.
+    let home = h.root.join("home");
+    let transcript = home.join("sess-1.jsonl");
+    fs::write(&transcript, "").unwrap();
+    let args_log = home.join("claude-args");
+    let script = format!(
+        "#!/bin/sh\necho \"$@\" >> '{log}'\nprintf '{{\"hook_event_name\":\"SessionStart\",\"cwd\":\"%s\",\"session_id\":\"sess-1\",\"transcript_path\":\"{tp}\"}}' \"$PWD\" | TENX_TMUX_SOCKET='{sock}' '{tenx}' internal session-event --agent claude --pid $$\nexec sleep 600\n",
+        log = args_log.display(),
+        tp = transcript.display(),
+        tenx = env!("CARGO_BIN_EXE_tenx"),
+        sock = h.socket,
+    );
+    fs::write(h.root.join("bin/claude"), script).unwrap();
+
+    let out = h.tenx().args(["task", "new", "Rs", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let sessions = home.join(".config/tenx/sessions");
+    let record = |not: Option<&str>| -> Option<(String, serde_json::Value)> {
+        for e in fs::read_dir(&sessions).ok()?.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let Some(pid) = name.strip_suffix(".json") else { continue };
+            if Some(pid) == not {
+                continue;
+            }
+            let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(e.path()).ok()?).ok()?;
+            return Some((pid.to_string(), v));
+        }
+        None
+    };
+    let mut first = None;
+    for _ in 0..50 {
+        first = record(None);
+        if first.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let (pid, mut rec) = first.expect("the fake claude reported in");
+    let window = || h.tmux_out(&["list-panes", "-t", "tenx:rs", "-F", "#{window_id} #{pane_id}"]);
+    let before = window();
+    assert_eq!(before.lines().count(), 3, "agent, nvim, shell: {before}");
+
+    // Mid-turn: waited out, and nothing is restarted when the wait times out.
+    rec["status"] = "busy".into();
+    fs::write(sessions.join(format!("{pid}.json")), rec.to_string()).unwrap();
+    let out = h.tenx().args(["agent", "restart", "--timeout", "1s"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(3), "busy task times out: {} {}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Rs (working)"));
+    assert_eq!(fs::read_to_string(&args_log).unwrap().lines().count(), 1, "not restarted while busy");
+
+    // Done for a while: restarted now, resuming exactly that session.
+    rec["status"] = "idle".into();
+    rec["statusUpdatedAt"] = 1000.into();
+    fs::write(sessions.join(format!("{pid}.json")), rec.to_string()).unwrap();
+    let out = h.tenx().args(["agent", "restart", "--timeout", "10s"]).output().unwrap();
+    assert!(out.status.success(), "restart: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("restarted Rs (claude)"), "{}", String::from_utf8_lossy(&out.stdout));
+
+    let args = fs::read_to_string(&args_log).unwrap();
+    assert_eq!(args.lines().nth(1), Some("--name rs --resume sess-1"), "{args}");
+    assert_eq!(window(), before, "same window, same panes");
+    let (new_pid, new_rec) = record(Some(&pid)).expect("the new process reported in");
+    assert_ne!(new_pid, pid);
+    assert_eq!(new_rec["statusUpdatedAt"], 1000, "done-since time carried over");
+    assert!(!sessions.join(format!("{pid}.json")).exists(), "old record removed");
+}

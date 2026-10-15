@@ -125,6 +125,23 @@ pub fn delete_record(pid: u32) {
     }
 }
 
+/// The live record of the agent running in `pane` (`%40`) other than
+/// `not_pid` — the session a respawned pane started, once its hooks have
+/// reported in.
+pub fn record_for_pane(pane: &str, not_pid: u32) -> Option<(u32, Record)> {
+    let entries = fs::read_dir(registry_dir()?).ok()?;
+    entries.flatten().find_map(|entry| {
+        let path = entry.path();
+        let pid = read_stem_pid(&path)?;
+        if pid == not_pid || !pid_alive(pid) {
+            return None;
+        }
+        let record: Record = serde_json::from_str(&fs::read_to_string(&path).ok()?).ok()?;
+        let here = record.tmux.as_deref().and_then(tenx_core::dialog::pane_id).is_some_and(|p| p == pane);
+        here.then_some((pid, record))
+    })
+}
+
 /// Milliseconds since the Unix epoch, for `statusUpdatedAt`.
 pub fn now_millis() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)

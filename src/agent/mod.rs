@@ -96,8 +96,30 @@ impl AgentKind {
         }
     }
 
-    /// Whether the agent has a stored conversation for `task_dir`, so a resume
-    /// flag will continue rather than error.
+    /// The command that brings back one exact conversation — what `tenx agent
+    /// restart` runs in the agent's pane. `session_id` is the agent's own id
+    /// for it (Claude Code, Codex), `transcript` its file (pi resumes by file).
+    /// Without what the agent needs, falls back to the ordinary launch and its
+    /// "continue the newest conversation here" rule.
+    pub fn resume_command_with(
+        self,
+        bin: &str,
+        slug: &str,
+        task_dir: &Path,
+        session_id: Option<&str>,
+        transcript: Option<&str>,
+        extra: &[String],
+    ) -> String {
+        let q = crate::tmux::shell_quote(slug);
+        let tail = if extra.is_empty() { String::new() } else { format!(" {}", extra.join(" ")) };
+        match (self, session_id, transcript) {
+            (AgentKind::Claude, Some(id), _) => format!("{bin} --name {q} --resume {}{tail}", crate::tmux::shell_quote(id)),
+            (AgentKind::Codex, Some(id), _) => format!("{bin} resume {}{tail}", crate::tmux::shell_quote(id)),
+            (AgentKind::Pi, _, Some(file)) => format!("{bin} --name {q} --session {}{tail}", crate::tmux::shell_quote(file)),
+            _ => self.launch_command_with(bin, slug, task_dir, extra),
+        }
+    }
+
     /// What [`launch`] appends after the configured args: an `--add-dir` per
     /// directory for Claude, then the quoted first prompt. Starts with a space
     /// when non-empty. Only Claude: its sandbox confines reads to its working
@@ -123,6 +145,8 @@ impl AgentKind {
         out
     }
 
+    /// Whether the agent has a stored conversation for `task_dir`, so a resume
+    /// flag will continue rather than error.
     pub fn has_conversation(self, task_dir: &Path) -> bool {
         match self {
             AgentKind::Claude => claude_has_conversation(task_dir),
@@ -253,18 +277,40 @@ pub fn launch(
     add_dirs: &[std::path::PathBuf],
     prompt: Option<&str>,
 ) -> String {
-    let key = kind.as_str();
-    let global = crate::workspace::load_global().ok();
-    let ws_cfg = ws.config.agents.get(key);
-    let global_cfg = global.as_ref().and_then(|g| g.agents.get(key));
-    // Prefer the workspace entry as a whole when present, else the global one.
-    let cfg = ws_cfg.or(global_cfg);
-    let bin = cfg.and_then(|c| c.command.as_deref()).unwrap_or_else(|| kind.default_bin());
-    let empty: Vec<String> = Vec::new();
-    let args = cfg.map(|c| &c.args).unwrap_or(&empty);
-    let mut cmd = kind.launch_command_with(bin, slug, task_dir, args);
+    let (bin, args) = configured(ws, kind);
+    let mut cmd = kind.launch_command_with(&bin, slug, task_dir, &args);
     cmd.push_str(&kind.session_args(add_dirs, prompt));
     cmd
+}
+
+/// [`launch`] for `tenx agent restart`: the same binary, args and readable
+/// directories — read again, so a config change lands — but resuming exactly
+/// the conversation that was running, and with no first prompt (the task's
+/// first message was sent long ago).
+pub fn launch_resume(
+    ws: &crate::workspace::Workspace,
+    kind: AgentKind,
+    slug: &str,
+    task_dir: &Path,
+    add_dirs: &[std::path::PathBuf],
+    session_id: Option<&str>,
+    transcript: Option<&str>,
+) -> String {
+    let (bin, args) = configured(ws, kind);
+    let mut cmd = kind.resume_command_with(&bin, slug, task_dir, session_id, transcript, &args);
+    cmd.push_str(&kind.session_args(add_dirs, None));
+    cmd
+}
+
+/// The binary and extra args `[agents.<kind>]` names: the workspace entry as a
+/// whole when present, else the global one, else the agent's default binary.
+fn configured(ws: &crate::workspace::Workspace, kind: AgentKind) -> (String, Vec<String>) {
+    let key = kind.as_str();
+    let global = crate::workspace::load_global().ok();
+    let cfg = ws.config.agents.get(key).or_else(|| global.as_ref().and_then(|g| g.agents.get(key)));
+    let bin = cfg.and_then(|c| c.command.clone()).unwrap_or_else(|| kind.default_bin().to_string());
+    let args = cfg.map(|c| c.args.clone()).unwrap_or_default();
+    (bin, args)
 }
 
 /// The agent a task runs, most specific first: its own `.tenx-agent` override,
@@ -336,6 +382,27 @@ mod tests {
         assert_eq!(AgentKind::Codex.session_args(&dirs, None), "");
         assert_eq!(AgentKind::Pi.session_args(&dirs, Some("hi")), " 'hi'");
         assert_eq!(AgentKind::Claude.session_args(&[], Some("  ")), "");
+    }
+
+    #[test]
+    fn resume_commands_name_the_exact_conversation() {
+        let dir = Path::new("/nonexistent/task");
+        let extra = vec!["--model".to_string(), "x".to_string()];
+        assert_eq!(
+            AgentKind::Claude.resume_command_with("claude", "t", dir, Some("abc"), None, &[]),
+            "claude --name 't' --resume 'abc'"
+        );
+        assert_eq!(
+            AgentKind::Codex.resume_command_with("codex", "t", dir, Some("abc"), Some("/r.jsonl"), &extra),
+            "codex resume 'abc' --model x"
+        );
+        assert_eq!(
+            AgentKind::Pi.resume_command_with("pi", "t", dir, Some("abc"), Some("/s/a b.jsonl"), &[]),
+            "pi --name 't' --session '/s/a b.jsonl'"
+        );
+        // Nothing to resume by: the ordinary launch and its continue rule.
+        assert_eq!(AgentKind::Claude.resume_command_with("claude", "t", dir, None, None, &[]), "claude --name 't'");
+        assert_eq!(AgentKind::Pi.resume_command_with("pi", "t", dir, Some("abc"), None, &[]), "pi --name 't' -c");
     }
 
     #[test]

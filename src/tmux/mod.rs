@@ -730,6 +730,28 @@ pub fn paste_text(target: &str, text: &str) -> Result<()> {
     run(&["paste-buffer", "-p", "-d", "-b", &buffer, "-t", target]).map(drop)
 }
 
+/// Replace the program in `pane` with `command`, started in `cwd`: the old
+/// one is killed (`-k`), the pane — its place in the window's layout, and
+/// every other pane — stays. How `tenx agent restart` swaps an agent for a
+/// fresh process of itself.
+pub fn respawn_pane(pane: &str, cwd: &str, command: &str) -> Result<()> {
+    run(&["respawn-pane", "-k", "-t", pane, "-c", cwd, command]).map(drop)
+}
+
+/// The directory `pane` was started in, or `None` when the pane is gone or
+/// the tmux is too old to report it (`pane_start_path`).
+pub fn pane_start_path(pane: &str) -> Option<String> {
+    let p = run(&["display-message", "-p", "-t", pane, "#{pane_start_path}"]).ok()?;
+    let p = p.trim();
+    (!p.is_empty()).then(|| p.to_string())
+}
+
+/// Run `command` (a shell string) in the background *in the server*, owned by
+/// no pane — so it survives the pane of whoever asked for it being respawned.
+pub fn run_shell_background(command: &str) -> Result<()> {
+    run(&["run-shell", "-b", command]).map(drop)
+}
+
 pub fn kill_window(id: &str) -> Result<()> {
     run(&["kill-window", "-t", id]).map(drop)
 }

@@ -540,7 +540,7 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
 /// other registered workspace for an adhoc session, which is how an
 /// orchestrator reads the tasks it drives. A workspace registered later is
 /// readable from the next reopen.
-fn readable_dirs(ws: &crate::workspace::Workspace, task: &crate::workspace::Task) -> Vec<PathBuf> {
+pub(crate) fn readable_dirs(ws: &crate::workspace::Workspace, task: &crate::workspace::Task) -> Vec<PathBuf> {
     if !task.repos.is_empty() {
         return Vec::new();
     }

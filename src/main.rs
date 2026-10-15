@@ -95,6 +95,10 @@ fn run() -> Result<()> {
             AgentCommands::Setup { kind, check } => {
                 cli::session_event::setup(&kind, check)?;
             }
+            AgentCommands::Restart { tasks, now, timeout, dry_run } => {
+                let timeout = cli::task::parse_duration(&timeout)?;
+                cli::restart::run(&tasks, now, timeout, dry_run)?;
+            }
         },
 
         Some(Commands::Doctor { reset_skills }) => cli::doctor::run(reset_skills)?,
@@ -105,6 +109,7 @@ fn run() -> Result<()> {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
             InternalCommands::SessionEvent { agent, pid } => cli::session_event::run(&agent, pid),
+            InternalCommands::RespawnAgent { plan } => cli::restart::respawn_from_json(&plan)?,
             InternalCommands::OpenAgent { pid, label, agent_type, nth, peers } => {
                 cli::agentview::run(pid, label.as_deref(), agent_type.as_deref(), nth, peers)?
             }
