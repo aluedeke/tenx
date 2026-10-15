@@ -89,6 +89,8 @@ Where granted secrets land — read them from the file, never print them:
 - **Keys** (`STRIPE_KEY`) go to `tasks/<name>/.secrets.env`, a plain `KEY=VALUE` file holding exactly the names you've been granted.
 - **Repos with their own sops setup** (a `.sops.yaml` in a worktree): name a key inside one of its `*.enc.*` files, or a fragment of the file's name (`staging`). The whole file is released as its plaintext sibling in the worktree (`secrets.staging.enc.env` → `secrets.staging.env`, a symlink to a copy outside git). If there's more than one such file, name the one you need.
 
+Granted secrets are deleted when the task's window closes (closed by hand, or swept after being idle). In a new session, ask again with `need`.
+
 If you no longer need something you asked for, withdraw it so nobody is chased for it:
 
     tenx secrets cancel <NAME>      # or --all

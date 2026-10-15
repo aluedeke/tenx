@@ -280,6 +280,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x40d44ff6a7fc8c16, // orchestrate: detached → adhoc portable
     0x8998d209f9f59751, // pr-watch
     0xb8458f20bb5a69d9, // pr-watch portable
+    0x6a67efef34b0422f, // tenx: granted secrets are deleted on close
+    0x79f195cf10afd4f0, // tenx: granted secrets are deleted on close portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {

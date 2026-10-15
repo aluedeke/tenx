@@ -558,7 +558,8 @@ impl Workspace {
 
 // ── Task discovery ────────────────────────────────────────────────────────────
 
-fn discover_task(task_dir: &Path) -> Result<Task> {
+/// A task as found on disk. Fails only when `task_dir` can't be read.
+pub fn discover_task(task_dir: &Path) -> Result<Task> {
     let name = task_dir.file_name().unwrap_or_default().to_string_lossy().into_owned();
     let display_name = read_task_display_name(task_dir);
     let meta = fs::metadata(task_dir)?;

@@ -19,6 +19,8 @@
 //! key names of a sealed file are readable without the identity
 //! ([`sealed_keys`]).
 
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 /// What a waiting request should do after one look at the disk.
@@ -230,6 +232,19 @@ pub fn upsert_note(mut notes: Vec<(String, String)>, name: &str, text: &str) -> 
     notes
 }
 
+/// Tasks whose window was open in the previous listing and is gone from
+/// this one — their released secrets are deleted, the same as for a window
+/// closed through tenx. `now` is `None` when this listing can't be trusted
+/// (tmux failed, or listed no window at all, which a running session never
+/// does since it always has its home window): a failed look is not proof
+/// that everything closed, so nothing is reported.
+pub fn closed_windows(prev: &HashSet<PathBuf>, now: Option<&HashSet<PathBuf>>) -> Vec<PathBuf> {
+    let Some(now) = now else { return Vec::new() };
+    let mut closed: Vec<PathBuf> = prev.iter().filter(|p| !now.contains(p.as_path())).cloned().collect();
+    closed.sort();
+    closed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,5 +359,29 @@ mod tests {
         assert_eq!(text, "B\trun the tests now\nA\ty\n");
         assert_eq!(parse_notes(&text), notes.iter().map(|(n, t)| (n.clone(), t.replace(['\t', '\n'], " "))).collect::<Vec<_>>());
         assert_eq!(parse_notes("LONE\n"), [("LONE".to_string(), String::new())]);
+    }
+
+    fn set(dirs: &[&str]) -> HashSet<PathBuf> {
+        dirs.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn a_window_gone_since_the_last_listing_is_closed() {
+        let prev = set(&["/ws/tasks/a", "/ws/tasks/b"]);
+        let now = set(&["/ws/tasks/b", "/ws/tasks/c"]);
+        assert_eq!(closed_windows(&prev, Some(&now)), vec![PathBuf::from("/ws/tasks/a")]);
+    }
+
+    #[test]
+    fn a_listing_that_cannot_be_trusted_closes_nothing() {
+        let prev = set(&["/ws/tasks/a", "/ws/tasks/b"]);
+        assert!(closed_windows(&prev, None).is_empty());
+    }
+
+    #[test]
+    fn a_newly_opened_window_is_not_closed() {
+        let prev = set(&[]);
+        let now = set(&["/ws/tasks/a"]);
+        assert!(closed_windows(&prev, Some(&now)).is_empty());
     }
 }

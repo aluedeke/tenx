@@ -2643,7 +2643,11 @@ impl Column {
                 Ok(()) => {
                     let _ = std::fs::remove_file(path.join(crate::tmux::WINDOW_ID_FILE));
                     self.rebuild_rows();
-                    self.status_msg = Some("closed window".into());
+                    self.status_msg = Some(match crate::cli::secrets::forget_released(&path) {
+                        Ok(true) => "closed window, removed its released secrets".into(),
+                        Ok(false) => "closed window".into(),
+                        Err(e) => format!("closed window, but released secrets not removed: {e}"),
+                    });
                 }
                 Err(e) => self.status_msg = Some(e.to_string()),
             },

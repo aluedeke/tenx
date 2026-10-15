@@ -94,6 +94,10 @@ pub fn run() -> Result<()> {
     // What tmux holds already, per option (`push_status`): only real changes
     // are set, since every `set-option` redraws every client.
     let mut pushed = Pushed::new();
+    // Tasks whose window was open on the last pass. A window that disappears
+    // without tenx closing it — its last pane exited, `tmux kill-window`, the
+    // server stopped — still ends the session its secrets were released to.
+    let mut open_tasks = primed.open_tasks.clone().unwrap_or_default();
 
     loop {
         std::thread::sleep(POLL);
@@ -107,6 +111,13 @@ pub fn run() -> Result<()> {
         let snapshot = resolve_all();
         for (note, title) in attention.step(&snapshot) {
             notify(note, title);
+        }
+
+        for dir in tenx_core::secrets::closed_windows(&open_tasks, snapshot.open_tasks.as_ref()) {
+            let _ = crate::cli::secrets::forget_released(&dir);
+        }
+        if let Some(now) = &snapshot.open_tasks {
+            open_tasks.clone_from(now);
         }
 
         pane_new_agents(&snapshot.agents, &snapshot.windows, &mut paned);
@@ -125,6 +136,10 @@ pub fn run() -> Result<()> {
             let alive = crate::tmux::server_running();
             session_misses = if alive { 0 } else { session_misses + 1 };
             if session_misses >= SESSION_MISSES_BEFORE_EXIT {
+                // The server is gone, so every window it had is closed.
+                for dir in &open_tasks {
+                    let _ = crate::cli::secrets::forget_released(dir);
+                }
                 let _ = std::fs::remove_file(pid_path()?);
                 return Ok(());
             }
@@ -239,6 +254,12 @@ pub(crate) struct Snapshot {
     /// The session's windows as listed for this pass — one `list-windows`
     /// serves signals, agent panes and the status push.
     windows: Vec<crate::tmux::Window>,
+    /// Task directories with an open window, matched by the window's
+    /// `@tenx_task_dir` tag (`tmux::window_owned_by`, no pane fallback: a
+    /// window too old to carry the tag is never counted, so it is never
+    /// counted as closed either). `None` when the listing is empty, which a
+    /// running session never is — see `tenx_core::secrets::closed_windows`.
+    open_tasks: Option<HashSet<PathBuf>>,
     /// Tasks with a live Claude Code session, in the shared wire shape
     /// (`workspace::task_json`).
     ///
@@ -278,8 +299,13 @@ pub(crate) fn resolve_all() -> Snapshot {
     let mut agents = Vec::new();
     let mut live_targets = Vec::new();
     let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
+    let mut open_tasks = HashSet::new();
+    let no_pane_paths = HashMap::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
+            if windows.iter().any(|w| w.name == task.name && crate::tmux::window_owned_by(w, &no_pane_paths, &task.path)) {
+                open_tasks.insert(task.path.clone());
+            }
             let state = workspace::resolve_task_state(&task.path, &sessions, &signals);
             let key = format!("{}/{}", ws.dir.display(), task.name);
             live_targets.push(LiveTarget {
@@ -362,6 +388,7 @@ pub(crate) fn resolve_all() -> Snapshot {
         secrets_pending_set,
         agents,
         live_targets,
+        open_tasks: (!windows.is_empty()).then_some(open_tasks),
         windows,
         tasks: tasks.into_iter().map(|(_, v)| v).collect(),
     }
