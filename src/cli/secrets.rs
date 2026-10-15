@@ -75,6 +75,13 @@
 //! outside git's reach, and `task rm`'s `fs::remove_dir_all(&task.path)`
 //! shreds them on teardown. Adopted secrets are decrypted there too and only
 //! *symlinked* into their worktree (see *Sops adoption*).
+//!
+//! **Closing.** A release lasts as long as the task's window. Whenever the
+//! window closes — `x` in the column, `task sweep`, the column's background
+//! sweep, or any other way, which the watcher notices
+//! (`tenx_core::secrets::closed_windows`) — `forget_released` deletes `.secrets.env`, `.secrets-adopted/` and
+//! the symlinks into it. Only the sealed files stay, so the next session asks
+//! again with `need`.
 
 use anyhow::{bail, Context, Result};
 use std::collections::HashSet;
@@ -554,6 +561,45 @@ fn release(id: &Path, task: &Task, want: Option<&[String]>) -> Result<HashSet<St
     Ok(satisfied)
 }
 
+/// Delete every plaintext a release left in this task: `.secrets.env`,
+/// `.secrets-adopted/`, and the worktree symlinks that point into it. Called
+/// whenever a task's window closes (`x` in the column, `task sweep`, the
+/// column's background sweep, and the watcher for a window that went away
+/// by itself or with the server): the agent that was granted them is gone, and
+/// a released value should not outlive the session it was released to. The
+/// sealed files stay, so the next session asks with `need` and a human grants
+/// again. Only a symlink that is exactly the one `release_adopted` would
+/// place is removed — a real file at that path is the project's own, not
+/// ours. Every removal is attempted; the first error is returned after.
+/// `Ok(true)` when anything was removed.
+pub fn forget_released(task_dir: &Path) -> Result<bool> {
+    let task = workspace::discover_task(task_dir)?;
+    let mut removed = false;
+    let mut first_err: Option<anyhow::Error> = None;
+    let mut note = |r: io::Result<()>, what: &Path| match r {
+        Ok(()) => removed = true,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => {
+            first_err.get_or_insert_with(|| anyhow::anyhow!("remove {}: {e}", what.display()));
+        }
+    };
+    for ciphertext in find_sops_covered_files(&task) {
+        let link = strip_enc_suffix(&ciphertext);
+        let ours = adopted_symlink_target(&task, &ciphertext, &adopted_secret_storage_path(&task, &ciphertext));
+        if std::fs::read_link(&link).is_ok_and(|t| t == ours) {
+            note(std::fs::remove_file(&link), &link);
+        }
+    }
+    let env_file = released_path(&task);
+    note(std::fs::remove_file(&env_file), &env_file);
+    let adopted = task.path.join(ADOPTED_DIR);
+    note(std::fs::remove_dir_all(&adopted), &adopted);
+    match first_err {
+        Some(e) => Err(e),
+        None => Ok(removed),
+    }
+}
+
 /// Move release requests nothing sealed can satisfy to the value queue — a
 /// name queued without routing (an older tenx), or whose sealed file has
 /// since gone. Pushed before removed, same commit-point rule as
@@ -973,8 +1019,11 @@ fn strip_enc_suffix(path: &Path) -> PathBuf {
 fn adopted_secret_storage_path(task: &Task, ciphertext: &Path) -> PathBuf {
     let rel = ciphertext.strip_prefix(&task.path).unwrap_or(ciphertext);
     let flat = rel.to_string_lossy().replace('/', "__");
-    task.path.join(".secrets-adopted").join(strip_enc_suffix(Path::new(&flat)))
+    task.path.join(ADOPTED_DIR).join(strip_enc_suffix(Path::new(&flat)))
 }
+
+/// Where adopted plaintexts live, directly under the task directory.
+const ADOPTED_DIR: &str = ".secrets-adopted";
 
 /// Relative symlink target from `strip_enc_suffix(ciphertext)`'s location to
 /// `storage_path` — relative, not absolute, so an accidentally-committed
@@ -1562,4 +1611,46 @@ fn read_tty_line(label: &str) -> Result<String> {
     let mut line = String::new();
     io::BufReader::new(&tty).read_line(&mut line).context("read from /dev/tty")?;
     Ok(rules::strip_paste_markers(&line).trim_end_matches(['\n', '\r']).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forget_released_removes_plaintext_and_keeps_sealed_and_foreign_files() {
+        let dir = env::temp_dir().join(format!("tenx-forget-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let write = |rel: &str, body: &str| {
+            let p = dir.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, body).unwrap();
+        };
+        // Two worktrees using sops: `app` had a file released through tenx,
+        // `own` keeps a real plaintext of its own next to its ciphertext.
+        for repo in ["app", "own"] {
+            write(&format!("{repo}/.git"), "gitdir: x");
+            write(&format!("{repo}/.sops.yaml"), "creation_rules: []");
+        }
+        write("app/secrets.staging.enc.env", "sealed");
+        write("own/local.enc.env", "sealed");
+        write("own/local.env", "the project's own file");
+        write(".secrets.enc.env", "sealed bundle");
+        write(".secrets.env", "STRIPE_KEY=plain");
+        write(".secrets-adopted/app__secrets.staging.env", "plain");
+        std::os::unix::fs::symlink("../.secrets-adopted/app__secrets.staging.env", dir.join("app/secrets.staging.env"))
+            .unwrap();
+
+        assert!(forget_released(&dir).unwrap());
+
+        assert!(!dir.join(".secrets.env").exists());
+        assert!(!dir.join(ADOPTED_DIR).exists());
+        assert!(std::fs::symlink_metadata(dir.join("app/secrets.staging.env")).is_err());
+        for kept in [".secrets.enc.env", "app/secrets.staging.enc.env", "own/local.enc.env", "own/local.env"] {
+            assert!(dir.join(kept).exists(), "{kept} should be kept");
+        }
+        // Nothing left to remove the second time.
+        assert!(!forget_released(&dir).unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -138,6 +138,8 @@ Driving a task from outside is three commands in `cli::drive`. `task send` paste
 
 **Waiting.** The agent polls once a second for up to `--timeout`. Once a name has left both queues, the outcome is decided from the disk alone (`tenx_core::secrets::wait_outcome`): a recorded denial means denied, a released output written at or after the request means granted, and neither means withdrawn. Each outcome has its own exit code. A timed-out request stays queued, so re-running resumes the wait.
 
+**Closing.** A release lasts only as long as the task's window. When the window closes, by `x` in the column, by a sweep, or any other way (its last pane exits, the tmux server stops), `forget_released` deletes `.secrets.env`, `.secrets-adopted/` and the symlinks into it. The watcher catches the closes tenx did not make: it compares which tasks have a window on each pass (`tenx_core::secrets::closed_windows`; an empty listing proves nothing and closes nothing), and when the server is gone it treats every window it last saw as closed. Only the sealed files remain, so the next session asks again and a human grants again. A symlink is removed only if it is exactly the one a release placed; a real file at that path belongs to the project.
+
 ## Testing
 
 Unit tests live in `tenx-core` next to the logic they cover, plus a few in the binary for parsing and platform detection. `tests/e2e_tmux.rs` drives a throwaway tmux server on its own socket to exercise task creation, the three-pane window layout, open and list end to end, and `tenx web` over a real WebSocket. CI runs all of it on macOS and Ubuntu with clippy at `-D warnings`.

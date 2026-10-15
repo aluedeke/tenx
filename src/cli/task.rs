@@ -780,6 +780,11 @@ pub fn sweep(after: Option<Duration>, idle_after: Option<Duration>, dry_run: boo
             Ok(()) => {
                 let _ = std::fs::remove_file(c.task_dir.join(crate::tmux::WINDOW_ID_FILE));
                 println!("closed {}/{} — {}", c.ws_name, c.title, c.reason);
+                match crate::cli::secrets::forget_released(&c.task_dir) {
+                    Ok(true) => println!("  removed its released secrets"),
+                    Ok(false) => {}
+                    Err(e) => eprintln!("! {}/{}: released secrets not removed: {e}", c.ws_name, c.title),
+                }
             }
             Err(e) => eprintln!("! {}/{}: {e}", c.ws_name, c.title),
         }
@@ -796,6 +801,7 @@ pub fn sweep_quiet(after: Duration, idle_after: Duration) -> usize {
     for c in sweep_candidates(after, idle_after) {
         if crate::tmux::kill_window(&c.window_id).is_ok() {
             let _ = std::fs::remove_file(c.task_dir.join(crate::tmux::WINDOW_ID_FILE));
+            let _ = crate::cli::secrets::forget_released(&c.task_dir);
             n += 1;
         }
     }
