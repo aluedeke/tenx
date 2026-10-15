@@ -33,25 +33,25 @@ pub const DEFAULT_TIMEOUT: &str = "30m";
 const REPORT_LIMIT: Duration = Duration::from_secs(30);
 
 /// One agent to restart.
-struct Target {
+pub(crate) struct Target {
     /// Index into the workspace list [`targets`] returns.
-    ws: usize,
-    slug: String,
-    title: String,
-    task_dir: PathBuf,
-    pane: String,
-    pid: u32,
-    agent: AgentKind,
-    session_id: Option<String>,
-    transcript: Option<String>,
+    pub(crate) ws: usize,
+    pub(crate) slug: String,
+    pub(crate) title: String,
+    pub(crate) task_dir: PathBuf,
+    pub(crate) pane: String,
+    pub(crate) pid: u32,
+    pub(crate) agent: AgentKind,
+    pub(crate) session_id: Option<String>,
+    pub(crate) transcript: Option<String>,
     /// This process runs inside that agent (it asked for the restart).
-    is_self: bool,
+    pub(crate) is_self: bool,
 }
 
 /// Everything needed to respawn one pane and follow it up — handed to
 /// `tenx internal respawn-agent` as JSON when this process can't do it
 /// itself (its own agent's pane).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plan {
     pub pane: String,
     pub cwd: String,
@@ -156,7 +156,7 @@ fn restart_now(workspaces: &[Workspace], t: &Target, status: TaskStatus, changed
     }
 }
 
-fn plan_for(workspaces: &[Workspace], t: &Target, status: TaskStatus, changed: Option<std::time::SystemTime>, waits: &[tenx_core::prwatch::WaitRecord]) -> Plan {
+pub(crate) fn plan_for(workspaces: &[Workspace], t: &Target, status: TaskStatus, changed: Option<std::time::SystemTime>, waits: &[tenx_core::prwatch::WaitRecord]) -> Plan {
     let watching = crate::cli::prwatch::watched_in(waits, &t.task_dir);
     let changed_ms = changed.and_then(|c| c.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64);
     Plan {
@@ -185,9 +185,16 @@ fn command(workspaces: &[Workspace], t: &Target) -> String {
 /// whether it did report in within [`REPORT_LIMIT`].
 pub fn respawn(plan: &Plan) -> Result<bool> {
     crate::tmux::respawn_pane(&plan.pane, &plan.cwd, &plan.command)?;
+    follow_up(plan, &plan.pane)
+}
+
+/// Once the agent started for `plan` in `pane` reports in: drop the old
+/// record, carry the done-since time over, type the message. Returns whether
+/// it reported in within [`REPORT_LIMIT`].
+pub(crate) fn follow_up(plan: &Plan, pane: &str) -> Result<bool> {
     let start = Instant::now();
     let (pid, mut record) = loop {
-        if let Some(found) = sessions::record_for_pane(&plan.pane, plan.old_pid) {
+        if let Some(found) = sessions::record_for_pane(pane, plan.old_pid) {
             break found;
         }
         if start.elapsed() >= REPORT_LIMIT {
@@ -204,9 +211,9 @@ pub fn respawn(plan: &Plan) -> Result<bool> {
     if let Some(text) = &plan.message {
         // The session-start hook fires before the agent's input is ready.
         std::thread::sleep(Duration::from_secs(2));
-        crate::tmux::paste_text(&plan.pane, text)?;
+        crate::tmux::paste_text(pane, text)?;
         std::thread::sleep(Duration::from_millis(200));
-        crate::tmux::send_keys(&plan.pane, "Enter")?;
+        crate::tmux::send_keys(pane, "Enter")?;
     }
     Ok(true)
 }
@@ -221,14 +228,14 @@ pub fn respawn_from_json(json: &str) -> Result<()> {
     Ok(())
 }
 
-fn log_path() -> PathBuf {
+pub(crate) fn log_path() -> PathBuf {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
     home.join(".config/tenx/restart.log")
 }
 
 /// Every interactive agent in a task window, one per pane, filtered to the
 /// named tasks (slug or title) when any are given.
-fn targets(only: &[String]) -> (Vec<Workspace>, Vec<Target>) {
+pub(crate) fn targets(only: &[String]) -> (Vec<Workspace>, Vec<Target>) {
     let mine = ancestors(std::process::id());
     let workspaces = workspace::registered_workspaces();
     let tasks: Vec<(usize, workspace::Task)> = workspaces

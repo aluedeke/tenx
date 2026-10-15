@@ -1285,3 +1285,79 @@ fn tmux_reload_loads_the_config_in_place() {
     let features = h.tmux_out(&["show", "-s", "terminal-features"]);
     assert_eq!(features.matches("hyperlinks").count(), 1, "{features}");
 }
+
+/// `tenx tmux restart` stops the server and builds it again: the task window
+/// comes back with its panes, task stamp and server environment; its agent
+/// resumes the same session and keeps its done-since time.
+#[test]
+fn tmux_restart_rebuilds_the_session() {
+    let Some(h) = Harness::named("-tmuxrestart") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+    let home = h.root.join("home");
+    let transcript = home.join("sess-1.jsonl");
+    fs::write(&transcript, "").unwrap();
+    let args_log = home.join("claude-args");
+    let script = format!(
+        "#!/bin/sh\necho \"$@\" >> '{log}'\nprintf '{{\"hook_event_name\":\"SessionStart\",\"cwd\":\"%s\",\"session_id\":\"sess-1\",\"transcript_path\":\"{tp}\"}}' \"$PWD\" | TENX_TMUX_SOCKET='{sock}' '{tenx}' internal session-event --agent claude --pid $$\nexec sleep 600\n",
+        log = args_log.display(),
+        tp = transcript.display(),
+        tenx = env!("CARGO_BIN_EXE_tenx"),
+        sock = h.socket,
+    );
+    fs::write(h.root.join("bin/claude"), script).unwrap();
+    // Something only the old server's environment has.
+    h.tmux_out(&["setenv", "-g", "TENX_E2E_MARK", "kept"]);
+
+    let out = h.tenx().args(["task", "new", "Rb", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let sessions = home.join(".config/tenx/sessions");
+    let pid_of = |not: Option<&str>| -> Option<String> {
+        fs::read_dir(&sessions).ok()?.flatten().find_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let pid = name.strip_suffix(".json")?.to_string();
+            (Some(pid.as_str()) != not).then_some(pid)
+        })
+    };
+    let wait = |what: &str, f: &dyn Fn() -> bool| {
+        for _ in 0..100 {
+            if f() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        panic!("timed out waiting for {what}");
+    };
+    wait("the agent to report in", &|| pid_of(None).is_some());
+    let pid = pid_of(None).unwrap();
+    let rec_path = sessions.join(format!("{pid}.json"));
+    let mut rec: serde_json::Value = serde_json::from_str(&fs::read_to_string(&rec_path).unwrap()).unwrap();
+    rec["statusUpdatedAt"] = 1000.into();
+    fs::write(&rec_path, rec.to_string()).unwrap();
+    let old_server = h.tmux_out(&["display", "-p", "#{pid}"]);
+
+    let out = h.tenx().args(["tmux", "restart", "--timeout", "5s"]).output().unwrap();
+    assert!(out.status.success(), "restart: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 window(s), 1 agent(s)"), "{}", String::from_utf8_lossy(&out.stdout));
+
+    let marker = home.join(format!(".config/tenx/tmux-restart-{}.pid", h.socket));
+    wait("the rebuild to finish", &|| !marker.exists() && pid_of(Some(&pid)).is_some());
+    assert_ne!(h.tmux_out(&["display", "-p", "#{pid}"]), old_server, "a new server");
+    let panes = h.tmux_out(&["list-panes", "-t", "tenx:rb", "-F", "#{pane_start_command}|#{@tenx_task_dir}"]);
+    let task_dir = h.root.join("ws/tasks/rb");
+    assert_eq!(panes.lines().count(), 3, "{panes}");
+    assert!(panes.lines().all(|l| l.ends_with(&format!("|{}", task_dir.display()))), "task stamp: {panes}");
+    assert!(panes.contains("nvim TASK.md"), "{panes}");
+    assert_eq!(h.tmux_out(&["show-environment", "-g", "TENX_E2E_MARK"]).trim(), "TENX_E2E_MARK=kept");
+
+    wait("the follow-up", &|| {
+        let new = pid_of(Some(&pid)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(sessions.join(format!("{new}.json"))).unwrap_or_default()).unwrap_or_default();
+        v["statusUpdatedAt"] == 1000
+    });
+    let args = fs::read_to_string(&args_log).unwrap();
+    assert_eq!(args.lines().nth(1), Some("--name rb --resume sess-1"), "{args}");
+}

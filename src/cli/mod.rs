@@ -14,6 +14,7 @@ pub mod session_event;
 pub mod standup;
 pub mod watch;
 pub mod task;
+pub mod tmuxrestart;
 
 use clap::{Parser, Subcommand};
 
@@ -200,6 +201,12 @@ pub enum InternalCommands {
     /// for the restart, whose own pane the respawn ends.
     RespawnAgent {
         plan: String,
+    },
+    /// Stop the tmux server and rebuild it from a `tenx tmux restart`
+    /// snapshot (a JSON file). Runs detached, since it kills the server the
+    /// restart was asked from.
+    TmuxRebuild {
+        snapshot: String,
     },
     /// Open a Claude Code subagent in Claude's own agent view, in its
     /// session's pane (what ⏎ on a subagent line in the column does).
@@ -402,6 +409,26 @@ pub enum TmuxCommands {
     /// settings apply only to what starts afterwards: the terminal type and
     /// scrollback size to new panes, terminal features to the next attach.
     Reload,
+    /// Stop tenx's tmux server and build it again as it was, for what a
+    /// reload can't reach (a new tmux, a setting read only at server start)
+    ///
+    /// Waits until no task is working or waiting on a prompt (`--now` skips
+    /// that). Every window comes back in order with its layout; agents resume
+    /// their conversation; programs the layout started (nvim on TASK.md) run
+    /// again; shells start fresh in the same folder. Programs you started in
+    /// a shell are stopped and listed — start them again yourself. A running
+    /// `tenx` reattaches by itself. Exits 3 if `--timeout` passes first.
+    Restart {
+        /// Don't wait for busy tasks; tell interrupted agents to continue
+        #[arg(long)]
+        now: bool,
+        /// Give up waiting for busy tasks after this long: "10m", "1h"
+        #[arg(long, default_value = restart::DEFAULT_TIMEOUT)]
+        timeout: String,
+        /// Print what would be rebuilt without restarting
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]

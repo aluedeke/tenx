@@ -719,6 +719,14 @@ fn running() -> bool {
 /// upgrade the old one keeps running the old binary until the server goes
 /// away, which `tenx tmux reload` no longer makes it do.
 pub fn restart(bin: &Path) {
+    stop();
+    ensure_running(bin);
+}
+
+/// Stop the running watcher, if any, and wait (briefly) for it to go. Before
+/// `tenx tmux restart` kills the server: a watcher that saw every window
+/// vanish would take them for closed and delete their released secrets.
+pub fn stop() {
     if let Some(pid) = pid_path().ok().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| t.trim().parse::<u32>().ok())
         && pid != std::process::id()
         && workspace::sessions::pid_alive(pid)
@@ -731,7 +739,6 @@ pub fn restart(bin: &Path) {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
-    ensure_running(bin);
 }
 
 /// Start a watcher unless one is already running. Called from `main::open()`,

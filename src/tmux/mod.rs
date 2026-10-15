@@ -159,7 +159,7 @@ fn cmd() -> Command {
     c
 }
 
-fn run(args: &[&str]) -> Result<String> {
+pub(crate) fn run(args: &[&str]) -> Result<String> {
     let out = cmd().args(args).output().with_context(|| format!("run tmux {}", args.join(" ")))?;
     if !out.status.success() {
         bail!("tmux {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
@@ -454,6 +454,45 @@ pub fn ensure_session() -> Result<()> {
         bail!("tmux new-session exited with {status}");
     }
     Ok(())
+}
+
+/// Start a fresh server and the tenx session — what [`ensure_session`] does —
+/// with `env` as the server's whole environment (what every pane inherits)
+/// and the session `size` big enough for the windows `tenx tmux restart`
+/// rebuilds in it before any client attaches.
+pub fn start_session_with(env: &[(String, String)], size: (u32, u32)) -> Result<()> {
+    let conf = write_config()?;
+    let home = env::var("HOME").context("HOME not set")?;
+    let mut c = cmd();
+    if !env.is_empty() {
+        c.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    }
+    let (x, y) = (size.0.max(80).to_string(), size.1.max(24).to_string());
+    let status = c
+        .current_dir(&home)
+        .args(["-f", &conf.to_string_lossy()])
+        .args(["new-session", "-d", "-s", SESSION, "-n", HOME_WINDOW, "-c", &home, "-x", &x, "-y", &y])
+        .status()
+        .context("run tmux new-session")?;
+    if !status.success() {
+        bail!("tmux new-session exited with {status}");
+    }
+    Ok(())
+}
+
+/// The server's global environment (`show-environment -g`): what it was
+/// started with, and what its panes inherit.
+pub fn server_environment() -> Vec<(String, String)> {
+    run(&["show-environment", "-g"])
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())))
+        .collect()
+}
+
+/// Stop the server, and every program in it.
+pub fn kill_server() -> Result<()> {
+    run(&["kill-server"]).map(drop)
 }
 
 /// The `tmux -L <socket> attach-session -t tenx` a client runs in its pty.

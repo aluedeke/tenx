@@ -304,7 +304,7 @@ pub fn launch_resume(
 
 /// The binary and extra args `[agents.<kind>]` names: the workspace entry as a
 /// whole when present, else the global one, else the agent's default binary.
-fn configured(ws: &crate::workspace::Workspace, kind: AgentKind) -> (String, Vec<String>) {
+pub(crate) fn configured(ws: &crate::workspace::Workspace, kind: AgentKind) -> (String, Vec<String>) {
     let key = kind.as_str();
     let global = crate::workspace::load_global().ok();
     let cfg = ws.config.agents.get(key).or_else(|| global.as_ref().and_then(|g| g.agents.get(key)));

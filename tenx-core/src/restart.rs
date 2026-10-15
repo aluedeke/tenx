@@ -61,9 +61,114 @@ pub fn carried_status_time(was: TaskStatus, was_changed_ms: Option<u64>, new_sta
     (was == TaskStatus::Done && new_status == "idle").then_some(was_changed_ms).flatten()
 }
 
+// ── `tenx tmux restart` ───────────────────────────────────────────────────────
+
+/// What a pane gets when `tenx tmux restart` rebuilds its window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaneRole {
+    /// The task's agent: resumed by its session, or launched with the
+    /// agent's continue rule when it never reported in.
+    Agent,
+    /// A program the layout started in the pane (`nvim TASK.md`): run again,
+    /// exactly as reopening the task would.
+    Program(String),
+    /// A plain shell; whatever was typed into it is gone.
+    Shell,
+    /// `tenx internal agent-log`, following a background agent: left out,
+    /// the watcher opens it again for an agent that is still running.
+    AgentLog,
+}
+
+/// Decide a pane's [`PaneRole`] from what tmux started in it (unquoted, see
+/// [`unquote_start_command`]), whether a live agent session reports from it,
+/// and the task's agent binary.
+pub fn pane_role(start_command: &str, has_session: bool, agent_bin: &str) -> PaneRole {
+    if has_session {
+        return PaneRole::Agent;
+    }
+    let start = start_command.trim();
+    if start.contains("internal agent-log") {
+        return PaneRole::AgentLog;
+    }
+    if start.is_empty() {
+        return PaneRole::Shell;
+    }
+    let first = start.split_whitespace().next().unwrap_or_default();
+    let base = |p: &str| p.rsplit('/').next().unwrap_or(p).trim_matches('\'').to_string();
+    if !agent_bin.is_empty() && base(first) == base(agent_bin) {
+        // The agent's own launch, which may carry a first prompt: running it
+        // again would send that prompt a second time.
+        return PaneRole::Agent;
+    }
+    PaneRole::Program(start.to_string())
+}
+
+/// `#{pane_start_command}` as tmux prints it — the command as one argument,
+/// double-quoted with `"`, `\` and `$` escaped when it needs quoting — back
+/// to the shell string that was started.
+pub fn unquote_start_command(raw: &str) -> String {
+    let raw = raw.trim();
+    let Some(inner) = raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')) else {
+        return raw.to_string();
+    };
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A program running in a shell pane that the restart stops — listed for the
+/// user, never started again by itself (a `git push` must not run twice).
+/// `None` when the shell itself is in front.
+pub fn stopped_program<'a>(role: &PaneRole, current_command: &'a str, shells: &[&str]) -> Option<&'a str> {
+    if *role != PaneRole::Shell {
+        return None;
+    }
+    let cur = current_command.trim().trim_start_matches('-');
+    (!cur.is_empty() && !shells.contains(&cur)).then_some(current_command.trim())
+}
+
+/// Shell names a pane's `#{pane_current_command}` shows while it is idle.
+pub const SHELLS: &[&str] = &["zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "elvish", "xonsh"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pane_roles() {
+        assert_eq!(pane_role("", true, "claude"), PaneRole::Agent);
+        assert_eq!(pane_role("claude --name 'x' 'do the thing'", false, "claude"), PaneRole::Agent);
+        assert_eq!(pane_role("/opt/bin/claude --name 'x'", false, "claude"), PaneRole::Agent);
+        assert_eq!(pane_role("nvim TASK.md", false, "claude"), PaneRole::Program("nvim TASK.md".into()));
+        assert_eq!(pane_role("", false, "claude"), PaneRole::Shell);
+        assert_eq!(pane_role("'/x/tenx' internal agent-log '/t' 12", false, "claude"), PaneRole::AgentLog);
+    }
+
+    #[test]
+    fn start_commands_are_unquoted() {
+        assert_eq!(unquote_start_command("\"claude --name 'x' --continue\""), "claude --name 'x' --continue");
+        assert_eq!(unquote_start_command("nvim"), "nvim");
+        assert_eq!(unquote_start_command("\"echo \\\"hi\\\" \\$HOME\""), "echo \"hi\" $HOME");
+        assert_eq!(unquote_start_command(""), "");
+    }
+
+    #[test]
+    fn only_a_program_in_a_shell_is_reported_stopped() {
+        assert_eq!(stopped_program(&PaneRole::Shell, "zsh", SHELLS), None);
+        assert_eq!(stopped_program(&PaneRole::Shell, "-zsh", SHELLS), None);
+        assert_eq!(stopped_program(&PaneRole::Shell, "npm", SHELLS), Some("npm"));
+        assert_eq!(stopped_program(&PaneRole::Program("nvim".into()), "nvim", SHELLS), None);
+        assert_eq!(stopped_program(&PaneRole::Agent, "node", SHELLS), None);
+    }
 
     #[test]
     fn running_turns_and_open_prompts_are_waited_out() {

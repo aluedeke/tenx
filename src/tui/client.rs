@@ -436,6 +436,23 @@ pub fn run() -> Result<()> {
     result
 }
 
+/// A fresh attach once a `tenx tmux restart` has rebuilt the server, or
+/// `None` when the attach ended for any other reason (the server is gone for
+/// good). Waits while the restart runs, up to two minutes.
+fn reattach() -> Result<Option<EmbeddedTerminal>> {
+    let start = std::time::Instant::now();
+    while crate::cli::tmuxrestart::in_progress() && start.elapsed() < Duration::from_secs(120) {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    if crate::cli::tmuxrestart::in_progress() || !crate::tmux::server_running() {
+        return Ok(None);
+    }
+    let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
+    let (tmux, args) = crate::tmux::attach_command();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    Ok(Some(EmbeddedTerminal::spawn(&tmux.to_string_lossy(), &args, &[], &["TMUX", "TMUX_PANE"], rows.max(1), cols.max(1))?))
+}
+
 fn run_client(terminal: &mut ClientTerminal) -> Result<()> {
     let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
 
@@ -449,7 +466,17 @@ fn run_client(terminal: &mut ClientTerminal) -> Result<()> {
     loop {
         terminal.draw(|f| client.draw(f))?;
         if !client.term.alive() {
-            break;
+            // `tenx tmux restart` ends every attach; wait for the new server
+            // and attach to it rather than quitting.
+            match reattach()? {
+                Some(term) => {
+                    client.term = Box::new(term);
+                    let (cols, rows) = crossterm::terminal::size().context("terminal size")?;
+                    client.apply_size(cols, rows);
+                    continue;
+                }
+                None => break,
+            }
         }
         if event::poll(FRAME)? {
             match event::read()? {

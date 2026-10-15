@@ -107,6 +107,10 @@ fn run() -> Result<()> {
                 cli::watch::restart(&tmux::self_bin()?);
                 println!("loaded {} into the running session; restarted the watcher", path.display());
             }
+            TmuxCommands::Restart { now, timeout, dry_run } => {
+                let timeout = cli::task::parse_duration(&timeout)?;
+                cli::tmuxrestart::run(now, timeout, dry_run)?;
+            }
         },
 
         Some(Commands::Doctor { reset_skills }) => cli::doctor::run(reset_skills)?,
@@ -118,6 +122,7 @@ fn run() -> Result<()> {
             }
             InternalCommands::SessionEvent { agent, pid } => cli::session_event::run(&agent, pid),
             InternalCommands::RespawnAgent { plan } => cli::restart::respawn_from_json(&plan)?,
+            InternalCommands::TmuxRebuild { snapshot } => cli::tmuxrestart::rebuild(&snapshot)?,
             InternalCommands::OpenAgent { pid, label, agent_type, nth, peers } => {
                 cli::agentview::run(pid, label.as_deref(), agent_type.as_deref(), nth, peers)?
             }
