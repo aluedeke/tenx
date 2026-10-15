@@ -1338,6 +1338,19 @@ fn tmux_restart_rebuilds_the_session() {
     rec["statusUpdatedAt"] = 1000.into();
     fs::write(&rec_path, rec.to_string()).unwrap();
     let old_server = h.tmux_out(&["display", "-p", "#{pid}"]);
+    // Where nvim and the shell sit: each must be back in its own place, not
+    // in the other's.
+    let places = || {
+        let list = h.tmux_out(&["list-panes", "-t", "tenx:rb", "-F", "#{pane_index} #{pane_left},#{pane_top} #{pane_start_command}"]);
+        let find = |nvim: bool| {
+            list.lines()
+                .find(|l| l.contains("nvim") == nvim && !l.contains("claude") && !l.starts_with("0 "))
+                .map(|l| l.split(' ').take(2).collect::<Vec<_>>().join(" "))
+        };
+        (find(true), find(false), list.clone())
+    };
+    let before = places();
+    assert!(before.0.is_some() && before.1.is_some(), "{}", before.2);
 
     let out = h.tenx().args(["tmux", "restart", "--timeout", "5s"]).output().unwrap();
     assert!(out.status.success(), "restart: {}", String::from_utf8_lossy(&out.stderr));
@@ -1346,6 +1359,8 @@ fn tmux_restart_rebuilds_the_session() {
     let marker = home.join(format!(".config/tenx/tmux-restart-{}.pid", h.socket));
     wait("the rebuild to finish", &|| !marker.exists() && pid_of(Some(&pid)).is_some());
     assert_ne!(h.tmux_out(&["display", "-p", "#{pid}"]), old_server, "a new server");
+    let after = places();
+    assert_eq!((&after.0, &after.1), (&before.0, &before.1), "panes moved:\n{}\nnow:\n{}", before.2, after.2);
     let panes = h.tmux_out(&["list-panes", "-t", "tenx:rb", "-F", "#{pane_start_command}|#{@tenx_task_dir}"]);
     let task_dir = h.root.join("ws/tasks/rb");
     assert_eq!(panes.lines().count(), 3, "{panes}");

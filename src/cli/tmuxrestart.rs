@@ -337,7 +337,11 @@ fn build_window(w: &WindowSnap) -> Result<(String, Vec<String>)> {
         let _ = std::fs::write(PathBuf::from(dir).join(crate::tmux::WINDOW_ID_FILE), &id);
     }
     for p in &w.panes[1..] {
-        let mut args = vec!["split-window", "-d", "-t", &id, "-c", &p.path, "-P", "-F", "#{pane_id}"];
+        // Split the pane made last: tmux puts a new pane right after the one
+        // it splits, so splitting the first pane each time would reverse the
+        // order, and the saved layout would put every pane in another's place.
+        let last = panes.last().cloned().unwrap_or_default();
+        let mut args = vec!["split-window", "-d", "-t", &last, "-c", &p.path, "-P", "-F", "#{pane_id}"];
         if let Some(c) = &p.command {
             args.push(c);
         }
