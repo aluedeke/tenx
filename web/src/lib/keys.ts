@@ -46,6 +46,14 @@ export function isMicToggle(ev: KeyboardEvent): boolean {
   return ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && baseLetter(ev) === 'm';
 }
 
+/** Ctrl+.: read the current task's last reply aloud, pause, go on — the
+ * speaker in the header. By the physical key (the period key is in the
+ * same place on US and German keyboards). A terminal has no use for it: it
+ * sends no byte of its own, so no agent or shell key is taken. */
+export function isSpeakerToggle(ev: KeyboardEvent): boolean {
+  return ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && ev.code === 'Period';
+}
+
 /** Ctrl+V, the key Claude Code pastes an image with. It reads the clipboard
  * of the machine it runs on — not the one of a browser on another device,
  * where the image is. By the physical key, like the others. */

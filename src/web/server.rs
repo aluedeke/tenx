@@ -34,6 +34,8 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
         .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
         .route("/clipboard/get", post(clipboard_get))
         .route("/clipboard/set", post(clipboard_set).layer(DefaultBodyLimit::max(web::CLIPBOARD_MAX_BYTES)))
+        .route("/speak", post(speak))
+        .route("/speak/audio", post(speak_audio).layer(DefaultBodyLimit::max(web::SPEAK_MAX_BYTES)))
         .route("/transcribe", post(transcribe).layer(DefaultBodyLimit::max(web::STT_MAX_BYTES)))
         .route("/push/key", get(push_key))
         .route("/push/subscribe", post(push_subscribe))
@@ -124,6 +126,8 @@ struct WsQuery {
     token: Option<String>,
     /// `/transcribe`: the language spoken (a Whisper code or `auto`).
     language: Option<String>,
+    /// `/speak`: the task whose agent's reply to read (a column row's id).
+    task: Option<String>,
 }
 
 async fn ws(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
@@ -217,7 +221,45 @@ async fn transcribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, heade
     }
 }
 
-/// A request that changes something (`/paste`, `/push/*`, `/transcribe`, `/clipboard/*`): the cookie (or a
+/// `POST /speak?task=<id>`: the last reply of the task's agent, as
+/// `{"pieces": [...]}` to read aloud one after the other (`speak.rs`).
+/// Guarded like `/paste` — it reads what the agent said. `422` with the
+/// reason when there is nothing to read or no voice model is set.
+async fn speak(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let Some(task) = q.task else {
+        return (StatusCode::BAD_REQUEST, "no task").into_response();
+    };
+    match tokio::task::spawn_blocking(move || super::speak::pieces(&task)).await {
+        Ok(Ok(pieces)) => json(serde_json::json!({ "pieces": pieces })),
+        Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /speak/audio`: the body (UTF-8 text, one piece) read aloud by
+/// `tenx-tts`, as `audio/wav`. `400` for a body that isn't UTF-8 or is
+/// empty, `502` when there is no voice model or the program fails.
+async fn speak_audio(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let Ok(text) = String::from_utf8(body.to_vec()) else {
+        return (StatusCode::BAD_REQUEST, "not UTF-8 text").into_response();
+    };
+    if text.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, "no text").into_response();
+    }
+    match tokio::task::spawn_blocking(move || super::speak::audio(&text)).await {
+        Ok(Ok(wav)) => ([(header::CONTENT_TYPE, "audio/wav"), (header::CACHE_CONTROL, "no-store")], wav).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// A request that changes something or reads content (`/paste`, `/push/*`, `/transcribe`, `/speak*`, `/clipboard/*`): the cookie (or a
 /// dev origin's token) and an allowed `Origin`, as for `/ws` — so another
 /// site can't make this server write files or send pushes.
 fn authorize(app: &App, q: &WsQuery, headers: &HeaderMap) -> Result<(), Box<Response>> {

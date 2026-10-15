@@ -8,11 +8,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Column } from './Column';
-import { Header, type MicState } from './Header';
+import { Header, type MicState, type SpeakerState } from './Header';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
-import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
+import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
 import { keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
@@ -21,6 +21,7 @@ import { EmptyClipboard, copyFromMac, sendToMac } from '@/lib/macclip';
 import { keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
+import { Reading, type ReadingState } from '@/lib/speak';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
@@ -81,6 +82,8 @@ export function App() {
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
   const [mic, setMic] = useState<MicState>('idle');
   const [micSeconds, setMicSeconds] = useState(0);
+  const [speaker, setSpeaker] = useState<SpeakerState>('idle');
+  const reading = useRef<Reading | null>(null);
   const recording = useRef<Dictation | null>(null);
   /** What live dictation has typed into the terminal so far, and how much
    * of it is the user's now (they typed after it): never erased. */
@@ -151,8 +154,8 @@ export function App() {
   }, []);
 
   // Latest state for the listeners registered once.
-  const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen, mic });
-  state.current = { focus, visible, narrow, ctrlSticky, touch, kbOpen, mic };
+  const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' });
+  state.current = { focus, visible, narrow, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' };
 
   // Inputs that change the column are numbered and kept until a view
   // acknowledges them, so the column can be drawn with their effect before
@@ -489,6 +492,12 @@ export function App() {
         if (!ev.repeat && state.current.mic !== 'transcribing') void toggleMicRef.current();
         return;
       }
+      if (isSpeakerToggle(ev)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (!ev.repeat && (reading.current || state.current.mic === 'idle')) toggleSpeakerRef.current(state.current.current);
+        return;
+      }
       // A web form's own inputs type natively; the form handles Enter
       // (submit) and Escape (cancel) itself.
       if ((ev.target as Element | null)?.closest?.('.webform')) return;
@@ -808,6 +817,8 @@ export function App() {
     }
     const why = sttUnsupported();
     if (why) return notice(why);
+    // The microphone would hear the voice.
+    reading.current?.stop();
     try {
       // Straight from the tap: iOS asks for the microphone only inside one.
       liveTyped.current = '';
@@ -840,6 +851,44 @@ export function App() {
     const t = setInterval(() => setMicSeconds(Math.floor((Date.now() - started) / 1000)), 250);
     return () => clearInterval(t);
   }, [mic]);
+
+  /** The header's speaker (and ⌃.): the current task's agent's last reply,
+   * read aloud — the audio made by `tenx web` (lib/speak). A tap while it
+   * reads pauses, the next goes on; one while it loads cancels. Its ■
+   * stops it. */
+  const toggleSpeaker = useCallback(
+    (taskId: string) => {
+      const r = reading.current;
+      if (r) {
+        const now = state.current.speaker;
+        if (now === 'playing') r.pause();
+        else if (now === 'paused') r.resume();
+        else r.stop();
+        return;
+      }
+      if (!taskId) return;
+      // Straight from the tap: iOS starts audio only inside one.
+      const next = new Reading(
+        taskId,
+        (s: ReadingState) => {
+          if (reading.current === next) setSpeaker(s);
+        },
+        (error) => {
+          if (reading.current === next) reading.current = null;
+          setSpeaker('idle');
+          if (error) notice(`read aloud: ${error}`);
+        },
+      );
+      reading.current = next;
+      setSpeaker('loading');
+    },
+    [notice],
+  );
+
+  const stopSpeaker = useCallback(() => reading.current?.stop(), []);
+
+  const toggleSpeakerRef = useRef(toggleSpeaker);
+  toggleSpeakerRef.current = toggleSpeaker;
 
   /** The header's ☰ / ⟨: show the column with the keyboard in it, or hide
    * it and give the keyboard back to the terminal. */
@@ -932,6 +981,9 @@ export function App() {
         mic={mic}
         micSeconds={micSeconds}
         onMic={toggleMic}
+        speaker={speaker}
+        onSpeak={toggleSpeaker}
+        onSpeakStop={stopSpeaker}
       />
       <div className="main">
         {visible && (
@@ -958,7 +1010,7 @@ export function App() {
             onData={onTerminalData}
             onResize={(size) => send({ type: 'resize', ...size })}
             onBell={bell}
-            intercept={(ev) => isFocusCycle(ev, mac.current) || isMicToggle(ev)}
+            intercept={(ev) => isFocusCycle(ev, mac.current) || isMicToggle(ev) || isSpeakerToggle(ev)}
             onFocus={() => {
               if (!state.current.narrow || !state.current.visible) setFocus('terminal');
             }}

@@ -49,6 +49,39 @@ pub struct GlobalConfig {
     /// `tenx web`'s microphone: the model `tenx-whisper` runs.
     #[serde(default, skip_serializing_if = "SpeechConfig::is_empty")]
     pub speech: SpeechConfig,
+    /// `tenx web`'s speaker: the model and voice `tenx-tts` reads with.
+    #[serde(default, skip_serializing_if = "ReadAloudConfig::is_empty")]
+    pub read_aloud: ReadAloudConfig,
+}
+
+/// `[read_aloud]`: text to speech for `tenx web`'s speaker (`web::tts`).
+/// Without a `model` the speaker says how to set one.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct ReadAloudConfig {
+    /// A Kokoro model directory as sherpa-onnx packs it
+    /// (`kokoro-multi-lang-v1_0`; `~` expanded).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
+    /// A Kokoro voice by name (`af_heart`, `bm_george`) or number; empty =
+    /// `af_heart` (`tenx_core::tts::VOICES`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub voice: String,
+    /// How fast it reads: 1.0 (or 0) is the voice's own pace.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub speed: f32,
+    /// Minutes unused before the model is unloaded; 0 = 10.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub idle_minutes: u32,
+}
+
+impl ReadAloudConfig {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn is_zero_f32(n: &f32) -> bool {
+    *n == 0.0
 }
 
 /// `[speech]`: speech to text for `tenx web` (`web::whisper`). Without a

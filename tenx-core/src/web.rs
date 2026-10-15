@@ -76,6 +76,10 @@ pub const PASTE_MAX_BYTES: usize = 25 * 1024 * 1024;
 /// hand, small enough that a mistake can't fill the Mac's memory.
 pub const CLIPBOARD_MAX_BYTES: usize = 4 * 1024 * 1024;
 
+/// The largest piece of text `/speak/audio` reads aloud: a piece is a few
+/// sentences (`tts::pieces`), and Kokoro makes audio for all of it at once.
+pub const SPEAK_MAX_BYTES: usize = 64 * 1024;
+
 /// How long a pasted image is kept. It only has to outlive the agent reading
 /// it; older ones are swept on the next paste.
 pub const PASTE_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
@@ -193,6 +197,15 @@ pub fn valid_session_id(id: &str) -> bool {
     (8..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// A column row's id (`<workspace>/<slug>`, as the page sends it) split into
+/// the workspace's name and the task's slug. A slug never holds a `/`; a
+/// workspace name might.
+pub fn task_id(id: &str) -> Option<(&str, &str)> {
+    let (ws, slug) = id.rsplit_once('/')?;
+    let ok = !ws.is_empty() && !slug.is_empty() && slug != "." && slug != "..";
+    ok.then_some((ws, slug))
+}
+
 /// The grouped session a tab with session id `id` attaches to.
 pub fn session_name(id: &str) -> String {
     format!("{SESSION_PREFIX}{id}")
@@ -301,6 +314,15 @@ mod tests {
     fn layout_follows_the_tui() {
         assert_eq!(layout(200, 0, 100), (crate::column::width(200, 0), false));
         assert!(layout(60, 0, 100).1, "under 100 cells the column is an overlay");
+    }
+
+    #[test]
+    fn task_ids_split_on_the_last_slash() {
+        assert_eq!(task_id("work/fix-login"), Some(("work", "fix-login")));
+        assert_eq!(task_id("a/b/fix"), Some(("a/b", "fix")));
+        for bad in ["fix", "/fix", "work/", "work/..", "work/."] {
+            assert_eq!(task_id(bad), None, "{bad}");
+        }
     }
 
     #[test]
