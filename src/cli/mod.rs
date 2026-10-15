@@ -115,6 +115,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: AgentCommands,
     },
+    /// Manage tenx's own tmux server
+    Tmux {
+        #[command(subcommand)]
+        command: TmuxCommands,
+    },
     /// Report agent integration health: binaries, versions, hooks, tmux
     /// options, and whether each workspace's installed skills are current
     Doctor {
@@ -386,6 +391,17 @@ pub enum HooksCommands {
     /// Remove tenx's Claude Code hooks (tenx no longer installs any — task
     /// state is read live from Claude Code's session registry)
     Install,
+}
+
+#[derive(Subcommand)]
+pub enum TmuxCommands {
+    /// Load this tenx's tmux config into the running server, without a
+    /// restart: every window, pane and program keeps running
+    ///
+    /// Also restarts the background watcher, so it runs this tenx. A few
+    /// settings apply only to what starts afterwards: the terminal type and
+    /// scrollback size to new panes, terminal features to the next attach.
+    Reload,
 }
 
 #[derive(Subcommand)]

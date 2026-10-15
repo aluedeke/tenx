@@ -285,8 +285,7 @@ pub fn stale_server_hint(running: &str) -> Option<String> {
     (running != mine).then(|| {
         format!(
             "tenx {mine} is installed but the running session was started by tenx {running}.\n\
-             Restart it to pick up the new binary: tmux -L {} kill-server, then tenx.",
-            socket()
+             Load the new version's settings with: tenx tmux reload"
         )
     })
 }
@@ -302,9 +301,8 @@ pub fn config_path() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".config").join("tenx").join(name))
 }
 
-/// Write the generated config and return its path. Only read by tmux when the
-/// *server* starts, so a running session keeps its config until restarted —
-/// same as the zellij version, and fine: nothing in here changes per task.
+/// Write the generated config and return its path. Read by tmux when the
+/// *server* starts, and again by [`reload_config`].
 pub fn write_config() -> Result<PathBuf> {
     let path = config_path()?;
     if let Some(dir) = path.parent() {
@@ -328,6 +326,11 @@ pub fn render_config() -> String {
 # The tenx that wrote this config; `tenx` compares it with its own version on
 # attach and says when a restart is due.
 set -g @tenx_version "{version}"
+
+# Loaded again into a running server by `tenx tmux reload`: start the lists
+# appended to below from tmux's defaults, so a reload doesn't stack copies.
+set -su terminal-overrides
+set -su terminal-features
 
 set -g default-terminal "tmux-256color"
 set -ga terminal-overrides ",*:Tc"
@@ -407,6 +410,21 @@ set -g status-right "#{{E:@tenx_right}} "
         border = palette::BORDER.hex(),
         border_active = palette::BORDER_ACTIVE.hex(),
     )
+}
+
+/// Write the current config and load it into the running server — what
+/// `tenx tmux reload` does instead of a restart. Every window, pane and
+/// process stays. Options tmux reads only when something starts keep their
+/// old value for what already exists: `default-terminal` and
+/// `history-limit` apply to new panes, `terminal-features` and
+/// `terminal-overrides` to the next attach.
+pub fn reload_config() -> Result<PathBuf> {
+    if !server_running() {
+        bail!("the '{SESSION}' session isn't running — nothing to reload");
+    }
+    let path = write_config()?;
+    run(&["source-file", &path.to_string_lossy()])?;
+    Ok(path)
 }
 
 // ── Session lifecycle ─────────────────────────────────────────────────────────
@@ -1158,7 +1176,7 @@ mod tests {
         // A version no build can have, so the mismatch is real whatever
         // Cargo.toml says.
         let hint = stale_server_hint("0.0.0-stale").unwrap();
-        assert!(hint.contains("0.0.0-stale") && hint.contains("kill-server"));
+        assert!(hint.contains("0.0.0-stale") && hint.contains("tenx tmux reload"));
     }
 
     #[test]

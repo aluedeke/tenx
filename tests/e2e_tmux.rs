@@ -1259,3 +1259,29 @@ fn agent_restart_resumes_the_session_in_place() {
     assert_eq!(new_rec["statusUpdatedAt"], 1000, "done-since time carried over");
     assert!(!sessions.join(format!("{pid}.json")).exists(), "old record removed");
 }
+
+/// `tenx tmux reload` loads the current config into the running server: the
+/// version stamp moves, windows stay, and loading it twice stacks nothing.
+#[test]
+fn tmux_reload_loads_the_config_in_place() {
+    let Some(h) = Harness::named("-reload") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    // An old server: its config came from some other tenx.
+    h.tmux_out(&["set", "-g", "@tenx_version", "0.0.1"]);
+    h.tmux_out(&["set", "-g", "history-limit", "10"]);
+    let windows = h.tmux_out(&["list-windows", "-a", "-F", "#{window_id} #{pane_pid}"]);
+    let overrides = h.tmux_out(&["show", "-s", "terminal-overrides"]);
+
+    for _ in 0..2 {
+        let out = h.tenx().args(["tmux", "reload"]).output().unwrap();
+        assert!(out.status.success(), "reload: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    assert_eq!(h.tmux_out(&["show", "-gv", "@tenx_version"]).trim(), env!("CARGO_PKG_VERSION"));
+    assert_eq!(h.tmux_out(&["show", "-gv", "history-limit"]).trim(), "50000");
+    assert_eq!(h.tmux_out(&["list-windows", "-a", "-F", "#{window_id} #{pane_pid}"]), windows, "nothing restarted");
+    assert_eq!(h.tmux_out(&["show", "-s", "terminal-overrides"]), overrides, "lists not stacked");
+    let features = h.tmux_out(&["show", "-s", "terminal-features"]);
+    assert_eq!(features.matches("hyperlinks").count(), 1, "{features}");
+}

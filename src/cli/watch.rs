@@ -715,6 +715,25 @@ fn running() -> bool {
     pid != std::process::id() && workspace::sessions::pid_alive(pid)
 }
 
+/// Replace the running watcher with one started from `bin` — after an
+/// upgrade the old one keeps running the old binary until the server goes
+/// away, which `tenx tmux reload` no longer makes it do.
+pub fn restart(bin: &Path) {
+    if let Some(pid) = pid_path().ok().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| t.trim().parse::<u32>().ok())
+        && pid != std::process::id()
+        && workspace::sessions::pid_alive(pid)
+    {
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+        for _ in 0..30 {
+            if !workspace::sessions::pid_alive(pid) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    ensure_running(bin);
+}
+
 /// Start a watcher unless one is already running. Called from `main::open()`,
 /// so every route into the session gets one. Best-effort throughout: a watcher
 /// that fails to start must never stop you opening your tasks.

@@ -118,8 +118,8 @@ fn report_tmux_option(name: &str, want: &str) {
     let got = crate::tmux::show_global_option(name);
     match got.as_deref() {
         Some(v) if v == want => println!("  {name} = {v} ✓"),
-        Some(v) => println!("  {name} = {v} (expected {want}; restart: tmux -L tenx kill-server then tenx)"),
-        None => println!("  {name} unset (expected {want}; restart: tmux -L tenx kill-server then tenx)"),
+        Some(v) => println!("  {name} = {v} (expected {want}; fix: tenx tmux reload)"),
+        None => println!("  {name} unset (expected {want}; fix: tenx tmux reload)"),
     }
 }
 

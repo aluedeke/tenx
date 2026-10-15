@@ -12,7 +12,7 @@ mod workspace;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, PrCommands, RepoCommands, SecretsCommands, TaskCommands};
+use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, PrCommands, RepoCommands, SecretsCommands, TaskCommands, TmuxCommands};
 use std::env;
 
 fn main() {
@@ -98,6 +98,14 @@ fn run() -> Result<()> {
             AgentCommands::Restart { tasks, now, timeout, dry_run } => {
                 let timeout = cli::task::parse_duration(&timeout)?;
                 cli::restart::run(&tasks, now, timeout, dry_run)?;
+            }
+        },
+
+        Some(Commands::Tmux { command }) => match command {
+            TmuxCommands::Reload => {
+                let path = tmux::reload_config()?;
+                cli::watch::restart(&tmux::self_bin()?);
+                println!("loaded {} into the running session; restarted the watcher", path.display());
             }
         },
 

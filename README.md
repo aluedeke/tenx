@@ -82,13 +82,15 @@ Nothing else to place. tenx generates its own tmux config at `~/.config/tenx/tmu
 
 ### Upgrading
 
-`brew upgrade tenx`, or run the installer again. A running tenx server keeps the config it started with, so after an upgrade `tenx` tells you to restart the session:
+`brew upgrade tenx`, or run the installer again. A running tenx server keeps the config it started with, so after an upgrade `tenx` tells you to load the new one:
 
 ```sh
-tmux -L tenx kill-server && tenx
+tenx tmux reload
 ```
 
-Task windows are recreated on demand and every Claude conversation resumes where it left off.
+Nothing is closed: every window, pane and program keeps running, and the background watcher is restarted on the new version. A few settings apply only to what starts afterwards — the terminal type and scrollback size to new panes, terminal features to the next attach (quit `tenx` and start it again). Restart a running `tenx` client or `tenx web` yourself to run the new binary there too.
+
+After an agent update (a new Claude Code, Codex or pi), use `tenx agent restart` instead (see [Sweep, pin and restart](#sweep-pin-and-restart)).
 
 ## Quickstart
 
@@ -176,6 +178,7 @@ tenx task rm <NAME>
 tenx task pin|unpin <NAME>
 tenx task sweep          close windows nobody is waiting on [--after 8h] [--idle-after 15m] [--dry-run]
 tenx agent restart       restart every open task's agent in place [TASK..] [--now] [--timeout 30m] [--dry-run]
+tenx tmux reload         load this tenx's tmux config into the running server
 tenx watch               the attention watcher (started automatically)
 tenx standup             summarize recent activity across tasks
 tenx secrets ...         per-task encrypted secrets, see below
@@ -271,7 +274,7 @@ idle_minutes = 10       # optional: unload the model after this long unused
 
 The voice's first letter is its language, and Kokoro has no German voice. A changed `[read_aloud]` applies to the next reading. Without a model the speaker says how to set one; nothing is read aloud in the browser.
 
-## Sweep and pin
+## Sweep, pin and restart
 
 Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks once they have been quiet for `--idle-after` (default 15m), finished tasks after `--after` (default 8h). A task's window is the one its panes are actually in, never just one that shares its slug — the same task name in two workspaces must not close the wrong session. It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.
 
