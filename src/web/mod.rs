@@ -16,6 +16,8 @@ mod paste;
 mod push;
 mod server;
 pub mod service;
+mod speak;
+mod tts;
 mod tab;
 mod token;
 mod transcribe;

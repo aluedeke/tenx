@@ -4,7 +4,7 @@
 // column's toggle, the wordmark, the task in front of you (the view's
 // `current`, i.e. this tab's tmux window) with what it wants from you, and
 // what doesn't depend on a row: the daily actions (next that needs you,
-// speak, new) on the right, and behind ⋯ what you set once (notifications,
+// read the current task's last reply aloud, speak, new) on the right, and behind ⋯ what you set once (notifications,
 // the keys, the connection — a dot on the wordmark, words only when it's
 // lost). On a phone it is how the column opens.
 
@@ -32,7 +32,24 @@ interface Props {
   /** Seconds recorded so far, while recording. */
   micSeconds: number;
   onMic(): void;
+  speaker: SpeakerState;
+  /** Read the task's last reply aloud, pause or go on (`taskId` empty when
+   * no task is current). */
+  onSpeak(taskId: string): void;
+  /** Stop reading. */
+  onSpeakStop(): void;
 }
+
+/** The speaker button: off, waiting for the audio, reading aloud, or
+ * paused. */
+export type SpeakerState = 'idle' | 'loading' | 'playing' | 'paused';
+
+const SPEAKER_TITLE: Record<SpeakerState, string> = {
+  idle: 'read the agent’s last reply aloud (⌃.)',
+  loading: 'making the audio… — tap to cancel',
+  playing: 'reading aloud — tap (or ⌃.) to pause',
+  paused: 'paused — tap (or ⌃.) to go on',
+};
 
 /** The speech button: off, listening, or turning what it heard into text. */
 export type MicState = 'idle' | 'recording' | 'transcribing';
@@ -172,27 +189,59 @@ export function Header(props: Props) {
           )}
           <button
             type="button"
-            className={`hbtn mic ${props.mic}`}
-            data-testid="mic"
-            data-state={props.mic}
-            title={MIC_TITLE[props.mic]}
-            aria-label={MIC_TITLE[props.mic]}
-            aria-pressed={props.mic === 'recording'}
-            disabled={props.mic === 'transcribing'}
-            // Not on pointer-down: getUserMedia wants a completed tap on iOS.
-            onClick={props.onMic}
+            className={`hbtn speaker ${props.speaker}`}
+            data-testid="speaker"
+            data-state={props.speaker}
+            title={SPEAKER_TITLE[props.speaker]}
+            aria-label={SPEAKER_TITLE[props.speaker]}
+            aria-pressed={props.speaker === 'playing' || props.speaker === 'loading'}
+            // Not over a dictation: the microphone would hear the voice.
+            disabled={props.speaker === 'idle' && (!current || props.mic !== 'idle')}
+            // Not on pointer-down: iOS starts audio only on a completed tap.
+            onClick={() => props.onSpeak(current?.id ?? '')}
           >
-            {props.mic === 'recording' ? (
-              <>
-                <span className="micdot" />
-                {formatSeconds(props.micSeconds)}
-              </>
-            ) : props.mic === 'transcribing' ? (
-              '…'
-            ) : (
-              <MicIcon />
-            )}
+            {props.speaker === 'loading' ? '…' : props.speaker === 'playing' ? <PauseIcon /> : <SpeakerIcon />}
           </button>
+          {/* While it reads, ■ takes the microphone's place: the header must
+              not grow on a phone, and nobody dictates over the voice. */}
+          {props.speaker === 'playing' || props.speaker === 'paused' ? (
+            <button
+              type="button"
+              className="hbtn speakstop"
+              data-testid="speaker-stop"
+              title="stop reading"
+              aria-label="stop reading"
+              onClick={props.onSpeakStop}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`hbtn mic ${props.mic}`}
+              data-testid="mic"
+              data-state={props.mic}
+              title={MIC_TITLE[props.mic]}
+              aria-label={MIC_TITLE[props.mic]}
+              aria-pressed={props.mic === 'recording'}
+              disabled={props.mic === 'transcribing'}
+              // Not on pointer-down: getUserMedia wants a completed tap on iOS.
+              onClick={props.onMic}
+            >
+              {props.mic === 'recording' ? (
+                <>
+                  <span className="micdot" />
+                  {formatSeconds(props.micSeconds)}
+                </>
+              ) : props.mic === 'transcribing' ? (
+                '…'
+              ) : (
+                <MicIcon />
+              )}
+            </button>
+          )}
           <button
             type="button"
             className="hbtn primary"
@@ -285,6 +334,23 @@ export function MicIcon() {
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M5.5 11a6.5 6.5 0 0 0 13 0" />
       <path d="M12 17.5V21" />
+    </svg>
+  );
+}
+
+function SpeakerIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+      <path d="M9 6v12M15 6v12" />
     </svg>
   );
 }

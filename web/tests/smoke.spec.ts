@@ -848,6 +848,130 @@ test('a tmux copy (OSC 52 with no target) reaches the browser clipboard', async 
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('from nvim');
 });
 
+test('the speaker reads the current task’s last reply aloud, piece by piece; a tap pauses, the next goes on, ■ stops', async ({ page }) => {
+  const asked: string[] = [];
+  const spoken: string[] = [];
+  page.on('request', (r) => {
+    const url = new URL(r.url());
+    if (url.pathname === '/speak') asked.push(url.searchParams.get('task') ?? '');
+    if (url.pathname === '/speak/audio') spoken.push(r.postData() ?? '');
+  });
+  await page.goto('/');
+  const speaker = page.getByTestId('speaker');
+  await expect(speaker).toHaveAttribute('data-state', 'idle');
+  await speaker.click();
+  // The mock's reply is two pieces of half a second each: they play one
+  // after the other, then the button is off again.
+  await expect(speaker).toHaveAttribute('data-state', 'playing');
+  await expect(speaker).toHaveAttribute('data-state', 'idle');
+  expect(asked).toEqual(['acme/fix-login-timeout']);
+  expect(spoken).toEqual(['First piece.', 'Second piece.']);
+
+  // A long piece: stopped by the next tap. The second piece was already
+  // asked for while the first played; nothing after it is.
+  spoken.length = 0;
+  await page.route('**/speak/audio', async (route) => {
+    const res = await route.fetch();
+    const wav = await res.body();
+    // The same silence, with a header claiming far more of it.
+    const long = Buffer.concat([wav, Buffer.alloc(8000 * 2 * 30)]);
+    long.writeUInt32LE(long.length - 8, 4);
+    long.writeUInt32LE(long.length - 44, 40);
+    await route.fulfill({ status: 200, contentType: 'audio/wav', body: long });
+  });
+  await speaker.click();
+  await expect(speaker).toHaveAttribute('data-state', 'playing');
+  // A tap pauses, the next goes on, ■ stops.
+  await speaker.click();
+  await expect(speaker).toHaveAttribute('data-state', 'paused');
+  await speaker.click();
+  await expect(speaker).toHaveAttribute('data-state', 'playing');
+  await expect(page.getByTestId('mic')).toHaveCount(0);
+  await page.getByTestId('speaker-stop').click();
+  await expect(speaker).toHaveAttribute('data-state', 'idle');
+  await expect(page.getByTestId('speaker-stop')).toHaveCount(0);
+  await expect(page.getByTestId('mic')).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(spoken).toEqual(['First piece.', 'Second piece.']);
+});
+
+test('Ctrl+. reads aloud, pauses and goes on, from the terminal and the column', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a hardware keyboard');
+  await page.route('**/speak/audio', async (route) => {
+    const wav = await (await route.fetch()).body();
+    const long = Buffer.concat([wav, Buffer.alloc(8000 * 2 * 30)]);
+    long.writeUInt32LE(long.length - 8, 4);
+    long.writeUInt32LE(long.length - 44, 40);
+    await route.fulfill({ status: 200, contentType: 'audio/wav', body: long });
+  });
+  const sent = sentMessages(page);
+  await page.goto('/');
+  const speaker = page.getByTestId('speaker');
+  await page.locator('.xterm').click();
+  await page.keyboard.press('Control+Period');
+  await expect(speaker).toHaveAttribute('data-state', 'playing');
+  await page.keyboard.press('Control+Period');
+  await expect(speaker).toHaveAttribute('data-state', 'paused');
+  await page.keyboard.press('Control+w'); // the column has the keys now
+  await page.keyboard.press('Control+Period');
+  await expect(speaker).toHaveAttribute('data-state', 'playing');
+  await page.getByTestId('speaker-stop').click();
+  await expect(speaker).toHaveAttribute('data-state', 'idle');
+  // Neither the terminal nor the column saw the key.
+  expect(sent().some((m) => m.type === 'key' && (m.key === '.' || m.key === 'Period'))).toBe(false);
+});
+
+test('on the smallest phone the header keeps every button on screen, also while reading', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'a phone');
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.route('**/speak?*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"pieces":["One."]}' }));
+  await page.route('**/speak/audio', async (route) => {
+    const wav = await (await route.fetch()).body();
+    const long = Buffer.concat([wav, Buffer.alloc(8000 * 2 * 30)]);
+    long.writeUInt32LE(long.length - 8, 4);
+    long.writeUInt32LE(long.length - 44, 40);
+    await route.fulfill({ status: 200, contentType: 'audio/wav', body: long });
+  });
+  // In another task than the one that needs you: ● next shows too.
+  await page.goto('/?task=web/better-loading');
+  const header = page.getByTestId('header');
+  await expect(header.getByTestId('next')).toBeVisible();
+  const offScreen = () =>
+    header.evaluate((h) =>
+      [...h.querySelectorAll('button')]
+        .filter((b) => (b as HTMLElement).offsetParent)
+        .filter((b) => b.getBoundingClientRect().right > window.innerWidth + 0.5 || b.getBoundingClientRect().left < 0)
+        .map((b) => (b as HTMLElement).dataset.testid),
+    );
+  expect(await offScreen()).toEqual([]);
+  await page.getByTestId('speaker').tap();
+  await expect(page.getByTestId('speaker')).toHaveAttribute('data-state', 'playing');
+  // ■ takes the microphone's place rather than adding a button.
+  await expect(header.getByTestId('speaker-stop')).toBeVisible();
+  await expect(header.getByTestId('mic')).toHaveCount(0);
+  expect(await offScreen()).toEqual([]);
+  await header.getByTestId('speaker-stop').tap();
+  await expect(header.getByTestId('mic')).toBeVisible();
+});
+
+test('the speaker says why a piece could not be read', async ({ page }) => {
+  await page.route('**/speak/audio', (route) => route.fulfill({ status: 502, contentType: 'text/plain', body: 'no voice model: set [read_aloud] model' }));
+  await page.goto('/');
+  const speaker = page.getByTestId('speaker');
+  await speaker.click();
+  await expect(page.getByRole('status')).toContainText('read aloud: no voice model');
+  await expect(speaker).toHaveAttribute('data-state', 'idle');
+});
+
+test('the speaker says why there is nothing to read', async ({ page }) => {
+  await page.route('**/speak?*', (route) => route.fulfill({ status: 422, contentType: 'text/plain', body: 'the agent has not replied since the last prompt' }));
+  await page.goto('/');
+  const speaker = page.getByTestId('speaker');
+  await speaker.click();
+  await expect(page.getByRole('status')).toContainText('read aloud: the agent has not replied since the last prompt');
+  await expect(speaker).toHaveAttribute('data-state', 'idle');
+});
+
 test('the microphone says why it cannot listen, and stays off', async ({ page }) => {
   await page.addInitScript(() => {
     navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));

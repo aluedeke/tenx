@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enterWhileDictating, isIPad, isMicToggle, isImagePaste, isRemote, takesImagePaste } from '../src/lib/keys.ts';
+import { enterWhileDictating, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
 
 const key = (code: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ code, key: code.slice(3).toLowerCase(), ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...mods }) as KeyboardEvent;
@@ -56,4 +56,12 @@ test('Ctrl+M toggles the microphone, by the physical key; Option+M no longer doe
   assert.equal(isMicToggle(key('KeyM', { altKey: true, key: 'µ' })), false);
   assert.equal(isMicToggle(key('KeyM', { ctrlKey: true, shiftKey: true })), false);
   assert.equal(isMicToggle(key('KeyM')), false);
+});
+
+test('Ctrl+. is the speaker key, by the physical key', () => {
+  assert.equal(isSpeakerToggle({ ...key('Period', { ctrlKey: true }), key: '.' }), true);
+  assert.equal(isSpeakerToggle({ ...key('Period', { ctrlKey: true, shiftKey: true }), key: ':' }), false);
+  assert.equal(isSpeakerToggle({ ...key('Period', { metaKey: true }), key: '.' }), false);
+  assert.equal(isSpeakerToggle({ ...key('Period'), key: '.' }), false);
+  assert.equal(isSpeakerToggle(key('KeyM', { ctrlKey: true })), false);
 });

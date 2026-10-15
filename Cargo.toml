@@ -34,6 +34,15 @@ path = "src/main.rs"
 name = "tenx-whisper"
 path = "src/bin/tenx-whisper.rs"
 
+# Text to speech for `tenx web`'s speaker: Kokoro behind stdin/stdout,
+# started and stopped by `tenx web` (src/web/tts.rs) — a program of its own
+# for the same reasons as tenx-whisper. sherpa-onnx ships prebuilt static
+# libraries for macOS and glibc Linux only (below); elsewhere it builds to a
+# stub, and releases leave it out (dist-workspace.toml `[dist.binaries]`).
+[[bin]]
+name = "tenx-tts"
+path = "src/bin/tenx-tts.rs"
+
 [dependencies]
 tenx-core = { version = "0.10.2", path = "tenx-core" }
 clap = { version = "4", features = ["derive"] }
@@ -64,6 +73,11 @@ rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-
 # whisper.cpp is C++: building it needs cmake and a C/C++ compiler.
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }
+
+# tenx-tts only. The build downloads sherpa-onnx's static libraries (with
+# onnxruntime) from its GitHub release for the target.
+[target.'cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))'.dependencies]
+sherpa-onnx = "=1.13.8"
 
 [dev-dependencies]
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }

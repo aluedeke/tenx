@@ -102,6 +102,11 @@ pub fn wav_samples(wav: &[u8]) -> Result<Vec<f32>, String> {
 /// Samples as a 16 kHz mono 16-bit WAV, what [`wav_samples`] reads — and a
 /// `whisper-server` (live dictation's audio, when one is set).
 pub fn wav(samples: &[f32]) -> Vec<u8> {
+    wav_at(samples, RATE)
+}
+
+/// Samples as a mono 16-bit WAV at `rate` (`tts` sends Kokoro's 24 kHz).
+pub fn wav_at(samples: &[f32], rate: u32) -> Vec<u8> {
     let data = (samples.len() * 2) as u32;
     let mut v = Vec::with_capacity(44 + data as usize);
     v.extend(b"RIFF");
@@ -110,8 +115,8 @@ pub fn wav(samples: &[f32]) -> Vec<u8> {
     v.extend(16u32.to_le_bytes());
     v.extend(1u16.to_le_bytes()); // PCM
     v.extend(1u16.to_le_bytes()); // mono
-    v.extend(RATE.to_le_bytes());
-    v.extend((RATE * 2).to_le_bytes());
+    v.extend(rate.to_le_bytes());
+    v.extend((rate * 2).to_le_bytes());
     v.extend(2u16.to_le_bytes());
     v.extend(16u16.to_le_bytes());
     v.extend(b"data");

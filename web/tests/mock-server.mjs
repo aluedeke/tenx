@@ -165,6 +165,25 @@ const SCREEN = [
 
 let macClipboard = 'from the mac ✓';
 
+/** `seconds` of 8 kHz 16-bit mono silence, as a WAV file. */
+function silentWav(seconds) {
+  const bytes = Math.round(8000 * seconds) * 2;
+  const b = Buffer.alloc(44 + bytes);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + bytes, 4);
+  b.write('WAVEfmt ', 8);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(8000, 24);
+  b.writeUInt32LE(16000, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(bytes, 40);
+  return b;
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   // `tenx web` hands this to its machine's speech server; here, a fixed
@@ -176,6 +195,22 @@ const server = createServer(async (req, res) => {
     const isWav = req.headers['content-type'] === 'audio/wav' && body.subarray(0, 4).toString() === 'RIFF';
     res.writeHead(isWav ? 200 : 502, { 'content-type': isWav ? 'application/json' : 'text/plain' });
     res.end(isWav ? JSON.stringify({ text: `heard ${url.searchParams.get('language') ?? 'default'}` }) : 'not a WAV');
+    return;
+  }
+  // `tenx web` reads the task's last reply aloud with `tenx-tts`, a piece
+  // at a time; here, two pieces for the task the mock is in, and half a
+  // second of silence (a WAV) for any piece.
+  if (req.method === 'POST' && url.pathname === '/speak') {
+    if (url.searchParams.get('task') !== 'acme/fix-login-timeout') {
+      res.writeHead(422, { 'content-type': 'text/plain' }).end('the agent has not replied since the last prompt');
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ pieces: ['First piece.', 'Second piece.'] }));
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/speak/audio') {
+    for await (const _ of req);
+    res.writeHead(200, { 'content-type': 'audio/wav' }).end(silentWav(0.5));
     return;
   }
   // The Mac's clipboard, kept in memory: what /clipboard/set put there,

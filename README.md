@@ -76,7 +76,7 @@ Prebuilt binaries for macOS and Linux, both Intel and ARM, are on the [releases 
 cargo install --locked --git https://github.com/aluedeke/tenx --tag v0.1.0
 ```
 
-The package is `tenx-cli` (the crates.io name `tenx` belongs to an unrelated project); the binary is `tenx` either way. On a Mac with Apple silicon it also builds `tenx-whisper` (speech to text for `tenx web`), which compiles whisper.cpp and so needs `cmake` (`brew install cmake`). From a checkout, `make install` does the same.
+The package is `tenx-cli` (the crates.io name `tenx` belongs to an unrelated project); the binary is `tenx` either way. On a Mac with Apple silicon it also builds `tenx-whisper` (speech to text for `tenx web`), which compiles whisper.cpp and so needs `cmake` (`brew install cmake`). Every build also makes `tenx-tts` (text to speech for `tenx web`), which downloads sherpa-onnx's prebuilt libraries while it builds. From a checkout, `make install` does the same.
 
 Nothing else to place. tenx generates its own tmux config at `~/.config/tenx/tmux.conf` and runs its own tmux server on a dedicated socket, so your `~/.tmux.conf` is untouched.
 
@@ -250,6 +250,23 @@ idle_minutes = 10                            # optional: unload the model after 
 ```
 
 Download a model from [ggerganov/whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (`ggml-large-v3-turbo.bin` is a good start). `tenx web` starts `tenx-whisper` on the first recording (loading a large model takes a few seconds), restarts it if it dies, and stops it after `idle_minutes`, which gives its memory back; a changed `[speech]` applies to the next recording. Without a model the microphone says how to set one; nothing is transcribed in the browser. On Linux and Intel Macs `tenx-whisper` isn't included; there, and to use a `whisper-server` instead on any machine, set `TENX_WEB_STT_URL` (e.g. `http://127.0.0.1:8178/inference`). A recording without speech is not sent, since Whisper invents text for silence. The microphone needs HTTPS (`tailscale serve`). To choose the language on one device, set `localStorage['tenx.stt.language']` to a code (`de`) or `auto`.
+
+Tap the speaker in the header (or press `Ctrl+.`) to hear the current task's agent read its last reply aloud. Tap it again to pause, and once more to go on; while it reads, ■ takes the microphone's place and stops it. The reply is its last message since your last prompt, with code blocks left out and links read as their text. `tenx web` turns it into speech on its own machine with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), an open voice model (Apache 2.0), run by [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) in `tenx-tts`, a program that ships next to `tenx` on Macs; on Linux, `cargo install` builds it (glibc only). Nothing leaves the machine. It reads a few sentences at a time, so a long reply starts at once, and the page plays it also with an iPhone's ringer switched to silent. Download the model once (about 330 MB) and point the config at its directory:
+
+```sh
+mkdir -p ~/.local/share/tenx/models && cd ~/.local/share/tenx/models
+curl -L https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 | tar xj
+```
+
+```toml
+[read_aloud]
+model = "~/.local/share/tenx/models/kokoro-multi-lang-v1_0"
+voice = "af_heart"      # optional: any Kokoro voice — af_*/am_* American, bf_*/bm_* British English, ff_siwis French, …
+speed = 1.0             # optional: 1.0 is the voice's own pace
+idle_minutes = 10       # optional: unload the model after this long unused
+```
+
+The voice's first letter is its language, and Kokoro has no German voice. A changed `[read_aloud]` applies to the next reading.
 
 ## Sweep and pin
 

@@ -134,26 +134,7 @@ fn finish(outcome: WaitOutcome, title: &str, status: &str, why: Option<&str>) ->
 pub fn output(ws_dir: Option<&str>, task: &str, json: bool) -> Result<()> {
     let (ws, slug) = crate::cli::task::resolve_task(ws_dir, task)?;
     let task = ws.find_task(&slug)?;
-    let cwd = task.path.to_string_lossy().into_owned();
-    // The session that runs in the task directory itself — not a background
-    // agent in a subdirectory — and its agent; with none live, the newest
-    // transcript for the directory, in the task's configured agent's format.
-    let sessions = workspace::sessions::sessions();
-    let live = sessions.iter().find(|s| match &s.task_dir {
-        Some(dir) => *dir == task.path,
-        None => s.cwd == task.path && s.kind != "bg",
-    });
-    let agent = match live {
-        Some(s) if !s.agent.is_empty() => s.agent.clone(),
-        _ => crate::agent::agent_for(&ws, &task.path).as_str().to_string(),
-    };
-    let session_id = live.and_then(|s| s.session_id.as_deref());
-    let Some(path) = crate::cli::agentlog::locate_transcript(&agent, &cwd, session_id) else {
-        bail!("'{}' has no transcript yet", task.display_name);
-    };
-    let text = std::fs::read_to_string(&path)?;
-    let entries: Vec<_> = text.lines().filter_map(|l| tenx_core::transcript::parse_line(&agent, l)).collect();
-    let turn = orchestrate::last_turn(&entries);
+    let turn = last_turn(&ws, &task)?;
     if json {
         let st = state(&task.path);
         println!(
@@ -173,4 +154,29 @@ pub fn output(ws_dir: Option<&str>, task: &str, json: bool) -> Result<()> {
         println!("{}", turn.replies.join("\n\n"));
     }
     Ok(())
+}
+
+/// The last exchange of the task's agent, from its transcript: the session
+/// that runs in the task directory itself — not a background agent in a
+/// subdirectory — and its agent; with none live, the newest transcript for
+/// the directory, in the task's configured agent's format. Also what
+/// `tenx web` reads aloud.
+pub(crate) fn last_turn(ws: &workspace::Workspace, task: &workspace::Task) -> Result<orchestrate::Turn> {
+    let cwd = task.path.to_string_lossy().into_owned();
+    let sessions = workspace::sessions::sessions();
+    let live = sessions.iter().find(|s| match &s.task_dir {
+        Some(dir) => *dir == task.path,
+        None => s.cwd == task.path && s.kind != "bg",
+    });
+    let agent = match live {
+        Some(s) if !s.agent.is_empty() => s.agent.clone(),
+        _ => crate::agent::agent_for(ws, &task.path).as_str().to_string(),
+    };
+    let session_id = live.and_then(|s| s.session_id.as_deref());
+    let Some(path) = crate::cli::agentlog::locate_transcript(&agent, &cwd, session_id) else {
+        bail!("'{}' has no transcript yet", task.display_name);
+    };
+    let text = std::fs::read_to_string(&path)?;
+    let entries: Vec<_> = text.lines().filter_map(|l| tenx_core::transcript::parse_line(&agent, l)).collect();
+    Ok(orchestrate::last_turn(&entries))
 }
