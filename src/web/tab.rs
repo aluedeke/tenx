@@ -186,6 +186,7 @@ impl Tab {
             unlock: Unlock::default(),
             ticker: Ticker::default(),
             pty: None,
+            size: None,
             out,
             last_view: String::new(),
             ack: 0,
@@ -282,6 +283,9 @@ struct Driver {
     /// Spawned on the page's first `resize`, so the attach starts at the
     /// page's size rather than resizing every window to 80×24 first.
     pty: Option<Pty>,
+    /// The page's last terminal size, for attaching again after `tenx tmux
+    /// restart` ended the attach.
+    size: Option<PtySize>,
     out: UnboundedSender<Output>,
     /// The last view sent, to send only a changed one.
     last_view: String,
@@ -309,7 +313,7 @@ impl Driver {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
             self.after_input();
-            if self.pty.as_ref().is_some_and(|p| !p.alive.load(Ordering::SeqCst)) {
+            if self.pty.as_ref().is_some_and(|p| !p.alive.load(Ordering::SeqCst)) && !self.reattach() {
                 self.send_json(serde_json::json!({ "type": "error", "message": "the tmux session ended" }));
                 break;
             }
@@ -318,6 +322,37 @@ impl Driver {
             let _ = pty.child.kill();
         }
         let _ = crate::tmux::kill_session(&self.session);
+    }
+
+    /// The attach ended: if `tenx tmux restart` ended it, wait for the new
+    /// server and attach to it again — this tab's grouped session went with
+    /// the old one, so it is made again. `false` when the tab should end.
+    /// Messages from the page wait meanwhile.
+    fn reattach(&mut self) -> bool {
+        if !crate::cli::tmuxrestart::in_progress() {
+            return false;
+        }
+        let start = std::time::Instant::now();
+        while crate::cli::tmuxrestart::in_progress() && start.elapsed() < Duration::from_secs(120) {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        if crate::cli::tmuxrestart::in_progress() || !crate::tmux::server_running() {
+            return false;
+        }
+        let Some(at) = self.size else { return false };
+        if !crate::tmux::has_session(&self.session) && crate::tmux::new_grouped_session(&self.session).is_err() {
+            return false;
+        }
+        if let Some(mut old) = self.pty.take() {
+            let _ = old.child.kill();
+        }
+        match Pty::spawn(&self.session, at, self.out.clone()) {
+            Ok(pty) => {
+                self.pty = Some(pty);
+                true
+            }
+            Err(_) => false,
+        }
     }
 
     /// One message; `false` ends the tab.
@@ -386,10 +421,15 @@ impl Driver {
             }
             PageMsg::Resize { cols, rows, width, height } => match &mut self.pty {
                 Some(pty) => {
-                    let _ = pty.master.resize(size(cols, rows, width, height));
+                    let at = size(cols, rows, width, height);
+                    let _ = pty.master.resize(at);
+                    self.size = Some(at);
                 }
                 None => match Pty::spawn(&self.session, size(cols, rows, width, height), self.out.clone()) {
-                    Ok(pty) => self.pty = Some(pty),
+                    Ok(pty) => {
+                        self.pty = Some(pty);
+                        self.size = Some(size(cols, rows, width, height));
+                    }
                     Err(e) => self.send_json(serde_json::json!({ "type": "error", "message": format!("{e:#}") })),
                 },
             },

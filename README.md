@@ -90,7 +90,7 @@ tenx tmux reload
 
 Nothing is closed: every window, pane and program keeps running, and the background watcher is restarted on the new version. A few settings apply only to what starts afterwards — the terminal type and scrollback size to new panes, terminal features to the next attach (quit `tenx` and start it again). Restart a running `tenx` client or `tenx web` yourself to run the new binary there too.
 
-When a reload is not enough (a new tmux version), `tenx tmux restart` stops the server and builds it again: every window in order with its layout, every agent resuming its conversation, the programs the layout started (nvim on `TASK.md`) running again, and a fresh shell in the same folder for each shell pane. Programs you started in a shell yourself (a dev server, a test run) are stopped; the command lists them and you start them again. It waits until no task is working or waiting on a prompt first (`--now` skips that), and a running `tenx` reconnects by itself.
+When a reload is not enough (a new tmux version), `tenx tmux restart` stops the server and builds it again: every window in order with its layout, every agent resuming its conversation, the programs the layout started (nvim on `TASK.md`) running again, and a fresh shell in the same folder for each shell pane. Programs you started in a shell yourself (a dev server, a test run) are stopped; the command lists them and you start them again. It waits until no task is working or waiting on a prompt first (`--now` skips that), and a running `tenx` and open `tenx web` tabs reconnect by themselves.
 
 After an agent update (a new Claude Code, Codex or pi), use `tenx agent restart` instead (see [Sweep, pin and restart](#sweep-pin-and-restart)).
 

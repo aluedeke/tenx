@@ -93,7 +93,7 @@ pub fn run(now: bool, timeout: Duration, dry_run: bool) -> Result<()> {
     let path = snapshot_path()?;
     std::fs::write(&path, serde_json::to_string(&snap)?).with_context(|| format!("write {}", path.display()))?;
     spawn_rebuild(&path)?;
-    println!("restarting tmux — a running `tenx` reattaches by itself; reload a `tenx web` page");
+    println!("restarting tmux — a running `tenx` and `tenx web` tabs reattach by themselves");
     Ok(())
 }
 

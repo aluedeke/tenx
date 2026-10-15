@@ -1009,6 +1009,30 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         let (mut ws, _) = tokio_tungstenite::connect_async(request(&page, Some(&token), Some(&id))).await.unwrap();
         assert_eq!(next_of(&mut ws, "hello").await["session"], id.as_str());
         assert_eq!(next_of(&mut ws, "view").await["view"]["filter"], "w");
+
+        // `tenx tmux restart` ends the tab's attach and its grouped session:
+        // the tab waits for the new server and attaches to it again, rather
+        // than ending.
+        let old_server = h.tmux_out(&["display", "-p", "#{pid}"]);
+        let out = h.tenx().args(["tmux", "restart", "--now"]).output().unwrap();
+        assert!(out.status.success(), "tmux restart: {}", String::from_utf8_lossy(&out.stderr));
+        let marker = h.root.join(format!("home/.config/tenx/tmux-restart-{}.pid", h.socket));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while marker.exists() || h.tmux_out(&["display", "-p", "#{pid}"]) == old_server {
+            assert!(std::time::Instant::now() < deadline, "the rebuild never finished");
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let tab_session = format!("tenx-web-{id}");
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            let msg = tokio::time::timeout_at(deadline, ws.next()).await.expect("the tab never came back").unwrap().unwrap();
+            if let Message::Text(t) = &msg {
+                assert!(!t.contains(r#""type":"error""#), "the tab ended: {t}");
+            }
+            if matches!(msg, Message::Binary(_)) && h.tmux_out(&["list-sessions", "-F", "#{session_name}"]).contains(&tab_session) {
+                break;
+            }
+        }
         ws.close(None).await.unwrap();
     });
 
