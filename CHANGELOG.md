@@ -5,6 +5,15 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.13.0] - 2026-10-16
+
+### Added
+
+- **web:** Send the column as patches after the first view
+- **web:** React to clicks and filtering before the server answers
+
+[0.13.0]: https://github.com/aluedeke/tenx/compare/v0.12.0...v0.13.0
+
 ## [0.12.0] - 2026-10-16
 
 ### Added
