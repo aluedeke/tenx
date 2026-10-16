@@ -33,6 +33,7 @@ pub mod transcript;
 pub mod service;
 pub mod trust;
 pub mod tts;
+pub mod viewpatch;
 pub mod web;
 pub mod webpush;
 pub mod whisper;

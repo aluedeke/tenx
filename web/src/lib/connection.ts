@@ -22,6 +22,8 @@ export interface Handlers {
 function socketUrl(session: string | null): string {
   const params = new URLSearchParams();
   if (session) params.set('session', session);
+  // Views after the first come as patches (lib/viewpatch).
+  params.set('patch', '1');
   const dev = process.env.NEXT_PUBLIC_TENX_URL;
   let base: string;
   if (dev) {
@@ -34,8 +36,7 @@ function socketUrl(session: string | null): string {
   } else {
     base = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
   }
-  const qs = params.toString();
-  return qs ? `${base}?${qs}` : base;
+  return `${base}?${params.toString()}`;
 }
 
 // localStorage, not sessionStorage: an iOS Home Screen app that is closed and

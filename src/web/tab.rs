@@ -77,12 +77,23 @@ fn view_message(view: &str, ack: u64) -> String {
     format!(r#"{{"type":"view","ack":{ack},"view":{view}}}"#)
 }
 
+/// A patch message: what changed since the last view or patch on this
+/// socket (`tenx_core::viewpatch`), and the ack as in a view.
+fn patch_message(patch: &serde_json::Value, ack: u64) -> String {
+    let mut msg = serde_json::json!({ "type": "patch", "ack": ack });
+    if let (Some(msg), Some(patch)) = (msg.as_object_mut(), patch.as_object()) {
+        msg.extend(patch.clone());
+    }
+    msg.to_string()
+}
+
 pub(super) enum Input {
     Page(PageMsg, Option<u64>),
     /// Keyboard input for the terminal.
     Term(Vec<u8>),
-    /// A socket (re)attached: send everything afresh.
-    Attached,
+    /// A socket (re)attached: send everything afresh. `patch`: the page
+    /// takes `patch` messages after the first view.
+    Attached { patch: bool },
     /// The grace period ran out: end the tab.
     Close,
 }
@@ -188,7 +199,8 @@ impl Tab {
             pty: None,
             size: None,
             out,
-            last_view: String::new(),
+            last_view: None,
+            patch: false,
             ack: 0,
             sent_ack: 0,
         };
@@ -287,8 +299,11 @@ struct Driver {
     /// restart` ended the attach.
     size: Option<PtySize>,
     out: UnboundedSender<Output>,
-    /// The last view sent, to send only a changed one.
-    last_view: String,
+    /// The last view sent, to send only a changed one — or only what
+    /// changed, to a page that takes patches. `None`: send the next whole.
+    last_view: Option<serde_json::Value>,
+    /// The socket's page applies `patch` messages.
+    patch: bool,
     /// The highest input `seq` applied, and the one the last view carried: a
     /// view goes out when either the column or the ack changed, so a page
     /// learns its input was applied even when it changed nothing.
@@ -370,8 +385,9 @@ impl Driver {
                     let _ = pty.writer.flush();
                 }
             }
-            Input::Attached => {
-                self.last_view.clear();
+            Input::Attached { patch } => {
+                self.last_view = None;
+                self.patch = patch;
                 // A new socket numbers its inputs from 1 again.
                 self.ack = 0;
                 // A new page starts from an empty terminal; tmux only sends
@@ -463,14 +479,26 @@ impl Driver {
         let req = self.column.take_request();
         self.request(req);
 
-        match serde_json::to_string(&self.column.view()) {
-            Ok(view) if view != self.last_view || self.ack != self.sent_ack => {
-                let _ = self.out.send(Output::Text(view_message(&view, self.ack)));
-                self.last_view = view;
-                self.sent_ack = self.ack;
+        let Ok(view) = serde_json::to_value(self.column.view()) else { return };
+        let patch = match &self.last_view {
+            Some(last) if *last == view && self.ack == self.sent_ack => return,
+            Some(last) if self.patch => tenx_core::viewpatch::view_patch(last, &view),
+            _ => None,
+        };
+        let whole = || view_message(&view.to_string(), self.ack);
+        let text = match patch {
+            // One that rewrote most rows can come out longer than the view.
+            Some(p) => {
+                let (patch, whole) = (patch_message(&p, self.ack), whole());
+                if patch.len() < whole.len() { patch } else { whole }
             }
-            _ => {}
-        }
+            // Only the ack moved: an empty patch says so.
+            None if self.patch && self.last_view.is_some() => patch_message(&serde_json::json!({}), self.ack),
+            None => whole(),
+        };
+        let _ = self.out.send(Output::Text(text));
+        self.last_view = Some(view);
+        self.sent_ack = self.ack;
     }
 
     fn request(&mut self, req: Option<ClientRequest>) {
@@ -505,6 +533,13 @@ mod tests {
         assert_eq!(v["type"], "view");
         assert_eq!(v["ack"], 5);
         assert_eq!(v["view"]["a"], 1);
+    }
+
+    #[test]
+    fn a_patch_message_carries_the_ack_and_the_patch_parts() {
+        let patch = serde_json::json!({ "set": { "focus": "list" }, "items": [0, 1] });
+        let v: serde_json::Value = serde_json::from_str(&patch_message(&patch, 9)).unwrap();
+        assert_eq!(v, serde_json::json!({ "type": "patch", "ack": 9, "set": { "focus": "list" }, "items": [0, 1] }));
     }
 
     #[test]

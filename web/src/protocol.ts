@@ -1,6 +1,8 @@
 // The wire contract with `tenx web` (docs/web-protocol.md). The view types
 // mirror src/tui/column/view.rs field for field; change both together.
 
+import type { ViewPatch } from './lib/viewpatch.ts';
+
 export interface ColumnView {
   tabs: TabView[];
   /** Where the cursor is: the search field (Insert) or the list (Normal). */
@@ -194,6 +196,9 @@ export type ServerMessage =
   | { type: 'hello'; session: string; host: string; version: string }
   /** `ack`: the highest input `seq` this view reflects (0: none). */
   | { type: 'view'; ack?: number; view: ColumnView }
+  /** What changed since the last view or patch (lib/viewpatch); only to a
+   * socket opened with `?patch=1`. */
+  | ({ type: 'patch'; ack: number } & ViewPatch)
   | { type: 'layout'; column_cols: number; narrow: boolean }
   | { type: 'request'; request: 'focus_terminal' | 'focus_column' | 'hide' | 'quit' }
   | { type: 'error'; message: string };

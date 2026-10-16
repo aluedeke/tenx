@@ -23,6 +23,7 @@ import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
 import { Reading, type ReadingState } from '@/lib/speak';
 import { predict, unacked, type Pending } from '@/lib/predict';
+import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
 
@@ -233,16 +234,23 @@ export function App() {
             if (!c.resumed && !wantTask.current) restoreTask.current = lastTask();
             break;
           }
-          case 'view': {
+          case 'view':
+          case 'patch': {
+            // A patch applies to the last view this socket sent, which came
+            // before it on the same socket (the first one is always whole).
+            const next = msg.type === 'view' ? msg.view : lastView.current && applyPatch(lastView.current, msg);
+            if (!next) break;
             // A server without `ack` predicts nothing: every input counts as
             // acknowledged.
             const acked = msg.ack ?? Number.MAX_SAFE_INTEGER;
             setAck(acked);
             setPending((p) => unacked(p, acked));
-            setView(msg.view);
-            lastView.current = msg.view;
-            openWanted(msg.view);
-            restoreLast(msg.view);
+            if (next !== lastView.current) {
+              setView(next);
+              lastView.current = next;
+              openWanted(next);
+              restoreLast(next);
+            }
             break;
           }
           case 'layout':

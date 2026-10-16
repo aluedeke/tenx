@@ -35,7 +35,10 @@ http://localhost:3000` lets `next dev` on another port connect; in dev the
 page passes the token as `?token=` on the WebSocket URL instead of the cookie
 (accepted only when the Origin is a `--dev-origin`).
 
-## WebSocket `/ws?session=<id>`
+## WebSocket `/ws?session=<id>&patch=1`
+
+`patch=1` says the page applies `patch` messages (below); without it every
+view is sent whole, as to a page from before them.
 
 `session` is optional: the id of a grouped session this tab had before (kept
 in `localStorage`). If `tenx-web-<id>` still exists (within the 30 s grace
@@ -58,6 +61,16 @@ Two frame kinds:
 // `ack` is the highest input `seq` the view reflects (0: none yet); a view
 // goes out after every numbered input, even one that changed nothing.
 { "type": "view", "ack": 17, "view": ColumnView }   // src/tui/column/view.rs, serialized
+
+// With `patch=1`, every view after a socket's first is sent as what changed
+// since the one before (tenx-core/src/viewpatch.rs; the page's side is
+// web/src/lib/viewpatch.ts), unless that would be longer than the view:
+// `set` — top-level fields that changed, whole; `unset` — fields that are
+// gone; `items` — when the rows changed, the new list, each entry the index
+// of an equal row in the previous list or a row. Each part is left out when
+// empty; a patch with none of them only moves the ack. A view is ~40 KB, a
+// cursor move's patch ~1 KB.
+{ "type": "patch", "ack": 18, "set": { "focus": "list" }, "items": [0, {"kind": "task", …}, 2, 3] }
 
 // The column's layout for the browser's width in cells (reply to `viewport`).
 { "type": "layout", "column_cols": 36, "narrow": false }

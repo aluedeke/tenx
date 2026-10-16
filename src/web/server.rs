@@ -128,6 +128,9 @@ struct WsQuery {
     language: Option<String>,
     /// `/speak`: the task whose agent's reply to read (a column row's id).
     task: Option<String>,
+    /// `/ws`: `1` when the page applies `patch` messages; else it gets every
+    /// view whole.
+    patch: Option<String>,
 }
 
 async fn ws(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
@@ -139,7 +142,8 @@ async fn ws(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: Head
     if !web::ws_authorized(cookie, query_token, allowed, dev) {
         return if allowed { StatusCode::UNAUTHORIZED } else { StatusCode::FORBIDDEN }.into_response();
     }
-    upgrade.on_upgrade(move |socket| connection(app, socket, q.session))
+    let patch = q.patch.as_deref() == Some("1");
+    upgrade.on_upgrade(move |socket| connection(app, socket, q.session, patch))
 }
 
 /// `/speech[?language=]`: live dictation, one socket per recording
@@ -347,7 +351,7 @@ async fn push_test(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, header
 
 /// One socket, for as long as it lasts: attach to the tab it asks for (or a
 /// new one), then shuttle messages both ways.
-async fn connection(app: Arc<App>, mut socket: WebSocket, want: Option<String>) {
+async fn connection(app: Arc<App>, mut socket: WebSocket, want: Option<String>, patch: bool) {
     let tabs = app.tabs.clone();
     // Making a tab runs tmux and reads every workspace: off the runtime.
     let attached = tokio::task::spawn_blocking(move || tabs.attach(want.as_deref())).await;
@@ -366,7 +370,7 @@ async fn connection(app: Arc<App>, mut socket: WebSocket, want: Option<String>) 
         "version": env!("CARGO_PKG_VERSION"),
     });
     if socket.send(Message::Text(hello.to_string().into())).await.is_ok() {
-        let _ = tab.input.send(Input::Attached);
+        let _ = tab.input.send(Input::Attached { patch });
         loop {
             tokio::select! {
                 msg = socket.recv() => match msg {
