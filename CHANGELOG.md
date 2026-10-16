@@ -5,6 +5,25 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.12.0] - 2026-10-16
+
+### Added
+
+- **agent:** Restart open tasks' agents in place with `agent restart`
+- **tmux:** Load a new config without a restart with `tmux reload`
+- **tmux:** Rebuild the whole session as it was with `tmux restart`
+- **web:** Reattach browser tabs after `tmux restart`
+
+### Fixed
+
+- **tmux:** Keep pane order when `tmux restart` rebuilds a window
+
+### Documentation
+
+- Give reading aloud its own README section
+
+[0.12.0]: https://github.com/aluedeke/tenx/compare/v0.11.0...v0.12.0
+
 ## [0.11.0] - 2026-10-15
 
 ### Added
