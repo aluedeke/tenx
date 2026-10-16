@@ -21,6 +21,8 @@ interface Props {
   view: ColumnView | null;
   /** A tab switch is on its way: the rows are the old tab's (lib/predict). */
   loading?: boolean;
+  /** The task an unanswered action acts on (lib/predict): drawn busy. */
+  busy?: string | null;
   /** The column has the keyboard: show the selection and the caret. */
   focused: boolean;
   onClick(click: Click): void;
@@ -130,6 +132,7 @@ export function Column(props: Props) {
     focused,
     touch: props.touch,
     confirming: mode.kind === 'confirm',
+    busy: props.busy ?? null,
     onClick,
     onKey,
     onOpen: () => onAction('open'),
@@ -190,6 +193,8 @@ interface RowCtl {
   touch: boolean;
   /** A delete is waiting for y / n: the selected task row asks. */
   confirming: boolean;
+  /** The task an unanswered action acts on. */
+  busy: string | null;
   onClick(c: Click): void;
   onKey(key: string, shift?: boolean): void;
   onOpen(): void;
@@ -386,7 +391,10 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
   const confirming = ctl.confirming && task.selected;
   const menu = (at: { left: number; top: number }) =>
     ctl.touch ? sheet() : ctl.openPopup({ at, entries: taskEntries(task, act, false) });
-  const cls = ['row', 'task', task.current && 'cur', (sel || confirming) && 'sel', confirming && 'conf'].filter(Boolean).join(' ');
+  const busy = ctl.busy === task.id;
+  const cls = ['row', 'task', task.current && 'cur', (sel || confirming) && 'sel', confirming && 'conf', busy && 'busy']
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <Slide
@@ -423,7 +431,7 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
         {...gesture.handlers}
       >
         <div className="line1">
-          <span className={task.pending ? 'glyph spin' : 'glyph'} style={{ color: confirming ? 'var(--danger)' : task.glyph_color }}>
+          <span className={task.pending || busy ? 'glyph spin' : 'glyph'} style={{ color: confirming ? 'var(--danger)' : task.glyph_color }}>
             {task.glyph}
           </span>
           <span className="title" style={{ color: sel || confirming ? 'var(--sel-text)' : task.title_color }}>

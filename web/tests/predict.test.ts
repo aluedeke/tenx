@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { predict, unacked, type Pending } from '../src/lib/predict.ts';
+import { filterMatches, filterTasks, predict, unacked, type Pending } from '../src/lib/predict.ts';
 import type { ColumnView, Item } from '../src/protocol.ts';
 
 const task = (id: string, extra: Record<string, unknown> = {}): Item =>
@@ -14,6 +14,13 @@ const task = (id: string, extra: Record<string, unknown> = {}): Item =>
 const sub = (taskId: string, id: string): Item =>
   ({ kind: 'sub', task: taskId, id, glyph: '◐', glyph_color: '#fff', label: id, extras: [], finished: false, selected: false }) as unknown as Item;
 const header = (label: string): Item => ({ kind: 'header', label, count: 1, color: '#fff' });
+// Titled tasks for the filter: "login" with a subagent, "build", "logs".
+const named = () => [
+  { ...header('WORKING'), count: 2 } as Item, task('login', { title: 'Login' }), sub('login', 'l1'), task('build', { title: 'Build log' }),
+  header('INACTIVE'), task('logs', { title: 'Logs' }),
+];
+const ids = (v: ColumnView) =>
+  v.items.map((i) => (i.kind === 'header' ? `${i.label} ${i.count}` : i.kind === 'sub' ? i.id : i.kind === 'task' ? i.id : i.kind));
 
 function view(items: Item[], focus: 'search' | 'list' = 'list', filter = ''): ColumnView {
   return {
@@ -66,11 +73,38 @@ test('↓ from the search field enters the list after your task', () => {
   assert.deepEqual(cursor(out), ['B']);
 });
 
-test('typing in the search field updates the filter text, not the rows', () => {
-  const v = view(rows(), 'search', 'lo');
-  const out = predict(v, ops(key('g'), key('i'), key('Backspace'), key('n'))).view;
-  assert.equal(out.filter, 'logn');
-  assert.equal(out.items, v.items, 'the rows are the server’s to filter');
+test('typing in the search field narrows the rows from those in hand', () => {
+  const out = predict(view(named(), 'search'), ops(key('l'), key('o'), key('g'), key('i'))).view;
+  assert.equal(out.filter, 'logi');
+  assert.deepEqual(ids(out), ['WORKING 1', 'login', 'l1'], 'a section with no match loses its header');
+});
+
+test('a shorter filter widens from the kept full list; without one the rows wait for the server', () => {
+  const narrowed = { ...view(filterTasks(named(), 'log'), 'search', 'log') } as ColumnView;
+  assert.deepEqual(ids(predict(narrowed, ops(key('Backspace')), named()).view), ['WORKING 2', 'login', 'l1', 'build', 'INACTIVE 1', 'logs']);
+  const out = predict(narrowed, ops(key('Backspace'), key('g')));
+  assert.equal(out.view.filter, 'log');
+  assert.equal(out.rowsFor, null, 'rows for an older filter: not filtered further');
+});
+
+test('a filter that matches nothing shows the empty line', () => {
+  assert.deepEqual(predict(view(named(), 'search'), ops(key('z'))).view.items, [{ kind: 'empty', lines: ['no tasks yet — :n to create one'] }]);
+});
+
+test('the match is filter_matches over "<workspace> <title>": in order, spaces skipped, any case', () => {
+  assert.equal(filterMatches('w lgn', 'w Login'), true);
+  assert.equal(filterMatches('nigol', 'w login'), false);
+  assert.equal(filterMatches('', 'anything'), true);
+});
+
+test('⏎ on a filtered list clears the filter: the full list comes back', () => {
+  const v = { ...view(filterTasks(named(), 'logs'), 'list', 'logs') } as ColumnView;
+  (v.items[1] as { selected: boolean }).selected = true;
+  const out = predict(v, ops(key('Enter')), named());
+  assert.equal(out.view.filter, '');
+  assert.equal(out.view.current, 'logs');
+  assert.equal(ids(out.view).length, named().length);
+  assert.equal(predict(v, ops(key('Enter'))).opened, undefined, 'no full list: not guessed');
 });
 
 test('a click on a subagent line selects it', () => {
@@ -87,8 +121,8 @@ test('a tab click switches the tab and marks the rows as loading; nothing after 
 });
 
 test('an input that can’t be predicted stops the replay', () => {
-  // Enter opens (server-only); the j after it isn't guessed.
-  assert.deepEqual(cursor(predict(view(rows()), ops(key('Enter'), key('j'))).view), ['A']);
+  // x closes the window (server-only); the j after it isn't guessed.
+  assert.deepEqual(cursor(predict(view(rows()), ops(key('x'), key('j'))).view), ['A']);
   // Nor anything outside list mode.
   const form = { ...view(rows()), mode: { kind: 'rename', buffer: 'x' } } as unknown as ColumnView;
   assert.deepEqual(cursor(predict(form, ops(key('j'))).view), ['A']);
@@ -101,4 +135,72 @@ test('a view that acknowledges an input drops it from the replay', () => {
   const server = view([header('W'), task('A'), sub('A', 'a1'), sub('A', 'a2', ), task('B'), task('C')]);
   (server.items[3] as { selected: boolean }).selected = true;
   assert.deepEqual(cursor(predict(server, unacked(pending, 2)).view), ['B']);
+});
+
+// What the task area shows: the marker, the closed screen, opening.
+const shown = (v: ColumnView) => v.items.filter((i) => i.kind === 'task' && i.current).map((i) => (i as { id: string }).id);
+const marked = () => {
+  const v = view([header('W'), task('A', { selected: true, current: true }), task('B'), task('C', { closed: true })]);
+  return { ...v, current: 'A' } as ColumnView;
+};
+
+test('moving onto an open task switches the window: the marker follows', () => {
+  const out = predict(marked(), ops(key('j'))).view;
+  assert.equal(out.current, 'B');
+  assert.deepEqual(shown(out), ['B']);
+  assert.equal(out.shown_closed, null);
+});
+
+test('resting on a closed task shows its empty screen; leaving it shows the window again', () => {
+  const on = predict(marked(), ops(key('j'), key('j'))).view;
+  assert.equal(on.current, 'C');
+  assert.equal(on.shown_closed?.id, 'C');
+  const back = predict(marked(), ops(key('j'), key('j'), key('k'))).view;
+  assert.equal(back.shown_closed, null);
+  assert.equal(back.current, 'B', 'the window B switched to is still behind');
+});
+
+test('from a server view on a closed task, the window behind it is unknown: no marker', () => {
+  const v = { ...view([header('W'), task('A'), task('C', { closed: true, selected: true, current: true })]), current: 'C' } as ColumnView;
+  (v as { shown_closed: unknown }).shown_closed = { id: 'C', title: 'C', ws: 'w', ws_color: '#fff' };
+  const out = predict(v, ops(key('i'))).view;
+  assert.equal(out.focus, 'search');
+  assert.equal(out.current, null);
+  assert.equal(out.shown_closed, null);
+});
+
+test('⏎ on an open task: its window, the keyboard to the terminal, the search field focused', () => {
+  const out = predict(marked(), ops(key('j'), key('Enter')));
+  assert.equal(out.view.current, 'B');
+  assert.equal(out.view.focus, 'search');
+  assert.deepEqual(cursor(out.view), []);
+  assert.equal(out.opened, 2);
+  assert.equal(out.opening, null, 'an open window comes up at once');
+});
+
+test('opening a closed task says so while its window starts', () => {
+  const out = predict(marked(), ops({ type: 'click', kind: 'task', id: 'C' }, { type: 'action', name: 'open' }));
+  assert.equal(out.opening, 'C');
+  assert.equal(out.view.current, 'C');
+  assert.equal(out.view.shown_closed, null);
+});
+
+test('no open is guessed on a filtered list, a task being set up, or a subagent line', () => {
+  assert.equal(predict(view(rows(), 'list', 'x'), ops(key('Enter'))).opened, undefined);
+  assert.equal(predict(view([task('A', { selected: true, pending: true })]), ops(key('Enter'))).opened, undefined);
+  assert.equal(predict(view(rows()), ops(key('j'), key('Enter'))).opened, undefined);
+});
+
+test('? opens help, which scrolls and closes on any other key', () => {
+  const v = view(rows());
+  assert.deepEqual(predict(v, ops(key('?'))).view.mode, { kind: 'help', scroll: 0 });
+  assert.deepEqual(predict(v, ops({ type: 'action', name: 'help' }, key('j'), key('j'), key('k'))).view.mode, { kind: 'help', scroll: 1 });
+  assert.deepEqual(predict(v, ops(key('?'), key('Escape'))).view.mode, { kind: 'list' });
+});
+
+test('an action on a row marks the row busy until the answer', () => {
+  const out = predict(view(rows()), ops({ type: 'click', kind: 'task', id: 'B' }, { type: 'action', name: 'approve' }));
+  assert.deepEqual(out.busy, { id: 'B', action: 'approve' });
+  assert.deepEqual(predict(view(rows()), ops(key('x'))).busy, { id: 'A', action: 'close' });
+  assert.equal(predict(view(rows()), ops({ type: 'form', op: 'submit' })).busy, null, 'not a row action');
 });

@@ -25,7 +25,7 @@ import { Reading, type ReadingState } from '@/lib/speak';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
-import type { Action, ClientMessage, Click, ColumnView, FormOp, KeyMessage, ServerMessage } from '@/protocol';
+import type { Action, ClientMessage, Click, ColumnView, FormOp, Item, KeyMessage, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
 
@@ -219,6 +219,7 @@ export function App() {
             // A new socket numbers its inputs from 1, and what was waiting
             // for the old one's acknowledgement is gone with it.
             seq.current = 0;
+            opened.current = 0;
             setPending([]);
             setAck(0);
             // A new attach redraws the whole screen.
@@ -968,14 +969,36 @@ export function App() {
   const overlay = narrow;
   // The column as drawn: the last view with the inputs it doesn't reflect
   // yet replayed on it.
-  const predicted = useMemo(() => (view ? predict(view, unacked(pending, ack)) : null), [view, pending, ack]);
+  // The last unfiltered Tasks list, for a filter typed shorter again.
+  const fullTasks = useRef<Item[] | null>(null);
+  if (view && view.filter === '' && view.mode.kind === 'list' && view.tabs.find((t) => t.active)?.label === 'Tasks') {
+    fullTasks.current = view.items;
+  }
+  const predicted = useMemo(
+    () => (view ? predict(view, unacked(pending, ack), fullTasks.current) : null),
+    [view, pending, ack],
+  );
+  const shown = predicted?.view ?? view;
+  // A predicted open hands the keyboard to the terminal now, as the server's
+  // `focus_terminal` will once it has switched.
+  const opened = useRef(0);
+  useEffect(() => {
+    const seqOpened = predicted?.opened ?? 0;
+    if (seqOpened <= opened.current) return;
+    opened.current = seqOpened;
+    setFocus('terminal');
+    if (state.current.narrow) setVisible(false);
+  }, [predicted?.opened]);
+  const opening = predicted?.opening
+    ? (shown?.items.find((i) => i.kind === 'task' && i.id === predicted.opening) as { title: string } | undefined)?.title
+    : undefined;
 
   const columnStyle = overlay ? undefined : { width: `${Math.ceil(columnCols * cell + 20)}px` };
 
   return (
     <div className={`app${overlay ? ' narrow' : ''}${touch ? ' touch' : ''}${kbOpen ? ' kb-open' : ''}`}>
       <Header
-        view={view}
+        view={shown}
         status={status}
         failures={failures}
         host={host}
@@ -999,6 +1022,7 @@ export function App() {
             <Column
               view={predicted?.view ?? null}
               loading={predicted?.loading ?? false}
+              busy={predicted?.busy?.id ?? null}
               focused={columnHasKeys}
               onClick={onClick}
               onFocus={() => setFocus('column')}
@@ -1025,7 +1049,12 @@ export function App() {
             onImages={pasteImages}
             onPasteStart={() => send({ type: 'paste' })}
           />
-          {view?.shown_closed && columnHasKeys && (
+          {opening && (
+            <div className="toast" role="status" data-testid="opening">
+              opening {opening}…
+            </div>
+          )}
+          {shown?.shown_closed && columnHasKeys && (
             // The cursor rests on a task with no window: its empty screen in
             // place of the session, as the TUI draws it (`render_closed`); the
             // session keeps running behind it. A press here must not move the
@@ -1036,7 +1065,7 @@ export function App() {
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => onAction('open')}
             >
-              <div className="closed-title">{view.shown_closed.title}</div>
+              <div className="closed-title">{shown.shown_closed.title}</div>
               <div className="muted">no window open</div>
               <button type="button" className="closed-open">
                 <span className="accent bold">⏎</span> open it here

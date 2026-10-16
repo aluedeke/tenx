@@ -1290,6 +1290,13 @@ a:hover {
   box-shadow: inset 3px 0 0 var(--current), inset 0 0 0 1px #2c3444;
 }
 
+/* An action on this row is on its way to the server (lib/predict `busy`):
+   the glyph pulses and its answer buttons can't be pressed twice. */
+.row.task.busy .split button {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* ── Web forms (WebForms.tsx) — design turn 3: 3c + 3a, 3e, 3f, 3g ────── */
 
 /* The form owns the column: a title row, sections that scroll, and the
