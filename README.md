@@ -129,7 +129,8 @@ The column lists every task from every registered workspace, sectioned by attent
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |
-| `Ctrl+n` | New task |
+| `Ctrl+n` | New task; give it a prompt and the agent starts on it, leave the name empty and Claude names it from the prompt |
+| `Ctrl+Shift+n` | Quick task: type a prompt, `Enter`, and a session in the adhoc workspace starts on it, named by Claude (needs a terminal that reports Shift with Ctrl, like kitty, Ghostty or iTerm2; elsewhere it opens the new-task form) |
 | `a` | Add a repo to the workspace (Repos tab) |
 | `W` | New workspace |
 | `e` | Edit which repos the task has worktrees for |
@@ -230,7 +231,7 @@ tenx web              # prints http://127.0.0.1:7070/?token=… — open that on
 tenx web --open       # and opens it
 ```
 
-Each browser tab switches tasks on its own, without moving your terminal client, and takes the same keys as the terminal client — `Ctrl+w` for the column (or the header's `☰`; the header also names the task you're in and holds next-that-needs-you, the speaker, the microphone, new task, and behind `⋯` notifications and `?`), `?` for the rest (`Alt+w`/`Alt+n` where the browser keeps `Ctrl+w`/`Ctrl+n`). A reload or a dropped connection within 30 s comes back to the same place.
+Each browser tab switches tasks on its own, without moving your terminal client, and takes the same keys as the terminal client — `Ctrl+w` for the column (or the header's `☰`; the header also names the task you're in and holds next-that-needs-you, the speaker, the microphone, new task, and behind `⋯` notifications and `?`), `?` for the rest (`Alt+w`/`Alt+n`/`Alt+Shift+n` where the browser keeps `Ctrl+w`/`Ctrl+n`/`Ctrl+Shift+n`). The header's `+` offers the quick task and the new-task form. A reload or a dropped connection within 30 s comes back to the same place.
 
 The address carries a token (`~/.config/tenx/web-token`, readable only by you) that the page swaps for a cookie; `tenx web --rotate-token` replaces it and logs every browser out. The page is a shell on this machine, so by default it listens on `127.0.0.1` only. To reach it from a phone, put it behind [`tailscale serve`](https://tailscale.com/kb/1312/serve) rather than `--listen 0.0.0.0`, which serves it over plain HTTP. Building from source, `make web` builds the page (Node and pnpm) before `cargo build`; without it the binary serves a placeholder.
 

@@ -104,10 +104,10 @@ function view(st) {
       kind: 'create', workspace: WORKSPACES[f.ws].name, workspace_index: f.ws + 1, workspaces: WORKSPACES.length,
       workspace_options: WORKSPACES.map((w) => ({ name: w.name, color: w.color })),
       agent_options: AGENTS, agent_index: f.agent,
-      name: f.name, repos: f.repos, agent: AGENTS[f.agent], agent_inherits: f.agent === 0, focus: 'name', focus_repo: null,
+      name: f.name, prompt: f.prompt, quick: !!f.quick, repos: f.repos, agent: AGENTS[f.agent], agent_inherits: f.agent === 0, focus: f.quick ? 'prompt' : 'name', focus_repo: null,
       agent_default: 'claude', slug: f.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
     };
-    footer = { kind: 'hint', tag: null, text: '⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent', hint: null, warn: null };
+    footer = { kind: 'hint', tag: null, text: f.quick ? '⏎ start   esc cancel' : '⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent', hint: null, warn: null };
   } else if (st.mode === 'reject') {
     const t = TASKS.find((x) => x.id === st.rejecting);
     mode = { kind: 'reject', task: t.title, id: t.id, names: WANTS, note: st.buffer };
@@ -334,6 +334,7 @@ wss.on('connection', (ws, req) => {
         // The list keys the real server presses for a button.
         const keys = { help: '?', open: 'Enter', next: 'n' };
         if (m.name === 'new') key({ key: 'n', ctrl: true });
+        else if (m.name === 'quick') key({ key: 'n', ctrl: true, shift: true });
         else if (m.name === 'rename') {
           st.mode = 'rename';
           st.buffer = TASKS.find((t) => t.id === CURSOR[st.sel].task).title;
@@ -372,6 +373,7 @@ wss.on('connection', (ws, req) => {
     if (st.mode === 'create') {
       const f = st.form;
       if (m.op === 'set' && m.field === 'name') f.name = m.value;
+      if (m.op === 'set' && m.field === 'prompt') f.prompt = m.value;
       if (m.op === 'check' && m.field === 'repo' && f.repos[m.index]) f.repos[m.index].checked = m.on;
       if (m.op === 'pick' && m.field === 'workspace' && WORKSPACES[m.index] && m.index !== f.ws) {
         f.ws = m.index;
@@ -379,7 +381,7 @@ wss.on('connection', (ws, req) => {
       }
       if (m.op === 'pick' && m.field === 'agent' && AGENTS[m.index]) f.agent = m.index;
       if (m.op === 'submit') {
-        if (!f.name.trim()) st.status = 'name the task first';
+        if (!f.name.trim() && !f.prompt.trim()) st.status = f.quick ? 'type a prompt' : 'type a name or a prompt';
         else {
           // As tenx: the form closes and a job starts; it reports progress,
           // then lands.
@@ -446,7 +448,9 @@ wss.on('connection', (ws, req) => {
     }
     if (m.ctrl && m.key === 'n') {
       st.mode = 'create';
-      st.form = { ws: 0, name: '', repos: repoChecks(0), agent: 0 };
+      // ^⇧n: the quick task, on the adhoc workspace.
+      const ws = m.shift ? Math.max(0, WORKSPACES.findIndex((w) => w.name === 'adhoc')) : 0;
+      st.form = { ws, name: '', prompt: '', quick: !!m.shift, repos: m.shift ? [] : repoChecks(0), agent: 0 };
       return;
     }
     if (st.focus === 'search') {

@@ -62,6 +62,31 @@ impl Reporter for Silent {
     fn emit(&self, _: Event) {}
 }
 
+/// Another reporter's events, every step index moved up by `by` — for work
+/// that runs after steps of the caller's own (`Ctrl+Shift+n`'s "naming it").
+pub struct Shifted<'a> {
+    inner: &'a dyn Reporter,
+    by: usize,
+}
+
+impl<'a> Shifted<'a> {
+    pub fn new(inner: &'a dyn Reporter, by: usize) -> Self {
+        Shifted { inner, by }
+    }
+}
+
+impl Reporter for Shifted<'_> {
+    fn emit(&self, ev: Event) {
+        let by = self.by;
+        self.inner.emit(match ev {
+            Event::Start { step, label, verb } => Event::Start { step: step + by, label, verb },
+            Event::Update { step, snap } => Event::Update { step: step + by, snap },
+            Event::Done { step, note } => Event::Done { step: step + by, note },
+            Event::Failed { step, err } => Event::Failed { step: step + by, err },
+        });
+    }
+}
+
 /// A reporter that owns a plain terminal: the CLI's.
 ///
 /// One live line for the running step, rewritten in place, then committed as
@@ -316,5 +341,23 @@ mod tests {
         let r: Box<dyn Reporter> = Box::new(Silent);
         r.emit(Event::Start { step: 0, label: "web".into(), verb: "cloning" });
         r.emit(Event::Done { step: 0, note: "cloned".into() });
+    }
+
+    #[test]
+    fn shifted_moves_every_step_up() {
+        struct Steps(std::sync::Mutex<Vec<usize>>);
+        impl Reporter for Steps {
+            fn emit(&self, ev: Event) {
+                let step = match ev {
+                    Event::Start { step, .. } | Event::Update { step, .. } | Event::Done { step, .. } | Event::Failed { step, .. } => step,
+                };
+                self.0.lock().unwrap().push(step);
+            }
+        }
+        let inner = Steps(std::sync::Mutex::new(Vec::new()));
+        let r = Shifted::new(&inner, 1);
+        r.emit(Event::Start { step: 0, label: "web".into(), verb: "cloning" });
+        r.emit(Event::Failed { step: 2, err: "x".into() });
+        assert_eq!(*inner.0.lock().unwrap(), [1, 3]);
     }
 }

@@ -209,6 +209,10 @@ pub(crate) enum ModeView {
         /// 0-based, of `agent_options`.
         agent_index: usize,
         name: String,
+        /// The agent's first message. With no `name`, Claude titles the task.
+        prompt: String,
+        /// The quick task (`Ctrl+Shift+n`): only `prompt` is shown.
+        quick: bool,
         repos: Vec<Check>,
         /// `default` when it inherits.
         agent: String,
@@ -216,9 +220,10 @@ pub(crate) enum ModeView {
         /// What `default` resolves to for the chosen workspace (`claude`, …).
         agent_default: &'static str,
         /// The task's directory and branch name, from `name`
-        /// (`tenx_core::slug::slugify`) — empty until the name makes one.
+        /// (`tenx_core::slug::slugify`) — empty until the name makes one,
+        /// and while Claude is to name it.
         slug: String,
-        /// `workspace`, `name`, `repo` or `agent`.
+        /// `workspace`, `name`, `prompt`, `repo` or `agent`.
         focus: &'static str,
         /// The repo under the cursor when `focus` is `repo`.
         focus_repo: Option<usize>,
@@ -329,6 +334,7 @@ pub(crate) enum FooterKind {
 }
 
 pub(super) const CREATE_HINT: &str = "⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent";
+pub(super) const QUICK_HINT: &str = "⏎ start   esc cancel";
 pub(super) const ADD_REPO_HINT: &str = "⏎ clone & add   esc cancel   ⇥ next field";
 pub(super) const NEW_WORKSPACE_HINT: &str = "⏎ create   esc cancel   ⇥ next field   space toggle skills";
 pub(super) const EDIT_REPOS_HINT: &str = "⏎ apply   esc cancel   space toggle   a all / n none";
@@ -362,6 +368,7 @@ pub(super) fn footer(column: &Column) -> Footer {
         Mode::Rename(_) => Footer::new(FooterKind::Hint, "⏎ save   esc cancel"),
         // Danger, not bold: a hint for a destructive step, not the yes/no.
         Mode::Reject(form) => Footer::new(FooterKind::Error, format!("⏎ reject {}   esc cancel", form.names.join(", "))),
+        Mode::Create(f) if f.quick => form_footer(QUICK_HINT),
         Mode::Create(_) => form_footer(CREATE_HINT),
         Mode::AddRepo(_) => form_footer(ADD_REPO_HINT),
         Mode::NewWorkspace(_) => form_footer(NEW_WORKSPACE_HINT),
@@ -661,6 +668,8 @@ impl Column {
                 agent_options: CreateForm::AGENTS.iter().map(|a| a.map_or("default", |k| k.as_str())).collect(),
                 agent_index: f.agent_index(),
                 name: f.name.clone(),
+                prompt: f.prompt.clone(),
+                quick: f.quick,
                 repos: f.repos.iter().map(|(name, checked)| Check { name: name.clone(), checked: *checked }).collect(),
                 agent: f.agent_label(),
                 agent_inherits: f.agent.is_none(),
@@ -677,6 +686,7 @@ impl Column {
                 focus: match f.focus {
                     CreateForm::WORKSPACE => "workspace",
                     CreateForm::NAME => "name",
+                    CreateForm::PROMPT => "prompt",
                     n if n == f.agent_field() => "agent",
                     _ => "repo",
                 },
@@ -800,7 +810,13 @@ impl Column {
             FormOp::Submit => return self.handle_key(KeyEvent::from(KeyCode::Enter)),
             FormOp::Cancel => return self.handle_key(KeyEvent::from(KeyCode::Esc)),
             FormOp::Set { field, value } => {
-                // One line, as the terminal types it: no control characters.
+                // A prompt may have lines; everything else is one line, as the
+                // terminal types it: no control characters.
+                if let (Mode::Create(f), "prompt") = (&mut self.mode, field.as_str()) {
+                    f.prompt = value.chars().filter(|c| *c == '\n' || !c.is_control()).collect();
+                    f.focus = CreateForm::PROMPT;
+                    return Ok(false);
+                }
                 let value: String = value.chars().filter(|c| !c.is_control()).collect();
                 match (&mut self.mode, field.as_str()) {
                     (Mode::Create(f), "name") => (f.name, f.focus) = (value, CreateForm::NAME),
@@ -818,7 +834,7 @@ impl Column {
                 (Mode::Create(f), "repo") => {
                     if let Some(r) = f.repos.get_mut(*index) {
                         r.1 = *on;
-                        f.focus = 2 + index;
+                        f.focus = CreateForm::REPOS + index;
                     }
                 }
                 (Mode::EditRepos(f), "repo") if !f.confirm => {
@@ -880,14 +896,18 @@ impl Column {
         if !matches!(self.mode, Mode::List) {
             return Ok(());
         }
-        // `^n` works from either place; everything else is a list key.
-        if action != Action::New {
+        // `^n` and `^⇧n` work from either place; everything else is a list key.
+        if action != Action::New && action != Action::Quick {
             self.focus_list();
         }
         // Not `D`: on a row that also waits on a permission prompt, `D`
         // answers that first. The button says what it does.
         if action == Action::Reject {
             self.start_reject();
+            return Ok(());
+        }
+        if action == Action::Quick {
+            self.start_quick();
             return Ok(());
         }
         for &(key, ctrl) in action.keys() {
@@ -1014,6 +1034,8 @@ pub(crate) enum Action {
     Transcript,
     Next,
     New,
+    /// The quick task (`Ctrl+Shift+n`).
+    Quick,
     AddRepo,
     NewWorkspace,
     Help,
@@ -1035,6 +1057,7 @@ impl Action {
             Action::Transcript => &[("t", false)],
             Action::Next => &[("n", false)],
             Action::New => &[("n", true)],
+            Action::Quick => &[],
             Action::AddRepo => &[("a", false)],
             Action::NewWorkspace => &[("W", false)],
             Action::Help => &[("?", false)],
@@ -1147,6 +1170,8 @@ mod tests {
         c.mode = Mode::Create(CreateForm {
             ws_idx: 0,
             name: String::new(),
+            prompt: String::new(),
+            quick: false,
             repos: c.ws_repos(0),
             agent: None,
             inherited: crate::agent::AgentKind::Claude,
@@ -1387,5 +1412,91 @@ mod tests {
         c.handle_action(Action::Reject).unwrap();
         assert!(matches!(c.view().mode, ModeView::List));
         assert_eq!(c.status_msg.as_deref(), Some("no pending secrets for this task"));
+    }
+
+    /// `with_workspaces` plus the adhoc workspace, where quick tasks go.
+    fn with_adhoc() -> Column {
+        let mut c = with_workspaces();
+        c.mode = Mode::List;
+        c.workspaces.push(crate::workspace::Workspace {
+            dir: PathBuf::from("/work/adhoc"),
+            config: crate::workspace::WorkspaceConfig {
+                name: crate::workspace::ADHOC_NAME.into(),
+                kind: crate::workspace::ADHOC_KIND.into(),
+                ..Default::default()
+            },
+        });
+        c
+    }
+
+    #[test]
+    fn ctrl_shift_n_opens_the_quick_task_on_the_adhoc_workspace() {
+        let mut c = with_adhoc();
+        // As the web sends it: the letter as typed, Ctrl and Shift held.
+        c.handle_web_key(&WebKey { key: "N".into(), ctrl: true, shift: true, ..Default::default() }).unwrap();
+        let ModeView::Create { quick, workspace, focus, .. } = c.view().mode else { panic!("quick form") };
+        assert!(quick);
+        assert_eq!(workspace, crate::workspace::ADHOC_NAME);
+        assert_eq!(focus, "prompt");
+        // Typing goes into the prompt, and Tab has nowhere else to go.
+        for k in ["h", "i", "Tab", " ", "x"] {
+            c.handle_web_key(&key(k)).unwrap();
+        }
+        let ModeView::Create { prompt, focus, name, .. } = c.view().mode else { panic!("quick form") };
+        assert_eq!((prompt.as_str(), focus, name.as_str()), ("hi x", "prompt", ""));
+        assert_eq!(footer(&c).text, QUICK_HINT);
+        // Ctrl+n alone is still the full form.
+        c.handle_web_key(&key("Escape")).unwrap();
+        c.handle_web_key(&WebKey { key: "n".into(), ctrl: true, ..Default::default() }).unwrap();
+        let ModeView::Create { quick, .. } = c.view().mode else { panic!("create form") };
+        assert!(!quick);
+        // And the `+` menu's entry opens the quick one.
+        c.handle_web_key(&key("Escape")).unwrap();
+        c.handle_action(Action::Quick).unwrap();
+        assert!(matches!(c.view().mode, ModeView::Create { quick: true, .. }));
+    }
+
+    #[test]
+    fn the_quick_task_needs_the_adhoc_workspace() {
+        let mut c = with_workspaces();
+        c.mode = Mode::List;
+        c.handle_action(Action::Quick).unwrap();
+        assert!(matches!(c.view().mode, ModeView::List));
+        assert!(c.status_msg.as_deref().unwrap_or("").contains("adhoc"));
+    }
+
+    #[test]
+    fn a_prompt_keeps_its_lines_and_stands_in_for_the_name() {
+        let mut c = with_workspaces();
+        form(&mut c, r#"{"op":"set","field":"prompt","value":"Fix the login\nthen add a test\u0007"}"#);
+        let ModeView::Create { prompt, focus, slug, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!(prompt, "Fix the login\nthen add a test");
+        assert_eq!(focus, "prompt");
+        assert_eq!(slug, "", "no name: Claude names it, so there is no slug to preview");
+        // Offline (no Claude), the first words are the title.
+        form(&mut c, r#"{"op":"submit"}"#);
+        assert!(matches!(c.view().mode, ModeView::List));
+        assert!(c.rows.iter().any(|r| r.title == "Fix the login"), "{:?}", c.rows.iter().map(|r| &r.title).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_form_with_neither_name_nor_prompt_says_so() {
+        let mut c = with_workspaces();
+        form(&mut c, r#"{"op":"submit"}"#);
+        assert!(matches!(c.view().mode, ModeView::Create { .. }));
+        assert_eq!(c.status_msg.as_deref(), Some("type a name or a prompt"));
+        let mut c = with_adhoc();
+        c.handle_action(Action::Quick).unwrap();
+        form(&mut c, r#"{"op":"submit"}"#);
+        assert_eq!(c.status_msg.as_deref(), Some("type a prompt"));
+    }
+
+    #[test]
+    fn the_repo_checkboxes_follow_the_prompt_field() {
+        let mut c = with_workspaces();
+        form(&mut c, r#"{"op":"check","field":"repo","index":1,"on":false}"#);
+        let ModeView::Create { focus, focus_repo, repos, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!((focus, focus_repo), ("repo", Some(1)));
+        assert!(!repos[1].checked);
     }
 }

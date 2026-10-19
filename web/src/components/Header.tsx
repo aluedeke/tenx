@@ -110,14 +110,20 @@ export function Header(props: Props) {
     !!view?.items.some((i) => i.kind === 'task' && i.id !== view.current && (i.status === 'blocked' || i.status === 'signaled'));
 
   const plus = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (tab !== 'Repos') return onAction('new');
     const r = e.currentTarget.getBoundingClientRect();
     setPopup({
       at: { left: Math.max(8, r.right - MENU_W), top: r.bottom + 4 },
-      entries: [
-        { label: 'add repo', key: 'a', run: () => onAction('add_repo') },
-        { label: 'new workspace', key: 'W', run: () => onAction('new_workspace') },
-      ],
+      entries:
+        tab === 'Repos'
+          ? [
+              { label: 'add repo', key: 'a', run: () => onAction('add_repo') },
+              { label: 'new workspace', key: 'W', run: () => onAction('new_workspace') },
+            ]
+          : [
+              // The prompt first, a session in adhoc, titled by Claude.
+              { label: 'quick task', key: '^⇧n', run: () => onAction('quick') },
+              { label: 'new task', key: '^n', run: () => onAction('new') },
+            ],
     });
   };
 
@@ -246,8 +252,8 @@ export function Header(props: Props) {
             type="button"
             className="hbtn primary"
             data-testid="add"
-            title={tab === 'Repos' ? 'add a repo or a workspace' : 'new task (^n)'}
-            aria-label={tab === 'Repos' ? 'add a repo or a workspace' : 'new task'}
+            title={tab === 'Repos' ? 'add a repo or a workspace' : 'quick task (^⇧n) or new task (^n)'}
+            aria-label={tab === 'Repos' ? 'add a repo or a workspace' : 'quick task or new task'}
             onClick={plus}
           >
             <Icon d={['M12 5v14', 'M5 12h14']} />

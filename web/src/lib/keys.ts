@@ -74,7 +74,8 @@ export function isRemote(hostname: string): boolean {
   return !['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
 }
 
-/** Alt+n off macOS: ^n for the column. */
+/** Alt+n off macOS: ^n for the column (Alt+Shift+n: ^⇧n, which the
+ * browser keeps too). */
 export function isNewTaskAlias(ev: KeyboardEvent, mac: boolean): boolean {
   return !mac && ev.altKey && !ev.ctrlKey && !ev.metaKey && (baseLetter(ev) ?? ev.key.toLowerCase()) === 'n';
 }

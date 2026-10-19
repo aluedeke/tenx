@@ -49,9 +49,42 @@ pub(super) enum Then {
     /// open and its agent is running without the terminal leaving wherever it
     /// was. What a freshly created task wants.
     OpenTask(usize, String),
+    /// As `OpenTask`, for a task whose name the job decides (Claude titles
+    /// it from its prompt): the ghost row is listed under a placeholder slug
+    /// until the job fills in the name.
+    OpenNamed(usize, Naming),
     /// A workspace was created here: re-read the registry, then land on its
     /// repos — or on the add-repo form, when it was created without one.
     Workspace(PathBuf),
+}
+
+/// The name a job picks for the task it creates, shared with the column:
+/// the worker sets it once Claude has answered, and the column renames the
+/// ghost row (listed under `placeholder` until then) and opens the task.
+#[derive(Debug, Clone)]
+pub(super) struct Naming {
+    pub(super) placeholder: String,
+    /// `(slug, title)`, once known.
+    pub(super) named: Arc<Mutex<Option<(String, String)>>>,
+}
+
+impl Naming {
+    pub(super) fn new(placeholder: String) -> Self {
+        Naming { placeholder, named: Arc::new(Mutex::new(None)) }
+    }
+    pub(super) fn set(&self, slug: &str, title: &str) {
+        *self.named.lock().unwrap_or_else(|e| e.into_inner()) = Some((slug.to_string(), title.to_string()));
+    }
+    pub(super) fn get(&self) -> Option<(String, String)> {
+        self.named.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+/// The same naming: one shared slot.
+impl PartialEq for Naming {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.named, &other.named)
+    }
 }
 
 /// What the worker sends back: a step event, or the whole job's outcome.

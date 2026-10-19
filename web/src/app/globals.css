@@ -1394,6 +1394,16 @@ a:hover {
   font-size: calc(var(--ui-size, 12px) + 0.5px);
   outline: none;
 }
+/* The prompt: lines of text, growing up to a few before it scrolls. */
+.wf-in.wf-area {
+  height: auto;
+  min-height: 64px;
+  max-height: 180px;
+  padding: 8px 11px;
+  resize: vertical;
+  line-height: 1.45;
+  field-sizing: content;
+}
 .wf-in::placeholder {
   color: var(--idle);
 }

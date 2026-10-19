@@ -529,7 +529,7 @@ export function App() {
       ev.preventDefault();
       ev.stopPropagation();
       if (isNewTaskAlias(ev, mac.current)) {
-        sendKey({ key: 'n', ctrl: true, alt: false, shift: false });
+        sendKey({ key: 'n', ctrl: true, alt: false, shift: ev.shiftKey });
         return;
       }
       const msg = keyMessage(ev);

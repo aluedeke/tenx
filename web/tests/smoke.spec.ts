@@ -116,11 +116,38 @@ test('the selected row has a menu, and a delete asks on the row', async ({ page,
   await expect(confirm).toHaveCount(0);
 });
 
+/** The `+` menu's "new task" entry (its other one is the quick task). */
+const newTaskItem = (page: import('@playwright/test').Page) => page.getByRole('menuitem', { name: /^new task/ });
+
+test('+ offers the quick task: only a prompt, ⏎ starts it', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
+  const tap = (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
+  await page.goto('/');
+  if (isMobile) await page.getByTestId('toggle').tap();
+  await tap(page.getByTestId('add'));
+  await tap(page.getByRole('menuitem', { name: /^quick task/ }));
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'quick')).toBe(true);
+  const prompt = page.locator('textarea[data-field=prompt]');
+  await expect(prompt).toBeVisible();
+  await expect(page.locator('input[data-field=name]')).toHaveCount(0);
+  if (isMobile) return;
+  await expect(prompt).toBeFocused();
+  await prompt.pressSequentially('fix the flaky test');
+  await prompt.press('Shift+Enter');
+  await prompt.pressSequentially('then push');
+  await expect
+    .poll(() => sent().some((m) => m.type === 'form' && m.op === 'set' && m.field === 'prompt' && m.value === 'fix the flaky test\nthen push'))
+    .toBe(true);
+  await prompt.press('Enter');
+  await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'submit')).toBe(true);
+});
+
 test('forms carry their own buttons; + opens the new-task form', async ({ page, isMobile }) => {
   const sent = sentMessages(page);
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
   await (isMobile ? page.getByTestId('add').tap() : page.getByTestId('add').click());
+  await (isMobile ? newTaskItem(page).tap() : newTaskItem(page).click());
   const buttons = page.locator('.wf').getByTestId('form-buttons');
   await expect(buttons.getByRole('button', { name: /create task/i })).toBeVisible();
   // The form owns the column: no search box, no terminal hint line.
@@ -292,6 +319,7 @@ test('the header names the task you are in and drives the column', async ({ page
   await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'help')).toBe(true);
   await tap(page.getByTestId('help'));
   await tap(header.getByTestId('add'));
+  await tap(newTaskItem(page));
   await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'new')).toBe(true);
 });
 
@@ -328,6 +356,7 @@ test('the new-task form is a real web form', async ({ page, isMobile }) => {
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
   await tap(page.getByTestId('add'));
+  await tap(newTaskItem(page));
   const name = page.locator('input[data-field=name]');
   await expect(name).toBeVisible();
   if (!isMobile) await expect(name).toBeFocused();
@@ -360,6 +389,8 @@ test('the new-task form is a real web form', async ({ page, isMobile }) => {
   if (!isMobile) {
     await name.focus();
     await page.keyboard.press('Tab');
+    await expect(page.locator('textarea[data-field=prompt]')).toBeFocused();
+    await page.keyboard.press('Tab');
     await expect(page.getByRole('radio', { name: /acme/ })).toBeFocused();
   }
   await name.press('Enter');
@@ -378,6 +409,7 @@ test('esc leaves a running job to the Work tab', async ({ page, isMobile }) => {
   test.skip(isMobile, 'keyboard');
   await page.goto('/');
   await page.getByTestId('add').click();
+  await newTaskItem(page).click();
   await page.locator('input[data-field=name]').fill('Leave it');
   await page.locator('input[data-field=name]').press('Enter');
   await expect(page.getByTestId('form-progress')).toBeVisible();
@@ -391,9 +423,10 @@ test('a refused submit shows why inside the form; Escape cancels', async ({ page
   const sent = sentMessages(page);
   await page.goto('/');
   await page.getByTestId('add').click();
+  await newTaskItem(page).click();
   await page.locator('input[data-field=name]').press('Enter');
   // Under the field it is about, which turns red (3a).
-  await expect(page.getByTestId('form-error')).toHaveText('name the task first');
+  await expect(page.getByTestId('form-error')).toHaveText('type a name or a prompt');
   await expect(page.locator('input[data-field=name]')).toHaveClass(/err/);
   await expect(page.getByTestId('form-progress')).toHaveCount(0);
   await page.locator('input[data-field=name]').press('Escape');
@@ -735,6 +768,7 @@ test('a workspace without repos creates a task the agent runs on its own', async
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
   await tap(page.getByTestId('add'));
+  await tap(newTaskItem(page));
   await tap(page.locator('.wf-chip', { hasText: /^\W*adhoc/ }));
   await expect(page.getByText('none — the agent runs on its own and can read the workspace')).toBeVisible();
   await page.locator('input[data-field=name]').fill('how does sweep work');

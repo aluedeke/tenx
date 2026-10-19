@@ -109,7 +109,8 @@ without `seq` work as before.
 // search field) focused. Ignored outside list mode — forms and prompts get
 // their buttons as plain `key` messages (Enter, Escape, y, space, ←/→).
 // open | approve | deny | rename | edit_repos | close | delete | unlock |
-// transcript | next | new | add_repo | new_workspace | help | reject
+// transcript | next | new | quick | add_repo | new_workspace | help | reject
+// (`quick` opens the quick task, ^⇧n: a prompt-only form on the adhoc workspace)
 // (`reject` opens the reject form for the row's pending secrets requests —
 // `:reject`, not `D`, which answers a permission prompt first)
 { "type": "action", "name": "rename" }
@@ -117,7 +118,8 @@ without `seq` work as before.
 // An edit in one of the column's web forms (view.rs `FormOp`), applied to the
 // open form (create, add repo, new workspace, edit repos, rename); ignored
 // when no such form is open. `set` carries a text field's whole value (`name`,
-// `url`, `path`, `repo_url`, `title`); `check` sets (never toggles) a checkbox
+// `prompt` — the only one that keeps line breaks —, `url`, `path`,
+// `repo_url`, `title`); `check` sets (never toggles) a checkbox
 // (`repo` by index, `skills`); `pick` chooses by index into the create form's
 // `workspace_options` / `agent_options` (a new workspace reloads its repos, as
 // ←/→ does). `submit` / `cancel` are the form's own ⏎ / esc, so they run the
@@ -177,15 +179,17 @@ chip (`answerable`), and the row's menu — `⋯`, a right-click, or on touch a
 long-press (a bottom sheet) — for open, unlock (`locked`), rename, edit
 repos, close and delete; on touch a swipe uncovers allow / deny (left) or
 delete (right). The header's `+`, `● next` (shown when a task other than the
-current one needs you) and `?` send `new` (on Repos a menu of `add_repo` /
-`new_workspace`), `next` and `help`. The column's forms
+current one needs you) and `?` send a menu of `quick` / `new` (on Repos of
+`add_repo` / `new_workspace`), `next` and `help`. The column's forms
 (new task, new workspace, add repo, edit repos, rename) are native web forms —
 a form owns the column (title, ✕, captioned sections, an action bar pinned to
 the bottom): text inputs, chips that are radios / checkboxes underneath
 (workspace, repos, agent — a native select past six workspaces), Tab order,
 Enter submits, Escape cancels — sending `form` messages. The create form shows
 the server's `slug` for the name and what `default` resolves to
-(`agent_default`). A refused submit shows the view's `status` under the field
+(`agent_default`), and a `prompt` box (Shift+Enter for a new line); with a
+prompt and no name, Claude titles the task and `slug` is empty. With `quick`
+set it shows only the prompt. A refused submit shows the view's `status` under the field
 it is about (else above the bar). A submit that starts a job keeps the form on
 screen, frozen, with that job's progress from `view.jobs` (the one whose `id`
 wasn't there before the submit) until it lands; esc leaves it running on the

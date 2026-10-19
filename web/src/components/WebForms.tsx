@@ -59,7 +59,7 @@ function errorField(kind: FormMode['kind'] | 'rename', error: string): string | 
   const e = error.toLowerCase();
   switch (kind) {
     case 'create':
-      return /name|title|exists|slug/.test(e) ? 'name' : null;
+      return /name|title|exists|slug|prompt/.test(e) ? 'name' : null;
     case 'add_repo':
       return /url|clone/.test(e) ? 'url' : /name/.test(e) ? 'name' : null;
     case 'new_workspace':
@@ -128,6 +128,41 @@ function TextField({ caption, field, value, send, autoFocus, placeholder, aside,
       ) : (
         hint && <div className="wf-hint">{hint}</div>
       )}
+    </Section>
+  );
+}
+
+/** The agent's first message: lines with Shift+Enter, ⏎ submits the form
+ * as in a one-line field. Grows with its text up to a few lines. */
+function PromptField({ value, send, autoFocus, hint }: { value: string; send: Send; autoFocus?: boolean; hint?: ReactNode }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el && document.activeElement !== el && el.value !== value) el.value = value;
+  }, [value]);
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus({ preventScroll: true });
+  }, [autoFocus]);
+  return (
+    <Section caption="PROMPT">
+      <textarea
+        ref={ref}
+        className="wf-in wf-area"
+        data-field="prompt"
+        aria-label="prompt"
+        defaultValue={value}
+        rows={3}
+        placeholder="what the agent should do first"
+        spellCheck={false}
+        onInput={(e) => send({ op: 'set', field: 'prompt', value: e.currentTarget.value })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            e.currentTarget.form?.requestSubmit();
+          }
+        }}
+      />
+      {hint && <div className="wf-hint">{hint}</div>}
     </Section>
   );
 }
@@ -285,6 +320,15 @@ function CreateForm({ mode, send, error, touch, progress }: { mode: Extract<Form
   };
   const nameError = error && errorField('create', error) === 'name' ? error : null;
   const checked = mode.repos.filter((r) => r.checked).length;
+  if (mode.quick) {
+    // The quick task: only the prompt; Claude names the session.
+    return (
+      <Shell title="Quick task" primary="Start" send={send} error={error} progress={progress}>
+        <PromptField value={mode.prompt} send={send} autoFocus={!touch && !progress} hint="a session in adhoc — Claude names it from the prompt" />
+      </Shell>
+    );
+  }
+  const titled = !mode.name.trim() && !!mode.prompt.trim();
   return (
     <Shell title="New task" primary="Create task" send={send} error={nameError ? null : error} progress={progress}>
       <TextField
@@ -293,10 +337,11 @@ function CreateForm({ mode, send, error, touch, progress }: { mode: Extract<Form
         value={mode.name}
         send={send}
         autoFocus={!touch && !progress}
-        placeholder="what the task is about"
+        placeholder="what the task is about — or leave it to the prompt"
         error={nameError}
-        hint={mode.slug ? <span data-testid="slug">→ {mode.slug}</span> : null}
+        hint={mode.slug ? <span data-testid="slug">→ {mode.slug}</span> : titled ? <span data-testid="slug">Claude names it from the prompt</span> : null}
       />
+      <PromptField value={mode.prompt} send={send} />
       <Section caption="WORKSPACE">
         {mode.workspace_options.length > 6 ? (
           // Many workspaces: a native list reads better than a wall of chips.

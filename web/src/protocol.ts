@@ -149,15 +149,20 @@ export type ModeView =
       agent_options: string[];
       agent_index: number;
       name: string;
+      /** The agent's first message; with no `name`, Claude titles the task. */
+      prompt: string;
+      /** The quick task (^⇧n): only `prompt` is shown. */
+      quick: boolean;
       repos: Check[];
       agent: string;
       agent_inherits: boolean;
       /** What `default` resolves to for the chosen workspace. */
       agent_default: string;
       /** The task's directory and branch name, from `name` (server-side
-       * slugify); empty until the name makes one. */
+       * slugify); empty until the name makes one, and while Claude is to
+       * name it. */
       slug: string;
-      focus: 'workspace' | 'name' | 'repo' | 'agent';
+      focus: 'workspace' | 'name' | 'prompt' | 'repo' | 'agent';
       focus_repo: number | null;
     }
   | { kind: 'add_repo'; workspace: string; url: string; name: string; focus: 'url' | 'name' }
@@ -233,6 +238,8 @@ export type Action =
   | 'transcript'
   | 'next'
   | 'new'
+  /** The quick task: a prompt, then a session in adhoc (^⇧n). */
+  | 'quick'
   | 'add_repo'
   | 'new_workspace'
   | 'help'

@@ -32,6 +32,7 @@ pub mod time;
 pub mod transcript;
 pub mod service;
 pub mod trust;
+pub mod title;
 pub mod tts;
 pub mod viewpatch;
 pub mod web;

@@ -49,20 +49,7 @@ impl OpenMode {
     }
 }
 
-/// Create a task in an explicit workspace (no cwd dependency), with an empty
-/// `TASK.md` body. Used by the column's create flow, which passes a reporter
-/// that feeds the column's progress panel instead of printing.
-pub fn new_in(
-    ws: &crate::workspace::Workspace,
-    name: &str,
-    repos: Option<&[String]>,
-    open: OpenMode,
-    rep: &dyn crate::progress::Reporter,
-) -> Result<String> {
-    new_with(ws, name, repos, open, &TaskMd::default(), None, rep)
-}
-
-/// The steps `new_in` will report, in order, for a plan built before the work
+/// The steps `new_with` will report, in order, for a plan built before the work
 /// starts. One per repo — the clone dominates, and the worktree that follows
 /// it is the same step finishing.
 ///
@@ -105,6 +92,59 @@ pub fn plan_slug(ws: &crate::workspace::Workspace, name: &str) -> Result<String>
         bail!(crate::workspace::WorkspaceError::TaskExists(existing.name));
     }
     Ok(slug)
+}
+
+/// A title for a task that only has its first prompt: Claude's
+/// (`tenx_core::title`, the fast model, no session kept), else the prompt's
+/// first words when the call fails, says nothing usable, or takes longer than
+/// `TIMEOUT_SECS`. Blocks for that long, so it runs on a job's worker.
+///
+/// The binary is the workspace's `[agents.claude]` one, without its extra
+/// args: those are for an interactive session. It runs in the temp directory,
+/// so its hooks name no task.
+pub fn title_for_prompt(ws: &crate::workspace::Workspace, prompt: &str) -> String {
+    let fallback = || {
+        let t = tenx_core::orchestrate::ask_title(prompt);
+        if crate::workspace::slugify(&t).is_empty() { "question".to_string() } else { t }
+    };
+    let (bin, _) = crate::agent::configured(ws, crate::agent::AgentKind::Claude);
+    claude_title(&bin, prompt).unwrap_or_else(fallback)
+}
+
+fn claude_title(bin: &str, prompt: &str) -> Option<String> {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(bin)
+        .args(["-p", "--model", tenx_core::title::MODEL, "--no-session-persistence"])
+        .current_dir(std::env::temp_dir())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Written from a thread: a pipe holds only so much, and the reply is
+    // read only after the child is done.
+    let mut stdin = child.stdin.take()?;
+    let request = tenx_core::title::request(prompt);
+    std::thread::spawn(move || {
+        let _ = stdin.write_all(request.as_bytes());
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(tenx_core::title::TIMEOUT_SECS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(Some(_)) | Err(_) => return None,
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+        }
+    }
+    let mut reply = String::new();
+    child.stdout.take()?.read_to_string(&mut reply).ok()?;
+    tenx_core::title::clean(&reply)
 }
 
 /// Create a task in an explicit workspace with a pre-filled `TASK.md`, and

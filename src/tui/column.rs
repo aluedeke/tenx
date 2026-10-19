@@ -5,7 +5,8 @@
 //! Telescope-style create/delete/rename/close bindings on a selected row
 //! (see `Focus`/`InputMode`: the search field is Insert, plain typing
 //! filters; a list row is Normal, plain letters act — `n` next task that
-//! needs you, `A`/`D` answer, `dd` delete; `Ctrl+n` new from either).
+//! needs you, `A`/`D` answer, `dd` delete; `Ctrl+n` new and `Ctrl+Shift+n`
+//! quick task from either).
 //!
 //! It is drawn by the client (`tui::client`) beside the embedded tmux
 //! session, in the same process: a jump is the window switch (the terminal
@@ -44,13 +45,19 @@ use crate::snapshot::{self, Row};
 use crate::workspace::sessions::{Subagent, SubagentStatus};
 use crate::workspace::{self, TaskStatus, Workspace};
 
-/// Create-task form. `focus`: 0 = workspace picker, 1 = name,
-/// 2.. = repo checkboxes, last = agent picker. The workspace starts as the
+/// Create-task form. `focus`: 0 = workspace picker, 1 = name, 2 = prompt,
+/// 3.. = repo checkboxes, last = agent picker. The workspace starts as the
 /// selected item's (or the first registered one) and ←/→ cycle it; the
 /// repo checklist follows the chosen workspace.
+///
+/// A prompt is the agent's first message. With a prompt and no name, Claude
+/// titles the task (`cli::task::title_for_prompt`). `quick` is the quick
+/// task (`Ctrl+Shift+n`): the adhoc workspace and only the prompt field.
 struct CreateForm {
     ws_idx: usize,
     name: String,
+    prompt: String,
+    quick: bool,
     repos: Vec<(String, bool)>,
     /// The task's agent, or `None` to inherit the workspace/global default.
     agent: Option<crate::agent::AgentKind>,
@@ -63,18 +70,21 @@ struct CreateForm {
 impl CreateForm {
     const WORKSPACE: usize = 0;
     const NAME: usize = 1;
+    const PROMPT: usize = 2;
+    /// Focus index of the first repo checkbox.
+    const REPOS: usize = 3;
 
     fn field_count(&self) -> usize {
-        // workspace, name, one per repo, then agent.
-        3 + self.repos.len()
+        // workspace, name, prompt, one per repo, then agent.
+        Self::REPOS + 1 + self.repos.len()
     }
     /// Focus index of the agent field (the last one).
     fn agent_field(&self) -> usize {
-        2 + self.repos.len()
+        Self::REPOS + self.repos.len()
     }
     /// The repo checkbox under the cursor, if it is on one.
     fn repo_field(&self) -> Option<usize> {
-        self.focus.checked_sub(2).filter(|&i| i < self.repos.len())
+        self.focus.checked_sub(Self::REPOS).filter(|&i| i < self.repos.len())
     }
     /// Cycle the workspace choice through the `count` registered ones.
     /// Returns whether it changed (the caller reloads the repo list).
@@ -110,9 +120,15 @@ impl CreateForm {
         self.agent.map(|k| k.as_str().to_string()).unwrap_or_else(|| "default".to_string())
     }
     fn focus_next(&mut self) {
+        if self.quick {
+            return;
+        }
         self.focus = (self.focus + 1) % self.field_count();
     }
     fn focus_prev(&mut self) {
+        if self.quick {
+            return;
+        }
         self.focus = if self.focus == 0 {
             self.field_count() - 1
         } else {
@@ -703,6 +719,7 @@ impl Column {
         let sessions = workspace::sessions::sessions();
         self.refresh_windows();
         let rows = snapshot::rows(&self.workspaces, &sessions, &self.windows);
+        self.name_ghosts();
         // A task a job is still building has a directory only once the worker
         // gets that far, so carry its ghost row across the rebuild — but only
         // while the real row is absent, or the two would both be listed.
@@ -1311,6 +1328,7 @@ impl Column {
             KeyCode::Up => self.nav_up(),
             KeyCode::Char('j') if ctrl => self.nav_down(),
             KeyCode::Char('k') if ctrl => self.nav_up(),
+            KeyCode::Char('n' | 'N') if ctrl && is_shifted(&key) => self.start_quick(),
             KeyCode::Char('n') if ctrl => self.start_create(),
             // `:` reaches the pane (zellij doesn't grab it), unlike Ctrl/Alt.
             KeyCode::Char(':') if !ctrl => {
@@ -1363,6 +1381,7 @@ impl Column {
             KeyCode::BackTab => self.cycle_tab(true),
             // `n` for a new task (matches the `:n`/`:new` command below),
             // `a` to add a repo — distinct verbs, distinct letters.
+            KeyCode::Char('n' | 'N') if ctrl && is_shifted(&key) => self.start_quick(),
             KeyCode::Char('n') if ctrl => self.start_create(),
             KeyCode::Char('n') if self.tab == Tab::Tasks => self.jump_needs_you(),
             KeyCode::Char('a') if self.tab == Tab::Repos => self.start_add_repo(),
@@ -1742,10 +1761,33 @@ impl Column {
         self.mode = Mode::Create(CreateForm {
             ws_idx,
             name: String::new(),
+            prompt: String::new(),
+            quick: false,
             repos,
             agent: None,
             inherited,
             focus: CreateForm::NAME,
+        });
+    }
+
+    /// `Ctrl+Shift+n` — the quick task: type a prompt, ⏎, and a session in
+    /// the adhoc workspace starts on it, titled by Claude.
+    fn start_quick(&mut self) {
+        let Some(ws_idx) = self.workspaces.iter().position(|w| w.is_adhoc()) else {
+            self.status_msg = Some("no adhoc workspace — restart tenx to create it".into());
+            return;
+        };
+        let inherited = self.ws_agent(ws_idx);
+        self.status_msg = None;
+        self.mode = Mode::Create(CreateForm {
+            ws_idx,
+            name: String::new(),
+            prompt: String::new(),
+            quick: true,
+            repos: Vec::new(),
+            agent: None,
+            inherited,
+            focus: CreateForm::PROMPT,
         });
     }
 
@@ -1785,7 +1827,7 @@ impl Column {
             KeyCode::BackTab | KeyCode::Up => form.focus_prev(),
             // On the workspace and agent fields, arrows (and space) cycle
             // the choice; a new workspace brings its own repo list.
-            KeyCode::Right | KeyCode::Left | KeyCode::Char(' ') if form.focus == CreateForm::WORKSPACE => {
+            KeyCode::Right | KeyCode::Left | KeyCode::Char(' ') if form.focus == CreateForm::WORKSPACE && !form.quick => {
                 let back = key.code == KeyCode::Left;
                 if form.cycle_workspace(self.workspaces.len(), back) {
                     form.repos = self.ws_repos(form.ws_idx);
@@ -1801,14 +1843,19 @@ impl Column {
                     form.repos[i].1 = !form.repos[i].1;
                 } else if form.focus == CreateForm::NAME {
                     form.name.push(' ');
+                } else if form.focus == CreateForm::PROMPT {
+                    form.prompt.push(' ');
                 }
             }
             KeyCode::Backspace => {
                 if form.focus == CreateForm::NAME {
                     form.name.pop();
+                } else if form.focus == CreateForm::PROMPT {
+                    form.prompt.pop();
                 }
             }
             KeyCode::Char(c) if !ctrl && form.focus == CreateForm::NAME => form.name.push(c),
+            KeyCode::Char(c) if !ctrl && form.focus == CreateForm::PROMPT => form.prompt.push(c),
             _ => {}
         }
         self.mode = Mode::Create(form);
@@ -1875,6 +1922,7 @@ impl Column {
             self.last_frame = Some(Instant::now());
             self.frame = self.frame.wrapping_add(1);
         }
+        self.name_ghosts();
         // Collect what landed on this tick before touching the column: the
         // follow-ups rebuild rows, which must not happen mid-iteration.
         let mut settled: Vec<(super::job::Then, Result<String, String>)> = Vec::new();
@@ -1941,6 +1989,11 @@ impl Column {
             }
             // A task that has just been built: give it its window, then land
             // the selection on it.
+            Then::OpenNamed(ws_idx, naming) => {
+                if let Some((slug, _)) = naming.get() {
+                    self.finish(Then::OpenTask(ws_idx, slug));
+                }
+            }
             Then::OpenTask(ws_idx, slug) => {
                 if !self.offline
                     && let Some(ws) = self.workspaces.get(ws_idx)
@@ -1999,9 +2052,17 @@ impl Column {
     /// the selection (so a `jump` lands on it), `Ok(false)` if it couldn't be
     /// found in the rebuilt list.
     fn submit_create(&mut self, form: &CreateForm) -> Result<bool, String> {
-        let name = form.name.trim().to_string();
+        let mut name = form.name.trim().to_string();
+        let prompt = form.prompt.trim().to_string();
         if name.is_empty() {
-            return Err("task name cannot be empty".into());
+            if prompt.is_empty() {
+                return Err(if form.quick { "type a prompt" } else { "type a name or a prompt" }.into());
+            }
+            if !self.offline {
+                return self.submit_titled(form, prompt);
+            }
+            // The demo asks no one: the first words are the title.
+            name = tenx_core::orchestrate::ask_title(&prompt);
         }
         // None ticked is a task without worktrees: its agent runs in the
         // task directory and can read the whole workspace.
@@ -2012,7 +2073,7 @@ impl Column {
             .map(|(n, _)| n.clone())
             .collect();
         let ws_idx = form.ws_idx;
-        // The same slug the job's `new_in` will pick — counted up in the
+        // The same slug the job's `new_with` will pick — counted up in the
         // adhoc workspace — so the ghost row and `OpenTask` name the task
         // the job creates. Its refusals (a taken name) surface here, before
         // anything starts.
@@ -2057,7 +2118,6 @@ impl Column {
             }
             let ws = &self.workspaces[ws_idx];
             let ws_dir = ws.dir.clone();
-            let task_dir = ws.dir.join("tasks").join(&slug);
             let plan = tenx_core::progress::Plan::new(
                 format!("creating '{name}'"),
                 crate::cli::task::new_steps(ws, Some(&repos)),
@@ -2078,15 +2138,13 @@ impl Column {
                 // — derive state from the live source, don't carry a snapshot
                 // across a thread boundary.
                 let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
-                // no_open=true: the window is opened by the `jump` that
-                // follows the job landing, not from the worker — tmux calls
-                // belong on the thread that owns the terminal.
-                crate::cli::task::new_in(&ws, &job_name, Some(&repos), crate::cli::task::OpenMode::Closed, rep).map_err(|e| e.to_string())?;
-                // Pin the chosen agent before anything opens the window;
-                // `None` inherits the workspace/global default.
-                if let Some(kind) = agent {
-                    let _ = crate::agent::set_task_agent(&task_dir, Some(kind));
-                }
+                // Closed: the window is opened when the job lands, not from
+                // the worker — tmux calls belong on the thread that owns the
+                // terminal. The chosen agent is pinned before that; `None`
+                // inherits the workspace/global default.
+                let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
+                crate::cli::task::new_with(&ws, &job_name, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent, rep)
+                    .map_err(|e| e.to_string())?;
                 Ok(format!("created '{job_name}'"))
             });
             // The ghost row is the selection, so ⏎ and the footer both have
@@ -2119,6 +2177,78 @@ impl Column {
         };
         self.status_msg = Some(format!("created '{name}'"));
         Ok(selected)
+    }
+
+    /// A task with a prompt and no name: listed at once under the prompt's
+    /// first words, while its job asks Claude for a title, creates the task
+    /// under it and hands the agent the prompt. The slug comes from that
+    /// title, so the ghost row waits under a placeholder until the job names
+    /// it (`Then::OpenNamed`).
+    fn submit_titled(&mut self, form: &CreateForm, prompt: String) -> Result<bool, String> {
+        let repos: Vec<String> = form.repos.iter().filter(|(_, on)| *on).map(|(n, _)| n.clone()).collect();
+        if !repos.is_empty() && self.job_running() {
+            return Err("one repo operation at a time — this one is still running".into());
+        }
+        let ws_idx = form.ws_idx;
+        let ws = &self.workspaces[ws_idx];
+        let ws_dir = ws.dir.clone();
+        let mut steps = vec!["title".to_string()];
+        steps.extend(crate::cli::task::new_steps(ws, Some(&repos)));
+        let draft = tenx_core::orchestrate::ask_title(&prompt);
+        let plan = tenx_core::progress::Plan::new(format!("creating '{draft}'"), steps);
+        // Not a slug `slugify` can make, so it never meets a real task.
+        let naming = super::job::Naming::new(format!("~naming-{}", self.rows.len()));
+        let ghost = self.ghost_row(ws_idx, &naming.placeholder, &draft, &repos, form.agent);
+        self.rows.push(ghost);
+        self.filter.clear();
+        self.sort_rows();
+        self.apply_filter();
+        let placeholder = naming.placeholder.clone();
+        let agent = form.agent;
+        let named = naming.clone();
+        self.start_job(plan, super::job::Then::OpenNamed(ws_idx, naming), move |rep| {
+            let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
+            rep.emit(crate::progress::Event::Start { step: 0, label: "title".into(), verb: "asking Claude" });
+            let title = crate::cli::task::title_for_prompt(&ws, &prompt);
+            rep.emit(crate::progress::Event::Done { step: 0, note: "named".into() });
+            let slug = crate::cli::task::plan_slug(&ws, &title).map_err(|e| e.to_string())?;
+            // Named before the directory exists, so a rebuild in between
+            // never lists the task twice (its ghost and its real row).
+            named.set(&slug, &title);
+            let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
+            let shifted = crate::progress::Shifted::new(rep, 1);
+            let made = crate::cli::task::new_with(&ws, &title, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent, &shifted)
+                .map_err(|e| e.to_string())?;
+            if made != slug {
+                named.set(&made, &title);
+            }
+            Ok(format!("created '{title}'"))
+        });
+        self.select_task(ws_idx, &placeholder);
+        Ok(false)
+    }
+
+    /// Give the ghost rows of jobs that have picked their task's name
+    /// (`Then::OpenNamed`) that slug and title.
+    fn name_ghosts(&mut self) {
+        let named: Vec<(usize, String, String, String)> = self
+            .jobs
+            .lock()
+            .iter()
+            .filter_map(|j| match &j.then {
+                super::job::Then::OpenNamed(ws_idx, n) => {
+                    n.get().map(|(slug, title)| (*ws_idx, n.placeholder.clone(), slug, title))
+                }
+                _ => None,
+            })
+            .collect();
+        for (ws_idx, placeholder, slug, title) in named {
+            for r in self.rows.iter_mut().filter(|r| r.pending && r.ws_idx == ws_idx && r.slug == placeholder) {
+                r.path = r.path.with_file_name(&slug);
+                r.slug = slug.clone();
+                r.title = title.clone();
+            }
+        }
     }
 
     /// A placeholder row for a task a job is still building. Filed under
@@ -3240,6 +3370,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("esc", "into the list"),
             ("⇥ ⇧⇥", "switch tab"),
             ("^n", "new task"),
+            ("^⇧n", "quick task: prompt first"),
         ],
     ),
     (
@@ -3254,6 +3385,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("D", "reject pending secrets"),
             ("u", "unlock pending secrets"),
             ("^n", "new task"),
+            ("^⇧n", "quick task: prompt first"),
             ("r", "rename"),
             ("e", "edit repos"),
             ("x", "close window"),
@@ -3950,6 +4082,22 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(area);
+    let muted = Style::default().fg(palette::MUTED.color());
+
+    if form.quick {
+        // The quick task: only the prompt, wrapped as it grows.
+        let lines = vec![
+            field_line(true, "prompt", &format!("{}▏", form.prompt)),
+            Line::from(""),
+            Line::from(Span::styled("  an adhoc session, named by Claude", muted)),
+        ];
+        let body = Paragraph::new(lines)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" quick task "));
+        f.render_widget(body, chunks[0]);
+        f.render_widget(Paragraph::new(footer_line(&view::footer(column))), chunks[1]);
+        return;
+    }
 
     let ws_name = column
         .workspaces
@@ -3980,8 +4128,14 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         Line::from(""),
         field_line(form.focus == CreateForm::NAME, "name", &format!("{}▏", form.name)),
         Line::from(""),
-        Line::from(Span::styled("  repos", Style::default().fg(palette::MUTED.color()))),
+        // One line: the end of a long prompt, where the typing is.
+        field_line(form.focus == CreateForm::PROMPT, "prompt", &format!("{}▏", tail(&form.prompt, area.width.saturating_sub(16) as usize))),
     ];
+    if form.name.trim().is_empty() && !form.prompt.trim().is_empty() {
+        lines.push(Line::from(Span::styled("  no name: Claude names it", muted)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("  repos", muted)));
     if form.repos.is_empty() {
         lines.push(Line::from(Span::styled(
             "  none — the agent runs on its own and can read the workspace",
@@ -4014,6 +4168,24 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
 
     let footer = footer_line(&view::footer(column));
     f.render_widget(Paragraph::new(footer), chunks[1]);
+}
+
+/// The last `max` characters of `s`, behind a `…` when that cut anything.
+fn tail(s: &str, max: usize) -> String {
+    let n = s.chars().count();
+    if n <= max || max == 0 {
+        return s.to_string();
+    }
+    let kept: String = s.chars().skip(n - max + 1).collect();
+    format!("…{kept}")
+}
+
+/// Ctrl+Shift+letter: a terminal with the kitty keyboard protocol reports
+/// Shift as a modifier, some also as the capital letter; the web sends both.
+/// Without the protocol the terminal sends what Ctrl+letter sends, and this
+/// is never true.
+fn is_shifted(key: &KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::SHIFT) || matches!(key.code, KeyCode::Char(c) if c.is_ascii_uppercase())
 }
 
 fn field_line<'a>(focused: bool, label: &str, value: &str) -> Line<'a> {
@@ -4375,5 +4547,51 @@ mod tests {
         c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
         let Mode::Create(f) = &c.mode else { panic!("create form") };
         assert_eq!(f.ws_idx, 0);
+    }
+
+    /// A terminal with the kitty keyboard protocol sends Ctrl+Shift+n as
+    /// `n` or `N` with Shift; without it, the plain Ctrl+n byte.
+    #[test]
+    fn ctrl_shift_n_is_the_quick_task_only_when_shift_is_reported() {
+        let mut c = Column::empty();
+        c.offline = true;
+        c.workspaces = vec![ws("ledger", &["api"])];
+        let mut adhoc = ws(crate::workspace::ADHOC_NAME, &[]);
+        adhoc.config.kind = crate::workspace::ADHOC_KIND.into();
+        c.workspaces.push(adhoc);
+        for code in [KeyCode::Char('n'), KeyCode::Char('N')] {
+            c.mode = Mode::List;
+            c.handle_key(KeyEvent::new(code, KeyModifiers::CONTROL | KeyModifiers::SHIFT)).unwrap();
+            let Mode::Create(f) = &c.mode else { panic!("quick form") };
+            assert!(f.quick && f.ws_idx == 1 && f.focus == CreateForm::PROMPT);
+        }
+        c.mode = Mode::List;
+        c.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL)).unwrap();
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert!(!f.quick);
+    }
+
+    /// A job that names its task renames the ghost row it was listed under.
+    #[test]
+    fn a_named_job_renames_its_ghost_row() {
+        let mut c = Column::empty();
+        c.workspaces = vec![ws("ledger", &[])];
+        let naming = crate::tui::job::Naming::new("~naming-0".into());
+        c.rows.push(c.ghost_row(0, "~naming-0", "fix the login", &[], None));
+        let (mut job, _tx) = crate::tui::job::fixture(tenx_core::progress::Plan::new("creating", Vec::new()));
+        job.then = crate::tui::job::Then::OpenNamed(0, naming.clone());
+        c.jobs.lock().push(job);
+        c.name_ghosts();
+        assert_eq!(c.rows[0].slug, "~naming-0", "not named yet");
+        naming.set("login-redirect", "Login redirect");
+        c.name_ghosts();
+        assert_eq!((c.rows[0].slug.as_str(), c.rows[0].title.as_str()), ("login-redirect", "Login redirect"));
+        assert!(c.rows[0].path.ends_with("tasks/login-redirect"));
+    }
+
+    #[test]
+    fn tail_keeps_the_end() {
+        assert_eq!(tail("short", 10), "short");
+        assert_eq!(tail("abcdefghij", 5), "…ghij");
     }
 }
