@@ -2459,7 +2459,7 @@ dependencies = [
 
 [[package]]
 name = "tenx-cli"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2485,7 +2485,7 @@ dependencies = [
 
 [[package]]
 name = "tenx-core"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "aes-gcm",
  "base64",

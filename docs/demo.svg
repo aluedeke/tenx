@@ -6939,36 +6939,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7063,36 +7065,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7187,36 +7191,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7311,36 +7317,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7435,36 +7443,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7559,36 +7569,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7683,36 +7695,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7807,36 +7821,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -7931,36 +7947,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8055,36 +8073,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8179,36 +8199,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8303,36 +8325,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8427,36 +8451,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8551,36 +8577,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8675,36 +8703,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8799,36 +8829,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -8923,36 +8955,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -9047,36 +9081,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -9171,36 +9207,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -9295,36 +9333,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#a78bfa" textLength="84.0" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ prompt: </text>
+<text x="102.4" y="113.0" fill="#e2e6ee" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▏</text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#a78bfa" textLength="75.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -9419,36 +9459,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#a78bfa" textLength="75.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
+<text x="18.4" y="167.0" fill="#a78bfa" textLength="75.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -9543,36 +9585,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#a78bfa" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ [x] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#a78bfa" textLength="75.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ [x] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>
@@ -9667,36 +9711,38 @@
 <text x="262.0" y="95.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="270.4" y="95.0" fill="#d6dbe3" textLength="999.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> The welcome sequence is wired up and the unit tests pass. I'll send the three test emails through the sandbox now.    </text>
 <text x="10.0" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="113.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
+<text x="18.4" y="113.0" fill="#787f8c" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  prompt: </text>
+<text x="102.4" y="113.0" fill="#d6dbe3" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▏                 </text>
 <text x="253.6" y="113.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="131.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="131.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="131.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="131.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Bash</text>
 <text x="312.4" y="131.0" fill="#787f8c" textLength="445.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(pnpm run email:send --template welcome --to sandbox)</text>
 <text x="10.0" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="149.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] web</text>
+<text x="18.4" y="149.0" fill="#787f8c" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  repos</text>
 <text x="253.6" y="149.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="149.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="149.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Sent 3 emails to sandbox@acme.test (welcome, day-2, day-7)                                                         </text>
 <text x="10.0" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="167.0" fill="#a78bfa" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ [ ] infra</text>
+<text x="18.4" y="167.0" fill="#e2e6ee" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] api</text>
 <text x="253.6" y="167.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="185.0" fill="#a78bfa" textLength="75.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">▸ [ ] web</text>
 <text x="253.6" y="185.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="185.0" fill="#d6dbe3" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">⏺</text>
 <text x="278.8" y="185.0" fill="#d6dbe3" textLength="33.6" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Read</text>
 <text x="312.4" y="185.0" fill="#787f8c" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(src/email/templates/welcome.html)</text>
 <text x="10.0" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="18.4" y="203.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
-<text x="94.0" y="203.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
+<text x="18.4" y="203.0" fill="#e2e6ee" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  [x] infra</text>
 <text x="253.6" y="203.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="278.8" y="203.0" fill="#787f8c" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⎿</text>
 <text x="287.2" y="203.0" fill="#d6dbe3" textLength="982.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  Read 86 lines                                                                                                      </text>
 <text x="10.0" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="253.6" y="221.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="10.0" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="18.4" y="239.0" fill="#787f8c" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  agent: </text>
+<text x="94.0" y="239.0" fill="#d6dbe3" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">‹ default  (inherit</text>
 <text x="253.6" y="239.0" fill="#343a46" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="262.0" y="239.0" fill="#a78bfa" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="278.8" y="239.0" fill="#787f8c" textLength="722.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Checking the rendered HTML against the design… (4s · ↑ 1.2k tokens · esc to interrupt)</text>

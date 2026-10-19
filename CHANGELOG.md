@@ -5,6 +5,19 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.14.0] - 2026-10-19
+
+### Added
+
+- **column:** Start tasks from a prompt; quick task on Ctrl+Shift+n
+
+### Fixed
+
+- **web:** Read Ctrl with a capital letter as Ctrl+Shift
+- **web:** Give an iPad's hardware keyboard to the page on the first tap
+
+[0.14.0]: https://github.com/aluedeke/tenx/compare/v0.13.0...v0.14.0
+
 ## [0.13.0] - 2026-10-16
 
 ### Added
