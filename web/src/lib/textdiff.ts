@@ -46,3 +46,9 @@ export function keptEdit(before: string, after: string, keep: number): Edit {
   }
   return { erase: a.length - keep, insert: after.slice(at) };
 }
+
+/** `value` with `edit` applied at its end (by code point). */
+export function applyEdit(value: string, edit: Edit): string {
+  const chars = Array.from(value);
+  return chars.slice(0, Math.max(0, chars.length - edit.erase)).join('') + edit.insert;
+}

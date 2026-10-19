@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keptEdit, textEdit } from '../src/lib/textdiff.ts';
+import { applyEdit, keptEdit, textEdit } from '../src/lib/textdiff.ts';
 
 test('dictation growing its guess only sends the new words', () => {
   assert.deepEqual(textEdit('', 'Fix'), { erase: 0, insert: 'Fix' });
@@ -30,4 +30,10 @@ test('a kept start is never erased: later text is edited after it', () => {
   assert.deepEqual(keptEdit('fix the log', 'fix a login', 7), { erase: 4, insert: ' login' });
   assert.deepEqual(keptEdit('fix the log', 'fix', 7), { erase: 4, insert: '' });
   assert.deepEqual(keptEdit('fix the', 'fix the', 7), { erase: 0, insert: '' });
+});
+
+test('applyEdit erases from the end by code point, then appends', () => {
+  assert.equal(applyEdit('fix the 🐛', { erase: 1, insert: 'bug' }), 'fix the bug');
+  assert.equal(applyEdit('ab', { erase: 5, insert: 'c' }), 'c');
+  assert.equal(applyEdit('', { erase: 0, insert: 'hi' }), 'hi');
 });

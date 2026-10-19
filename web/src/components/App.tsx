@@ -18,7 +18,7 @@ import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { EmptyClipboard, copyFromMac, sendToMac } from '@/lib/macclip';
-import { keptEdit, textEdit } from '@/lib/textdiff';
+import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
 import { Reading, type ReadingState } from '@/lib/speak';
@@ -92,6 +92,12 @@ export function App() {
   const liveKeep = useRef(0);
   /** Enter was pressed while dictating: sent once the final text is typed. */
   const enterAfterDictation = useRef(false);
+  /** Dictation into a form's prompt field instead of the terminal (a new
+   * task or quick task was open when it started), and the field's text as
+   * dictation last left it: an unfocused field may still show an older
+   * echo from the server. */
+  const liveField = useRef<HTMLTextAreaElement | null>(null);
+  const liveValue = useRef('');
   /** A task to open once the column has rows: from `?task=` (a notification
    * opened the page) or the service worker (it focused this page). */
   const wantTask = useRef<string | null>(null);
@@ -538,6 +544,20 @@ export function App() {
         if (!ev.repeat && (reading.current || state.current.mic === 'idle')) toggleSpeakerRef.current(state.current.current);
         return;
       }
+      // Dictating into a form's prompt: Enter stops and submits once the
+      // final text is in, as it sends in the terminal; other typing there
+      // stays as typed.
+      if (liveField.current && (ev.target as Element | null)?.closest?.('.webform')) {
+        const enter = ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing ? enterWhileDictating('\r', recording.current ? 'recording' : state.current.mic) : null;
+        if (enter) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          enterAfterDictation.current = true;
+          if (enter === 'stop') void toggleMicRef.current();
+          return;
+        }
+        if (recording.current && ev.target === liveField.current) liveKeep.current = Array.from(liveTyped.current).length;
+      }
       // A web form's own inputs type natively; the form handles Enter
       // (submit) and Escape (cancel) itself.
       if ((ev.target as Element | null)?.closest?.('.webform')) return;
@@ -813,7 +833,9 @@ export function App() {
 
   /** The header's microphone: a tap starts recording, the next one stops it,
    * and what was said is typed into the terminal (not sent: no Enter —
-   * unless Enter is what stopped it, onTerminalData).
+   * unless Enter is what stopped it, onTerminalData). With a new task or
+   * quick task open, it goes into the form's prompt field instead, and
+   * Enter submits the form.
    * `tenx web` transcribes it on its machine while the user talks; the text
    * so far shows above the terminal (lib/stt). */
   const toggleMic = useCallback(async () => {
@@ -823,7 +845,17 @@ export function App() {
     const typeLive = (target: string) => {
       const edit = keptEdit(liveTyped.current, target, liveKeep.current);
       if (!edit.erase && !edit.insert) return;
-      conn.current?.input('\x7f'.repeat(edit.erase) + edit.insert);
+      const field = liveField.current;
+      if (field) {
+        // The form closed meanwhile: nowhere to type.
+        if (!field.isConnected) return;
+        const value = applyEdit(document.activeElement === field ? field.value : liveValue.current, edit);
+        field.value = value;
+        liveValue.current = value;
+        send({ type: 'form', op: 'set', field: 'prompt', value });
+      } else {
+        conn.current?.input('\x7f'.repeat(edit.erase) + edit.insert);
+      }
       const kept = Array.from(liveTyped.current);
       liveTyped.current = kept.slice(0, kept.length - edit.erase).join('') + edit.insert;
     };
@@ -840,6 +872,19 @@ export function App() {
         const text = await rec.stop();
         diag(`final ${text.length} chars ${Math.round(performance.now() - started)} ms after stop`);
         submit = enterAfterDictation.current;
+        const field = liveField.current;
+        if (field) {
+          typeLive(text);
+          if (!field.isConnected) return;
+          if (!text && !submit) return notice('heard no speech');
+          if (submit) {
+            submit = false;
+            field.form?.requestSubmit();
+          } else if (!state.current.touch) {
+            field.focus({ preventScroll: true });
+          }
+          return;
+        }
         // Sent with Enter: no trailing space before it.
         typeLive(text ? (submit ? text : text + ' ') : '');
         if (!text && !submit) return notice('heard no speech');
@@ -850,6 +895,7 @@ export function App() {
         notice(`speech: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         enterAfterDictation.current = false;
+        liveField.current = null;
         setMic('idle');
         if (submit) conn.current?.input('\r');
       }
@@ -863,11 +909,19 @@ export function App() {
       // Straight from the tap: iOS asks for the microphone only inside one.
       liveTyped.current = '';
       liveKeep.current = 0;
+      const field = document.querySelector<HTMLTextAreaElement>('.webform textarea[data-field="prompt"]');
+      liveField.current = field;
+      if (field) {
+        // Said after what is there: a space between them.
+        liveValue.current = field.value && !/\s$/.test(field.value) ? field.value + ' ' : field.value;
+        field.value = liveValue.current;
+      }
       const rec = await Dictation.start((t) => typeLive(joined(t)), (message) => {
         // tenx web gave up mid-recording: the microphone off, the reason shown.
         if (recording.current !== rec) return;
         recording.current = null;
         enterAfterDictation.current = false;
+        liveField.current = null;
         rec.cancel();
         diag(`failed: ${message}`);
         notice(`speech: ${message}`);
@@ -875,6 +929,7 @@ export function App() {
       }, diag);
       recording.current = rec;
     } catch (e) {
+      liveField.current = null;
       diag(`no microphone: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
       return notice(`no microphone: ${e instanceof Error ? e.message : String(e)}`);
     }

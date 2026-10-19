@@ -1114,6 +1114,34 @@ test('speech streams to the server and is typed at the cursor as it is heard', a
   expect(term.raw()).not.toContain('\r');
 });
 
+test('with a task form open, speech goes into its prompt; ⏎ stops and submits', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the header + is in the column overlay on a phone');
+  await fakeMicrophone(page, 'de');
+  const term = terminalInput(page);
+  const sent = sentMessages(page);
+  await page.goto('/');
+  await page.getByTestId('add').click();
+  await page.getByRole('menuitem', { name: /^quick task/ }).click();
+  const prompt = page.locator('textarea[data-field=prompt]');
+  await prompt.pressSequentially('fix');
+  term.reset();
+  const mic = page.getByTestId('mic');
+  await mic.click();
+  await expect(mic).toHaveAttribute('data-state', 'recording');
+  // Live, after what was typed, and the server's form state follows.
+  await expect.poll(() => prompt.inputValue()).toMatch(/^fix heard \d+ bytes$/);
+  await expect
+    .poll(() => sent().some((m) => m.type === 'form' && m.op === 'set' && m.field === 'prompt' && /^fix heard \d+ bytes$/.test(String(m.value))))
+    .toBe(true);
+  await prompt.focus();
+  await prompt.press('Enter');
+  await expect(mic).toHaveAttribute('data-state', 'idle');
+  await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'set' && m.field === 'prompt' && m.value === 'fix heard de')).toBe(true);
+  await expect.poll(() => sent().some((m) => m.type === 'form' && m.op === 'submit')).toBe(true);
+  // Nothing went to the terminal.
+  expect(term.raw()).toBe('');
+});
+
 test('a chime says when the microphone records, and is not sent as speech', async ({ page }) => {
   await fakeMicrophone(page, 'de');
   // The tones the page plays: the fake microphone's own is 440 Hz.
