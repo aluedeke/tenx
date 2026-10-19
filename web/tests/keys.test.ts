@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enterWhileDictating, keyMessage, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
+import { enterWhileDictating, keyMessage, tapTakesKeys, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
 
 const key = (code: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ code, key: code.slice(3).toLowerCase(), ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...mods }) as KeyboardEvent;
@@ -70,4 +70,13 @@ test('Ctrl + a capital letter carries Shift, whatever the browser says (^⇧n)',
   assert.deepEqual(keyMessage(key('KeyN', { ctrlKey: true, key: 'N' })), { type: 'key', key: 'n', ctrl: true, alt: false, shift: true });
   assert.equal(keyMessage(key('KeyN', { ctrlKey: true, shiftKey: true })).shift, true);
   assert.equal(keyMessage(key('KeyN', { ctrlKey: true })).shift, false);
+});
+
+test('a tap gives a touch page the keyboard only when nothing has it', () => {
+  const body = {} as Element;
+  const field = {} as Element;
+  assert.equal(tapTakesKeys(true, body, body), true);
+  assert.equal(tapTakesKeys(true, null, body), true);
+  assert.equal(tapTakesKeys(true, field, body), false, 'the terminal or a form field keeps it');
+  assert.equal(tapTakesKeys(false, body, body), false, 'a desktop browser sends keys to the body anyway');
 });

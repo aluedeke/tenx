@@ -12,7 +12,7 @@ import { Header, type MicState, type SpeakerState } from './Header';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
-import { TERMINAL_BYTES, ctrlChar, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
+import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
 import { keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
@@ -105,6 +105,9 @@ export function App() {
   const conn = useRef<Connection | null>(null);
   /** Off-screen: focusing it is what raises a phone's keyboard for the column. */
   const kbd = useRef<HTMLInputElement>(null);
+  /** Where the keys go on a touch device when nothing else has the focus:
+   * not a text field, so focusing it never raises the on-screen keyboard. */
+  const keySink = useRef<HTMLDivElement>(null);
   const term = useRef<TerminalHandle>(null);
   const mac = useRef(false);
   const [fontPref, setFontPref] = useState<{ size?: number; weight?: number }>({});
@@ -295,12 +298,40 @@ export function App() {
   // ── Tell the server where the keyboard is; put xterm's focus with it ────
   useEffect(() => {
     send({ type: 'focus', column: columnHasKeys });
-    if (columnHasKeys) term.current?.blur();
-    else {
+    if (columnHasKeys) {
+      term.current?.blur();
+      // So the column's keys keep arriving (iPadOS ignores this outside a
+      // tap; the tap handler below catches up then).
+      if (tapTakesKeys(state.current.touch, document.activeElement, document.body)) keySink.current?.focus({ preventScroll: true });
+    } else {
       kbd.current?.blur();
       term.current?.focus();
     }
   }, [columnHasKeys, send]);
+
+  // ── A hardware keyboard on iPadOS ───────────────────────────────────────
+  // Its keys reach the page only once a tap focused something. The page
+  // opens with nothing focused (a focus() from code is ignored), so until
+  // the terminal was tapped no shortcut worked. Any tap now gives the page
+  // the keyboard: the terminal or a form field takes it as before (they
+  // run after this, and win); otherwise the sink, which raises no keyboard.
+  // ^w and the column's keys then work; typing to the agent still wants a
+  // tap on the terminal.
+  useEffect(() => {
+    const onTap = () => {
+      if (tapTakesKeys(state.current.touch, document.activeElement, document.body)) keySink.current?.focus({ preventScroll: true });
+    };
+    // `touchend`, not `pointerup`: moving the focus inside a row's pointerup
+    // re-renders it mid-swipe. `click` too: the tap's mousedown, which comes
+    // after its touchend, takes the focus back off an element that can't
+    // hold it. iPadOS lets either focus.
+    window.addEventListener('touchend', onTap, true);
+    window.addEventListener('click', onTap, true);
+    return () => {
+      window.removeEventListener('touchend', onTap, true);
+      window.removeEventListener('click', onTap, true);
+    };
+  }, []);
 
   // ── Notifications, the badge, and opening a task from one ─────────────
   // `openWanted` runs from the connection's handler, registered once: it
@@ -1093,6 +1124,7 @@ export function App() {
           )}
         </div>
       </div>
+      <div ref={keySink} className="key-sink" aria-hidden="true" tabIndex={-1} data-testid="key-sink" />
       <input
         ref={kbd}
         className="kbd-sink"

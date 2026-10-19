@@ -116,3 +116,11 @@ export function ctrlChar(ch: string): string {
   const map: Record<string, number> = { '@': 0, ' ': 0, '[': 27, '\\': 28, ']': 29, '^': 30, _: 31, '?': 127 };
   return ch in map ? String.fromCharCode(map[ch]) : ch;
 }
+
+/** Whether a tap should give the page the keyboard: a touch device (iPadOS
+ * sends a hardware keyboard's keys only to a focused element, and focus
+ * only from a tap) where nothing has the focus — not the terminal, not a
+ * form field. */
+export function tapTakesKeys(touch: boolean, active: Element | null, body: Element | null): boolean {
+  return touch && (!active || active === body);
+}

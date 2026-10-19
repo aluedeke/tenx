@@ -586,7 +586,8 @@ a:hover {
   justify-content: space-between;
 }
 
-.kbd-sink {
+.kbd-sink,
+.key-sink {
   position: fixed;
   left: -1000px;
   top: 0;

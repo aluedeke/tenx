@@ -1286,3 +1286,19 @@ test('on a phone, the key bar stays while recording even when the keyboard goes 
   await mic.tap();
   await expect.poll(term.line).toMatch(/heard default $/);
 });
+
+test('on touch, any tap gives the page the keyboard, without raising the soft one', async ({ page, isMobile }) => {
+  // iPadOS sends a hardware keyboard's keys only to a focused element.
+  test.skip(!isMobile, 'touch');
+  // An iPad's size, so the column is shown and the wordmark is there to tap.
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.goto('/');
+  await expect(page.getByTestId('toggle')).toHaveAttribute('aria-expanded', 'true');
+  // iPadOS ignores a focus() from code: the page opens with nothing focused.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.locator('.wordmark').tap();
+  await expect(page.getByTestId('key-sink')).toBeFocused();
+  // The column's keys arrive: ^⇧n opens the quick task.
+  await page.keyboard.press('Control+Shift+N');
+  await expect(page.locator('textarea[data-field=prompt]')).toBeVisible();
+});
