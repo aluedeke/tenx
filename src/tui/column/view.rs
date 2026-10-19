@@ -932,8 +932,9 @@ pub(crate) struct WebKey {
 
 impl WebKey {
     /// The crossterm event a terminal would have sent for it. A Ctrl+letter
-    /// is lowercased (browsers report `A` with Shift held), and Shift+Tab is
-    /// `BackTab`, as crossterm reports them.
+    /// is lowercased (browsers report `A` with Shift held) — a capital one
+    /// gets Shift, so `^⇧n` stays itself however it was sent — and Shift+Tab
+    /// is `BackTab`, as crossterm reports them.
     pub(crate) fn to_event(&self) -> Option<KeyEvent> {
         let code = match self.key.as_str() {
             "Enter" => KeyCode::Enter,
@@ -960,14 +961,15 @@ impl WebKey {
             }
         };
         let mut modifiers = KeyModifiers::NONE;
+        let capital = self.ctrl && self.key.chars().count() == 1 && self.key.chars().all(|c| c.is_ascii_uppercase());
+        if self.shift || capital {
+            modifiers |= KeyModifiers::SHIFT;
+        }
         if self.ctrl {
             modifiers |= KeyModifiers::CONTROL;
         }
         if self.alt {
             modifiers |= KeyModifiers::ALT;
-        }
-        if self.shift {
-            modifiers |= KeyModifiers::SHIFT;
         }
         Some(KeyEvent::new(code, modifiers))
     }
@@ -1359,6 +1361,10 @@ mod tests {
         assert_eq!(ev("A", false, true), Some(KeyCode::Char('A')));
         assert_eq!(ev("ArrowDown", false, false), Some(KeyCode::Down));
         assert_eq!(ev("Shift", false, true), None);
+        // Ctrl + a capital is Shift held, even with no Shift flag sent.
+        let m = |k: &str, shift| WebKey { key: k.into(), ctrl: true, alt: false, shift }.to_event().map(|e| e.modifiers);
+        assert_eq!(m("N", false), Some(KeyModifiers::CONTROL | KeyModifiers::SHIFT));
+        assert_eq!(m("n", false), Some(KeyModifiers::CONTROL));
     }
 
     /// The web's reject form: opened by the row's button (not `D`, which
@@ -1432,8 +1438,9 @@ mod tests {
     #[test]
     fn ctrl_shift_n_opens_the_quick_task_on_the_adhoc_workspace() {
         let mut c = with_adhoc();
-        // As the web sends it: the letter as typed, Ctrl and Shift held.
-        c.handle_web_key(&WebKey { key: "N".into(), ctrl: true, shift: true, ..Default::default() }).unwrap();
+        // As the web sends it: the letter as typed, Ctrl and Shift held —
+        // or only the capital, as some keyboards report it.
+        c.handle_web_key(&WebKey { key: "N".into(), ctrl: true, ..Default::default() }).unwrap();
         let ModeView::Create { quick, workspace, focus, .. } = c.view().mode else { panic!("quick form") };
         assert!(quick);
         assert_eq!(workspace, crate::workspace::ADHOC_NAME);

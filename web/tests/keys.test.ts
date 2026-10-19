@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enterWhileDictating, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
+import { enterWhileDictating, keyMessage, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
 
 const key = (code: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ code, key: code.slice(3).toLowerCase(), ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...mods }) as KeyboardEvent;
@@ -64,4 +64,10 @@ test('Ctrl+. is the speaker key, by the physical key', () => {
   assert.equal(isSpeakerToggle({ ...key('Period', { metaKey: true }), key: '.' }), false);
   assert.equal(isSpeakerToggle({ ...key('Period'), key: '.' }), false);
   assert.equal(isSpeakerToggle(key('KeyM', { ctrlKey: true })), false);
+});
+
+test('Ctrl + a capital letter carries Shift, whatever the browser says (^⇧n)', () => {
+  assert.deepEqual(keyMessage(key('KeyN', { ctrlKey: true, key: 'N' })), { type: 'key', key: 'n', ctrl: true, alt: false, shift: true });
+  assert.equal(keyMessage(key('KeyN', { ctrlKey: true, shiftKey: true })).shift, true);
+  assert.equal(keyMessage(key('KeyN', { ctrlKey: true })).shift, false);
 });

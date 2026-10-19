@@ -84,7 +84,10 @@ export function keyMessage(ev: KeyboardEvent): KeyMessage {
   // With Ctrl held a browser may report the letter shifted or, on some
   // layouts, a control character; the physical key is what a terminal sends.
   const key = ev.ctrlKey && baseLetter(ev) ? baseLetter(ev)! : ev.key;
-  return { type: 'key', key, ctrl: ev.ctrlKey, alt: ev.altKey, shift: ev.shiftKey };
+  // A capital letter is Shift held, even where the browser doesn't say so
+  // with Ctrl down (^⇧n, the quick task).
+  const shift = ev.shiftKey || (ev.ctrlKey && /^[A-Z]$/.test(ev.key));
+  return { type: 'key', key, ctrl: ev.ctrlKey, alt: ev.altKey, shift };
 }
 
 /** Enter (a lone `\r`: Shift+Enter is CSI u) while the microphone is on:
