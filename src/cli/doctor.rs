@@ -4,7 +4,8 @@
 //! integration is installed; then the tmux options the non-Claude TUIs need;
 //! then whether the client's terminal reports Shift+Enter; then any pane
 //! running an agent that isn't reporting to tenx's registry
-//! (usually a Codex hook awaiting its one-time `/hooks` trust).
+//! (usually a Codex hook awaiting its one-time `/hooks` trust); then repo
+//! Claude Code files a task's session can't load.
 
 use crate::agent::AgentKind;
 use anyhow::Result;
@@ -51,7 +52,43 @@ pub fn run(reset_skills: bool) -> Result<()> {
     println!("\nWorkspace skills:");
     report_skills(reset_skills)?;
 
+    println!("\nRepo Claude config:");
+    report_repo_claude_config();
+
     Ok(())
+}
+
+/// Repos whose worktrees carry Claude Code files a task's session skips
+/// ([`crate::agent::CLAUDE_FILES_NOT_LOADED_FROM_ADDED_DIRS`]): the session
+/// starts in the task directory and gets each repo with `--add-dir`, which
+/// brings its `CLAUDE.md`, skills, subagents and commands but not its settings
+/// or MCP servers. One line per workspace repo, from whichever of its tasks
+/// has the file.
+fn report_repo_claude_config() {
+    use std::collections::BTreeMap;
+    let mut any = false;
+    for ws in crate::workspace::registered_workspaces() {
+        let Ok(tasks) = ws.tasks() else { continue };
+        let mut found: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+        for task in &tasks {
+            for repo in &task.repos {
+                let files = found.entry(repo.clone()).or_default();
+                for f in crate::agent::CLAUDE_FILES_NOT_LOADED_FROM_ADDED_DIRS {
+                    if !files.contains(f) && task.path.join(repo).join(f).is_file() {
+                        files.push(f);
+                    }
+                }
+            }
+        }
+        for (repo, mut files) in found.into_iter().filter(|(_, f)| !f.is_empty()) {
+            files.sort();
+            any = true;
+            println!("  {:<16} {repo}: {} not loaded (Claude reads these only from the folder it starts in)", ws.config.name, files.join(", "));
+        }
+    }
+    if !any {
+        println!("  nothing skipped ✓ (each repo's CLAUDE.md, skills, agents and commands load via --add-dir)");
+    }
 }
 
 /// Refresh every registered workspace's installed skills (the same pass a
