@@ -5,6 +5,15 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.16.0] - 2026-10-21
+
+### Added
+
+- **agent:** Load each repo's CLAUDE.md, skills and agents in its task
+- **doctor:** List repo settings and MCP files Claude can't load
+
+[0.16.0]: https://github.com/aluedeke/tenx/compare/v0.15.0...v0.16.0
+
 ## [0.15.0] - 2026-10-19
 
 ### Added
