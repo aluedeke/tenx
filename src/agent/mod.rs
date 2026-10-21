@@ -145,6 +145,20 @@ impl AgentKind {
         out
     }
 
+    /// Environment the launch command sets, as a `VAR=value ` prefix (empty or
+    /// ending in a space). Claude reads skills, subagents and commands from its
+    /// `--add-dir` directories by itself, but their `CLAUDE.md` only with
+    /// `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` — without it a repo's
+    /// instructions never reach a session started in the task directory above
+    /// it.
+    pub fn env_prefix(self, add_dirs: &[std::path::PathBuf]) -> &'static str {
+        if self == AgentKind::Claude && !add_dirs.is_empty() {
+            "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 "
+        } else {
+            ""
+        }
+    }
+
     /// Whether the agent has a stored conversation for `task_dir`, so a resume
     /// flag will continue rather than error.
     pub fn has_conversation(self, task_dir: &Path) -> bool {
@@ -260,13 +274,21 @@ fn ensure_codex_trust(task_dir: &Path) -> std::io::Result<()> {
     std::fs::write(&path, out)
 }
 
+/// A repo's Claude Code files that `--add-dir` does not load: Claude reads
+/// settings (permissions, hooks, env) and MCP servers only from the directory
+/// it starts in, and a task's agent starts one level above its repos. Checked
+/// by `tenx doctor`, so a repo that relies on them is visible.
+pub const CLAUDE_FILES_NOT_LOADED_FROM_ADDED_DIRS: &[&str] =
+    &[".claude/settings.json", ".claude/settings.local.json", ".mcp.json"];
+
 /// Build a task's launch command, honouring `[agents.<kind>]` overrides: the
 /// workspace config wins over the global config, and either supplies an
 /// alternate binary and/or extra args around tenx's per-agent session flags.
 ///
-/// `add_dirs` are directories outside the task the agent may read without
-/// asking (`--add-dir`; see [`AgentKind::session_args`]) — what a
-/// repo-less task gets so it can look at the code it is asked about.
+/// `add_dirs` are the directories passed with `--add-dir` (see
+/// [`AgentKind::session_args`]): a task's own worktrees, so Claude loads each
+/// repo's `CLAUDE.md`, skills, subagents and commands, or for a repo-less
+/// task the code it is asked about.
 /// `prompt` is the session's first message, passed as the positional
 /// argument every agent takes for it.
 pub fn launch(
@@ -278,7 +300,8 @@ pub fn launch(
     prompt: Option<&str>,
 ) -> String {
     let (bin, args) = configured(ws, kind);
-    let mut cmd = kind.launch_command_with(&bin, slug, task_dir, &args);
+    let mut cmd = kind.env_prefix(add_dirs).to_string();
+    cmd.push_str(&kind.launch_command_with(&bin, slug, task_dir, &args));
     cmd.push_str(&kind.session_args(add_dirs, prompt));
     cmd
 }
@@ -297,7 +320,8 @@ pub fn launch_resume(
     transcript: Option<&str>,
 ) -> String {
     let (bin, args) = configured(ws, kind);
-    let mut cmd = kind.resume_command_with(&bin, slug, task_dir, session_id, transcript, &args);
+    let mut cmd = kind.env_prefix(add_dirs).to_string();
+    cmd.push_str(&kind.resume_command_with(&bin, slug, task_dir, session_id, transcript, &args));
     cmd.push_str(&kind.session_args(add_dirs, None));
     cmd
 }
@@ -382,6 +406,15 @@ mod tests {
         assert_eq!(AgentKind::Codex.session_args(&dirs, None), "");
         assert_eq!(AgentKind::Pi.session_args(&dirs, Some("hi")), " 'hi'");
         assert_eq!(AgentKind::Claude.session_args(&[], Some("  ")), "");
+    }
+
+    #[test]
+    fn claude_reads_claude_md_of_added_dirs() {
+        let dirs = vec![std::path::PathBuf::from("/ws/tasks/t/monorepo")];
+        assert_eq!(AgentKind::Claude.env_prefix(&dirs), "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 ");
+        assert_eq!(AgentKind::Claude.env_prefix(&[]), "");
+        assert_eq!(AgentKind::Codex.env_prefix(&dirs), "");
+        assert_eq!(AgentKind::Pi.env_prefix(&dirs), "");
     }
 
     #[test]

@@ -102,6 +102,10 @@ This is also why nothing on this path prints to stdout. The client owns the alte
 
 A blocked task's permission prompt can be answered from the column with `A` or `D`. Claude Code has no API for this, so the answer is a keystroke sent into the pane, guarded twice right before sending: the registry must still say the session waits on a permission prompt (not a question, which `Enter` would answer wrongly), and the captured pane must still show the dialog. The check is `tenx_core::dialog`.
 
+## Repo agent config
+
+A task's agent starts in the task directory, one level above its worktrees, and Claude Code reads project config only from its start directory and its `--add-dir` directories. So Claude is launched with `--add-dir` for each worktree and `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` (`cli::task::readable_dirs`, `AgentKind::env_prefix`), which loads each repo's `CLAUDE.md`, skills, subagents and commands. A repo's `.claude/settings.json`, `.claude/settings.local.json` and `.mcp.json` still don't load from an added directory; `tenx doctor` lists the repos that have them (`agent::CLAUDE_FILES_NOT_LOADED_FROM_ADDED_DIRS`).
+
 ## Sessions outside a repo
 
 A task's worktrees are optional. Without any, its agent runs in the task directory, in a window holding only the agent, and is launched with `--add-dir` for its workspace so it can read every task's code.

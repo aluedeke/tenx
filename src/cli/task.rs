@@ -573,16 +573,20 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
     Ok(())
 }
 
-/// Directories outside a task its agent may read without asking, recomputed
-/// at every open: none for a task with worktrees (its code is in its own
-/// directory); its workspace for a repo-less task in an ordinary workspace,
-/// so a question about the workspace can see every task's code; and every
-/// other registered workspace for an adhoc session, which is how an
+/// Directories a task's agent gets with `--add-dir`, recomputed at every
+/// open. For a task with worktrees, the worktrees themselves: they are already
+/// readable (inside the task directory), but Claude Code only loads a repo's
+/// `CLAUDE.md`, skills, subagents and commands from its start directory and
+/// its added directories, and it starts one level above the repos. (Its
+/// `settings.json` and `.mcp.json` still don't load; `tenx doctor` lists
+/// repos that have them.) For a repo-less task in an ordinary workspace, its
+/// workspace, so a question about the workspace can see every task's code;
+/// and every other registered workspace for an adhoc session, which is how an
 /// orchestrator reads the tasks it drives. A workspace registered later is
 /// readable from the next reopen.
 pub(crate) fn readable_dirs(ws: &crate::workspace::Workspace, task: &crate::workspace::Task) -> Vec<PathBuf> {
     if !task.repos.is_empty() {
-        return Vec::new();
+        return task.repos.iter().map(|r| task.path.join(r)).collect();
     }
     if !ws.is_adhoc() {
         return vec![ws.dir.clone()];

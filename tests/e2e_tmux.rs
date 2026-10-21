@@ -1276,7 +1276,11 @@ fn agent_restart_resumes_the_session_in_place() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("restarted Rs (claude)"), "{}", String::from_utf8_lossy(&out.stdout));
 
     let args = fs::read_to_string(&args_log).unwrap();
-    assert_eq!(args.lines().nth(1), Some("--name rs --resume sess-1"), "{args}");
+    // The task's worktree rides along with `--add-dir`, so Claude loads the
+    // repo's CLAUDE.md, skills, subagents and commands.
+    let line = args.lines().nth(1).unwrap_or_default();
+    assert!(line.starts_with("--name rs --resume sess-1 --add-dir="), "{args}");
+    assert!(line.ends_with("/tasks/rs/origin"), "{args}");
     assert_eq!(window(), before, "same window, same panes");
     let (new_pid, new_rec) = record(Some(&pid)).expect("the new process reported in");
     assert_ne!(new_pid, pid);
@@ -1398,5 +1402,9 @@ fn tmux_restart_rebuilds_the_session() {
         v["statusUpdatedAt"] == 1000
     });
     let args = fs::read_to_string(&args_log).unwrap();
-    assert_eq!(args.lines().nth(1), Some("--name rb --resume sess-1"), "{args}");
+    // The task's worktree rides along with `--add-dir`, so Claude loads the
+    // repo's CLAUDE.md, skills, subagents and commands.
+    let line = args.lines().nth(1).unwrap_or_default();
+    assert!(line.starts_with("--name rb --resume sess-1 --add-dir="), "{args}");
+    assert!(line.ends_with("/tasks/rb/origin"), "{args}");
 }
