@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { TerminalClipboard, imagesIn } from '@/lib/clipboard';
+import { DragFilter } from '@/lib/dragfilter';
 import { openExternal } from '@/lib/links';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
@@ -193,7 +194,12 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         // No WebGL: xterm's DOM renderer draws instead.
       }
       xterm.attachCustomKeyEventHandler((ev) => !composesDeadKey(ev) && !propsRef.current.intercept(ev));
-      xterm.onData((d) => propsRef.current.onData(d));
+      // A click that reports a drag without leaving its cell (iPad Safari)
+      // would make tmux select and copy nothing over the clipboard.
+      const drags = new DragFilter();
+      xterm.onData((d) => {
+        if (drags.pass(d)) propsRef.current.onData(d);
+      });
       xterm.onBinary((d) => propsRef.current.onData(d));
       let last = '';
       reportRef.current = () => {
