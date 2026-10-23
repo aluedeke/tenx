@@ -15,6 +15,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { PopupLayer, Slide, jobEntries, subEntries, taskEntries, useRowGestures, type Popup, type Reveal } from './RowActions';
 import type { Action, Click, ColumnView, Footer, FormOp, Item, JobItem, ModeView, SubItem, TaskItem } from '@/protocol';
+import { linkHref } from '@/lib/links';
 import { RenameForm, WebForms } from './WebForms';
 
 interface Props {
@@ -309,14 +310,15 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
     reveal,
     setReveal: (side) => ctl.setReveal(task.id, side),
     onFullSwipe: () => act('approve'),
-    onLongPress: () => sheet(),
+    onLongPress: (at) => sheet(at),
   });
 
   // Touch: the sheet, answers first; its header says what the task wants.
-  function sheet() {
+  function sheet(at?: { left: number; top: number }) {
     ctl.onClick(select);
     const waiting = task.status === 'blocked' || task.status === 'signaled';
     ctl.openPopup({
+      at,
       entries: taskEntries(task, act, true),
       head: {
         glyph: task.glyph,
@@ -377,20 +379,39 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
   );
   if (task.agent) pieces.push(<span key="agent" style={{ color: 'var(--info)' }}>{task.agent}</span>);
   if (task.age) pieces.push(<span key="age">{task.age}</span>);
-  task.prs.forEach((pr, i) =>
+  // PRs, what was made with Claude, ports: real links, opened by the browser
+  // like any other; in `f` mode each carries its letter.
+  task.chips.forEach((chip, i) => {
+    const hint = chip.hint && <span className="lhint">{chip.hint}</span>;
     pieces.push(
-      <span key={`pr${i}`} style={{ color: pr.fg }}>
-        {pr.label}
-      </span>,
-    ),
-  );
-  if (task.ports.length) pieces.push(<span key="ports">{task.ports.map((p) => `:${p}`).join(' ')}</span>);
+      chip.link ? (
+        <a
+          key={`l${i}`}
+          className="lchip"
+          href={linkHref(chip.link, location.hostname)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`${chip.link.label} — ${chip.link.url}`}
+          style={{ color: chip.fg }}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          {hint}
+          {chip.label}
+        </a>
+      ) : (
+        <span key={`l${i}`} style={{ color: chip.fg }}>
+          {chip.label}
+        </span>
+      ),
+    );
+  });
 
   const sel = task.selected && ctl.focused;
   // The delete prompt sits on the row it deletes (the selection).
   const confirming = ctl.confirming && task.selected;
   const menu = (at: { left: number; top: number }) =>
-    ctl.touch ? sheet() : ctl.openPopup({ at, entries: taskEntries(task, act, false) });
+    ctl.touch ? sheet(at) : ctl.openPopup({ at, entries: taskEntries(task, act, false) });
   const busy = ctl.busy === task.id;
   const cls = ['row', 'task', task.current && 'cur', (sel || confirming) && 'sel', confirming && 'conf', busy && 'busy']
     .filter(Boolean)
@@ -503,9 +524,9 @@ function SubRow({ sub, ctl }: { sub: SubItem; ctl: RowCtl }) {
     reveal: null,
     setReveal: () => {},
     onFullSwipe: () => {},
-    onLongPress: () => {
+    onLongPress: (at) => {
       ctl.onClick(select);
-      ctl.openPopup({ entries: subEntries(sub, act), head: { glyph: sub.glyph, color: sub.glyph_color, title: sub.label, detail: sub.extras.join(' · ') } });
+      ctl.openPopup({ at, entries: subEntries(sub, act), head: { glyph: sub.glyph, color: sub.glyph_color, title: sub.label, detail: sub.extras.join(' · ') } });
     },
   });
   return (

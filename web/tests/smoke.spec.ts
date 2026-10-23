@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { devices, expect, test } from '@playwright/test';
 
 test('the column renders the view and the terminal mounts', async ({ page, isMobile }) => {
   await page.goto('/');
@@ -1329,4 +1329,59 @@ test('on touch, any tap gives the page the keyboard, without raising the soft on
   // The column's keys arrive: ^⇧n opens the quick task.
   await page.keyboard.press('Control+Shift+N');
   await expect(page.locator('textarea[data-field=prompt]')).toBeVisible();
+});
+
+test("a task's chips are links and the header lists the current task's", async ({ page, isMobile }) => {
+  await page.goto('/');
+  if (isMobile) await page.getByTestId('toggle').tap();
+  const chips = page.getByTestId('task').filter({ hasText: 'web version' }).locator('a.lchip');
+  await expect(chips).toHaveCount(2);
+  await expect(chips.first()).toHaveAttribute('href', 'https://claude.ai/code/artifact/0f3a9c');
+  // A port is reached through the host the page came from.
+  await expect(chips.nth(1)).toHaveAttribute('href', 'http://127.0.0.1:7070');
+
+  // The current task (Fix login timeout) has its PR.
+  const button = page.getByTestId('links');
+  await (isMobile ? button.tap() : button.click());
+  const menu = page.getByTestId(isMobile ? 'links-sheet' : 'links-menu');
+  await expect(menu).toContainText('#412');
+  await expect(menu.locator('a.lopen')).toHaveAttribute('href', 'https://github.com/acme/repo/pull/412');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+});
+
+test.describe('on an iPad', () => {
+  // The device without its browser choice, which a group can't change.
+  const { defaultBrowserType: _, ...ipad } = devices['iPad Pro 11'];
+  test.use(ipad);
+  test('the links open as a menu under the header, not a sheet across the screen', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'one run is enough');
+    await page.goto('/');
+    await page.getByTestId('links').tap();
+    const menu = page.getByTestId('links-menu');
+    await expect(menu).toContainText('#412');
+    await expect(page.getByTestId('links-sheet')).toHaveCount(0);
+    const box = (await menu.boundingBox())!;
+    expect(box.width).toBeLessThanOrEqual(360);
+    const row = (await menu.locator('a.lopen').first().boundingBox())!;
+    expect(row.height).toBeGreaterThanOrEqual(44);
+  });
+
+  test("a row's long-press opens a card beside the finger, not a sheet across the screen", async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'one run is enough');
+    await page.goto('/');
+    const row = page.locator('[data-id="web/better-loading"]');
+    const b = (await row.boundingBox())!;
+    const at = { pointerType: 'touch', pointerId: 9, isPrimary: true, bubbles: true, clientX: b.x + 40, clientY: b.y + 10 };
+    await row.dispatchEvent('pointerdown', at);
+    const sheet = page.getByTestId('sheet');
+    await expect(sheet).toBeVisible({ timeout: 2000 });
+    await row.dispatchEvent('pointerup', at);
+    await expect(sheet.getByRole('menuitem', { name: 'go to task' })).toBeVisible();
+    const box = (await sheet.boundingBox())!;
+    expect(box.width).toBeLessThanOrEqual(320);
+    // Just below the finger, which is in the upper half.
+    expect(box.y).toBeGreaterThan(b.y + 10);
+    expect(box.y).toBeLessThan(b.y + 40);
+  });
 });

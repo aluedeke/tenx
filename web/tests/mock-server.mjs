@@ -36,6 +36,7 @@ const TASKS = [
   { section: ['WAITING FOR INPUT', C.warn], id: 'web/better-loading', ws: 'web', ws_color: '#ce86a8', title: 'Better loading indicators', glyph: '✔', glyph_color: C.ok, status: 'done', age: '12m', prs: [{ label: '#398 ✓', fg: C.ok }] },
   {
     section: ['WORKING', C.info], id: 'tenx/web-version', ws: 'tenx', ws_color: '#78b4ce', title: 'web version', glyph: '◐', glyph_color: C.info, status: 'working', ports: [7070],
+    made: [{ url: 'https://claude.ai/code/artifact/0f3a9c', label: 'Link picker proposal', kind: 'artifact', icon: '◇', color: C.acc }],
     subs: [
       { id: 'a1', glyph: '◐', glyph_color: C.info, label: 'Map column keymap', extras: ['bg', 'Explore'], finished: false },
       { id: 'a2', glyph: '✔', glyph_color: C.ok, label: 'Map tenx architecture', extras: ['Explore'], finished: true },
@@ -46,6 +47,19 @@ const TASKS = [
   { section: ['INACTIVE', C.mut], id: 'notes/competitor-analysis', ws: 'notes', ws_color: '#ce86a8', title: 'Competitor analysis', glyph: '·', glyph_color: C.idle, status: 'idle', closed: true },
   { section: ['INACTIVE', C.mut], id: 'tenx/zero-permission', ws: 'tenx', ws_color: '#78b4ce', title: 'Zero permission', glyph: '·', glyph_color: C.idle, status: 'idle', closed: true },
 ];
+
+// A task's chips and links, as view.rs builds them from its PRs, what was
+// made with Claude, and its ports.
+const prLink = (pr) => ({ url: `https://github.com/acme/repo/pull/${pr.label.slice(1).split(' ')[0]}`, label: pr.label, kind: 'PR', icon: '⇡', color: C.ok });
+const portLink = (p) => ({ url: `http://localhost:${p}`, label: `localhost:${p}`, kind: 'port', icon: '⌁', color: C.info });
+function linksOf(t) {
+  const chips = [
+    ...(t.prs ?? []).map((pr) => ({ label: pr.label, fg: pr.fg, link: prLink(pr), hint: null })),
+    ...(t.made?.length ? [{ label: '◇', fg: C.acc, link: t.made[0], hint: null }] : []),
+    ...(t.ports ?? []).map((p) => ({ label: `:${p}`, fg: C.mut, link: portLink(p), hint: null })),
+  ];
+  return { chips, links: [...(t.prs ?? []).map(prLink), ...(t.made ?? []), ...(t.ports ?? []).map(portLink)] };
+}
 
 const HELP = [
   { section: 'anywhere', keys: [['^w', 'into the column / hide it'], ['?', 'this help (list mode)'], [':', 'command line']] },
@@ -74,7 +88,7 @@ function view(st) {
       kind: 'task', id: t.id, ws: t.ws, ws_color: t.ws_color, slug: t.id.split('/')[1], title: t.title,
       title_color: current ? C.cur : t.closed ? C.mut : C.text, glyph: t.glyph, glyph_color: t.glyph_color, status: t.status,
       selected, current, closed: !!t.closed, pending: false, reason: t.reason ?? null, agent: t.agent ?? null, age: t.age ?? null,
-      prs: t.prs ?? [], ports: t.ports ?? [],
+      ...linksOf(t),
       answerable: t.status === 'blocked', locked: t.glyph === '🔒' && !st.rejected?.includes(t.id),
       wants: t.glyph === '🔒' && !st.rejected?.includes(t.id) ? WANTS : [],
     });

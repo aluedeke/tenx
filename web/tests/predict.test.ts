@@ -9,7 +9,7 @@ const task = (id: string, extra: Record<string, unknown> = {}): Item =>
   ({
     kind: 'task', id, ws: 'w', ws_color: '#fff', slug: id, title: id, title_color: '#fff', glyph: '·', glyph_color: '#fff',
     status: 'idle', selected: false, current: false, closed: false, pending: false, reason: null, answerable: false,
-    locked: false, agent: null, age: null, prs: [], ports: [], ...extra,
+    locked: false, agent: null, age: null, chips: [], links: [], ...extra,
   }) as unknown as Item;
 const sub = (taskId: string, id: string): Item =>
   ({ kind: 'sub', task: taskId, id, glyph: '◐', glyph_color: '#fff', label: id, extras: [], finished: false, selected: false }) as unknown as Item;
