@@ -82,8 +82,28 @@ export interface TaskItem {
   wants: Wanted[];
   agent: string | null;
   age: string | null;
-  prs: Chip[];
-  ports: number[];
+  /** The PR, ◇ and port chips, in order (column/links.rs `link_chips`). */
+  chips: LinkChip[];
+  /** Everything it links to, in display order: what `L` lists. */
+  links: LinkView[];
+}
+
+/** One link (tenx_core::links): what it opens, its name, its kind. */
+export interface LinkView {
+  url: string;
+  label: string;
+  kind: 'PR' | 'artifact' | 'design' | 'linear' | 'port' | 'web';
+  icon: string;
+  color: string;
+}
+
+/** A chip about a link. `link` is null for a wait on a PR the lookup hasn't
+ * found; `hint` is its letter in `f` mode. */
+export interface LinkChip {
+  label: string;
+  fg: string;
+  link: LinkView | null;
+  hint: string | null;
 }
 
 export interface SubItem {
@@ -179,7 +199,11 @@ export type ModeView =
   | { kind: 'rename'; buffer: string }
   /** Rejecting every pending secrets request of a task (`D`, `:reject`). */
   | { kind: 'reject'; task: string; id: string; names: Wanted[]; note: string }
-  | { kind: 'help'; scroll: number };
+  | { kind: 'help'; scroll: number }
+  /** `L`: a task's links, `selected` under the cursor. */
+  | { kind: 'links'; task: string; title: string; links: LinkView[]; selected: number }
+  /** `f`: the chips carry their letters (`LinkChip.hint`). */
+  | { kind: 'hints' };
 
 export interface HelpSection {
   section: string;
@@ -206,6 +230,8 @@ export type ServerMessage =
   | ({ type: 'patch'; ack: number } & ViewPatch)
   | { type: 'layout'; column_cols: number; narrow: boolean }
   | { type: 'request'; request: 'focus_terminal' | 'focus_column' | 'hide' | 'quit' }
+  /** A link the column picked that the page didn't handle itself. */
+  | { type: 'link'; action: 'open' | 'copy'; url: string; label: string }
   | { type: 'error'; message: string };
 
 export interface KeyMessage {
@@ -238,6 +264,7 @@ export type Action =
   | 'transcript'
   | 'next'
   | 'new'
+  | 'links'
   /** The quick task: a prompt, then a session in adhoc (^⇧n). */
   | 'quick'
   | 'add_repo'

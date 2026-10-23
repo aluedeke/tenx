@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Column } from './Column';
 import { Header, type MicState, type SpeakerState } from './Header';
+import { LinksMenu } from './LinksMenu';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
@@ -25,7 +26,8 @@ import { Reading, type ReadingState } from '@/lib/speak';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
-import type { Action, ClientMessage, Click, ColumnView, FormOp, Item, KeyMessage, ServerMessage } from '@/protocol';
+import { copyText, linkHref, linkKey, openExternal } from '@/lib/links';
+import type { Action, ClientMessage, Click, ColumnView, FormOp, Item, KeyMessage, LinkView, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
 
@@ -78,6 +80,11 @@ export function App() {
   const [typing, setTyping] = useState(false);
   /** A paste on its way up, or why it failed. */
   const [pasting, setPasting] = useState<string | null>(null);
+  /** The current task's links, opened by the header's ↗ (not the column's
+   * `L`, which is the server's mode). */
+  const [ownLinks, setOwnLinks] = useState<{ title: string; links: LinkView[] } | null>(null);
+  /** What a copied link says, for a moment. */
+  const [linkNote, setLinkNote] = useState<string | null>(null);
   /** The notice is a button that brings the keyboard back (after 📎). */
   const [pastingTap, setPastingTap] = useState(false);
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
@@ -286,6 +293,12 @@ export function App() {
               setVisible(false);
               setFocus('terminal');
             }
+            break;
+          case 'link':
+            // A link the column picked that the key handler didn't take
+            // (`linkKey`): the browser may well block a window this late.
+            if (msg.action === 'open') openExternal(msg.url);
+            else void copyText(msg.url).then((ok) => setLinkNote(ok ? `copied ${msg.label}` : 'the browser refused the clipboard'));
             break;
           case 'error':
             console.warn('tenx web:', msg.message);
@@ -583,6 +596,17 @@ export function App() {
         sendKey({ key: 'n', ctrl: true, alt: false, shift: ev.shiftKey });
         return;
       }
+      // `L` and `f`: a key that names a link opens it here and now — a
+      // browser opens a window only inside the key press — and the column
+      // goes back to its list.
+      const picked = lastView.current && linkKey(lastView.current, ev.key, ev.ctrlKey || ev.altKey);
+      if (picked) {
+        const href = linkHref(picked.link, location.hostname);
+        if (picked.do === 'open') openExternal(href);
+        else void copyText(href).then((ok) => setLinkNote(ok ? `copied ${picked.link.label}` : 'the browser refused the clipboard'));
+        sendKey({ key: 'Escape', ctrl: false, alt: false, shift: false });
+        return;
+      }
       const msg = keyMessage(ev);
       if (ctrlSticky) {
         msg.ctrl = true;
@@ -593,6 +617,12 @@ export function App() {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [cycle, send, sendKey]);
+
+  useEffect(() => {
+    if (!linkNote) return;
+    const t = setTimeout(() => setLinkNote(null), 2500);
+    return () => clearTimeout(t);
+  }, [linkNote]);
 
   const onTerminalData = useCallback((data: string) => {
     if (state.current.ctrlSticky && data.length === 1) {
@@ -1101,7 +1131,23 @@ export function App() {
         speaker={speaker}
         onSpeak={toggleSpeaker}
         onSpeakStop={stopSpeaker}
+        onLinks={(task) => setOwnLinks({ title: task.title, links: task.links })}
       />
+      {shown?.mode.kind === 'links' ? (
+        <LinksMenu
+          own={false}
+          title={shown.mode.title}
+          links={shown.mode.links}
+          selected={shown.mode.selected}
+          touch={touch}
+          onClose={() => sendKey({ key: 'Escape', ctrl: false, alt: false, shift: false })}
+          onDone={setLinkNote}
+        />
+      ) : (
+        ownLinks && (
+          <LinksMenu own title={ownLinks.title} links={ownLinks.links} touch={touch} onClose={() => setOwnLinks(null)} onDone={setLinkNote} />
+        )
+      )}
       <div className="main">
         {visible && (
           <div className={overlay ? 'column-wrap overlay' : 'column-wrap'} style={columnStyle}>
@@ -1156,6 +1202,11 @@ export function App() {
               <button type="button" className="closed-open">
                 <span className="accent bold">⏎</span> open it here
               </button>
+            </div>
+          )}
+          {linkNote && (
+            <div className="toast" role="status" data-testid="link-note">
+              {linkNote}
             </div>
           )}
           {mic === 'transcribing' && (

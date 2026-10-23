@@ -30,6 +30,7 @@ export function taskEntries(task: TaskItem, act: (a: Action) => void, answers: b
   }
   out.push({ label: 'go to task', key: '⏎', tone: 'pri', wide: true, run: () => act('open') });
   if (task.locked) out.push({ label: 'unlock secrets', key: 'u', wide: true, run: () => act('unlock') });
+  if (task.links.length) out.push({ label: 'links', key: 'L', run: () => act('links') });
   out.push({ label: 'rename', key: 'r', run: () => act('rename') });
   out.push({ label: 'edit repos', key: 'e', run: () => act('edit_repos') });
   if (!task.closed) out.push({ label: 'close window', key: 'x', run: () => act('close') });
@@ -54,13 +55,18 @@ export function jobEntries(job: JobItem, act: (a: Action) => void): Entry[] {
 
 export interface Popup {
   entries: Entry[];
-  /** Menu: where its top-left goes (viewport px). */
+  /** Menu: where its top-left goes (viewport px). A sheet on a wide screen
+   * (an iPad): the finger it opens beside. */
   at?: { left: number; top: number };
   /** Sheet: its header. */
   head?: { glyph: string; color: string; title: string; detail: string };
 }
 
 const MENU_W = 218;
+/** A sheet's width as a card beside the finger, on a screen at least
+ * `CARD_FROM` wide: across a whole iPad it is far from the hand. */
+const CARD_W = 320;
+const CARD_FROM = 600;
 
 /** Open while shown; closes on an outside press, on Escape, and after an
  * entry runs. `data-popup` tells the page to leave keys alone meanwhile. */
@@ -82,12 +88,22 @@ export function PopupLayer({ popup, onClose }: { popup: Popup | null; onClose():
     e.run();
   };
   if (popup.head) {
-    const { head } = popup;
+    const { head, at } = popup;
+    // Beside the finger: below it in the upper half of the screen, above it
+    // in the lower half, so it never runs off the bottom.
+    const card = at && window.innerWidth >= CARD_FROM;
+    const place = card
+      ? {
+          left: Math.max(8, Math.min(at.left - CARD_W / 2, window.innerWidth - CARD_W - 8)),
+          width: CARD_W,
+          ...(at.top < window.innerHeight / 2 ? { top: at.top + 12, bottom: 'auto' } : { bottom: window.innerHeight - at.top + 12 }),
+        }
+      : undefined;
     return (
       <div className="popup-layer" data-popup="sheet">
-        <div className="dim" onPointerDown={onClose} />
-        <div className="sheet" data-testid="sheet" role="menu">
-          <div className="handle" />
+        <div className={card ? 'backdrop' : 'dim'} onPointerDown={onClose} />
+        <div className={card ? 'sheet card' : 'sheet'} data-testid="sheet" role="menu" style={place}>
+          {!card && <div className="handle" />}
           <div className="shead">
             <span className="bright bold">
               <span style={{ color: head.color }}>{head.glyph}</span> {head.title}
@@ -154,7 +170,8 @@ interface GestureOpts {
   reveal: Reveal;
   setReveal(r: Reveal): void;
   onFullSwipe(): void;
-  onLongPress(): void;
+  /** `at`: where the finger is (viewport px). */
+  onLongPress(at: { left: number; top: number }): void;
 }
 
 /** Touch-only: horizontal drags slide the row (vertical ones stay the
@@ -182,7 +199,7 @@ export function useRowGestures(o: GestureOpts) {
         if (!g.current || g.current.sliding) return;
         swallow.current = true;
         g.current.timer = null;
-        opts.current.onLongPress();
+        if (g.current) opts.current.onLongPress({ left: g.current.x, top: g.current.y });
       }, LONG_PRESS_MS);
       g.current = { x: e.clientX, y: e.clientY, base, sliding: false, timer };
     },

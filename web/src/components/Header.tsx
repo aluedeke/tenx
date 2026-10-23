@@ -38,6 +38,8 @@ interface Props {
   onSpeak(taskId: string): void;
   /** Stop reading. */
   onSpeakStop(): void;
+  /** The current task's links (↗). */
+  onLinks(task: TaskItem): void;
 }
 
 /** The speaker button: off, waiting for the audio, reading aloud, or
@@ -193,6 +195,19 @@ export function Header(props: Props) {
               <span className="nlabel">next</span>
             </button>
           )}
+          {current && current.links.length > 0 && (
+            <button
+              type="button"
+              className="hbtn hlinks"
+              data-testid="links"
+              title="this task's links: PRs, artifacts, pages (L in the column)"
+              aria-label={`${current.links.length} links of this task`}
+              onClick={() => props.onLinks(current)}
+            >
+              <Icon d={LINK_ARROW} />
+              <span className="lcount">{current.links.length}</span>
+            </button>
+          )}
           <button
             type="button"
             className={`hbtn speaker ${props.speaker}`}
@@ -307,6 +322,14 @@ export function Header(props: Props) {
                 <span className="hmlabel">send a test notification</span>
               </button>
             )}
+            {current && current.links.length > 0 && (
+              // On the narrowest phones ↗ has no room in the header: here.
+              <button type="button" role="menuitem" className="hmi hmlinks" data-testid="links-item" onClick={run(() => props.onLinks(current))}>
+                <Icon d={LINK_ARROW} />
+                <span className="hmlabel">links of this task</span>
+                <span className="k">{current.links.length}</span>
+              </button>
+            )}
             <button type="button" role="menuitem" className="hmi" data-testid="keys" onClick={run(() => onAction('help'))}>
               <Icon d={['M4.5 6h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z', 'M6 10h.01M10 10h.01M14 10h.01M18 10h.01', 'M8 14h8']} />
               <span className="hmlabel">keys</span>
@@ -364,6 +387,9 @@ function PauseIcon() {
 const BELL = ['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0 0 0 3.4 0'];
 
 /** A line icon in the header's one style; `dots` draws ⋯. */
+/** ↗: a task's links. */
+const LINK_ARROW = ['M7 17 17 7', 'M8 7h9v9'];
+
 function Icon({ d, dots }: { d: string[]; dots?: boolean }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -79,6 +79,10 @@ Two frame kinds:
 // when an unlock popup has closed and the column should come back.
 { "type": "request", "request": "focus_terminal" | "focus_column" | "hide" | "quit" }
 
+// A link the column picked (`L`, `f`) that the page didn't open itself — a
+// fallback: the page opens links inside the key press (see below).
+{ "type": "link", "action": "open" | "copy", "url": "https://…", "label": "…" }
+
 { "type": "error", "message": "…" }
 ```
 
@@ -160,6 +164,11 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
   column is an overlay over the terminal.
 - Everything else goes to whichever side has focus: the column as `key`
   messages, the terminal as binary input.
+- In the column's `links` mode (`L`) a digit, Enter, `o`, `l` or `y`, and in
+  its `hints` mode (`f`) a letter, name a link: the page opens it (or copies
+  it, `y` / a capital) itself, inside the key press — a browser opens a window
+  only then — and sends `Escape` instead of the key (`lib/links.ts`
+  `linkKey`). Other keys (moving, Escape) go to the server as usual.
 - `request` messages from the server apply `focus_terminal` (and hide the
   column when narrow), `focus_column` (show it and focus it), `hide`, and
   `quit` (= hide; the tab stays open). The server doesn't move the column's
@@ -173,10 +182,15 @@ Everything is also reachable by pointer. A header runs across the page: `☰`
 overlay), then the current task (`view.current` — glyph, title, workspace,
 its reason chip; tapping it opens the column on that task with a `task`
 click), then `● next`, `+`, the notifications bell, the connection and `?`.
+A task's `chips` that carry a `link` are anchors (a port's
+`localhost` is replaced by the page's host), and `links` is everything the
+task links to: the header's ↗ (the current task's; inside ⋯ on the narrowest
+phones) and the column's `links` mode show it as a menu, or a bottom sheet on
+touch, each link with a copy button.
 In the column, a click selects a row, a double click opens it. A row's controls send a
 `task` click (select it) then an `action`: allow / deny on a blocked row's
 chip (`answerable`), and the row's menu — `⋯`, a right-click, or on touch a
-long-press (a bottom sheet) — for open, unlock (`locked`), rename, edit
+long-press (a bottom sheet) — for open, unlock (`locked`), links (`links`), rename, edit
 repos, close and delete; on touch a swipe uncovers allow / deny (left) or
 delete (right). The header's `+`, `● next` (shown when a task other than the
 current one needs you) and `?` send a menu of `quick` / `new` (on Repos of
