@@ -14,7 +14,7 @@ import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
-import { keyBarShown, layout } from '@/lib/viewport';
+import { inIosApp, keepsShortcutRoom, keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
@@ -75,9 +75,6 @@ export function App() {
   /** An iPad: room for the key bar all the time, and often a hardware
    * keyboard (or the floating one), which never shows as a keyboard here. */
   const [ipad, setIpad] = useState(false);
-  /** A text field has the focus: the terminal's, the column's hidden input,
-   * a form's. */
-  const [typing, setTyping] = useState(false);
   /** A paste on its way up, or why it failed. */
   const [pasting, setPasting] = useState<string | null>(null);
   /** The current task's links, opened by the header's ↗ (not the column's
@@ -435,6 +432,9 @@ export function App() {
     // keyboard. Measured rather than taken from innerHeight, which Android
     // shrinks along with the viewport (`interactive-widget`) and iOS doesn't.
     let full = { width: vv.width, height: Math.max(vv.height, window.innerHeight) };
+    // The room iPadOS's shortcut bar took at this width, kept while it's gone.
+    let reserve = 0;
+    const coarse = window.matchMedia('(pointer: coarse)');
     // An on-screen keyboard needs a text field with the focus, and never
     // covers most of the screen. Anything else the viewport reports — iPadOS
     // hands out a sliver while switching apps, for the switcher's snapshot,
@@ -445,14 +445,18 @@ export function App() {
       return !!a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable);
     };
     const apply = () => {
-      if (Math.abs(vv.width - full.width) > 1) full = { width: vv.width, height: Math.max(vv.height, window.innerHeight) };
-      else full.height = Math.max(full.height, vv.height, window.innerHeight);
-      const page = layout({ editing: editing(), height: vv.height, top: vv.offsetTop, innerHeight: window.innerHeight, fullHeight: full.height });
+      if (Math.abs(vv.width - full.width) > 1) {
+        full = { width: vv.width, height: Math.max(vv.height, window.innerHeight) };
+        reserve = 0;
+      } else full.height = Math.max(full.height, vv.height, window.innerHeight);
+      const keep = keepsShortcutRoom({ touch: coarse.matches, ipad: isIPad(navigator.platform, navigator.maxTouchPoints), app: push.standalone() || inIosApp(window as Parameters<typeof inIosApp>[0]) });
+      const page = layout({ editing: editing(), height: vv.height, top: vv.offsetTop, innerHeight: window.innerHeight, fullHeight: full.height, keep, reserve });
+      reserve = page.reserve;
       const root = document.documentElement.style;
       root.setProperty('--vv-h', `${page.height}px`);
       root.setProperty('--vv-top', `${page.top}px`);
+      root.setProperty('--kb-gap', `${page.gap}px`);
       setKbOpen(page.keyboard);
-      setTyping(editing());
     };
     // Back in front (or rotated, or resized in Split View): measure again,
     // and again shortly after — iOS settles the viewport over a few frames
@@ -1267,10 +1271,12 @@ export function App() {
           typing, and a phone has no room for them otherwise. Always on an
           iPad: it has the room, and with a hardware keyboard there is no
           on-screen one to wait for — yet the 📎, the paste key and Esc
-          (missing on some iPad keyboards) are only here.
+          (missing on some iPad keyboards) are only here. Not only while
+          the terminal has the focus: the bar coming and going with every
+          tap resized the terminal each time.
           And while the microphone is on: its stop button is here, even if
           iOS took the keyboard down (asking for the microphone does). */}
-      {keyBarShown({ touch, ipad, typing, keyboard: kbOpen, recording: mic !== 'idle' }) && (
+      {keyBarShown({ touch, ipad, keyboard: kbOpen, recording: mic !== 'idle' }) && (
         <KeyBar
           column={columnHasKeys}
           ctrlSticky={ctrlSticky}

@@ -4,12 +4,13 @@ import { useEffect, useRef } from 'react';
 import { MicIcon, formatSeconds, type MicState } from './Header';
 
 // The keys a phone keyboard lacks, above it: Esc, a sticky Ctrl for the next
-// key, Tab, arrows, Enter. They go wherever the keyboard is — the column as
+// key, Tab, arrows, Enter, `?` (the column's help). They go wherever the keyboard is — the column as
 // key messages, the terminal as bytes. Then the clipboard: this device's to
 // the Mac's (→⌘), the Mac's to this device's (←⌘), paste into the terminal.
 
 interface Props {
-  /** The column has the keyboard (adds `?`, drops the sticky Ctrl). */
+  /** The column has the keyboard: ctrl, paste, the microphone and 📎 are
+   * off (still there, so no key moves). */
   column: boolean;
   ctrlSticky: boolean;
   onCtrl(): void;
@@ -68,92 +69,121 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste
     };
   }, []);
   // Pointer-down, not click, and no default: a tap mustn't take focus from
-  // the terminal (and with it the on-screen keyboard).
-  const press = (fn: () => void) => (ev: React.PointerEvent) => {
+  // the terminal (and with it the on-screen keyboard). A key that is off
+  // does nothing — the touch is still cancelled, so the focus stays.
+  const press = (fn: () => void, on = true) => (ev: React.PointerEvent) => {
     ev.preventDefault();
+    if (!on) return;
+    flash(ev.currentTarget);
     fn();
     onRefocus();
   };
+  // Every key, always, in the same place: which keys work changes with the
+  // focus, the bar doesn't.
   return (
     <div ref={bar} className="keybar" data-testid="keybar">
       <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('Escape', false))}>
         esc
       </button>
-      {!column && (
-        <button type="button" className={ctrlSticky ? 'key on' : 'key'} data-keep-focus onPointerDown={press(onCtrl)}>
-          ctrl
-        </button>
-      )}
+      <button
+        type="button"
+        className={ctrlSticky && !column ? 'key on' : 'key'}
+        data-keep-focus
+        aria-disabled={column}
+        aria-pressed={ctrlSticky && !column}
+        onPointerDown={press(onCtrl, !column)}
+      >
+        ctrl
+      </button>
       {KEYS.slice(1).map((k) => (
         <button key={k.key} type="button" className="key" data-keep-focus onPointerDown={press(() => onKey(k.key, false))}>
           {k.label}
         </button>
       ))}
-      {column && (
-        <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('?', true))}>
-          ?
-        </button>
-      )}
+      <button type="button" className="key" data-keep-focus onPointerDown={press(() => onKey('?', true))}>
+        ?
+      </button>
       <ClipboardKey label="copy to the Mac" testId="to-mac" onDiag={onDiag} onRefocus={onRefocus} onTap={onToMac}>
         →⌘
       </ClipboardKey>
       <ClipboardKey label="copy from the Mac" testId="from-mac" onDiag={onDiag} onRefocus={onRefocus} onTap={onFromMac}>
         ←⌘
       </ClipboardKey>
-      {!column && (
-        <ClipboardKey label="paste" testId="paste" onDiag={onDiag} onRefocus={onRefocus} onTap={onPaste}>
-          <PasteIcon />
-        </ClipboardKey>
-      )}
-      {!column && (
-        // Keeps the keyboard like the keys around it (data-keep-focus: the
-        // touch is cancelled, so iOS moves no focus), so the same button
-        // stops the recording. A finger acts on lifting — a completed tap,
-        // which iOS wants before it opens the microphone.
-        <button
-          type="button"
-          className={`key mic ${mic}`}
-          data-keep-focus
-          aria-label={mic === 'recording' ? 'stop and type what you said' : 'speak instead of typing'}
-          aria-pressed={mic === 'recording'}
-          data-testid="kb-mic"
-          disabled={mic === 'transcribing'}
-          onPointerDown={(e) => e.preventDefault()}
-          onPointerUp={(e) => {
-            if (e.pointerType === 'mouse') return;
-            micByTouch.current = true;
-            onRefocus();
-            onMic();
-          }}
-          onClick={() => {
-            if (micByTouch.current) {
-              micByTouch.current = false;
-              return;
-            }
-            onMic();
-          }}
-        >
-          {mic === 'recording' ? (
-            <>
-              <span className="micdot" />
-              {formatSeconds(micSeconds)}
-            </>
-          ) : mic === 'transcribing' ? (
-            '…'
-          ) : (
-            <MicIcon />
-          )}
-        </button>
-      )}
-      {!column && (
-        // A label, not a pointer-down button: the file picker only opens from
-        // a real click on its input.
-        <label className="key" aria-label="attach an image" data-testid="attach" htmlFor={attachInput}>
-          📎
-        </label>
-      )}
+      <ClipboardKey label="paste" testId="paste" off={column} onDiag={onDiag} onRefocus={onRefocus} onTap={onPaste}>
+        <PasteIcon />
+      </ClipboardKey>
+      {/* Keeps the keyboard like the keys around it (data-keep-focus: the
+          touch is cancelled, so iOS moves no focus), so the same button
+          stops the recording. A finger acts on lifting — a completed tap,
+          which iOS wants before it opens the microphone. Off in the column,
+          unless a recording is running: its stop button is here. */}
+      {(() => {
+        const off = mic === 'transcribing' || (column && mic === 'idle');
+        return (
+          <button
+            type="button"
+            className={`key mic ${mic}`}
+            data-keep-focus
+            aria-label={mic === 'recording' ? 'stop and type what you said' : 'speak instead of typing'}
+            aria-pressed={mic === 'recording'}
+            aria-disabled={off}
+            data-testid="kb-mic"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              if (!off) flash(e.currentTarget);
+            }}
+            onPointerUp={(e) => {
+              if (e.pointerType === 'mouse' || off) return;
+              micByTouch.current = true;
+              onRefocus();
+              onMic();
+            }}
+            onClick={() => {
+              if (micByTouch.current) {
+                micByTouch.current = false;
+                return;
+              }
+              if (!off) onMic();
+            }}
+          >
+            {mic === 'recording' ? (
+              <>
+                <span className="micdot" />
+                {formatSeconds(micSeconds)}
+              </>
+            ) : mic === 'transcribing' ? (
+              '…'
+            ) : (
+              <MicIcon />
+            )}
+          </button>
+        );
+      })()}
+      {/* A label, not a pointer-down button: the file picker only opens from
+          a real click on its input. Off in the column: no click reaches it. */}
+      <label
+        className="key"
+        aria-label="attach an image"
+        aria-disabled={column}
+        data-testid="attach"
+        htmlFor={column ? undefined : attachInput}
+        onPointerDown={(e) => {
+          if (!column) flash(e.currentTarget);
+        }}
+      >
+        📎
+      </label>
     </div>
   );
+}
+
+/** A short highlight on a pressed key: the keys cancel their touch (so the
+ * focus stays), and with it iOS's own :active look. */
+function flash(el: Element) {
+  el.classList.remove('pressed');
+  void (el as HTMLElement).offsetWidth;
+  el.classList.add('pressed');
+  window.setTimeout(() => el.classList.remove('pressed'), 150);
 }
 
 /** A key that reads or writes the clipboard, which needs a completed tap —
@@ -164,6 +194,7 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste
 function ClipboardKey({
   label,
   testId,
+  off = false,
   onTap,
   onRefocus,
   onDiag,
@@ -171,6 +202,8 @@ function ClipboardKey({
 }: {
   label: string;
   testId: string;
+  /** Shown, but does nothing. */
+  off?: boolean;
   onTap(): void;
   onRefocus(): void;
   onDiag?(message: string): void;
@@ -185,12 +218,15 @@ function ClipboardKey({
       aria-label={label}
       title={label}
       data-testid={testId}
+      aria-disabled={off}
       onPointerDown={(e) => {
         e.preventDefault();
+        if (off) return;
+        flash(e.currentTarget);
         onDiag?.(`${testId}: pointerdown (${e.pointerType})`);
       }}
       onPointerUp={(e) => {
-        if (e.pointerType === 'mouse') return;
+        if (e.pointerType === 'mouse' || off) return;
         byTouch.current = true;
         onDiag?.(`${testId}: pointerup (${e.pointerType})`);
         onTap();
@@ -200,6 +236,7 @@ function ClipboardKey({
           byTouch.current = false;
           return;
         }
+        if (off) return;
         onRefocus();
         onTap();
       }}

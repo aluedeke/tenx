@@ -527,7 +527,9 @@ a:hover {
   display: flex;
   gap: 6px;
   padding: 6px 8px;
-  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  /* --kb-gap: the room of iPadOS's shortcut bar while it's gone (App), so
+     the terminal stays one height. */
+  padding-bottom: calc(max(6px, env(safe-area-inset-bottom)) + var(--kb-gap, 0px));
   background: var(--bar-bg);
   border-top: 1px solid var(--border);
 }
@@ -546,6 +548,23 @@ a:hover {
 .key.on {
   background: var(--accent);
   color: var(--ground);
+}
+/* A tap: a short flash (KeyBar's flash), since the cancelled touch gets no
+   :active look from iOS. */
+.key.pressed {
+  background: var(--bright);
+  color: var(--ground);
+  transition: none;
+}
+.key {
+  transition: background 0.15s, color 0.15s;
+}
+/* Off for now (the column has the keyboard): still in its place, faded. */
+.key[aria-disabled='true'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--key-bg);
+  color: var(--muted);
+  opacity: 0.45;
 }
 .key.mic {
   gap: 5px;

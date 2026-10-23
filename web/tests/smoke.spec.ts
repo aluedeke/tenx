@@ -245,7 +245,7 @@ test('the key bar only shows with the on-screen keyboard up', async ({ page, isM
   await expect(bar.getByTestId('attach')).toBeVisible();
 });
 
-test('on an iPad the key bar shows while the terminal has the focus', async ({ page, isMobile }) => {
+test('on an iPad the key bar is always there, and the terminal keeps its height', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'touch screens only');
   // iPadOS Safari: a "Mac" with a touch screen.
   await page.addInitScript(() => {
@@ -255,15 +255,60 @@ test('on an iPad the key bar shows while the terminal has the focus', async ({ p
   await page.goto('/');
   const bar = page.getByTestId('keybar');
   const textarea = page.locator('.xterm-helper-textarea');
-  await textarea.blur();
-  await expect(bar).toHaveCount(0);
+  const terminalHeight = async () => (await page.locator('.terminal-wrap').boundingBox())!.height;
   // A hardware keyboard: the terminal has the focus, no on-screen keyboard.
   await textarea.focus();
   await expect(bar.getByTestId('attach')).toBeVisible();
   await expect(bar.getByTestId('paste')).toBeVisible();
   await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
+  // iPadOS's shortcut bar comes up over it.
+  const inner = await page.evaluate(() => window.innerHeight);
+  await page.evaluate((h) => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => h });
+    vv.dispatchEvent(new Event('resize'));
+  }, inner - 55);
+  await page.waitForTimeout(100);
+  const withShortcutBar = await terminalHeight();
+  // The focus leaves, and iPadOS takes its bar away: the key bar stays, and
+  // the terminal keeps its height.
   await textarea.blur();
-  await expect(bar).toHaveCount(0);
+  await page.evaluate((h) => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => h });
+    vv.dispatchEvent(new Event('resize'));
+  }, inner);
+  await expect(bar.getByRole('button', { name: 'esc' })).toBeVisible();
+  await page.waitForTimeout(100);
+  expect(await terminalHeight()).toBe(withShortcutBar);
+});
+
+test('on an iPad the keys keep their size and place when the column takes the keyboard', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch screens only');
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
+    Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5 });
+  });
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.goto('/');
+  const bar = page.getByTestId('keybar');
+  const keys = bar.locator('.key');
+  const boxes = async () => Promise.all((await keys.all()).map(async (k) => await k.boundingBox()));
+  const ctrl = bar.getByRole('button', { name: 'ctrl' });
+  // A tap on the terminal: it has the keyboard, every key works.
+  await page.locator('.terminal-wrap').tap();
+  await expect(ctrl).toHaveAttribute('aria-disabled', 'false');
+  const before = await boxes();
+  // A tap on a task: the column has the keyboard, and the terminal's keys go off.
+  await page.getByTestId('task').first().tap();
+  await expect(ctrl).toHaveAttribute('aria-disabled', 'true');
+  await expect(bar.getByTestId('paste')).toHaveAttribute('aria-disabled', 'true');
+  await expect(bar.getByTestId('attach')).toHaveAttribute('aria-disabled', 'true');
+  await expect(bar.getByRole('button', { name: 'esc' })).not.toHaveAttribute('aria-disabled', 'true');
+  expect(await boxes()).toEqual(before);
+  // A key the column takes keeps the keyboard there.
+  await bar.getByRole('button', { name: '↓' }).tap();
+  await expect(ctrl).toHaveAttribute('aria-disabled', 'true');
 });
 
 test('a sliver of a viewport while switching apps keeps the whole page', async ({ page, isMobile }) => {
