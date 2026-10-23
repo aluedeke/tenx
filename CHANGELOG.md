@@ -5,6 +5,15 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.17.0] - 2026-10-23
+
+### Added
+
+- **column:** Open a task's links with L and f
+- **web:** Open a task's links from the chips, the header and the column
+
+[0.17.0]: https://github.com/aluedeke/tenx/compare/v0.16.1...v0.17.0
+
 ## [0.16.1] - 2026-10-22
 
 ### Fixed
