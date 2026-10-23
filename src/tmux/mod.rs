@@ -192,6 +192,12 @@ pub fn server_running() -> bool {
         .is_ok_and(|s| s.success())
 }
 
+/// The running tenx server's pid, or `None` when there is none: what tells
+/// a new server (after `tenx tmux restart`) from the one an attach was made to.
+pub fn server_pid() -> Option<String> {
+    run(&["display-message", "-p", "-t", SESSION, "#{pid}"]).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
 /// `tmux -V` → (major, minor); errors below [`MIN_VERSION`] with a message
 /// that says what to install, rather than failing later on an unknown flag.
 pub fn check_version() -> Result<(u32, u32)> {
