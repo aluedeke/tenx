@@ -4,6 +4,7 @@
 //! `gh pr view`) and caches the result per task; the parsing and the
 //! summaries live here so they can be tested without any of those tools.
 
+use crate::links::Link;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -24,6 +25,23 @@ pub struct Live {
     /// now (`prwatch::watched_in`), refreshed every watcher tick.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub watching: Vec<u64>,
+    /// Links the agent named in its replies, newest first
+    /// (`crate::links::merge`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Link>,
+    /// Links in `TASK.md`'s `## Links` section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub task_links: Vec<Link>,
+    /// How far the agent's transcript has been read for `links`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scanned: Option<Scanned>,
+}
+
+/// A transcript read up to `offset` bytes: the next read starts there.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Scanned {
+    pub path: String,
+    pub offset: u64,
 }
 
 /// What a PR chip gains while a wait is running on it.
@@ -33,6 +51,11 @@ impl Live {
     /// `pr`'s chip, marked when a wait is running on it.
     pub fn chip(&self, pr: &PrInfo) -> String {
         if self.watching.contains(&pr.number) { format!("{} {WATCHING}", pr.chip()) } else { pr.chip() }
+    }
+
+    /// Everything the task links to, in display order (`crate::links::all`).
+    pub fn all_links(&self) -> Vec<Link> {
+        crate::links::all(&self.prs, &self.task_links, &self.links, &self.ports)
     }
 
     /// Chips for waits on PRs the PR lookup hasn't found for this task (a
@@ -59,6 +82,8 @@ pub struct PrInfo {
     /// Rolled up from the PR's checks: `success`, `failure`, `pending`, or
     /// empty when there are none.
     pub checks: String,
+    #[serde(default)]
+    pub title: String,
 }
 
 impl PrInfo {
@@ -78,9 +103,14 @@ impl PrInfo {
         };
         format!("#{}{tail}", self.number)
     }
+
+    /// Its name in a list of links: `#12 Fix the parser`.
+    pub fn label(&self) -> String {
+        if self.title.is_empty() { format!("#{}", self.number) } else { format!("#{} {}", self.number, self.title) }
+    }
 }
 
-/// `gh pr view --json number,state,url,isDraft,reviewDecision,statusCheckRollup`
+/// `gh pr view --json number,title,state,url,isDraft,reviewDecision,statusCheckRollup`
 /// → a summary. `None` if the document isn't a PR (e.g. `gh` printed an error
 /// object, or nothing).
 pub fn summarize_pr(repo: &str, json: &serde_json::Value) -> Option<PrInfo> {
@@ -117,6 +147,7 @@ pub fn summarize_pr(repo: &str, json: &serde_json::Value) -> Option<PrInfo> {
         draft: json["isDraft"].as_bool().unwrap_or(false),
         review: json["reviewDecision"].as_str().unwrap_or("").to_string(),
         checks: checks.unwrap_or("").to_string(),
+        title: json["title"].as_str().unwrap_or("").to_string(),
     })
 }
 
@@ -232,7 +263,13 @@ mod tests {
     fn live_roundtrips_and_defaults() {
         let l: Live = serde_json::from_str("{}").unwrap();
         assert_eq!(l, Live::default());
-        let l = Live { ports: vec![3000], prs: vec![], pr_checked: 5, watching: vec![] };
+        let l = Live {
+            ports: vec![3000],
+            pr_checked: 5,
+            links: vec![Link { url: "https://x".into(), label: "x".into(), kind: crate::links::LinkKind::Web }],
+            scanned: Some(Scanned { path: "/t.jsonl".into(), offset: 9 }),
+            ..Default::default()
+        };
         let back: Live = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
         assert_eq!(back, l);
     }

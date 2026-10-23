@@ -279,6 +279,10 @@ struct LiveTarget {
     path: PathBuf,
     repos: Vec<String>,
     active: bool,
+    /// The agent whose transcript holds the task's links, and its live
+    /// session's id when one runs in the task directory.
+    agent: String,
+    session: Option<String>,
 }
 
 struct Agent {
@@ -308,11 +312,21 @@ pub(crate) fn resolve_all() -> Snapshot {
             }
             let state = workspace::resolve_task_state(&task.path, &sessions, &signals);
             let key = format!("{}/{}", ws.dir.display(), task.name);
+            // The task's interactive session, matched as its status is: an
+            // agent that has `cd`-ed into a repo is still the task's. Not a
+            // background agent, whose transcript is its own.
+            let mine = tenx_core::status::sessions_for(&sessions, &task.path);
+            let main = mine.iter().find(|s| s.kind == "interactive").or_else(|| mine.iter().find(|s| s.kind != "bg")).copied();
             live_targets.push(LiveTarget {
                 slug: task.name.clone(),
                 path: task.path.clone(),
                 repos: task.repos.clone(),
                 active: state.status != TaskStatus::Idle || signals.contains_key(&task.name),
+                agent: match main {
+                    Some(s) if !s.agent.is_empty() => s.agent.clone(),
+                    _ => crate::agent::agent_for(&ws, &task.path).as_str().to_string(),
+                },
+                session: main.and_then(|s| s.session_id.clone()),
             });
             for s in tenx_core::status::sessions_for(&sessions, &task.path) {
                 if s.kind != "interactive" && s.cwd != task.path {
@@ -399,6 +413,8 @@ pub(crate) fn resolve_all() -> Snapshot {
 /// update and the PR update can't race each other's read-modify-write.
 struct PrLookups {
     busy: bool,
+    /// Ticks so far: where this tick's round of transcript lookups starts.
+    turn: usize,
     tx: std::sync::mpsc::Sender<(PathBuf, Vec<crate::live::PrInfo>)>,
     rx: std::sync::mpsc::Receiver<(PathBuf, Vec<crate::live::PrInfo>)>,
 }
@@ -406,7 +422,7 @@ struct PrLookups {
 impl PrLookups {
     fn new() -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
-        PrLookups { busy: false, tx, rx }
+        PrLookups { busy: false, turn: 0, tx, rx }
     }
 }
 
@@ -436,16 +452,30 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
     // A task with no window (closed, swept, server gone) has no ports — clear
     // them, don't keep showing the last observed set.
     // Same for the PRs a `tenx pr wait` in the task is waiting on.
+    // Links: TASK.md's every tick (a small file), the transcript from where
+    // the last tick stopped (`live::scan_links`).
     let ports = crate::live::ports_by_window();
     let waits = crate::cli::prwatch::waits();
-    for t in targets {
-        let new_ports = ports.get(&t.slug).cloned().unwrap_or_default();
-        let watching = crate::cli::prwatch::watched_in(&waits, &t.path);
+    // Transcript lookups are budgeted per tick, so the task that goes first
+    // turns round: one whose transcript can't be found yet (a session that
+    // hasn't written it) must not keep the others from ever being read.
+    let mut backfills = crate::live::TRANSCRIPT_LOOKUPS_PER_TICK;
+    prs.turn = prs.turn.wrapping_add(1);
+    let first = if targets.is_empty() { 0 } else { prs.turn % targets.len() };
+    for t in targets[first..].iter().chain(&targets[..first]) {
         let mut live = crate::live::read(&t.path);
-        if live.ports != new_ports || live.watching != watching {
-            live.ports = new_ports;
-            live.watching = watching;
-            changed |= crate::live::write(&t.path, &live).is_ok();
+        let before = live.clone();
+        live.ports = ports.get(&t.slug).cloned().unwrap_or_default();
+        live.watching = crate::cli::prwatch::watched_in(&waits, &t.path);
+        live.task_links = crate::live::task_links(&t.path);
+        crate::live::scan_links(&t.path, &t.agent, t.session.as_deref(), &mut live, &mut backfills);
+        if live != before {
+            let links_moved = live.links != before.links || live.task_links != before.task_links;
+            let shown_moved = live.ports != before.ports || live.watching != before.watching || links_moved;
+            // How far the transcript was read is bookkeeping: saved, but no
+            // reason to republish the status line.
+            let written = crate::live::write(&t.path, &live).is_ok();
+            changed |= written && shown_moved;
         }
     }
 

@@ -20,7 +20,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::tui::column::view::{Click, WebKey};
-use crate::tui::column::{ClientRequest, Column};
+use crate::tui::column::{ClientRequest, Column, LinkAction};
 use crate::tui::host::{Ticker, Unlock, UnlockStart, Views};
 
 /// How often the driver looks at the column when no message arrives — the
@@ -478,6 +478,16 @@ impl Driver {
         self.ticker.tick(&mut self.column);
         let req = self.column.take_request();
         self.request(req);
+        // The page opens links itself, inside the key or tap that asked (a
+        // browser blocks a window opened later); this is for one that got
+        // past it.
+        if let Some(a) = self.column.take_link_action() {
+            let (action, link) = match a {
+                LinkAction::Open(l) => ("open", l),
+                LinkAction::Copy(l) => ("copy", l),
+            };
+            self.send_json(serde_json::json!({ "type": "link", "action": action, "url": link.url, "label": link.label }));
+        }
 
         let Ok(view) = serde_json::to_value(self.column.view()) else { return };
         let patch = match &self.last_view {

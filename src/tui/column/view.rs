@@ -131,8 +131,43 @@ pub(crate) struct TaskItem {
     pub(crate) agent: Option<String>,
     /// How long it has rested (blocked, signaled and done rows only).
     pub(crate) age: Option<String>,
-    pub(crate) prs: Vec<Chip>,
-    pub(crate) ports: Vec<u16>,
+    /// The PR, `◇` and port chips, in order (`links::link_chips`).
+    pub(crate) chips: Vec<LinkChipView>,
+    /// Everything it links to, in display order — what `L` lists.
+    pub(crate) links: Vec<LinkView>,
+}
+
+/// One link: what it opens, its name, and its kind's `name`, icon and colour.
+#[derive(Debug, Serialize)]
+pub(crate) struct LinkView {
+    pub(crate) url: String,
+    pub(crate) label: String,
+    pub(crate) kind: &'static str,
+    pub(crate) icon: &'static str,
+    pub(crate) color: String,
+}
+
+impl From<&tenx_core::links::Link> for LinkView {
+    fn from(l: &tenx_core::links::Link) -> Self {
+        LinkView {
+            url: l.url.clone(),
+            label: l.label.clone(),
+            kind: l.kind.name(),
+            icon: l.kind.icon(),
+            color: links::kind_rgb(l.kind).hex(),
+        }
+    }
+}
+
+/// A chip on a task's second line that is about a link. `link` is `None`
+/// for a wait on a PR the lookup hasn't found; `hint` is its letter in `f`
+/// mode.
+#[derive(Debug, Serialize)]
+pub(crate) struct LinkChipView {
+    pub(crate) label: String,
+    pub(crate) fg: String,
+    pub(crate) link: Option<LinkView>,
+    pub(crate) hint: Option<char>,
 }
 
 #[derive(Debug, Serialize)]
@@ -269,6 +304,16 @@ pub(crate) enum ModeView {
     Help {
         scroll: u16,
     },
+    /// `L`: a task's links, `selected` under the cursor.
+    Links {
+        /// The task's row id and title.
+        task: String,
+        title: String,
+        links: Vec<LinkView>,
+        selected: usize,
+    },
+    /// `f`: the chips carry their letters (`LinkChipView::hint`).
+    Hints,
 }
 
 /// A pending secrets request: the name, and why the agent asked for it
@@ -382,6 +427,8 @@ pub(super) fn footer(column: &Column) -> Footer {
         ),
         Mode::EditRepos(_) => form_footer(EDIT_REPOS_HINT),
         Mode::Help(_) => Footer::new(FooterKind::Hint, HELP_HINT),
+        Mode::Links(_) => Footer::new(FooterKind::Hint, links::LINKS_HINT),
+        Mode::Hints => Footer::new(FooterKind::Hint, links::HINTS_HINT),
         Mode::List => match &column.status_msg {
             Some(msg) => Footer::new(FooterKind::Message, msg.clone()),
             None => Footer {
@@ -478,6 +525,7 @@ impl Column {
     fn task_items(&self) -> Vec<Item> {
         let mut items = Vec::new();
         let on_sub = self.selected_sub();
+        let hints = self.hint_letters();
         let mut counts: [usize; 4] = [0; 4];
         for &i in &self.filtered {
             counts[self.rows[i].section.rank() as usize] += 1;
@@ -528,14 +576,17 @@ impl Column {
                     .collect(),
                 agent: (row.agent != crate::agent::AgentKind::Claude).then(|| row.agent.as_str().to_string()),
                 age: row.changed.filter(|_| rested).map(workspace::format_age),
-                prs: row
-                    .live
-                    .prs
-                    .iter()
-                    .map(|pr| Chip { label: row.live.chip(pr), fg: pr_rgb(&pr.checks).hex(), bg: None })
-                    .chain(row.live.watch_only_chips().into_iter().map(|label| Chip { label, fg: pr_rgb("").hex(), bg: None }))
+                chips: links::link_chips(row)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(k, c)| LinkChipView {
+                        label: c.text,
+                        fg: c.rgb.hex(),
+                        link: c.link.as_ref().map(LinkView::from),
+                        hint: hints.iter().find(|(r, ch, _)| *r == i && *ch == k).map(|(_, _, key)| *key),
+                    })
                     .collect(),
-                ports: row.live.ports.clone(),
+                links: row.live.all_links().iter().map(LinkView::from).collect(),
             })));
             for (k, a) in row.subagents.iter().enumerate() {
                 let status = a.status.as_task_status();
@@ -735,6 +786,13 @@ impl Column {
                 }
             }
             Mode::Help(scroll) => ModeView::Help { scroll: *scroll },
+            Mode::Links(p) => ModeView::Links {
+                task: p.id.clone(),
+                title: p.title.clone(),
+                links: p.links.iter().map(LinkView::from).collect(),
+                selected: p.selected,
+            },
+            Mode::Hints => ModeView::Hints,
         }
     }
 
@@ -1043,6 +1101,8 @@ pub(crate) enum Action {
     Help,
     /// Reject every pending secrets request of the row (`:reject`).
     Reject,
+    /// The row's links (`L`).
+    Links,
 }
 
 impl Action {
@@ -1064,6 +1124,7 @@ impl Action {
             Action::NewWorkspace => &[("W", false)],
             Action::Help => &[("?", false)],
             Action::Reject => &[],
+            Action::Links => &[("L", false)],
         }
     }
 }

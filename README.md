@@ -126,6 +126,8 @@ The column lists every task from every registered workspace, sectioned by attent
 | `n` | Next task that needs you (blocked, rang the bell, or secrets pending), cycling |
 | `Enter`, `o`, `l` | Open the task, creating its window if needed, and put the cursor in it; on a subagent, the same for its view (or its transcript, once Claude no longer lists it) |
 | `t` | On a subagent: follow its transcript in a tmux window |
+| `L` | The task's links in a box: its PRs, the Artifact pages and Claude Design projects its agent made, its Linear issue, its ports, other pages it named. `1`–`9` or `Enter` opens one, `y` copies it |
+| `f` | A letter on every link chip in the list (PR, `◇` for what was made with Claude, port); type the letter to open it, the capital to copy it |
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |
@@ -144,6 +146,8 @@ The column lists every task from every registered workspace, sectioned by attent
 | `:` | Command line, see below |
 
 The column opens in the search field (`Ctrl+w` lands in the list instead). Typing filters the list; `Backspace` edits the filter; `Esc` or `↓` leaves the field for the list. `↓` and `↑` from the field land next to the task you are in, not at the top, and `Ctrl+j`/`Ctrl+k` do the same. `Enter` in the field opens the top match. In the list, `↑` from the first row goes back to the field. `Ctrl+w` lands in the list, so `Ctrl+w` `n` from any task reaches the next one that needs you, and `A` or `Enter` deals with it.
+
+Links open in the browser of the machine the client runs on; over SSH there is none of yours there, so `L` and `f` copy the link to your terminal's clipboard instead (OSC 52). tenx finds a task's links in the `## Links` section of its `TASK.md` and in its agent's replies — not in tool output, where a "list my projects" result alone carries dozens of unrelated links — and keeps the newest ten of each kind. In `tenx web` the chips are plain links, the header's ↗ lists the current task's links, and a row's menu has them too.
 
 The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task, starting in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else. `W` (or `:init [path]`), from either tab, creates a whole new workspace: a path, a name, a first repo URL and whether to install the skills, the same questions `tenx init` asks. The column then lands on the new workspace's repo in the Repos tab, where `Ctrl+n` creates its first task; given no repo, it opens the add-repo form for it instead, since a task with no repo to work on is rarely what a new workspace is for.
 
