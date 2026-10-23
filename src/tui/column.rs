@@ -39,7 +39,9 @@ use super::mouse;
 mod demo;
 #[cfg(test)]
 mod screenshot;
+mod links;
 pub(crate) mod view;
+pub(crate) use links::LinkAction;
 use crate::palette;
 use crate::snapshot::{self, Row};
 use crate::workspace::sessions::{Subagent, SubagentStatus};
@@ -305,6 +307,10 @@ enum Mode {
     Reject(RejectForm),
     /// `?` / `:help` — every key, from `KEYS`; the u16 is the scroll offset.
     Help(u16),
+    /// `L` — the selected task's links in a box over the list.
+    Links(links::LinksPicker),
+    /// `f` — a letter on every link chip in the list.
+    Hints,
 }
 
 /// What the column asks the client to do, since it cannot move focus or
@@ -358,6 +364,8 @@ pub(crate) struct AgentView {
 
 pub(crate) struct Column {
     client_request: Option<ClientRequest>,
+    /// A link `L` or `f` asked to open or copy (`take_link_action`).
+    link_action: Option<LinkAction>,
     /// No tmux, no registry: a switch or an answer only updates this
     /// struct. The README demo's mode; never set by the client.
     pub(super) offline: bool,
@@ -614,6 +622,7 @@ impl Column {
     fn empty() -> Self {
         Column {
             client_request: None,
+            link_action: None,
             offline: false,
             session: crate::tmux::SESSION.to_string(),
             workspaces: vec![],
@@ -1207,6 +1216,11 @@ impl Column {
     /// therefore the one zellij switches. Returns `Ok(true)` when the column
     /// should close (a jump completed).
     pub(super) fn handle_mouse(&mut self, m: MouseEvent) -> Result<bool> {
+        // A click anywhere puts the links away again.
+        if matches!(self.mode, Mode::Links(_) | Mode::Hints) && matches!(m.kind, MouseEventKind::Down(_)) {
+            self.mode = Mode::List;
+            return Ok(false);
+        }
         if !matches!(self.mode, Mode::List) {
             return Ok(false);
         }
@@ -1262,6 +1276,8 @@ impl Column {
             Rename,
             Reject,
             Help,
+            Links,
+            Hints,
         }
         let kind = match self.mode {
             Mode::List => Kind::List,
@@ -1274,6 +1290,8 @@ impl Column {
             Mode::Rename(_) => Kind::Rename,
             Mode::Reject(_) => Kind::Reject,
             Mode::Help(_) => Kind::Help,
+            Mode::Links(_) => Kind::Links,
+            Mode::Hints => Kind::Hints,
         };
         let close = match kind {
             Kind::List => self.handle_list_key(key),
@@ -1290,6 +1308,14 @@ impl Column {
             Kind::Reject => self.handle_reject_key(key),
             Kind::Help => {
                 self.handle_help_key(key);
+                Ok(false)
+            }
+            Kind::Links => {
+                self.handle_links_key(key);
+                Ok(false)
+            }
+            Kind::Hints => {
+                self.handle_hints_key(key);
                 Ok(false)
             }
         }?;
@@ -1405,6 +1431,8 @@ impl Column {
             KeyCode::Char('A') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
             KeyCode::Char('D') if self.require_tasks() => self.deny_selected(),
             KeyCode::Char('t') if self.selected_sub().is_some() => self.view_subagent(false),
+            KeyCode::Char('L') if self.require_tasks() => self.start_links(),
+            KeyCode::Char('f') if self.require_tasks() => self.start_hints(),
             KeyCode::Char('u') => {
                 if self.require_tasks() {
                     self.start_unlock();
@@ -3342,6 +3370,9 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
         .highlight_style(Style::default().bg(palette::SEL_BG.color()))
         .highlight_spacing(HighlightSpacing::Never);
     f.render_stateful_widget(list, list_area, &mut column.list_state);
+    if let Mode::Links(picker) = &column.mode {
+        links::render_links_box(f, picker, list_area);
+    }
 
     // ── Footer / hints ────────────────────────────────────────────────────────
     let footer = footer_line(&view::footer(column));
@@ -3380,6 +3411,8 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("gg G", "top / bottom"),
             ("⏎ o l", "open task / agent"),
             ("t", "agent transcript"),
+            ("L", "task links (y copies)"),
+            ("f", "open a link (⇧ copies)"),
             ("n", "next task that needs you"),
             ("A D", "approve / deny permission"),
             ("D", "reject pending secrets"),
@@ -3665,6 +3698,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
     }
     let mut last_group: Option<workspace::TaskGroup> = None;
     let dim = Style::default().fg(palette::MUTED.color());
+    let hints = column.hint_letters();
 
     for (pos, &row_idx) in column.filtered.iter().enumerate() {
         let row = &column.rows[row_idx];
@@ -3716,46 +3750,48 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         // no longer fits, separated by a muted dot. What the task wants from
         // you comes first — it is the reason to look at the row at all — then
         // the workspace, the age, and the live chips.
-        let mut pieces: Vec<Span<'static>> = Vec::new();
+        let mut pieces: Vec<Vec<Span<'static>>> = Vec::new();
         if let Some((label, fg, bg)) = row_reason(row) {
-            pieces.push(Span::styled(
+            pieces.push(vec![Span::styled(
                 format!(" {label} "),
                 Style::default().fg(fg.color()).bg(bg.color()).add_modifier(Modifier::BOLD),
-            ));
+            )]);
         }
-        pieces.push(Span::styled(row.ws_name.clone(), Style::default().fg(palette::workspace_color(&row.ws_name).color())));
+        pieces.push(vec![Span::styled(row.ws_name.clone(), Style::default().fg(palette::workspace_color(&row.ws_name).color()))]);
         // Name the agent when it isn't the default — a Codex or pi task reads as
         // such; Claude rows stay unadorned.
         if row.agent != crate::agent::AgentKind::Claude {
-            pieces.push(Span::styled(format!(" {}", row.agent.as_str()), Style::default().fg(palette::INFO.color())));
+            pieces.push(vec![Span::styled(format!(" {}", row.agent.as_str()), Style::default().fg(palette::INFO.color()))]);
         }
         if matches!(row.status, TaskStatus::Blocked | TaskStatus::Signaled | TaskStatus::Done)
             && let Some(changed) = row.changed
         {
-            pieces.push(Span::styled(workspace::format_age(changed), dim));
+            pieces.push(vec![Span::styled(workspace::format_age(changed), dim)]);
         }
-        for pr in &row.live.prs {
-            pieces.push(Span::styled(row.live.chip(pr), Style::default().fg(pr_rgb(&pr.checks).color())));
-        }
-        for chip in row.live.watch_only_chips() {
-            pieces.push(Span::styled(chip, Style::default().fg(pr_rgb("").color())));
-        }
-        if !row.live.ports.is_empty() {
-            let ports: Vec<String> = row.live.ports.iter().map(|p| format!(":{p}")).collect();
-            pieces.push(Span::styled(ports.join(" "), dim));
+        // PRs, what was made with Claude, ports — each with its hint letter
+        // in `f` mode, the letter and the chip kept or dropped together.
+        for (k, chip) in links::link_chips(row).into_iter().enumerate() {
+            let style = Style::default().fg(chip.rgb.color());
+            match hints.iter().find(|(r, c, _)| *r == row_idx && *c == k) {
+                Some((_, _, key)) => pieces.push(vec![
+                    Span::styled(key.to_string(), Style::default().fg(palette::GROUND.color()).bg(palette::WARN.color()).add_modifier(Modifier::BOLD)),
+                    Span::styled(chip.text, style),
+                ]),
+                None => pieces.push(vec![Span::styled(chip.text, style)]),
+            }
         }
         let mut second = vec![gutter(), Span::raw(" ".repeat(INDENT - 2))];
         let mut used = INDENT;
         for (i, piece) in pieces.into_iter().enumerate() {
             let sep = if i == 0 { 0 } else { 3 };
-            let w = piece.width();
+            let w: usize = piece.iter().map(|s| s.width()).sum();
             if used + sep + w > list_width {
                 // Truncate the very first piece rather than show nothing;
                 // skip any later piece that doesn't fit whole, and keep
                 // going — a short age can still follow a long workspace.
                 if i == 0 && list_width > INDENT + 1 {
                     let room = list_width - INDENT;
-                    second.push(Span::styled(truncate(&piece.content, room), piece.style));
+                    second.push(Span::styled(truncate(&piece[0].content, room), piece[0].style));
                     used = list_width;
                 }
                 continue;
@@ -3764,7 +3800,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
                 second.push(Span::styled(" · ", dim));
             }
             used += sep + w;
-            second.push(piece);
+            second.extend(piece);
         }
         items.push(ListItem::new(vec![first, Line::from(second)]));
         line_to_pos.push(Some(pos));
@@ -4383,6 +4419,51 @@ mod tests {
         c.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap();
         c.handle_key(plain('n')).unwrap();
         assert_eq!(c.status_msg.as_deref(), Some("nothing needs you"));
+    }
+
+    /// `L` lists the selected task's links and a digit, ⏎ or `y` hands one
+    /// to the front end; `f` letters every link chip, a letter opens it and
+    /// the capital copies it. Either way the column is back in the list.
+    #[test]
+    fn l_and_f_hand_a_link_to_the_front_end() {
+        use tenx_core::links::LinkKind;
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.focus = Focus::List;
+        c.selected = c.filtered.iter().position(|&i| c.rows[i].slug == "csv-export").unwrap();
+
+        c.handle_key(plain('L')).unwrap();
+        let Mode::Links(p) = &c.mode else { panic!("no picker") };
+        let kinds: Vec<_> = p.links.iter().map(|l| l.kind).collect();
+        assert_eq!(kinds, vec![LinkKind::Pr, LinkKind::Artifact]);
+        c.handle_key(plain('2')).unwrap();
+        assert!(matches!(c.mode, Mode::List));
+        assert!(matches!(c.take_link_action(), Some(LinkAction::Open(l)) if l.label == "Link picker proposal"));
+
+        c.handle_key(plain('L')).unwrap();
+        c.handle_key(plain('j')).unwrap();
+        c.handle_key(plain('k')).unwrap();
+        c.handle_key(plain('y')).unwrap();
+        assert!(matches!(c.take_link_action(), Some(LinkAction::Copy(l)) if l.url.ends_with("/pull/31")));
+
+        c.handle_key(plain('f')).unwrap();
+        assert!(matches!(c.mode, Mode::Hints));
+        // a = rate limit middleware's port, b = csv export's PR.
+        c.handle_key(plain('B')).unwrap();
+        assert!(matches!(c.take_link_action(), Some(LinkAction::Copy(l)) if l.url.ends_with("/pull/31")));
+        c.handle_key(plain('f')).unwrap();
+        c.handle_key(plain('a')).unwrap();
+        assert!(matches!(c.take_link_action(), Some(LinkAction::Open(l)) if l.url == "http://localhost:8080"));
+        // A letter with no chip, or esc: nothing, back in the list.
+        c.handle_key(plain('f')).unwrap();
+        c.handle_key(plain('z')).unwrap();
+        assert!(c.take_link_action().is_none());
+        assert!(matches!(c.mode, Mode::List));
+
+        c.selected = c.filtered.iter().position(|&i| c.rows[i].slug == "flaky-checkout-e2e").unwrap();
+        c.handle_key(plain('L')).unwrap();
+        assert!(matches!(c.mode, Mode::List));
+        assert_eq!(c.status_msg.as_deref(), Some("no links for this task yet"));
     }
 
     /// Ctrl+n opens the new-task form from either mode; `A`/`D` answer.

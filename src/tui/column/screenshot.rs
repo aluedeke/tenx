@@ -27,6 +27,8 @@ struct Fx {
     open: bool,
     prs: Vec<PrInfo>,
     ports: Vec<u16>,
+    /// Links the agent named (`Live::links`).
+    links: Vec<tenx_core::links::Link>,
     waiting_for: Option<&'static str>,
     secrets: Vec<&'static str>,
 }
@@ -40,6 +42,7 @@ fn fx(title: &'static str, ws: &'static str, status: TaskStatus) -> Fx {
         open: false,
         prs: vec![],
         ports: vec![],
+        links: vec![],
         waiting_for: None,
         secrets: vec![],
     }
@@ -50,10 +53,11 @@ fn pr(number: u64, state: &str, draft: bool, checks: &str) -> PrInfo {
         repo: "repo".into(),
         number,
         state: state.into(),
-        url: String::new(),
+        url: format!("https://github.com/acme/repo/pull/{number}"),
         draft,
         review: String::new(),
         checks: checks.into(),
+        title: String::new(),
     }
 }
 
@@ -80,12 +84,7 @@ fn row(f: Fx) -> Row {
         activity: changed.unwrap_or(SystemTime::UNIX_EPOCH),
         window_id: f.open.then(|| "@1".to_string()),
         pane: (f.open && f.status != TaskStatus::Idle).then(|| "%1".to_string()),
-        live: Live {
-            ports: f.ports,
-            prs: f.prs,
-            pr_checked: 0,
-            watching: vec![],
-        },
+        live: Live { ports: f.ports, prs: f.prs, links: f.links, ..Default::default() },
         repos: vec![],
         agent: crate::agent::AgentKind::Claude,
         secrets_pending: f.secrets.iter().map(|s| s.to_string()).collect(),
@@ -152,6 +151,7 @@ pub(super) fn fixture_column() -> Column {
             open: true,
             age: 23 * h,
             prs: vec![pr(31, "OPEN", false, "success")],
+            links: tenx_core::links::find("[Link picker proposal](https://claude.ai/code/artifact/0f3a9c)"),
             ..fx("csv export", "ledger", Done)
         },
         Fx {
@@ -338,7 +338,7 @@ fn column_renders_narrow() {
         "     tenx-workspace",              // second line, indented under the title
         "      permission: Bash  · 4m",    // the reason first, then what else fits
         "     acme-api · 54m · :8080",
-        "     ledger · 23h · #31 ✓",
+        "     ledger · 23h · #31 ✓ · ◇",
         "wants STRIPE_WEBHOOK_SECRET",
         "     ◐ Map the session registry", // a subagent, under its task
         "     ✔ Check hook payloads",
@@ -373,6 +373,34 @@ fn column_renders_narrow() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/column.svg");
         std::fs::write(&path, svg(buf)).unwrap();
         eprintln!("wrote {}", path.display());
+    }
+}
+
+/// `L` draws the selected task's links in a box over the list; `f` puts a
+/// letter in front of every link chip.
+#[test]
+fn links_box_and_hint_letters_render() {
+    let mut column = fixture_column();
+    column.offline = true;
+    column.selected = column.filtered.iter().position(|&i| column.rows[i].slug == "csv-export").unwrap();
+    column.focus = Focus::List;
+    let draw = |column: &mut Column| {
+        let mut term = Terminal::new(TestBackend::new(COLS, ROWS)).unwrap();
+        term.draw(|f| render_in(f, column, f.area())).unwrap();
+        plain_text(term.backend().buffer())
+    };
+
+    column.handle_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT)).unwrap();
+    let text = draw(&mut column);
+    for needle in ["links · csv export", "1 ⇡ #31", "PR", "2 ◇ Link picker proposal", "artifact", links::LINKS_HINT] {
+        assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
+    }
+
+    column.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap();
+    column.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE)).unwrap();
+    let text = draw(&mut column);
+    for needle in ["54m · a:8080", "23h · b#31 ✓ · c◇", links::HINTS_HINT] {
+        assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
     }
 }
 

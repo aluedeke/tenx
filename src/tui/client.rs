@@ -178,6 +178,41 @@ impl Client {
     }
 
     /// Put a view in front of you (`host::Views`).
+    /// `L` or `f` picked a link: open it in this machine's browser — over
+    /// SSH there is none of yours here, so copy it to your terminal's
+    /// clipboard instead (OSC 52, which the terminal on your side honours).
+    fn link(&mut self, action: column::LinkAction) {
+        let over_ssh = std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some();
+        let msg = match action {
+            column::LinkAction::Open(l) if !over_ssh => {
+                let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+                let spawned = std::process::Command::new(opener)
+                    .arg(&l.url)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+                match spawned {
+                    Ok(mut child) => {
+                        // Reaped off the loop: the opener exits at once.
+                        std::thread::spawn(move || child.wait());
+                        format!("opened {}", l.label)
+                    }
+                    Err(e) => format!("{opener}: {e}"),
+                }
+            }
+            column::LinkAction::Open(l) => {
+                let _ = execute!(io::stdout(), Print(tenx_core::links::osc52(&l.url)));
+                format!("copied {} (no browser over SSH)", l.label)
+            }
+            column::LinkAction::Copy(l) => {
+                let _ = execute!(io::stdout(), Print(tenx_core::links::osc52(&l.url)));
+                format!("copied {}", l.label)
+            }
+        };
+        self.column.set_status(msg);
+    }
+
     fn start_view(&mut self, v: column::AgentView) {
         if let Some(req) = self.views.start(&mut self.column, v) {
             self.handle_request(req);
@@ -506,6 +541,9 @@ fn run_client(terminal: &mut ClientTerminal) -> Result<()> {
         client.poll_unlock();
         if let Some(v) = client.column.take_agent_view() {
             client.start_view(v);
+        }
+        if let Some(a) = client.column.take_link_action() {
+            client.link(a);
         }
         client.poll_claude_view();
         client.tick();
