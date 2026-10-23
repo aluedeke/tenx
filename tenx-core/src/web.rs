@@ -181,6 +181,34 @@ pub fn is_loopback(host: &str) -> bool {
     h == "localhost" || h == "::1" || h.starts_with("127.")
 }
 
+/// What a tab does when its `tmux attach` ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachEnded {
+    /// `tenx tmux restart` is rebuilding the server: wait for it, then attach.
+    Wait,
+    /// A different server runs now — a restart that finished before the tab
+    /// noticed its attach had ended: attach to it.
+    Reattach,
+    /// The server is gone, or it is the same one (the tab's own session went
+    /// away): the tab ends.
+    End,
+}
+
+/// The tab's attach ended. `restarting`: a rebuild's marker is live;
+/// `server_now`: the running server's pid, if any; `server_at_attach`: the
+/// one the attach was made to. A restart is recognised by the new server,
+/// not only by the marker, which is gone again once the rebuild is done — a
+/// tab that noticed late (a busy machine) used to end there.
+pub fn attach_ended(restarting: bool, server_now: Option<&str>, server_at_attach: Option<&str>) -> AttachEnded {
+    if restarting {
+        return AttachEnded::Wait;
+    }
+    match (server_now, server_at_attach) {
+        (Some(now), Some(then)) if now != then => AttachEnded::Reattach,
+        _ => AttachEnded::End,
+    }
+}
+
 /// The column's layout for a page `page_cols` cells wide: its width
 /// (`column::width`, the TUI's rule) and whether the page is narrow — under
 /// `small_cols`, where the column is an overlay over the terminal rather
@@ -240,6 +268,22 @@ pub fn stt_text(body: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ended_attach_follows_a_restart_however_late_it_is_noticed() {
+        use AttachEnded::*;
+        // Noticed during the rebuild: wait for it.
+        assert_eq!(attach_ended(true, None, Some("100")), Wait);
+        assert_eq!(attach_ended(true, Some("100"), Some("100")), Wait);
+        // Noticed after it: the marker is gone, a new server runs.
+        assert_eq!(attach_ended(false, Some("200"), Some("100")), Reattach);
+        // No server, or the same one: the tab ends.
+        assert_eq!(attach_ended(false, None, Some("100")), End);
+        assert_eq!(attach_ended(false, Some("100"), Some("100")), End);
+        // The server the attach was made to is unknown: only a live
+        // rebuild brings the tab back.
+        assert_eq!(attach_ended(false, Some("200"), None), End);
+    }
 
     #[test]
     fn token_matches_only_the_same_token() {

@@ -198,6 +198,7 @@ impl Tab {
             ticker: Ticker::default(),
             pty: None,
             size: None,
+            server: None,
             out,
             last_view: None,
             patch: false,
@@ -298,6 +299,8 @@ struct Driver {
     /// The page's last terminal size, for attaching again after `tenx tmux
     /// restart` ended the attach.
     size: Option<PtySize>,
+    /// The pid of the server the attach was made to (`attach_ended`).
+    server: Option<String>,
     out: UnboundedSender<Output>,
     /// The last view sent, to send only a changed one — or only what
     /// changed, to a page that takes patches. `None`: send the next whole.
@@ -339,20 +342,26 @@ impl Driver {
         let _ = crate::tmux::kill_session(&self.session);
     }
 
-    /// The attach ended: if `tenx tmux restart` ended it, wait for the new
-    /// server and attach to it again — this tab's grouped session went with
-    /// the old one, so it is made again. `false` when the tab should end.
-    /// Messages from the page wait meanwhile.
+    /// The attach ended: if `tenx tmux restart` ended it — rebuilding now,
+    /// or done already and a new server running (`attach_ended`) — wait for
+    /// the new server and attach to it again; this tab's grouped session went
+    /// with the old one, so it is made again. `false` when the tab should
+    /// end. Messages from the page wait meanwhile.
     fn reattach(&mut self) -> bool {
-        if !crate::cli::tmuxrestart::in_progress() {
-            return false;
-        }
-        let start = std::time::Instant::now();
-        while crate::cli::tmuxrestart::in_progress() && start.elapsed() < Duration::from_secs(120) {
-            std::thread::sleep(Duration::from_millis(200));
-        }
-        if crate::cli::tmuxrestart::in_progress() || !crate::tmux::server_running() {
-            return false;
+        use tenx_core::web::{attach_ended, AttachEnded};
+        let restarting = crate::cli::tmuxrestart::in_progress();
+        match attach_ended(restarting, crate::tmux::server_pid().as_deref(), self.server.as_deref()) {
+            AttachEnded::End => return false,
+            AttachEnded::Reattach => {}
+            AttachEnded::Wait => {
+                let start = std::time::Instant::now();
+                while crate::cli::tmuxrestart::in_progress() && start.elapsed() < Duration::from_secs(120) {
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+                if crate::cli::tmuxrestart::in_progress() || !crate::tmux::server_running() {
+                    return false;
+                }
+            }
         }
         let Some(at) = self.size else { return false };
         if !crate::tmux::has_session(&self.session) && crate::tmux::new_grouped_session(&self.session).is_err() {
@@ -364,6 +373,7 @@ impl Driver {
         match Pty::spawn(&self.session, at, self.out.clone()) {
             Ok(pty) => {
                 self.pty = Some(pty);
+                self.server = crate::tmux::server_pid();
                 true
             }
             Err(_) => false,
@@ -445,6 +455,7 @@ impl Driver {
                     Ok(pty) => {
                         self.pty = Some(pty);
                         self.size = Some(size(cols, rows, width, height));
+                        self.server = crate::tmux::server_pid();
                     }
                     Err(e) => self.send_json(serde_json::json!({ "type": "error", "message": format!("{e:#}") })),
                 },
