@@ -284,6 +284,7 @@ pub const CLAUDE_FILES_NOT_LOADED_FROM_ADDED_DIRS: &[&str] =
 /// Build a task's launch command, honouring `[agents.<kind>]` overrides: the
 /// workspace config wins over the global config, and either supplies an
 /// alternate binary and/or extra args around tenx's per-agent session flags.
+/// The task's own `.tenx-agent-args` ([`task_args`]) come after those.
 ///
 /// `add_dirs` are the directories passed with `--add-dir` (see
 /// [`AgentKind::session_args`]): a task's own worktrees, so Claude loads each
@@ -299,7 +300,8 @@ pub fn launch(
     add_dirs: &[std::path::PathBuf],
     prompt: Option<&str>,
 ) -> String {
-    let (bin, args) = configured(ws, kind);
+    let (bin, mut args) = configured(ws, kind);
+    args.extend(task_args(task_dir));
     let mut cmd = kind.env_prefix(add_dirs).to_string();
     cmd.push_str(&kind.launch_command_with(&bin, slug, task_dir, &args));
     cmd.push_str(&kind.session_args(add_dirs, prompt));
@@ -319,7 +321,8 @@ pub fn launch_resume(
     session_id: Option<&str>,
     transcript: Option<&str>,
 ) -> String {
-    let (bin, args) = configured(ws, kind);
+    let (bin, mut args) = configured(ws, kind);
+    args.extend(task_args(task_dir));
     let mut cmd = kind.env_prefix(add_dirs).to_string();
     cmd.push_str(&kind.resume_command_with(&bin, slug, task_dir, session_id, transcript, &args));
     cmd.push_str(&kind.session_args(add_dirs, None));
@@ -371,10 +374,60 @@ pub const TENX_AGENT_FILE: &str = ".tenx-agent";
 
 /// Write (or clear) a task's agent override.
 pub fn set_task_agent(task_dir: &Path, kind: Option<AgentKind>) -> std::io::Result<()> {
-    let path = task_dir.join(TENX_AGENT_FILE);
-    match kind {
-        Some(k) => std::fs::write(&path, format!("{}\n", k.as_str())),
-        None => match std::fs::remove_file(&path) {
+    write_or_remove(&task_dir.join(TENX_AGENT_FILE), kind.map(|k| format!("{}\n", k.as_str())))
+}
+
+/// Per-task extra arguments for the agent, appended after `[agents.<kind>]`'s
+/// on every start — open, reopen, `tenx agent restart`, `tenx tmux restart`.
+/// One line of shell words, used as written (like `[agents.<kind>].args`), so
+/// quoting is the writer's: `--dangerously-load-development-channels
+/// server:mattermost`. A user decision, like `.tenx-agent`.
+pub const TENX_AGENT_ARGS_FILE: &str = ".tenx-agent-args";
+
+/// A task's extra arguments (see [`TENX_AGENT_ARGS_FILE`]): the file's lines
+/// joined by spaces, or nothing when it is missing or blank.
+pub fn task_args(task_dir: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(task_dir.join(TENX_AGENT_ARGS_FILE)) else {
+        return Vec::new();
+    };
+    let joined = one_line(&text);
+    if joined.is_empty() { Vec::new() } else { vec![joined] }
+}
+
+/// Lines trimmed and joined by one space; spacing inside a line (inside
+/// quotes, say) is kept.
+fn one_line(text: &str) -> String {
+    text.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+/// Write (or clear, with `None` or blank text) a task's extra arguments.
+pub fn set_task_args(task_dir: &Path, args: Option<&str>) -> std::io::Result<()> {
+    let args = args.map(one_line).filter(|a| !a.is_empty());
+    write_or_remove(&task_dir.join(TENX_AGENT_ARGS_FILE), args.map(|a| format!("{a}\n")))
+}
+
+/// Opt-in marker: the watcher confirms Claude Code's "Loading development
+/// channels" warning in this task's window each time it appears
+/// (`--dangerously-load-development-channels` shows it at every start), so a
+/// restarted channel session doesn't sit waiting for a key press. Never set
+/// by default — only `task new --confirm-dev-channels` / `task agent
+/// --confirm-dev-channels` write it.
+pub const CONFIRM_DEV_CHANNELS_FILE: &str = ".tenx-confirm-dev-channels";
+
+/// Whether a task opted in to [`CONFIRM_DEV_CHANNELS_FILE`].
+pub fn confirms_dev_channels(task_dir: &Path) -> bool {
+    task_dir.join(CONFIRM_DEV_CHANNELS_FILE).exists()
+}
+
+/// Set or clear a task's [`CONFIRM_DEV_CHANNELS_FILE`] opt-in.
+pub fn set_confirm_dev_channels(task_dir: &Path, on: bool) -> std::io::Result<()> {
+    write_or_remove(&task_dir.join(CONFIRM_DEV_CHANNELS_FILE), on.then(String::new))
+}
+
+fn write_or_remove(path: &Path, content: Option<String>) -> std::io::Result<()> {
+    match content {
+        Some(c) => std::fs::write(path, c),
+        None => match std::fs::remove_file(path) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),
         },
@@ -436,6 +489,47 @@ mod tests {
         // Nothing to resume by: the ordinary launch and its continue rule.
         assert_eq!(AgentKind::Claude.resume_command_with("claude", "t", dir, None, None, &[]), "claude --name 't'");
         assert_eq!(AgentKind::Pi.resume_command_with("pi", "t", dir, Some("abc"), None, &[]), "pi --name 't' -c");
+    }
+
+    #[test]
+    fn task_args_round_trip_and_clear() {
+        let dir = std::env::temp_dir().join(format!("tenx-agent-args-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(task_args(&dir).is_empty());
+        set_task_args(&dir, Some("  --dangerously-load-development-channels\n server:mattermost ")).unwrap();
+        assert_eq!(task_args(&dir), vec!["--dangerously-load-development-channels server:mattermost".to_string()]);
+        set_task_args(&dir, Some("   ")).unwrap();
+        assert!(!dir.join(TENX_AGENT_ARGS_FILE).exists());
+        set_task_args(&dir, Some("--x")).unwrap();
+        set_task_args(&dir, None).unwrap();
+        assert!(task_args(&dir).is_empty());
+
+        assert!(!confirms_dev_channels(&dir));
+        set_confirm_dev_channels(&dir, true).unwrap();
+        assert!(confirms_dev_channels(&dir));
+        set_confirm_dev_channels(&dir, false).unwrap();
+        set_confirm_dev_channels(&dir, false).unwrap();
+        assert!(!confirms_dev_channels(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn task_args_come_before_add_dirs_and_the_prompt() {
+        // A variadic flag (`--dangerously-load-development-channels <servers...>`)
+        // must not swallow the prompt: `--add-dir=` (an option) ends it first.
+        let dir = Path::new("/nonexistent/task");
+        let extra = vec!["--dangerously-load-development-channels server:mattermost".to_string()];
+        let dirs = vec![std::path::PathBuf::from("/ws")];
+        let cmd = format!(
+            "{}{}",
+            AgentKind::Claude.launch_command_with("claude", "bot", dir, &extra),
+            AgentKind::Claude.session_args(&dirs, Some("hi"))
+        );
+        assert_eq!(cmd, "claude --name 'bot' --dangerously-load-development-channels server:mattermost '--add-dir=/ws' 'hi'");
+        assert_eq!(
+            AgentKind::Claude.resume_command_with("claude", "bot", dir, Some("abc"), None, &extra),
+            "claude --name 'bot' --resume 'abc' --dangerously-load-development-channels server:mattermost"
+        );
     }
 
     #[test]

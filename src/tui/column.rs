@@ -2171,7 +2171,7 @@ impl Column {
                 // terminal. The chosen agent is pinned before that; `None`
                 // inherits the workspace/global default.
                 let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
-                crate::cli::task::new_with(&ws, &job_name, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent, rep)
+                crate::cli::task::new_with(&ws, &job_name, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent.into(), rep)
                     .map_err(|e| e.to_string())?;
                 Ok(format!("created '{job_name}'"))
             });
@@ -2245,7 +2245,7 @@ impl Column {
             named.set(&slug, &title);
             let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
             let shifted = crate::progress::Shifted::new(rep, 1);
-            let made = crate::cli::task::new_with(&ws, &title, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent, &shifted)
+            let made = crate::cli::task::new_with(&ws, &title, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent.into(), &shifted)
                 .map_err(|e| e.to_string())?;
             if made != slug {
                 named.set(&made, &title);
@@ -2361,7 +2361,7 @@ impl Column {
             let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
             let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
             let none: [String; 0] = [];
-            crate::cli::task::new_with(&ws, &title, Some(&none), crate::cli::task::OpenMode::Closed, &md, None, rep)
+            crate::cli::task::new_with(&ws, &title, Some(&none), crate::cli::task::OpenMode::Closed, &md, Default::default(), rep)
                 .map_err(|e| e.to_string())?;
             Ok(format!("asked '{title}'"))
         });

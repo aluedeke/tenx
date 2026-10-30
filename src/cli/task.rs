@@ -147,9 +147,26 @@ fn claude_title(bin: &str, prompt: &str) -> Option<String> {
     tenx_core::title::clean(&reply)
 }
 
+/// How a new task's agent starts, beyond the workspace defaults: its own
+/// agent (`.tenx-agent`; `None` inherits the workspace's), extra arguments
+/// (`.tenx-agent-args`) and the development-channels opt-in
+/// (`.tenx-confirm-dev-channels`). `Default` is "nothing of its own".
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AgentSetup<'a> {
+    pub kind: Option<crate::agent::AgentKind>,
+    pub args: Option<&'a str>,
+    pub confirm_dev_channels: bool,
+}
+
+impl From<Option<crate::agent::AgentKind>> for AgentSetup<'_> {
+    fn from(kind: Option<crate::agent::AgentKind>) -> Self {
+        AgentSetup { kind, ..Default::default() }
+    }
+}
+
 /// Create a task in an explicit workspace with a pre-filled `TASK.md`, and
-/// return its slug. `agent` pins the task's coding agent via a `.tenx-agent`
-/// override; `None` inherits the workspace default. `repos` is the picked
+/// return its slug. `agent` is how its agent starts ([`AgentSetup`]), written
+/// before the window opens. `repos` is the picked
 /// subset (`None` = all of the workspace's); an empty set — or a workspace
 /// with no repos, the adhoc one always — makes a task without worktrees,
 /// whose agent runs in the bare task directory.
@@ -159,7 +176,7 @@ pub fn new_with(
     repos: Option<&[String]>,
     open: OpenMode,
     md: &TaskMd,
-    agent: Option<crate::agent::AgentKind>,
+    agent: AgentSetup,
     rep: &dyn crate::progress::Reporter,
 ) -> Result<String> {
     let display_name = name.to_string();
@@ -183,9 +200,16 @@ pub fn new_with(
     write_task_md(&task_dir, &display_name, md)?;
     write_claude_hooks(&task_dir)?;
     trust_task_dir(&task_dir);
-    // Pin the agent before the window opens, so `agent_for` picks it up.
-    if let Some(a) = agent {
+    // Pin the agent before the window opens, so `agent_for` and `launch`
+    // pick it up.
+    if let Some(a) = agent.kind {
         crate::agent::set_task_agent(&task_dir, Some(a))?;
+    }
+    if agent.args.is_some() {
+        crate::agent::set_task_args(&task_dir, agent.args)?;
+    }
+    if agent.confirm_dev_channels {
+        crate::agent::set_confirm_dev_channels(&task_dir, true)?;
     }
     if !md.prompt.trim().is_empty() {
         std::fs::write(task_dir.join(PROMPT_FILE), md.prompt)?;
@@ -570,7 +594,20 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
     let id = crate::tmux::open_task_window(&opts)?;
     let _ = std::fs::remove_file(&prompt_file);
     std::fs::write(&id_file, &id)?;
+    ensure_confirmer(&task.path);
     Ok(())
+}
+
+/// A task that opted in to having its development-channels warning confirmed
+/// needs the watcher running, since that is what confirms it
+/// (`cli::watch::confirm_dev_channels`). Usually it already is — `tenx`
+/// starts it — but a window opened from a script shouldn't depend on that.
+pub(crate) fn ensure_confirmer(task_dir: &Path) {
+    if crate::agent::confirms_dev_channels(task_dir) {
+        if let Ok(bin) = crate::tmux::self_bin() {
+            crate::cli::watch::ensure_running(&bin);
+        }
+    }
 }
 
 /// Directories a task's agent gets with `--add-dir`, recomputed at every
@@ -688,28 +725,37 @@ pub fn unpin(ws_dir: Option<&str>, task: &str) -> Result<()> {
     Ok(())
 }
 
-/// Show or set a task's coding agent. With no `kind`, prints the effective
-/// agent and where it comes from. With a `kind`, writes the task's `.tenx-agent`
-/// override (or clears it for `default`). Takes effect the next time the task's
-/// window is opened.
-pub fn agent(ws_dir: Option<&str>, task: &str, kind: Option<&str>) -> Result<()> {
+/// Show or set a task's coding agent and how it starts. With nothing to
+/// change, prints the effective agent and where it comes from, then the
+/// task's extra arguments and development-channels opt-in when it has them.
+/// `kind` writes the task's `.tenx-agent` override (or clears it for
+/// `default`); `args` writes `.tenx-agent-args` (`""` clears it); `confirm`
+/// sets or clears `.tenx-confirm-dev-channels`. Takes effect at the agent's
+/// next start.
+pub fn agent(ws_dir: Option<&str>, task: &str, kind: Option<&str>, args: Option<&str>, confirm: Option<bool>) -> Result<()> {
     let (ws, slug) = resolve_task(ws_dir, task)?;
     let task = ws.find_task(&slug)?;
     match kind {
-        None => {
-            let effective = crate::agent::agent_for(&ws, &task.path);
-            println!("{} — {} ({})", task.display_name, effective.as_str(), agent_source(&ws, &task.path));
-        }
-        Some("default") => {
-            crate::agent::set_task_agent(&task.path, None)?;
-            let effective = crate::agent::agent_for(&ws, &task.path);
-            println!("cleared override for '{}' — now {} ({})", task.display_name, effective.as_str(), agent_source(&ws, &task.path));
-        }
-        Some(token) => {
-            let picked = crate::agent::AgentKind::from_token(token);
-            crate::agent::set_task_agent(&task.path, Some(picked))?;
-            println!("'{}' will use {} — reopen the task to apply", task.display_name, picked.as_str());
-        }
+        None => {}
+        Some("default") => crate::agent::set_task_agent(&task.path, None)?,
+        Some(token) => crate::agent::set_task_agent(&task.path, Some(crate::agent::AgentKind::from_token(token)))?,
+    }
+    if args.is_some() {
+        crate::agent::set_task_args(&task.path, args)?;
+    }
+    if let Some(on) = confirm {
+        crate::agent::set_confirm_dev_channels(&task.path, on)?;
+    }
+    let effective = crate::agent::agent_for(&ws, &task.path);
+    println!("{} — {} ({})", task.display_name, effective.as_str(), agent_source(&ws, &task.path));
+    if let Some(a) = crate::agent::task_args(&task.path).first() {
+        println!("  args: {a}");
+    }
+    if crate::agent::confirms_dev_channels(&task.path) {
+        println!("  confirms Claude Code's development-channels warning at each start");
+    }
+    if kind.is_some() || args.is_some() || confirm.is_some() {
+        println!("applies at the agent's next start — reopen the task, or: tenx agent restart {slug}");
     }
     Ok(())
 }

@@ -185,6 +185,7 @@ fn command(workspaces: &[Workspace], t: &Target) -> String {
 /// whether it did report in within [`REPORT_LIMIT`].
 pub fn respawn(plan: &Plan) -> Result<bool> {
     crate::tmux::respawn_pane(&plan.pane, &plan.cwd, &plan.command)?;
+    crate::cli::task::ensure_confirmer(Path::new(&plan.cwd));
     follow_up(plan, &plan.pane)
 }
 

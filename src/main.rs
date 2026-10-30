@@ -159,7 +159,21 @@ fn run() -> Result<()> {
 
 
         Some(Commands::Task { command }) => match command {
-            TaskCommands::New { name, repos, description, links, no_open, no_focus, no_repos, adhoc, prompt, agent, ws_dir } => {
+            TaskCommands::New {
+                name,
+                repos,
+                description,
+                links,
+                no_open,
+                no_focus,
+                no_repos,
+                adhoc,
+                prompt,
+                agent,
+                agent_args,
+                confirm_dev_channels,
+                ws_dir,
+            } => {
                 let links = links
                     .iter()
                     .map(|l| tenx_core::taskmd::parse_link(l).ok_or_else(|| anyhow::anyhow!("--link wants \"Label: value\", got {l:?}")))
@@ -169,7 +183,11 @@ fn run() -> Result<()> {
                     links: &links,
                     prompt: prompt.as_deref().unwrap_or(""),
                 };
-                let agent = agent.as_deref().map(agent::AgentKind::from_token);
+                let agent = cli::task::AgentSetup {
+                    kind: agent.as_deref().map(agent::AgentKind::from_token),
+                    args: agent_args.as_deref(),
+                    confirm_dev_channels,
+                };
                 let open = cli::task::OpenMode::for_cli(no_open, no_focus);
                 let none: Vec<String> = Vec::new();
                 let repos = if no_repos || adhoc { Some(none.as_slice()) } else { repos.as_deref() };
@@ -231,8 +249,14 @@ fn run() -> Result<()> {
                 Some(dir) => cli::task::rm_by_dir(&dir, &name)?,
                 None => cli::task::rm(&name, force)?,
             },
-            TaskCommands::Agent { name, kind, ws_dir } => {
-                cli::task::agent(ws_dir.as_deref(), &name, kind.as_deref())?;
+            TaskCommands::Agent { name, kind, args, clear_args, confirm_dev_channels, no_confirm_dev_channels, ws_dir } => {
+                let args = if clear_args { Some("") } else { args.as_deref() };
+                let confirm = match (confirm_dev_channels, no_confirm_dev_channels) {
+                    (true, _) => Some(true),
+                    (_, true) => Some(false),
+                    _ => None,
+                };
+                cli::task::agent(ws_dir.as_deref(), &name, kind.as_deref(), args, confirm)?;
             }
             TaskCommands::Pin { name, ws_dir } => {
                 cli::task::pin(ws_dir.as_deref(), &name)?;

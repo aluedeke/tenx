@@ -532,6 +532,15 @@ pub enum TaskCommands {
         /// workspace's `agent`. Writes the task's `.tenx-agent`.
         #[arg(long)]
         agent: Option<String>,
+        /// Extra arguments for the agent, as shell words, added at every
+        /// start (open, restart). Writes the task's `.tenx-agent-args`.
+        /// E.g. --agent-args "--dangerously-load-development-channels server:mattermost"
+        #[arg(long, allow_hyphen_values = true, value_name = "ARGS")]
+        agent_args: Option<String>,
+        /// Let tenx confirm Claude Code's "Loading development channels"
+        /// warning at every start of this task's agent.
+        #[arg(long)]
+        confirm_dev_channels: bool,
         /// Create the task in this workspace directory instead of cwd.
         #[arg(long)]
         ws_dir: Option<String>,
@@ -656,13 +665,29 @@ pub enum TaskCommands {
         #[arg(long)]
         ws_dir: Option<String>,
     },
-    /// Show or set a task's coding agent (writes/clears its `.tenx-agent`).
+    /// Show or set a task's coding agent and how it starts (`.tenx-agent`,
+    /// `.tenx-agent-args`, `.tenx-confirm-dev-channels`). Changes apply at the
+    /// agent's next start: reopen the task or run `tenx agent restart`.
     Agent {
         /// Exact task slug
         name: String,
         /// New agent (`claude`, `codex`, `pi`); omit to show the current one,
         /// or pass `default` to clear the override and use the workspace default.
         kind: Option<String>,
+        /// Extra arguments for the agent, as shell words, added at every start.
+        /// E.g. --args "--dangerously-load-development-channels server:mattermost"
+        #[arg(long, allow_hyphen_values = true, value_name = "ARGS", conflicts_with = "clear_args")]
+        args: Option<String>,
+        /// Remove the task's extra arguments.
+        #[arg(long)]
+        clear_args: bool,
+        /// Let tenx confirm Claude Code's "Loading development channels"
+        /// warning at every start of this task's agent.
+        #[arg(long, conflicts_with = "no_confirm_dev_channels")]
+        confirm_dev_channels: bool,
+        /// Stop confirming that warning for this task.
+        #[arg(long)]
+        no_confirm_dev_channels: bool,
         /// Resolve the task in this workspace directory instead of cwd.
         #[arg(long)]
         ws_dir: Option<String>,

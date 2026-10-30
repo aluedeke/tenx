@@ -203,7 +203,7 @@ pub fn ask(prompt: &str, ws_dir: Option<&str>, agent: Option<crate::agent::Agent
         }
     }
     let md = crate::cli::task::TaskMd { prompt, ..Default::default() };
-    let slug = crate::cli::task::new_with(&ws, &title, Some(&[]), open, &md, agent, &crate::progress::Silent)?;
+    let slug = crate::cli::task::new_with(&ws, &title, Some(&[]), open, &md, agent.into(), &crate::progress::Silent)?;
     println!("{slug}");
     Ok(())
 }

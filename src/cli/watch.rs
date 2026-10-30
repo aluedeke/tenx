@@ -15,7 +15,9 @@
 //!   `@tenx_right` user options ([`push_status`]), which is how every window
 //!   learns that a task you *aren't* looking at changed state;
 //! - a transcript pane for each background agent ([`pane_new_agents`]);
-//! - the per-task `.tenx-live.json` cache of ports and PRs ([`refresh_live`]).
+//! - the per-task `.tenx-live.json` cache of ports and PRs ([`refresh_live`]);
+//! - the development-channels warning, for tasks that opted in
+//!   ([`confirm_dev_channels`]).
 //!
 //! Notification and status line deliberately differ on `Done`: a finished
 //! turn fires after every single turn, which is noise as a desktop popup and
@@ -121,6 +123,7 @@ pub fn run() -> Result<()> {
         }
 
         pane_new_agents(&snapshot.agents, &snapshot.windows, &mut paned);
+        confirm_dev_channels(&snapshot.windows);
         let live_changed = refresh_live(&snapshot.live_targets, &mut pr_lookups);
 
         // Publish last. Only on a real change, so a quiet session sends
@@ -547,6 +550,29 @@ fn pane_new_agents(agents: &[Agent], windows: &[crate::tmux::Window], paned: &mu
         );
         if opened.is_ok() {
             paned.insert(key);
+        }
+    }
+}
+
+/// Accept Claude Code's "Loading development channels" warning in the window
+/// of every task that opted in (`agent::CONFIRM_DEV_CHANNELS_FILE`). The
+/// warning comes at every start with `--dangerously-load-development-channels`,
+/// and the session registers only after it is answered — so this is also what
+/// lets `tenx agent restart`/`tenx tmux restart` reach such a task's agent
+/// with their follow-up. Costs nothing unless an open window's task opted in:
+/// only then are panes listed and captured.
+fn confirm_dev_channels(windows: &[crate::tmux::Window]) {
+    if !windows.iter().filter_map(|w| w.task_dir.as_deref()).any(crate::agent::confirms_dev_channels) {
+        return;
+    }
+    let Ok(panes) = crate::tmux::pane_task_dirs() else { return };
+    for (pane, dir) in panes {
+        if !crate::agent::confirms_dev_channels(&dir) {
+            continue;
+        }
+        let Ok(screen) = crate::tmux::capture_pane(&pane) else { continue };
+        if let Some(key) = tenx_core::dialog::dev_channels_key(&screen) {
+            let _ = crate::tmux::send_keys(&pane, &key);
         }
     }
 }

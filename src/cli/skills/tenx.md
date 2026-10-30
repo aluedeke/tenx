@@ -107,6 +107,8 @@ If you no longer need something you asked for, withdraw it so nobody is chased f
     tenx task open <name>      switch to the task's window
     tenx task list             list all tasks and open tabs
     tenx task rm <name>        remove task and worktrees
+    tenx task agent <name> [--args "…"] [--confirm-dev-channels]
+                               show or set extra start options for the task's agent
     tenx repo add <url>        add a repo to the workspace
     tenx secrets need <n>… --why "…"   ask for credentials and wait (see Secrets above)
     tenx secrets cancel <n>    withdraw a request you no longer need

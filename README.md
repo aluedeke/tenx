@@ -173,6 +173,7 @@ tenx repo add <URL>      add a repo to the workspace (bare clone)
 tenx repo list|fetch
 tenx task new <TITLE>    create a task [--repos a,b | --no-repos | --adhoc] [--prompt ..] [--description ..]
                          [--link "Label: value"] [--no-open | --no-focus]
+                         [--agent ..] [--agent-args ".."] [--confirm-dev-channels]
 tenx ask <QUESTION>      a session of its own for a question, outside any workspace
 tenx task open <NAME>    open or switch to a task's window
 tenx task send <SLUG> <TEXT>   message a task's agent, as if typed into its pane
@@ -183,6 +184,7 @@ tenx task rename <SLUG> <TITLE>
 tenx task add-repo|rm-repo|set-repos <SLUG> <REPOS..>
 tenx task rm <NAME>
 tenx task pin|unpin <NAME>
+tenx task agent <SLUG> [AGENT]  show or set its agent [--args ".." | --clear-args] [--[no-]confirm-dev-channels]
 tenx task sweep          close windows nobody is waiting on [--after 8h] [--idle-after 15m] [--dry-run]
 tenx agent restart       restart every open task's agent in place [TASK..] [--now] [--timeout 30m] [--dry-run]
 tenx tmux reload         load this tenx's tmux config into the running server
@@ -373,6 +375,21 @@ Every task runs one of `claude`, `codex`, or `pi`. tenx resolves which, most spe
 4. Otherwise `claude`.
 
 `tenx task agent <slug>` (no agent) shows a task's effective agent; `tenx doctor` shows which agents are installed. A change takes effect the next time the task's window opens. Point an agent at a wrapper or pin a model with an `[agents.<kind>]` block (workspace overrides global).
+
+### Extra start options per task
+
+A task can add its own arguments to the agent's command line, after those of `[agents.<kind>]`. They are used at every start: opening the task, reopening it after a sweep, `tenx task send` to a closed task, `tenx agent restart`, `tenx tmux restart`, and the column and web UI.
+
+```sh
+tenx task new "mattermost bot" --agent-args "--dangerously-load-development-channels server:mattermost" --confirm-dev-channels
+tenx task agent mattermost-bot --args "--dangerously-load-development-channels server:mattermost"
+tenx task agent mattermost-bot              # shows the agent, its args and the opt-in
+tenx task agent mattermost-bot --clear-args
+```
+
+The arguments are shell words, used as written, stored in the task's `.tenx-agent-args`. A change applies at the agent's next start (`tenx agent restart <slug>` does that in place).
+
+Claude Code shows a full-screen warning ("Loading development channels") at every start with `--dangerously-load-development-channels`. With `--confirm-dev-channels` (stored as `.tenx-confirm-dev-channels`; off unless you set it), the watcher answers "I am using this for local development" for that task, so a restarted channel session doesn't wait for a key press. `--no-confirm-dev-channels` turns it off again. For a task that should run for good, also `tenx task pin` it, so `tenx task sweep` and the column's background sweep leave its window open.
 
 A layout script replaces the default three-pane window. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_AGENT`, `TENX_AGENT_CMD` (the resolved agent and its launch command) and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
 

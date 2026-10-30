@@ -121,6 +121,49 @@ pub fn permission_dialog_visible(capture: &str) -> bool {
     has_question && has_yes
 }
 
+/// The title of the warning Claude Code shows at every start with
+/// `--dangerously-load-development-channels`.
+const DEV_CHANNELS_TITLE: &str = "WARNING: Loading development channels";
+/// The option that accepts it (the other one is "Exit").
+const DEV_CHANNELS_ACCEPT: &str = "I am using this for local development";
+
+/// The key that accepts Claude Code's "Loading development channels" warning,
+/// if a pane capture shows it — for a task that opted in to having tenx
+/// confirm it (`agent::CONFIRM_DEV_CHANNELS_FILE`):
+///
+/// ```text
+///   WARNING: Loading development channels
+///   …
+///   ❯ 1. I am using this for local development
+///     2. Exit
+///
+///   Enter to confirm · Esc to cancel
+/// ```
+///
+/// `Enter` when the accepting option is highlighted (the dialog opens on it),
+/// else its digit. Needs the title, the numbered option row and the
+/// "Enter to confirm" footer, so the same words in an editor pane don't
+/// match. Literal on purpose: a wording change fails closed — the dialog
+/// waits for a person, as it does without tenx.
+pub fn dev_channels_key(capture: &str) -> Option<String> {
+    let plain = strip_ansi(capture);
+    let lines: Vec<&str> = plain.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if !lines.contains(&DEV_CHANNELS_TITLE) || !lines.iter().any(|l| l.starts_with("Enter to confirm")) {
+        return None;
+    }
+    lines.iter().find_map(|l| {
+        let (selected, rest) = match l.strip_prefix('❯') {
+            Some(r) => (true, r.trim_start()),
+            None => (false, *l),
+        };
+        let (digit, label) = rest.split_once(". ")?;
+        if label.trim() != DEV_CHANNELS_ACCEPT || digit.len() != 1 || !digit.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        Some(if selected { "Enter".to_string() } else { digit.to_string() })
+    })
+}
+
 /// Drop terminal escape sequences (CSI such as colours, and OSC), keeping
 /// the text. A capture taken with `-e` — the one the preview wants — puts
 /// colour changes in the middle of the dialog's lines (`1. ` and `Yes` are
@@ -194,6 +237,42 @@ mod tests {
 
 
 ";
+
+    const DEV_CHANNELS: &str = "\
+────────────────────────────────────────
+  WARNING: Loading development channels
+
+  --dangerously-load-development-channels is for local channel development only. Do not use this option to run
+  channels you have downloaded off the internet.
+
+  Please use --channels to run a list of approved channels.
+
+  Channels: server:mattermost
+
+  \x1b[38;5;153m❯ 1. I am using this for local development\x1b[39m
+    2. Exit
+
+  Enter to confirm · Esc to cancel
+";
+
+    #[test]
+    fn accepts_the_dev_channels_warning() {
+        assert_eq!(dev_channels_key(DEV_CHANNELS).as_deref(), Some("Enter"));
+        // Highlight moved to "Exit": pick the accepting option by its digit.
+        let moved = DEV_CHANNELS.replace("❯ 1.", "  1.").replace("  2. Exit", "❯ 2. Exit");
+        assert_eq!(dev_channels_key(&moved).as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn dev_channels_needs_the_whole_dialog() {
+        // The same words in TASK.md (an nvim pane) are not the dialog.
+        let notes = "# Bot\n\nWARNING: Loading development channels\nAnswer: I am using this for local development\n";
+        assert_eq!(dev_channels_key(notes), None);
+        assert_eq!(dev_channels_key(&DEV_CHANNELS.replace("Enter to confirm", "")), None);
+        assert_eq!(dev_channels_key(&DEV_CHANNELS.replace("WARNING: Loading", "Loading")), None);
+        assert_eq!(dev_channels_key(DIALOG), None);
+        assert_eq!(dev_channels_key(""), None);
+    }
 
     #[test]
     fn recognises_the_permission_dialog() {
