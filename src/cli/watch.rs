@@ -578,7 +578,7 @@ fn confirm_dev_channels(windows: &[crate::tmux::Window]) {
 }
 
 /// A `Done` task counts as "waiting on you" in the corner only once it has
-/// sat unanswered this long. Every turn ends `Done`; without a gate the
+/// sat unanswered this long, and never when it is pinned. Every turn ends `Done`; without a gate the
 /// count flips on and off with each prompt you type — the flicker the old
 /// status bar measured and designed out.
 const RIGHT_WAIT_GATE_SECS: u64 = 60;
@@ -616,6 +616,9 @@ fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window], pus
         }
         match TaskStatus::from_token(t["status"].as_str().unwrap_or("")) {
             s if s.needs_you() => need += 1,
+            // A pinned task is kept open on purpose (a channel bot, say): its
+            // finished turn is it idling, not waiting on you.
+            TaskStatus::Done if t["pinned"].as_bool() == Some(true) => {}
             TaskStatus::Done if t["age_secs"].as_u64().unwrap_or(0) >= RIGHT_WAIT_GATE_SECS => waiting += 1,
             _ => {}
         }

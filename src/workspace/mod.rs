@@ -695,6 +695,7 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "slug": task.name,
         "title": task.display_name,
         "agent": crate::agent::agent_for(ws, &task.path).as_str(),
+        "pinned": crate::cli::task::is_pinned(&task.path),
         "status": state.status.token(),
         "waiting_for": state.waiting_for,
         "sessions": state.sessions,

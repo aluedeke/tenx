@@ -703,7 +703,7 @@ pub fn list() -> Result<()> {
 /// idle. Plain and empty, same style as `.tenx-tab-id`.
 const PINNED_FILE: &str = ".tenx-pinned";
 
-fn is_pinned(task_dir: &Path) -> bool {
+pub(crate) fn is_pinned(task_dir: &Path) -> bool {
     task_dir.join(PINNED_FILE).is_file()
 }
 

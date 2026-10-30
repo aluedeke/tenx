@@ -389,7 +389,7 @@ tenx task agent mattermost-bot --clear-args
 
 The arguments are shell words, used as written, stored in the task's `.tenx-agent-args`. A change applies at the agent's next start (`tenx agent restart <slug>` does that in place).
 
-Claude Code shows a full-screen warning ("Loading development channels") at every start with `--dangerously-load-development-channels`. With `--confirm-dev-channels` (stored as `.tenx-confirm-dev-channels`; off unless you set it), the watcher answers "I am using this for local development" for that task, so a restarted channel session doesn't wait for a key press. `--no-confirm-dev-channels` turns it off again. For a task that should run for good, also `tenx task pin` it, so `tenx task sweep` and the column's background sweep leave its window open.
+Claude Code shows a full-screen warning ("Loading development channels") at every start with `--dangerously-load-development-channels`. With `--confirm-dev-channels` (stored as `.tenx-confirm-dev-channels`; off unless you set it), the watcher answers "I am using this for local development" for that task, so a restarted channel session doesn't wait for a key press. `--no-confirm-dev-channels` turns it off again. For a task that should run for good, also `tenx task pin` it, so `tenx task sweep` and the column's background sweep leave its window open, and its idle turns don't count in the status bar's "✔ N waiting".
 
 A layout script replaces the default three-pane window. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_AGENT`, `TENX_AGENT_CMD` (the resolved agent and its launch command) and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
 
