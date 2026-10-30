@@ -52,6 +52,12 @@ x86_64-apple-darwin = ["tenx", "tenx-tts"]
 aarch64-unknown-linux-musl = ["tenx"]
 x86_64-unknown-linux-musl = ["tenx"]
 
+# Build machines, where dist's default is wrong: it picks macos-14 for Apple
+# silicon, and GitHub retires that image on 2026-11-02 (brownouts before
+# that cancel the job). macos-26 is what ci.yml runs.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-26"
+
 # Becomes `depends_on "tmux"` in the generated formula.
 [dist.dependencies.homebrew]
 tmux = { stage = ["run"] }
