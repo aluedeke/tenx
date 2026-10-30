@@ -5,6 +5,15 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.18.0] - 2026-10-30
+
+### Added
+
+- **task:** Start a task's agent with its own extra arguments
+- **watch:** Leave pinned tasks out of the status bar's waiting count
+
+[0.18.0]: https://github.com/aluedeke/tenx/compare/v0.17.2...v0.18.0
+
 ## [0.17.2] - 2026-10-23
 
 ### Fixed
