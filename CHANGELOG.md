@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.20.0] - 2026-11-01
+
+### Added
+
+- **task:** Add task open --no-focus to open a window without switching
+
+[0.20.0]: https://github.com/aluedeke/tenx/compare/v0.19.0...v0.20.0
+
 ## [0.19.0] - 2026-11-01
 
 ### Added
