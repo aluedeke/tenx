@@ -91,8 +91,17 @@ fn run(call: Call) -> Result<Value> {
         }
         Call::GetOutput { workspace, task } => {
             let (ws, task) = find(&workspace, &task)?;
-            let turn = crate::cli::drive::last_turn(&ws, &task)?;
-            let st = state(&task.path);
+            let mut turn = crate::cli::drive::last_turn(&ws, &task)?;
+            let mut st = state(&task.path);
+            // A turn can be reported over a moment before its reply is in
+            // the transcript (seen on a new task's first turn): read again
+            // for a little while rather than answer "no reply".
+            let deadline = std::time::Instant::now() + REPLY_GRACE;
+            while turn.replies.is_empty() && st.status != workspace::TaskStatus::Working && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(250));
+                turn = crate::cli::drive::last_turn(&ws, &task)?;
+                st = state(&task.path);
+            }
             Ok(json!({
                 "status": st.status.token(),
                 "waiting_for": st.waiting_for,
@@ -165,6 +174,10 @@ fn run(call: Call) -> Result<Value> {
         }
     }
 }
+
+/// How long `tenx_get_output` waits for a settled turn's reply to reach the
+/// transcript.
+const REPLY_GRACE: Duration = Duration::from_secs(3);
 
 /// A task in `tenx_list_tasks`: what tells tasks apart, without the
 /// subagents' and secrets' detail (`tenx_get_task` has it all).
