@@ -18,6 +18,13 @@ pub(crate) use job::Jobs;
 /// exist, so a repo checklist can be built without reaching the workspace
 /// dirs). Each task carries the repos it actually has worktrees for.
 pub fn dump_json() -> anyhow::Result<()> {
+    println!("{}", listing());
+    Ok(())
+}
+
+/// `{workspaces, tasks}`: what `task list --json` prints, and what
+/// `tenx web`'s MCP tools list from.
+pub fn listing() -> serde_json::Value {
     let global = crate::workspace::load_global().unwrap_or_default();
     // One registry read for the whole dump — every task's live state is resolved
     // against this same snapshot.
@@ -50,6 +57,5 @@ pub fn dump_json() -> anyhow::Result<()> {
     }
     entries.sort_by_key(|e| std::cmp::Reverse(e.0));
     let tasks: Vec<_> = entries.into_iter().map(|(_, v)| v).collect();
-    println!("{}", serde_json::json!({ "workspaces": workspaces, "tasks": tasks }));
-    Ok(())
+    serde_json::json!({ "workspaces": workspaces, "tasks": tasks })
 }

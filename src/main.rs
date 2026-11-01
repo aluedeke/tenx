@@ -87,6 +87,7 @@ fn run() -> Result<()> {
             cli::WebServiceAction::Uninstall => web::service::uninstall()?,
             cli::WebServiceAction::Status => web::service::status()?,
         },
+        Some(Commands::Web { command: Some(cli::WebCommand::McpToken { rotate }), .. }) => web::mcp_token(rotate)?,
         Some(Commands::Web { command: None, listen, port, open, rotate_token, dev_origin }) => {
             web::run(web::Options { listen, port, open, rotate_token, dev_origins: dev_origin })?
         }

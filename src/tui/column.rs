@@ -1656,36 +1656,10 @@ impl Column {
             return;
         }
         let (title, path) = (row.title.clone(), row.path.clone());
-        let sessions = workspace::sessions::sessions();
-        let state = workspace::resolve_task_state(&path, &sessions, &self.windows.signals);
-        if state.status != TaskStatus::Blocked {
-            self.status_msg = Some(format!("'{title}' is not waiting on a prompt"));
-            return;
-        }
-        if !state.waiting_for.as_deref().is_some_and(tenx_core::dialog::is_permission_reason) {
-            let reason = state.waiting_for.unwrap_or_default();
-            self.status_msg = Some(format!("'{title}' is waiting on {reason} — open it to answer (⏎)"));
-            return;
-        }
-        let Some(pane) = state.pane else {
-            self.status_msg = Some(format!("'{title}': no pane known for its session"));
-            return;
-        };
-        let capture = match crate::tmux::capture_pane(&pane) {
-            Ok(c) => c,
-            Err(e) => {
-                self.status_msg = Some(e.to_string());
-                return;
-            }
-        };
-        if !tenx_core::dialog::permission_dialog_visible(&capture) {
-            self.status_msg = Some(format!("'{title}': no permission dialog on screen — open it to check (⏎)"));
-            return;
-        }
-        match crate::tmux::send_keys(&pane, answer.key()) {
-            Ok(()) => self.status_msg = Some(format!("{} '{title}'", answer.verb())),
-            Err(e) => self.status_msg = Some(e.to_string()),
-        }
+        self.status_msg = Some(match crate::cli::drive::answer(&path, &title, &self.windows.signals, answer) {
+            Ok(()) => format!("{} '{title}'", answer.verb()),
+            Err(e) => e.to_string(),
+        });
         self.refresh_statuses();
     }
 

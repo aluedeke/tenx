@@ -284,6 +284,12 @@ idle_minutes = 10       # optional: unload the model after this long unused
 
 The voice's first letter is its language, and Kokoro has no German voice. A changed `[read_aloud]` applies to the next reading. Without a model the speaker says how to set one; nothing is read aloud in the browser.
 
+### Tasks as tools for Claude on the web (MCP)
+
+`tenx web` also serves an [MCP](https://modelcontextprotocol.io) endpoint, `/mcp`, so an agent on another machine — Claude on the web, Claude on your phone — can list your tasks, read what their agents said, start new tasks and send them messages. The tools: `tenx_list_workspaces`, `tenx_list_tasks`, `tenx_get_task` (status, PRs, `TASK.md`), `tenx_get_output` (the agent's last reply), `tenx_read_screen` (the agent pane's last lines), `tenx_create_task`, `tenx_send_message`, `tenx_wait` (up to 60 s per call) and `tenx_answer_permission` (approve or deny a permission prompt that is on screen). A new task opens its window without taking your screen.
+
+It is not for a browser: it takes a bearer token of its own (`~/.config/tenx/mcp-token`, readable only by you; `tenx web mcp-token` prints it, `--rotate` replaces it and needs a `tenx web service restart`), never the page's cookie, and refuses any request with an `Origin` header. Sending a message to an agent is as good as running commands on this machine, so never put `/mcp` on the internet directly: reach it over your tailnet (`tailscale serve`), behind a gateway that logs you in first (for claude.ai: Cloudflare Access with OAuth in front of a gateway that checks Access's token and adds `Authorization: Bearer <mcp-token>`), and keep "ask before use" on for the tools that write.
+
 ## Sweep, pin and restart
 
 Every open task window holds a resident `claude` process. `tenx task sweep` closes windows nobody is waiting on: idle tasks once they have been quiet for `--idle-after` (default 15m), finished tasks after `--after` (default 8h). A task's window is the one its panes are actually in, never just one that shares its slug — the same task name in two workspaces must not close the wrong session. It never touches the current window, a pinned task, or a task that is blocked or working, and it deletes nothing. The home column runs a rate-limited sweep in the background. `tenx task pin` exempts a task.

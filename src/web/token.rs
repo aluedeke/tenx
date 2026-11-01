@@ -7,13 +7,24 @@ use anyhow::{Context, Result};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-fn path() -> Result<PathBuf> {
-    Ok(crate::workspace::home_dir()?.join(".config").join("tenx").join("web-token"))
+/// The page's token's file name.
+const WEB_TOKEN: &str = "web-token";
+/// `/mcp`'s bearer token (`mcp.rs`): kept apart, so the gateway's can't
+/// open the page and the page's can't call tools.
+pub const MCP_TOKEN: &str = "mcp-token";
+
+fn path(name: &str) -> Result<PathBuf> {
+    Ok(crate::workspace::home_dir()?.join(".config").join("tenx").join(name))
 }
 
 /// The token, made (or remade, with `rotate`) if needed.
 pub fn load_or_create(rotate: bool) -> Result<String> {
-    let path = path()?;
+    load_or_create_named(WEB_TOKEN, rotate)
+}
+
+/// The token in `~/.config/tenx/<name>`, made (or remade) if needed.
+pub fn load_or_create_named(name: &str, rotate: bool) -> Result<String> {
+    let path = path(name)?;
     if !rotate
         && let Ok(text) = std::fs::read_to_string(&path)
         && !text.trim().is_empty()

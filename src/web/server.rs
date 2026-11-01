@@ -21,6 +21,8 @@ use super::tab::{Input, Output, Tabs};
 
 pub(super) struct App {
     pub(super) token: String,
+    /// `/mcp`'s bearer token (`mcp.rs`), never the page's.
+    pub(super) mcp_token: String,
     pub(super) dev_origins: Vec<String>,
     pub(super) tabs: Arc<Tabs>,
     pub(super) push: Arc<super::push::Push>,
@@ -41,6 +43,10 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
         .route("/push/subscribe", post(push_subscribe))
         .route("/push/unsubscribe", post(push_unsubscribe))
         .route("/push/test", post(push_test))
+        .route(
+            "/mcp",
+            post(super::mcp::post).get(super::mcp::other).delete(super::mcp::other).layer(DefaultBodyLimit::max(tenx_core::mcp::MAX_BYTES)),
+        )
         .fallback(get(page))
         .with_state(app);
     let listener = tokio::net::TcpListener::from_std(listener)?;
