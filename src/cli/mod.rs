@@ -736,6 +736,13 @@ pub enum WebCommand {
         #[command(subcommand)]
         action: WebServiceAction,
     },
+    /// Print the bearer token for `/mcp`, the MCP endpoint (tenx's tasks as
+    /// tools, for an agent on another machine behind a gateway)
+    McpToken {
+        /// Replace it; a running `tenx web` needs a restart to use the new one
+        #[arg(long)]
+        rotate: bool,
+    },
 }
 
 #[derive(Subcommand)]

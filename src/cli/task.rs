@@ -472,7 +472,7 @@ pub fn load_ws_arg(arg: &str) -> Result<crate::workspace::Workspace> {
 /// directory of exactly that name exists (tasks created before `slugify`
 /// tightened up may have punctuation in their directory names), else the
 /// name slugified — what a freshly created task would get.
-fn slug_for(ws: &crate::workspace::Workspace, name: &str) -> String {
+pub(crate) fn slug_for(ws: &crate::workspace::Workspace, name: &str) -> String {
     if !name.is_empty() && !name.contains('/') && ws.tasks_dir().join(name).is_dir() {
         return name.to_string();
     }

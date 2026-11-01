@@ -59,6 +59,26 @@ pub const TURN_LIMIT: Duration = Duration::from_secs(15);
 /// sitting on a dialog, where typed text would answer it (`--force` to do it
 /// anyway).
 pub fn send(ws_dir: Option<&str>, task: &str, text: &str, force: bool) -> Result<()> {
+    let (ws, slug) = crate::cli::task::resolve_task(ws_dir, task)?;
+    if send_in(&ws, &slug, text, force)? == Sent::Opened {
+        println!("opened '{}' with the message", ws.find_task(&slug)?.display_name);
+    }
+    Ok(())
+}
+
+/// How [`send_in`] delivered a message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sent {
+    /// The task had no window: it was opened with the message as its prompt.
+    Opened,
+    /// Pasted into the running agent and submitted.
+    Typed,
+}
+
+/// [`send`] for an explicit workspace and slug — also `tenx web`'s
+/// `tenx_send_message` tool. The window opens detached, so a message from
+/// elsewhere never moves the session's current window.
+pub fn send_in(ws: &workspace::Workspace, slug: &str, text: &str, force: bool) -> Result<Sent> {
     let text = text.trim();
     if text.is_empty() {
         bail!("nothing to send");
@@ -66,15 +86,13 @@ pub fn send(ws_dir: Option<&str>, task: &str, text: &str, force: bool) -> Result
     if !crate::tmux::server_running() {
         bail!("the '{}' session isn't running — run 'tenx' to start it first", crate::tmux::SESSION);
     }
-    let (ws, slug) = crate::cli::task::resolve_task(ws_dir, task)?;
-    let task = ws.find_task(&slug)?;
+    let task = ws.find_task(slug)?;
 
-    let Some(window) = crate::tmux::find_task_window(&slug, &task.path)? else {
+    let Some(window) = crate::tmux::find_task_window(slug, &task.path)? else {
         std::fs::write(task.path.join(crate::cli::task::PROMPT_FILE), text)?;
-        crate::cli::task::open_window(&ws, &slug, true)?;
+        crate::cli::task::open_window(ws, slug, true)?;
         await_turn(&task.path, TURN_LIMIT);
-        println!("opened '{}' with the message", task.display_name);
-        return Ok(());
+        return Ok(Sent::Opened);
     };
 
     let st = state(&task.path);
@@ -93,7 +111,7 @@ pub fn send(ws_dir: Option<&str>, task: &str, text: &str, force: bool) -> Result
     if st.sessions > 0 {
         await_turn(&task.path, TURN_LIMIT);
     }
-    Ok(())
+    Ok(Sent::Typed)
 }
 
 /// `tenx task wait`: block until the task's turn is over, then print its
@@ -102,17 +120,51 @@ pub fn send(ws_dir: Option<&str>, task: &str, text: &str, force: bool) -> Result
 pub fn wait(ws_dir: Option<&str>, task: &str, timeout: Duration) -> Result<()> {
     let (ws, slug) = crate::cli::task::resolve_task(ws_dir, task)?;
     let task = ws.find_task(&slug)?;
+    let (outcome, st) = wait_in(&task.path, timeout);
+    let why = if outcome == WaitOutcome::TimedOut { None } else { st.waiting_for.as_deref() };
+    finish(outcome, &task.display_name, st.status.token(), why)
+}
+
+/// Poll the task's state until its turn is over or `timeout` runs out: how
+/// it ended, and the state it ended in.
+pub fn wait_in(task_dir: &Path, timeout: Duration) -> (WaitOutcome, TaskState) {
     let start = Instant::now();
     loop {
-        let st = state(&task.path);
+        let st = state(task_dir);
         if let Some(outcome) = orchestrate::wait_outcome(st.status) {
-            return finish(outcome, &task.display_name, st.status.token(), st.waiting_for.as_deref());
+            return (outcome, st);
         }
         if start.elapsed() >= timeout {
-            return finish(WaitOutcome::TimedOut, &task.display_name, st.status.token(), None);
+            return (WaitOutcome::TimedOut, st);
         }
         std::thread::sleep(Duration::from_secs(1));
     }
+}
+
+/// Answer the permission prompt the task's agent shows: `A`/`D` in the
+/// column, and `tenx web`'s `tenx_answer_permission`. The registry is re-read
+/// and the pane re-captured right before the key goes out, and the key goes
+/// only when the session waits on a permission *and* the dialog is on screen
+/// — anywhere else Enter or Escape means something else
+/// (`tenx_core::dialog`). `Err` says why nothing was sent.
+pub fn answer(task_dir: &Path, title: &str, signals: &workspace::Signals, answer: tenx_core::dialog::Answer) -> Result<()> {
+    let sessions = workspace::sessions::sessions();
+    let state = workspace::resolve_task_state(task_dir, &sessions, signals);
+    if state.status != workspace::TaskStatus::Blocked {
+        bail!("'{title}' is not waiting on a prompt");
+    }
+    if !state.waiting_for.as_deref().is_some_and(tenx_core::dialog::is_permission_reason) {
+        let reason = state.waiting_for.unwrap_or_default();
+        bail!("'{title}' is waiting on {reason} — open it to answer (⏎)");
+    }
+    let Some(pane) = state.pane else {
+        bail!("'{title}': no pane known for its session");
+    };
+    let capture = crate::tmux::capture_pane(&pane)?;
+    if !tenx_core::dialog::permission_dialog_visible(&capture) {
+        bail!("'{title}': no permission dialog on screen — open it to check (⏎)");
+    }
+    crate::tmux::send_keys(&pane, answer.key())
 }
 
 fn finish(outcome: WaitOutcome, title: &str, status: &str, why: Option<&str>) -> Result<()> {

@@ -12,6 +12,7 @@
 
 mod assets;
 mod clipboard;
+mod mcp;
 mod paste;
 mod push;
 mod server;
@@ -58,6 +59,7 @@ pub fn run(o: Options) -> Result<()> {
     // here too, as the client's launch does.
     crate::cli::adhoc::ensure_quiet();
     let token = token::load_or_create(o.rotate_token)?;
+    let mcp_token = token::load_or_create_named(token::MCP_TOKEN, false)?;
 
     let addr = (o.listen.trim_start_matches('[').trim_end_matches(']'), o.port)
         .to_socket_addrs()
@@ -104,12 +106,24 @@ pub fn run(o: Options) -> Result<()> {
     }
     let app = Arc::new(server::App {
         token,
+        mcp_token,
         dev_origins: o.dev_origins,
         tabs: Arc::new(tab::Tabs::new(grace())),
         push,
     });
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().context("start the async runtime")?;
     runtime.block_on(server::serve(listener, app))
+}
+
+/// `tenx web mcp-token [--rotate]`: print `/mcp`'s bearer token — what the
+/// gateway in front of it sends — making it on first use. A running
+/// `tenx web` reads it at start, so a rotated one needs a restart.
+pub fn mcp_token(rotate: bool) -> Result<()> {
+    println!("{}", token::load_or_create_named(token::MCP_TOKEN, rotate)?);
+    if rotate {
+        eprintln!("rotated — restart tenx web (tenx web service restart) to use it");
+    }
+    Ok(())
 }
 
 /// `--listen` as it goes in a URL: an IPv6 address in brackets.
