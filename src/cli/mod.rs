@@ -562,6 +562,10 @@ pub enum TaskCommands {
         /// is treated as an exact slug (not slugified).
         #[arg(long)]
         ws_dir: Option<String>,
+        /// Open (or reopen) the window without switching to it — no attached
+        /// terminal or tenx web tab moves; for scripts and agents
+        #[arg(long)]
+        no_focus: bool,
     },
     /// List the workspace's tasks
     List {

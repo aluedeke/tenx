@@ -479,18 +479,21 @@ pub(crate) fn slug_for(ws: &crate::workspace::Workspace, name: &str) -> String {
     crate::workspace::slugify(name)
 }
 
-pub fn open(name: &str) -> Result<()> {
+/// `tenx task open`. `detached` (`--no-focus`) opens or reopens the window
+/// without making it the session's current one — the path `task new
+/// --no-focus` takes — so no attached terminal or `tenx web` tab moves.
+pub fn open(name: &str, detached: bool) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = crate::workspace::find(&cwd)?;
     let slug = slug_for(&ws, name);
-    open_in(&ws, &slug)
+    open_window(&ws, &slug, detached)
 }
 
-/// Open a task given an explicit workspace directory and exact slug. Used by
-/// the column (cross-workspace, no meaningful cwd, slug already known).
-pub fn open_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
+/// [`open`] given an explicit workspace directory and exact slug (`--ws-dir`:
+/// cross-workspace, no meaningful cwd, slug already known).
+pub fn open_by_dir(ws_dir: &str, slug: &str, detached: bool) -> Result<()> {
     let ws = load_ws_arg(ws_dir)?;
-    open_in(&ws, slug)
+    open_window(&ws, slug, detached)
 }
 
 /// Delete a task by explicit workspace directory and exact slug (no prompt).

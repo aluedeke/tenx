@@ -214,6 +214,12 @@ fn task_new_open_and_list_against_real_tmux() {
     assert!(out.status.success(), "task open: {}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx", "#{window_name}"]), "smoke-test");
 
+    // --no-focus on an open window leaves the session where it is.
+    h.tmux_out(&["select-window", "-t", "tenx:home"]);
+    let out = h.tenx().args(["task", "open", "smoke-test", "--no-focus", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task open --no-focus: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx", "#{window_name}"]), "home");
+
     // The status line reads the pushed window option.
     h.tmux_out(&["set-option", "-w", "-t", "tenx:smoke-test", "@tenx_status", "▷ Smoke"]);
     let left = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{T:status-left}"]);
@@ -293,6 +299,16 @@ fn task_new_open_and_list_against_real_tmux() {
     assert!(out.status.success(), "task open after kill: {}", String::from_utf8_lossy(&out.stderr));
     let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_name}"]);
     assert!(windows.lines().any(|l| l == "smoke-test"), "recreated: {windows}");
+
+    // --no-focus reopens a closed window behind the current one.
+    let id = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{window_id}"]);
+    h.tmux_out(&["kill-window", "-t", &id]);
+    h.tmux_out(&["select-window", "-t", "tenx:home"]);
+    let out = h.tenx().args(["task", "open", "smoke-test", "--no-focus", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task open --no-focus after kill: {}", String::from_utf8_lossy(&out.stderr));
+    let windows = h.tmux_out(&["list-windows", "-t", "tenx", "-F", "#{window_name} #{window_active}"]);
+    assert!(windows.lines().any(|l| l == "smoke-test 0"), "recreated in the background: {windows}");
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx", "#{window_name}"]), "home");
 }
 
 /// The client: `tenx` in a terminal draws the task column beside the session

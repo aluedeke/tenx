@@ -232,9 +232,9 @@ fn run() -> Result<()> {
             TaskCommands::SetRepos { name, repos, force, ws_dir } => {
                 cli::task::set_repos(ws_dir.as_deref(), &name, &repos, force)?;
             }
-            TaskCommands::Open { name, ws_dir } => match ws_dir {
-                Some(dir) => cli::task::open_by_dir(&dir, &name)?,
-                None => cli::task::open(&name)?,
+            TaskCommands::Open { name, ws_dir, no_focus } => match ws_dir {
+                Some(dir) => cli::task::open_by_dir(&dir, &name, no_focus)?,
+                None => cli::task::open(&name, no_focus)?,
             },
             TaskCommands::Rename { name, title, ws_dir } => {
                 cli::task::rename(ws_dir.as_deref(), &name, &title)?;

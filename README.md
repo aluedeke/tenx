@@ -175,7 +175,7 @@ tenx task new <TITLE>    create a task [--repos a,b | --no-repos | --adhoc] [--p
                          [--link "Label: value"] [--no-open | --no-focus]
                          [--agent ..] [--agent-args ".."] [--confirm-dev-channels]
 tenx ask <QUESTION>      a session of its own for a question, outside any workspace
-tenx task open <NAME>    open or switch to a task's window
+tenx task open <NAME>    open or switch to a task's window [--no-focus: open it, switch nobody to it]
 tenx task send <SLUG> <TEXT>   message a task's agent, as if typed into its pane
 tenx task wait <SLUG>    until its turn is over [--timeout 10m]; exits 2 if it needs you, 3 on timeout
 tenx task output <SLUG>  what its agent said since the last prompt [--json]

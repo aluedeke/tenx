@@ -284,6 +284,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x79f195cf10afd4f0, // tenx: granted secrets are deleted on close portable
     0x7cc4a58c8d9a3b73, // tenx: task agent start options
     0x8bf80e322020228e, // tenx: task agent start options portable
+    0x5d5720929d048b86, // tenx: task open --no-focus
+    0xb672274985e96c97, // tenx: task open --no-focus portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {

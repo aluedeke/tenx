@@ -105,6 +105,8 @@ If you no longer need something you asked for, withdraw it so nobody is chased f
                                a task without worktrees: its agent can read the whole workspace
     tenx ask "<question>"      a session of its own for a question, outside any workspace
     tenx task open <name>      switch to the task's window
+    tenx task open <name> --no-focus
+                               open (or reopen) it without switching anyone's screen to it
     tenx task list             list all tasks and open tabs
     tenx task rm <name>        remove task and worktrees
     tenx task agent <name> [--args "…"] [--confirm-dev-channels]
