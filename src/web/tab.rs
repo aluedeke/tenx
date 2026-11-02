@@ -278,6 +278,18 @@ impl Pty {
     fn pid(&self) -> Option<u32> {
         self.child.process_id()
     }
+
+    /// End the attach and wait until its last output is read: what a dying
+    /// tmux client prints (mouse off, the main screen back) must not reach the
+    /// page after a new attach has set it up.
+    fn stop(mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let start = std::time::Instant::now();
+        while self.alive.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(2) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
 }
 
 /// The pty's size; tmux hands the pixels (its cell size) on to the panes,
@@ -367,8 +379,8 @@ impl Driver {
         if !crate::tmux::has_session(&self.session) && crate::tmux::new_grouped_session(&self.session).is_err() {
             return false;
         }
-        if let Some(mut old) = self.pty.take() {
-            let _ = old.child.kill();
+        if let Some(old) = self.pty.take() {
+            old.stop();
         }
         match Pty::spawn(&self.session, at, self.out.clone()) {
             Ok(pty) => {
@@ -377,6 +389,18 @@ impl Driver {
                 true
             }
             Err(_) => false,
+        }
+    }
+
+    /// Replace the running attach with a new one at the page's size.
+    fn attach_again(&mut self) {
+        let Some(at) = self.size else { return };
+        if let Some(old) = self.pty.take() {
+            old.stop();
+        }
+        match Pty::spawn(&self.session, at, self.out.clone()) {
+            Ok(pty) => self.pty = Some(pty),
+            Err(e) => self.send_json(serde_json::json!({ "type": "error", "message": format!("{e:#}") })),
         }
     }
 
@@ -400,10 +424,14 @@ impl Driver {
                 self.patch = patch;
                 // A new socket numbers its inputs from 1 again.
                 self.ack = 0;
-                // A new page starts from an empty terminal; tmux only sends
-                // what changes, so ask it for the whole screen.
-                if let Some(client) = self.pty.as_ref().and_then(Pty::pid).and_then(crate::tmux::client_by_pid) {
-                    let _ = crate::tmux::refresh_client(&client);
+                // A new page starts from an empty terminal, its modes
+                // included, and tmux only sends what changes: `refresh-client`
+                // redraws the screen but never sends the mouse, bracketed
+                // paste or cursor-key modes again. xterm.js without mouse
+                // reports turns the wheel into ↑/↓, which an agent takes as
+                // its prompt history. A fresh attach sends everything.
+                if self.pty.is_some() {
+                    self.attach_again();
                 }
             }
             Input::Close => return false,

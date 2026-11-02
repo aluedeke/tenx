@@ -564,12 +564,6 @@ pub fn sessions_with_prefix(prefix: &str) -> Vec<(String, bool)> {
         .collect()
 }
 
-/// Redraw a client's whole screen — a browser tab that reconnects starts from
-/// an empty terminal, and tmux only sends what changed.
-pub fn refresh_client(client: &str) -> Result<()> {
-    run(&["refresh-client", "-t", client]).map(drop)
-}
-
 // ── Windows ───────────────────────────────────────────────────────────────────
 
 const WINDOW_FORMAT: &str = "#{window_id}\t#{window_index}\t#{window_name}\t#{window_active}\t#{window_bell_flag}\t#{window_activity_flag}\t#{window_activity}\t#{@tenx_task_dir}";

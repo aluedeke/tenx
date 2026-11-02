@@ -973,6 +973,32 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
             }
         }
 
+        // Terminal output until `want` (true) or `secs` without it (false),
+        // answering tmux's device-attributes query as xterm.js does: an
+        // unanswered one has tmux set the terminal up again after a timeout,
+        // mouse included, which would hide a page that lost its modes.
+        const MOUSE_ON: &[u8] = b"\x1b[?1000h";
+        async fn terminal_until<S>(ws: &mut S, want: &[u8], secs: u64) -> bool
+        where
+            S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+                + futures_util::Sink<Message>
+                + Unpin,
+        {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(secs);
+            let mut seen = Vec::new();
+            loop {
+                let Ok(Some(Ok(msg))) = tokio::time::timeout_at(deadline, ws.next()).await else { return false };
+                let Message::Binary(b) = msg else { continue };
+                if b.windows(3).any(|w| w == b"\x1b[c") {
+                    let _ = ws.send(Message::Binary(b"\x1b[?62;22c".to_vec().into())).await;
+                }
+                seen.extend_from_slice(&b);
+                if seen.windows(want.len()).any(|w| w == want) {
+                    return true;
+                }
+            }
+        }
+
         let (mut ws, _) = tokio_tungstenite::connect_async(request(&page, Some(&token), None)).await.unwrap();
         let hello = next_of(&mut ws, "hello").await;
         let id = hello["session"].as_str().unwrap().to_string();
@@ -982,13 +1008,11 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
 
         // The terminal: attached once the page says its size.
         ws.send(Message::Text(r#"{"type":"resize","cols":120,"rows":40}"#.into())).await.unwrap();
-        let mut got_bytes = false;
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-        while !got_bytes {
-            if let Message::Binary(_) = tokio::time::timeout_at(deadline, ws.next()).await.expect("no terminal output").unwrap().unwrap() {
-                got_bytes = true;
-            }
-        }
+        // The attach sets the mouse up.
+        assert!(terminal_until(&mut ws, MOUSE_ON, 10).await, "the attach never turned the mouse on");
+        // Then nothing more: everything this attach sends is on this page,
+        // none of it left to arrive on the next socket.
+        terminal_until(&mut ws, b"\0never", 1).await;
 
         // A key goes through the column's own handler: typed into the
         // search field, where the column starts.
@@ -1025,6 +1049,10 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         let (mut ws, _) = tokio_tungstenite::connect_async(request(&page, Some(&token), Some(&id))).await.unwrap();
         assert_eq!(next_of(&mut ws, "hello").await["session"], id.as_str());
         assert_eq!(next_of(&mut ws, "view").await["view"]["filter"], "w");
+        // The page is new, and so is its terminal: the mouse is set up again
+        // (`refresh-client` redraws the screen but leaves the modes as the
+        // last page had them), or xterm.js turns the wheel into ↑/↓.
+        assert!(terminal_until(&mut ws, MOUSE_ON, 3).await, "a page that came back has no mouse");
 
         // `tenx tmux restart` ends the tab's attach and its grouped session:
         // the tab waits for the new server and attaches to it again, rather
