@@ -956,69 +956,81 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         let err = tokio_tungstenite::connect_async(request(&page, None, None)).await.unwrap_err();
         assert!(err.to_string().contains("401"), "{err}");
 
-        // Text frames until one of `kind`.
-        async fn next_of<S>(ws: &mut S, kind: &str) -> serde_json::Value
+        // Text frames until one of `kind`. Terminal output read on the way
+        // is kept in `term`, as the page keeps it: a fresh attach can start
+        // before the view it is sent with, and its first bytes carry the
+        // mouse modes and tmux's device-attributes query.
+        async fn next_of<S>(ws: &mut S, term: &mut Vec<u8>, kind: &str) -> serde_json::Value
         where
             S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
         {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
             loop {
-                let msg = tokio::time::timeout_at(deadline, ws.next()).await.expect("timed out").unwrap().unwrap();
-                if let Message::Text(t) = msg {
-                    let v: serde_json::Value = serde_json::from_str(&t).unwrap();
-                    if v["type"] == kind {
-                        return v;
+                match tokio::time::timeout_at(deadline, ws.next()).await.expect("timed out").unwrap().unwrap() {
+                    Message::Text(t) => {
+                        let v: serde_json::Value = serde_json::from_str(&t).unwrap();
+                        if v["type"] == kind {
+                            return v;
+                        }
                     }
+                    Message::Binary(b) => term.extend_from_slice(&b),
+                    _ => {}
                 }
             }
         }
 
-        // Terminal output until `want` (true) or `secs` without it (false),
-        // answering tmux's device-attributes query as xterm.js does: an
-        // unanswered one has tmux set the terminal up again after a timeout,
-        // mouse included, which would hide a page that lost its modes.
+        // Terminal output — what `term` holds first — until `want` (true)
+        // or `secs` without it (false), answering tmux's device-attributes
+        // query as xterm.js does: an unanswered one has tmux set the
+        // terminal up again after a timeout, mouse included, which would
+        // hide a page that lost its modes.
         const MOUSE_ON: &[u8] = b"\x1b[?1000h";
-        async fn terminal_until<S>(ws: &mut S, want: &[u8], secs: u64) -> bool
+        async fn terminal_until<S>(ws: &mut S, term: &mut Vec<u8>, want: &[u8], secs: u64) -> bool
         where
             S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
                 + futures_util::Sink<Message>
                 + Unpin,
         {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(secs);
-            let mut seen = Vec::new();
+            let mut seen = std::mem::take(term);
+            let mut answered = 0;
             loop {
-                let Ok(Some(Ok(msg))) = tokio::time::timeout_at(deadline, ws.next()).await else { return false };
-                let Message::Binary(b) = msg else { continue };
-                if b.windows(3).any(|w| w == b"\x1b[c") {
+                let queries = seen.windows(3).filter(|w| w == b"\x1b[c").count();
+                for _ in answered..queries {
                     let _ = ws.send(Message::Binary(b"\x1b[?62;22c".to_vec().into())).await;
                 }
-                seen.extend_from_slice(&b);
+                answered = queries;
                 if seen.windows(want.len()).any(|w| w == want) {
                     return true;
+                }
+                let Ok(Some(Ok(msg))) = tokio::time::timeout_at(deadline, ws.next()).await else { return false };
+                if let Message::Binary(b) = msg {
+                    seen.extend_from_slice(&b);
                 }
             }
         }
 
         let (mut ws, _) = tokio_tungstenite::connect_async(request(&page, Some(&token), None)).await.unwrap();
-        let hello = next_of(&mut ws, "hello").await;
+        let mut term = Vec::new();
+        let hello = next_of(&mut ws, &mut term, "hello").await;
         let id = hello["session"].as_str().unwrap().to_string();
-        let first = next_of(&mut ws, "view").await;
+        let first = next_of(&mut ws, &mut term, "view").await;
         assert!(first["view"]["items"].to_string().contains("Web task"), "{first}");
         assert_eq!(first["view"]["filter"], "");
 
         // The terminal: attached once the page says its size.
         ws.send(Message::Text(r#"{"type":"resize","cols":120,"rows":40}"#.into())).await.unwrap();
         // The attach sets the mouse up.
-        assert!(terminal_until(&mut ws, MOUSE_ON, 10).await, "the attach never turned the mouse on");
+        assert!(terminal_until(&mut ws, &mut term, MOUSE_ON, 10).await, "the attach never turned the mouse on");
         // Then nothing more: everything this attach sends is on this page,
         // none of it left to arrive on the next socket.
-        terminal_until(&mut ws, b"\0never", 1).await;
+        terminal_until(&mut ws, &mut term, b"\0never", 1).await;
 
         // A key goes through the column's own handler: typed into the
         // search field, where the column starts.
         ws.send(Message::Text(r#"{"type":"key","key":"w","ctrl":false,"alt":false,"shift":false}"#.into())).await.unwrap();
         let typed = loop {
-            let v = next_of(&mut ws, "view").await;
+            let v = next_of(&mut ws, &mut term, "view").await;
             if v["view"]["filter"] == "w" {
                 break v;
             }
@@ -1030,7 +1042,7 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         // prediction for it.
         ws.send(Message::Text(r#"{"type":"key","key":"Shift","ctrl":false,"alt":false,"shift":true,"seq":7}"#.into())).await.unwrap();
         loop {
-            let v = next_of(&mut ws, "view").await;
+            let v = next_of(&mut ws, &mut term, "view").await;
             if v["ack"] == 7 {
                 break;
             }
@@ -1038,21 +1050,22 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
 
         // The layout rule, for a phone and a desktop.
         ws.send(Message::Text(r#"{"type":"viewport","cols":60}"#.into())).await.unwrap();
-        assert_eq!(next_of(&mut ws, "layout").await["narrow"], true);
+        assert_eq!(next_of(&mut ws, &mut term, "layout").await["narrow"], true);
         ws.send(Message::Text(r#"{"type":"viewport","cols":220}"#.into())).await.unwrap();
-        assert_eq!(next_of(&mut ws, "layout").await["narrow"], false);
+        assert_eq!(next_of(&mut ws, &mut term, "layout").await["narrow"], false);
         ws.close(None).await.unwrap();
         drop(ws);
 
         // Back within the grace period: the same session, the column as it
         // was left.
         let (mut ws, _) = tokio_tungstenite::connect_async(request(&page, Some(&token), Some(&id))).await.unwrap();
-        assert_eq!(next_of(&mut ws, "hello").await["session"], id.as_str());
-        assert_eq!(next_of(&mut ws, "view").await["view"]["filter"], "w");
+        let mut term = Vec::new();
+        assert_eq!(next_of(&mut ws, &mut term, "hello").await["session"], id.as_str());
+        assert_eq!(next_of(&mut ws, &mut term, "view").await["view"]["filter"], "w");
         // The page is new, and so is its terminal: the mouse is set up again
         // (`refresh-client` redraws the screen but leaves the modes as the
         // last page had them), or xterm.js turns the wheel into ↑/↓.
-        assert!(terminal_until(&mut ws, MOUSE_ON, 3).await, "a page that came back has no mouse");
+        assert!(terminal_until(&mut ws, &mut term, MOUSE_ON, 3).await, "a page that came back has no mouse");
 
         // `tenx tmux restart` ends the tab's attach and its grouped session:
         // the tab waits for the new server and attaches to it again, rather
