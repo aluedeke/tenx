@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Only what the build settings' INFOPLIST_KEY_* can't say; Xcode merges
+     the generated keys in. Talk mode (VoiceCall, CallManager) is a CallKit
+     call: it keeps the app, its microphone and its speaker running with
+     the screen off. -->
+<dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>voip</string>
+	</array>
+</dict>
+</plist>

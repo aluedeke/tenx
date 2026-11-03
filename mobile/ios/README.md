@@ -12,6 +12,15 @@ web app can't do:
 - **No iPadOS shortcut bar** over a hardware keyboard (`ShortcutBar.swift`;
   it reaches into WebKit's private content view, so a future iOS may bring
   the bar back — it can't crash).
+- **Talk mode with the screen off.** The page's 🎧 (talk to tenx) runs as
+  a CallKit call made by the app, not by the web view, whose microphone
+  stops when the screen turns off: `VoiceCall.swift` makes the WebRTC
+  connection to `tenx-voice` as `web/src/lib/voice.ts` does (WebRTC from
+  the `stasel/WebRTC` package, 155.0.0), `CallManager.swift` makes it a
+  call (lock screen, mute = pause, hold for a phone call, end). The page
+  still draws it: the app hands it every message (`window.__tenxVoice`).
+  In the simulator, which ends every CallKit call, it runs without CallKit.
+  Log: `log stream --predicate 'subsystem == "it.luedeke.mobile.tenx"'`.
 - **The sign-in kept.** The address and token live in the Keychain; every
   launch signs in with `?token=`, so a lost cookie never matters.
 
