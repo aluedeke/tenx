@@ -52,6 +52,14 @@ pub struct GlobalConfig {
     /// `tenx web`'s speaker: the model and voice `tenx-tts` reads with.
     #[serde(default, skip_serializing_if = "ReadAloudConfig::is_empty")]
     pub read_aloud: ReadAloudConfig,
+    /// `tenx web`'s voice assistant: what `tenx-voice` runs with.
+    #[serde(default, skip_serializing_if = "VoiceConfig::is_empty")]
+    pub voice: VoiceConfig,
+    /// `[say]`: words the voices get wrong, `word = "how to say it"` — read
+    /// aloud by the speaker and by the voice assistant
+    /// (`tenx_core::readaloud::respell`; "tenx" is built in).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub say: std::collections::BTreeMap<String, String>,
 }
 
 /// `[read_aloud]`: text to speech for `tenx web`'s speaker (`web::tts`).
@@ -82,6 +90,42 @@ impl ReadAloudConfig {
 
 fn is_zero_f32(n: &f32) -> bool {
     *n == 0.0
+}
+
+/// `[voice]`: `tenx web`'s voice assistant (`web::voice`), a Pipecat
+/// pipeline in Python. Every field has a default; what it needs besides is
+/// `uv` on `PATH` and an Anthropic API key.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct VoiceConfig {
+    /// The Claude model it thinks with; empty = `claude-haiku-5-5`, since a
+    /// conversation wants fast answers more than deep ones.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
+    /// A Kokoro voice name (`af_heart`, `bm_george`); empty = `af_heart`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub voice: String,
+    /// An MLX Whisper model on Hugging Face, for when `[speech]` has no
+    /// model (with one, it hears through `tenx-whisper` and that model);
+    /// empty = `mlx-community/whisper-large-v3-turbo`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub stt_model: String,
+    /// The language spoken, a Whisper code; empty = `en`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub language: String,
+    /// The file holding the Anthropic API key (`~` expanded; keep it 600);
+    /// empty = `~/.config/tenx/anthropic-key`. Without it, `tenx web`'s own
+    /// `ANTHROPIC_API_KEY`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key_file: String,
+    /// Minutes with nobody connected before the program ends; 0 = 10.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub idle_minutes: u32,
+}
+
+impl VoiceConfig {
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// `[speech]`: speech to text for `tenx web` (`web::whisper`). Without a

@@ -202,10 +202,14 @@ pub(super) fn notifier(push: std::sync::Arc<Push>) {
     const POLL: Duration = Duration::from_secs(2);
     let snapshot = crate::cli::watch::resolve_all();
     let mut attention = crate::cli::watch::Attention::primed(&snapshot);
+    // The voice assistant hears the same edges, said aloud (`voice::News`).
+    let mut news = super::voice::News::new();
     loop {
         std::thread::sleep(POLL);
         let snapshot = crate::cli::watch::resolve_all();
-        for (note, _) in attention.step(&snapshot) {
+        let notes = attention.step(&snapshot);
+        news.step(&snapshot, &notes.iter().map(|(n, _)| *n).collect::<Vec<_>>());
+        for (note, _) in notes {
             let reason = note.reason.clone().unwrap_or_else(|| "waiting for you".into());
             let msg = Message {
                 title: note.task.clone(),

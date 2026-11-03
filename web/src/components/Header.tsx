@@ -4,9 +4,11 @@
 // column's toggle, the wordmark, the task in front of you (the view's
 // `current`, i.e. this tab's tmux window) with what it wants from you, and
 // what doesn't depend on a row: the daily actions (next that needs you,
-// read the current task's last reply aloud, speak, new) on the right, and behind ⋯ what you set once (notifications,
+// read the current task's last reply aloud, speak, talk to tenx, new) on the right, and behind ⋯ what you set once (notifications,
 // the keys, the connection — a dot on the wordmark, words only when it's
-// lost). On a phone it is how the column opens.
+// lost). While you talk with tenx (🎧), the conversation's state (tap:
+// pause) and ■ stand in for the speaker, the microphone and 🎧. On a phone
+// it is how the column opens.
 
 import { useEffect, useRef, useState } from 'react';
 import { PopupLayer, type Popup } from './RowActions';
@@ -14,6 +16,7 @@ import type { Action, ColumnView, TaskItem } from '@/protocol';
 import type { Status } from '@/lib/connection';
 import type { PushState } from '@/lib/push';
 import { nativeApp, openNativeSettings } from '@/lib/native';
+import type { VoiceState } from '@/lib/voice';
 
 interface Props {
   view: ColumnView | null;
@@ -41,6 +44,12 @@ interface Props {
   onSpeakStop(): void;
   /** The current task's links (↗). */
   onLinks(task: TaskItem): void;
+  /** Talk mode (lib/voice): what the conversation is doing, null when off. */
+  voice: VoiceState | null;
+  /** Start talking with tenx; while talking, pause or go on. */
+  onVoice(): void;
+  /** End the conversation. */
+  onVoiceStop(): void;
 }
 
 /** The speaker button: off, waiting for the audio, reading aloud, or
@@ -61,6 +70,15 @@ const MIC_TITLE: Record<MicState, string> = {
   idle: 'speak instead of typing — tap (or ⌃M), talk, tap again; ⏎ stops and sends',
   recording: 'listening — tap (or ⌃M) to stop and type it, ⏎ to stop and send it',
   transcribing: 'turning speech into text…',
+};
+
+const VOICE_LABEL: Record<VoiceState, string> = {
+  connecting: 'starting',
+  listening: 'listening',
+  hearing: 'hearing you',
+  thinking: 'thinking',
+  speaking: 'speaking',
+  paused: 'paused',
 };
 
 const PUSH_TITLE: Record<PushState, string> = {
@@ -210,6 +228,40 @@ export function Header(props: Props) {
               <span className="lcount">{current.links.length}</span>
             </button>
           )}
+          {props.voice ? (
+            // Talking with tenx: the conversation (tap: pause, go on) and ■
+            // in the speaker's, the microphone's and the talk button's
+            // place — they would fight it for the audio.
+            <>
+              <button
+                type="button"
+                className={`hbtn talk ${props.voice}`}
+                data-testid="talk"
+                data-state={props.voice}
+                title={props.voice === 'paused' ? 'paused — tap to go on' : `talking with tenx (${VOICE_LABEL[props.voice]}) — tap to pause`}
+                aria-label={props.voice === 'paused' ? 'talk paused — go on' : `talking with tenx, ${VOICE_LABEL[props.voice]} — pause`}
+                aria-pressed={props.voice !== 'paused'}
+                disabled={props.voice === 'connecting'}
+                onClick={props.onVoice}
+              >
+                {props.voice === 'paused' ? <HeadsetIcon /> : <span className="talkdot" />}
+                <span className="tlabel">{VOICE_LABEL[props.voice]}</span>
+              </button>
+              <button
+                type="button"
+                className="hbtn speakstop"
+                data-testid="talk-stop"
+                title="end the conversation"
+                aria-label="end the conversation"
+                onClick={props.onVoiceStop}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
+                </svg>
+              </button>
+            </>
+          ) : (
+            <>
           <button
             type="button"
             className={`hbtn speaker ${props.speaker}`}
@@ -264,6 +316,19 @@ export function Header(props: Props) {
                 <MicIcon />
               )}
             </button>
+          )}
+          <button
+            type="button"
+            className="hbtn"
+            data-testid="talk-start"
+            title="talk to tenx — what needs you, what a task said, what to tell it"
+            aria-label="talk to tenx"
+            // Not on pointer-down: getUserMedia wants a completed tap on iOS.
+            onClick={props.onVoice}
+          >
+            <HeadsetIcon />
+          </button>
+            </>
           )}
           <button
             type="button"
@@ -390,6 +455,12 @@ function PauseIcon() {
       <path d="M9 6v12M15 6v12" />
     </svg>
   );
+}
+
+const HEADSET = ['M4 15v-3a8 8 0 0 1 16 0v3', 'M4 15a2 2 0 0 0 2 2h1v-5H6a2 2 0 0 0-2 2z', 'M20 15a2 2 0 0 1-2 2h-1v-5h1a2 2 0 0 1 2 2z', 'M18 17v1a3 3 0 0 1-3 3h-2'];
+
+function HeadsetIcon() {
+  return <Icon d={HEADSET} />;
 }
 
 const BELL = ['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0 0 0 3.4 0'];

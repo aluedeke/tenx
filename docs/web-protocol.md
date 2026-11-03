@@ -28,6 +28,10 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 | `POST /speak?task=<id>` | cookie + Origin | The last reply of the task's agent (`<id>`: a column row's id, `<workspace>/<slug>`), to read aloud: the agent's last message since the last prompt, from its transcript (what `tenx task output` prints last), made speakable (`tenx_core::readaloud`: code blocks left out, links read as their text, table rows as lists) and cut into pieces of whole sentences (`tenx_core::tts::pieces`: a short first one, so the voice starts soon). Answers `{"pieces": [...]}` and starts `tenx-tts` loading. `422` with the reason when there is no such task, no reply since the last prompt, or no `[read_aloud] model` set. |
 | `POST /speak/audio` | cookie + Origin | The body (UTF-8 text, one piece; at most 64 KB) read aloud on this machine by `tenx-tts` (Kokoro through sherpa-onnx) with `[read_aloud]` from the config: `audio/wav`, 16-bit mono at the model's rate (24 kHz). One piece at a time. The page asks for the next piece while one plays. `400` for a body that isn't UTF-8 or is empty, `502` with the reason when no model is set or the program fails. |
 | `POST /transcribe[?language=]` | cookie + Origin | One recording at once (the page streams to `/speech` instead): a recording (`Content-Type` `audio/wav`, `audio/mp4`, `audio/webm` or `audio/ogg`; at most 25 MB), turned into text on this machine: by `tenx-whisper` with `[speech] model` from the config (16 kHz mono 16-bit WAV only — what the page sends), or by the whisper.cpp `whisper-server` at `TENX_WEB_STT_URL` when that is set (any of the formats). `language`: a Whisper code or `auto`, anything else dropped. Answers `{"text": …}`, trimmed; `502` with the reason when no model is set, or the program or server fails. |
+| `POST /voice/offer` | cookie + Origin | Talk mode (`web/src/lib/voice.ts`): the page's WebRTC offer for the voice assistant, `{sdp, type, pc_id, restart_pc, task}` — the body Pipecat's own clients send, plus `task`, the row id the page shows (or `null`). The first one starts `tenx-voice` (`voice.rs`: `voice.py` run with `uv run --script`; minutes on the very first start, while uv installs its packages). Answers `{sdp, type, pc_id}`. The audio then flows between the browser and that program over WebRTC, not through `tenx web`. With `pc_id` set it renegotiates that connection (the program asks over the data channel). `502` with the reason when the program can't run: no `uv`, no Anthropic API key (`[voice] key_file`, default `~/.config/tenx/anthropic-key`, else `tenx web`'s `ANTHROPIC_API_KEY`). |
+| `PATCH /voice/offer` | cookie + Origin | ICE candidates the page found after its offer: `{pc_id, candidates: [{candidate, sdp_mid, sdp_mline_index}]}`; an empty `candidate` ends them. `{"ok": true}`. |
+| `POST /voice/context` | cookie + Origin | `{pc_id, task}`: the page shows another task now, so "it" means that one. `{"ok": true}` at once; nothing waits for the program. |
+| `POST /voice/pause` | cookie + Origin | `{pc_id, paused}`: the page paused the conversation — it has already silenced its microphone and muted the voice — so the program stops mid-sentence and keeps its news until `paused: false`. `{"ok": true}` at once. |
 
 The token lives in `~/.config/tenx/web-token` (mode 600), created on first
 start and the same across restarts, reinstalls and upgrades; only
@@ -226,6 +230,35 @@ Work tab. A delete asks on its row with `key` messages
 (y, n). Tapping
 something that takes typing focuses an off-screen input so a phone raises its
 keyboard; what it types goes over as `key` messages.
+
+## Talk mode
+
+The page and `tenx-voice` share one WebRTC connection: the microphone on the
+first transceiver (sent with the browser's echo cancellation and noise
+suppression), the assistant's voice coming back on it, and a data channel
+the page opens. On that channel the page sends `ping: <ms>` every second —
+the program's only way to notice a page that went away (3 s without one) —
+and, once it opens, RTVI's `client-ready` (`{"label":"rtvi-ai","type":"client-ready",…}`).
+The program sends RTVI messages, of which the page reads `bot-ready`,
+`user-started-speaking`/`user-stopped-speaking`, `bot-llm-started`,
+`bot-started-speaking`/`bot-stopped-speaking` (the header's state),
+`user-transcription` with `final`, `bot-output` (a spoken sentence) and
+`llm-function-call-started` (the captions), and `{"type":"signalling",
+"message":{"type":"renegotiate"}}`, which the page answers with a new offer
+for its `pc_id`.
+
+Its voice says the words in `[say]` (and "tenx") the way that table says,
+as the speaker does (`tenx_core::readaloud::respell`); the captions keep
+them as written.
+
+The assistant hears through `tenx-whisper` with `[speech]`'s model and
+glossary (the microphone button's), one process of its own; without a
+`[speech] model`, through MLX Whisper (`[voice] stt_model`).
+
+What the assistant is told about tasks comes from `tenx web`'s notifier, on
+the same attention edges as push notifications (`cli::watch::Attention`),
+plus a task that finished a turn (`tenx_core::voice::Turns`) — only while a
+page is connected.
 
 ## Push messages
 

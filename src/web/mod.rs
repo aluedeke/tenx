@@ -24,6 +24,7 @@ mod tab;
 mod token;
 mod transcribe;
 mod dictate;
+mod voice;
 mod whisper;
 
 use anyhow::{bail, Context, Result};
@@ -99,6 +100,14 @@ pub fn run(o: Options) -> Result<()> {
         let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
         let _ = std::process::Command::new(opener).arg(&url).spawn();
     }
+
+    // The voice assistant reaches tenx's tools through this server's `/mcp`.
+    let local = match addr.ip() {
+        ip if ip.is_unspecified() && ip.is_ipv4() => "127.0.0.1".to_string(),
+        ip if ip.is_unspecified() => "[::1]".to_string(),
+        ip => url_host(&ip.to_string()),
+    };
+    voice::set_mcp(format!("http://{local}:{}/mcp", o.port), mcp_token.clone());
 
     let push = Arc::new(push::Push::load().context("load the Web Push key")?);
     {

@@ -296,6 +296,13 @@ struct Agent {
     agent: String,
 }
 
+impl Snapshot {
+    /// Every task with a live session, in `workspace::task_json`'s shape.
+    pub(crate) fn live_tasks(&self) -> &[serde_json::Value] {
+        &self.tasks
+    }
+}
+
 pub(crate) fn resolve_all() -> Snapshot {
     let sessions = workspace::sessions::sessions();
     let windows = crate::tmux::list_windows().unwrap_or_default();

@@ -12,7 +12,8 @@ use anyhow::{Result, bail};
 pub(super) fn pieces(task_id: &str) -> Result<Vec<String>> {
     let config = super::tts::config()?;
     std::thread::spawn(move || super::tts::warm(&config));
-    let text = tenx_core::readaloud::spoken_text(&last_reply(task_id)?);
+    let say = tenx_core::readaloud::say_table(&crate::workspace::load_global()?.say);
+    let text = tenx_core::readaloud::respell(&tenx_core::readaloud::spoken_text(&last_reply(task_id)?), &say);
     let pieces = tenx_core::tts::pieces(&text);
     if pieces.is_empty() {
         bail!("the last reply has nothing to read aloud");

@@ -37,6 +37,7 @@ pub mod trust;
 pub mod title;
 pub mod tts;
 pub mod viewpatch;
+pub mod voice;
 pub mod web;
 pub mod webpush;
 pub mod whisper;

@@ -74,8 +74,9 @@ fn idle(config: &SpeechConfig) -> Duration {
     Duration::from_secs(60 * u64::from(if config.idle_minutes == 0 { 10 } else { config.idle_minutes }))
 }
 
-/// `tenx-whisper` beside this binary, else whatever `PATH` has.
-fn program() -> PathBuf {
+/// `tenx-whisper` beside this binary, else whatever `PATH` has. The voice
+/// assistant runs one of its own (`voice.rs`).
+pub(super) fn program() -> PathBuf {
     let beside = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join("tenx-whisper")));
     beside.filter(|p| p.is_file()).unwrap_or_else(|| PathBuf::from("tenx-whisper"))
 }

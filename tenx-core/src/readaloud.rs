@@ -153,6 +153,56 @@ fn link(s: &str) -> Option<(&str, &str)> {
     Some((label, &s[end + 1..]))
 }
 
+/// Words a voice gets wrong, and how to say them instead — tenx's own name
+/// first: Kokoro reads "tenx" as one syllable, "tenks".
+pub const BUILTIN_SAY: &[(&str, &str)] = &[("tenx", "ten x")];
+
+/// The respelling table: the built-in words, then the config's `[say]`
+/// (`word = "how to say it"`), which wins. Keys are lowercased: a word
+/// matches in any case.
+pub fn say_table<'a>(config: impl IntoIterator<Item = (&'a String, &'a String)>) -> Vec<(String, String)> {
+    let mut table: Vec<(String, String)> = BUILTIN_SAY.iter().map(|(w, s)| (w.to_string(), s.to_string())).collect();
+    for (word, say) in config {
+        let word = word.trim().to_lowercase();
+        if word.is_empty() {
+            continue;
+        }
+        table.retain(|(w, _)| *w != word);
+        table.push((word, say.clone()));
+    }
+    table
+}
+
+/// `text` with every word in `table` respelled. A word is a run of letters
+/// and digits matched whole, in any case — "tenx" in "tenx-web" or "TenX",
+/// never in "tenxy". `voice.py` applies the same rule to the assistant's
+/// speech; keep them alike.
+pub fn respell(text: &str, table: &[(String, String)]) -> String {
+    if table.is_empty() {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        let lower = word.to_lowercase();
+        match table.iter().find(|(w, _)| *w == lower) {
+            Some((_, say)) => out.push_str(say),
+            None => out.push_str(word),
+        }
+        word.clear();
+    };
+    for c in text.chars() {
+        if c.is_alphanumeric() {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +242,22 @@ mod tests {
     fn plain_text_is_unchanged() {
         assert_eq!(spoken_text("Yes, this is possible."), "Yes, this is possible.");
         assert_eq!(spoken_text(""), "");
+    }
+
+    #[test]
+    fn words_are_respelled_whole_in_any_case() {
+        let table = say_table(&[("Kubectl".to_string(), "cube control".to_string())].into_iter().collect::<std::collections::BTreeMap<_, _>>());
+        assert_eq!(respell("tenx web runs TenX tasks.", &table), "ten x web runs ten x tasks.");
+        assert_eq!(respell("tenx-web, not tenxy or 2tenx", &table), "ten x-web, not tenxy or 2tenx");
+        assert_eq!(respell("run kubectl apply", &table), "run cube control apply");
+        assert_eq!(respell("", &table), "");
+    }
+
+    #[test]
+    fn the_config_overrides_a_builtin_word() {
+        let config: std::collections::BTreeMap<String, String> = [("TENX".to_string(), "ten ex".to_string())].into_iter().collect();
+        let table = say_table(&config);
+        assert_eq!(table, vec![("tenx".to_string(), "ten ex".to_string())]);
+        assert_eq!(respell("tenx", &table), "ten ex");
     }
 }

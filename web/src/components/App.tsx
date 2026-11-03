@@ -26,6 +26,7 @@ import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
 import { Reading, type ReadingState } from '@/lib/speak';
+import { Conversation, addCaption, type Caption, type VoiceState } from '@/lib/voice';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
@@ -98,6 +99,11 @@ export function App() {
   const [speaker, setSpeaker] = useState<SpeakerState>('idle');
   const reading = useRef<Reading | null>(null);
   const recording = useRef<Dictation | null>(null);
+  /** Talk mode (lib/voice): the conversation, what it is doing, and the
+   * last lines said. */
+  const talking = useRef<Conversation | null>(null);
+  const [voice, setVoice] = useState<VoiceState | null>(null);
+  const [captions, setCaptions] = useState<Caption[]>([]);
   /** What live dictation has typed into the terminal so far, and how much
    * of it is the user's now (they typed after it): never erased. */
   const liveTyped = useRef('');
@@ -896,6 +902,8 @@ export function App() {
    * `tenx web` transcribes it on its machine while the user talks; the text
    * so far shows above the terminal (lib/stt). */
   const toggleMic = useCallback(async () => {
+    // The conversation has the microphone.
+    if (talking.current) return notice('talking with tenx — end it first');
     const diag = (message: string) => send({ type: 'log', message: `stt: ${message}` });
     // The text so far, typed at the cursor as iOS dictation types: the edit
     // since what was typed last (backspaces, then the new characters).
@@ -1042,6 +1050,52 @@ export function App() {
   const toggleSpeakerRef = useRef(toggleSpeaker);
   toggleSpeakerRef.current = toggleSpeaker;
 
+  /** The header's 🎧: a spoken conversation about the tasks (lib/voice);
+   * while it runs, the same place pauses it and goes on. It takes the
+   * microphone and the speaker, so a reading stops and a dictation must
+   * end first. */
+  const toggleVoice = useCallback(() => {
+    if (talking.current) {
+      talking.current.togglePause();
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === 'undefined') {
+      return notice('talking needs HTTPS (tailscale serve) and a browser with WebRTC');
+    }
+    if (recording.current) return notice('dictating — stop that first');
+    reading.current?.stop();
+    setCaptions([]);
+    // Straight from the tap: iOS asks for the microphone, and plays audio,
+    // only inside one.
+    const next = new Conversation(state.current.current || null, {
+      onState: (s) => {
+        if (talking.current === next) setVoice(s);
+      },
+      onCaption: (c) => {
+        if (talking.current === next) setCaptions((l) => addCaption(l, c));
+      },
+      onEnd: (error) => {
+        if (talking.current !== next) return;
+        talking.current = null;
+        setVoice(null);
+        setCaptions([]);
+        if (error) notice(`talk: ${error}`);
+      },
+    });
+    talking.current = next;
+    setVoice('connecting');
+  }, [notice]);
+
+  const stopVoice = useCallback(() => talking.current?.stop(), []);
+
+  // "It" is the task in front of you.
+  useEffect(() => {
+    talking.current?.lookAt(view?.current || null);
+  }, [view?.current]);
+
+  // Not past the page: the microphone and the program's session go with it.
+  useEffect(() => () => talking.current?.stop(), []);
+
   /** The header's ☰ / ⟨: show the column with the keyboard in it, or hide
    * it and give the keyboard back to the terminal. */
   const toggleColumn = useCallback(() => {
@@ -1159,6 +1213,9 @@ export function App() {
         onSpeak={toggleSpeaker}
         onSpeakStop={stopSpeaker}
         onLinks={(task) => setOwnLinks({ title: task.title, links: task.links })}
+        voice={voice}
+        onVoice={toggleVoice}
+        onVoiceStop={stopVoice}
       />
       {shown?.mode.kind === 'links' ? (
         <LinksMenu
@@ -1247,6 +1304,23 @@ export function App() {
           {linkNote && (
             <div className="toast" role="status" data-testid="link-note">
               {linkNote}
+            </div>
+          )}
+          {voice && voice !== 'paused' && (
+            // What was said, a few lines of it: you can't scroll back
+            // through a voice. Not while paused: the screen is yours then.
+            <div className="voicecap" role="log" aria-live="polite" data-testid="voice-captions">
+              {captions.length === 0 ? (
+                <div className="vc muted">
+                  {voice === 'connecting' ? 'starting the assistant…' : 'say something — “what needs me?”'}
+                </div>
+              ) : (
+                captions.map((c, i) => (
+                  <div key={i} className={`vc ${c.who}`}>
+                    {c.who === 'tool' ? `→ ${c.text}` : c.text}
+                  </div>
+                ))
+              )}
             </div>
           )}
           {mic === 'transcribing' && (

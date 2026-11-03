@@ -41,6 +41,12 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
         .route("/speak", post(speak))
         .route("/speak/audio", post(speak_audio).layer(DefaultBodyLimit::max(web::SPEAK_MAX_BYTES)))
         .route("/transcribe", post(transcribe).layer(DefaultBodyLimit::max(web::STT_MAX_BYTES)))
+        .route(
+            "/voice/offer",
+            post(voice_offer).patch(voice_ice).layer(DefaultBodyLimit::max(tenx_core::voice::MAX_BODY)),
+        )
+        .route("/voice/context", post(voice_context).layer(DefaultBodyLimit::max(tenx_core::voice::MAX_BODY)))
+        .route("/voice/pause", post(voice_pause).layer(DefaultBodyLimit::max(tenx_core::voice::MAX_BODY)))
         .route("/push/key", get(push_key))
         .route("/push/subscribe", post(push_subscribe))
         .route("/push/unsubscribe", post(push_unsubscribe))
@@ -308,7 +314,94 @@ async fn speak_audio(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, head
     }
 }
 
-/// A request that changes something or reads content (`/paste`, `/push/*`, `/transcribe`, `/speak*`, `/clipboard/*`): the cookie (or a
+/// `POST /voice/offer`: a page's WebRTC offer for the voice assistant
+/// (`voice.rs`), in the shape Pipecat's clients send — `{sdp, type, pc_id?,
+/// restart_pc?, task?}` — answered with `{sdp, type, pc_id}`. Guarded like
+/// `/paste`: the assistant acts on tasks. The first one starts the program,
+/// which can take minutes while it installs; `502` when it can't run.
+async fn voice_offer(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let offer: tenx_core::voice::PageOffer = match serde_json::from_slice(&body) {
+        Ok(o) => o,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("not an offer: {e}")).into_response(),
+    };
+    let asked = tokio::task::spawn_blocking(move || {
+        super::voice::request(|id| tenx_core::voice::ToVoice::Offer {
+            id,
+            sdp: offer.sdp,
+            sdp_type: offer.sdp_type,
+            pc_id: offer.pc_id,
+            restart_pc: offer.restart_pc,
+            task: offer.task,
+        })
+    })
+    .await;
+    match asked {
+        Ok(Ok(tenx_core::voice::FromVoice::Answer { sdp, sdp_type, pc_id, .. })) => {
+            json(serde_json::json!({ "sdp": sdp, "type": sdp_type, "pc_id": pc_id }))
+        }
+        Ok(Ok(other)) => (StatusCode::BAD_GATEWAY, format!("tenx-voice answered {other:?}")).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `PATCH /voice/offer`: ICE candidates the page found after its offer,
+/// `{pc_id, candidates: [{candidate, sdp_mid, sdp_mline_index}]}`.
+async fn voice_ice(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let ice: tenx_core::voice::PageIce = match serde_json::from_slice(&body) {
+        Ok(i) => i,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("not ICE candidates: {e}")).into_response(),
+    };
+    let asked = tokio::task::spawn_blocking(move || {
+        super::voice::request(|id| tenx_core::voice::ToVoice::Ice { id, pc_id: ice.pc_id, candidates: ice.candidates })
+    })
+    .await;
+    match asked {
+        Ok(Ok(_)) => json(serde_json::json!({ "ok": true })),
+        Ok(Err(e)) => (StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /voice/context`: `{pc_id, task}` — the page shows another task,
+/// so "it" means that one now. Nothing waits for it.
+async fn voice_context(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    #[derive(Deserialize)]
+    struct Context {
+        pc_id: String,
+        task: Option<String>,
+    }
+    let Ok(c) = serde_json::from_slice::<Context>(&body) else { return StatusCode::BAD_REQUEST.into_response() };
+    tokio::task::spawn_blocking(move || super::voice::tell(&tenx_core::voice::ToVoice::Context { pc_id: c.pc_id, task: c.task }));
+    json(serde_json::json!({ "ok": true }))
+}
+
+/// `POST /voice/pause`: `{pc_id, paused}` — the page paused the
+/// conversation (stop talking, keep the news) or went on.
+async fn voice_pause(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    #[derive(Deserialize)]
+    struct Pause {
+        pc_id: String,
+        paused: bool,
+    }
+    let Ok(p) = serde_json::from_slice::<Pause>(&body) else { return StatusCode::BAD_REQUEST.into_response() };
+    tokio::task::spawn_blocking(move || super::voice::tell(&tenx_core::voice::ToVoice::Pause { pc_id: p.pc_id, paused: p.paused }));
+    json(serde_json::json!({ "ok": true }))
+}
+
+/// A request that changes something or reads content (`/paste`, `/push/*`, `/transcribe`, `/speak*`, `/clipboard/*`, `/voice/*`): the cookie (or a
 /// dev origin's token) and an allowed `Origin`, as for `/ws` — so another
 /// site can't make this server write files or send pushes.
 fn authorize(app: &App, q: &WsQuery, headers: &HeaderMap) -> Result<(), Box<Response>> {
