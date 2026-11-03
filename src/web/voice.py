@@ -85,7 +85,10 @@ from pipecat.workers.runner import WorkerRunner  # noqa: E402
 MODEL = os.environ.get("TENX_VOICE_MODEL") or "claude-haiku-5-5"
 TTS_VOICE = os.environ.get("TENX_VOICE_TTS") or "af_heart"
 STT_MODEL = os.environ.get("TENX_VOICE_STT") or "mlx-community/whisper-large-v3-turbo"
-LANGUAGE = os.environ.get("TENX_VOICE_LANGUAGE") or "en"
+# The language spoken, a Whisper code; "auto" (or empty) lets Whisper tell,
+# so German and English both work.
+LANGUAGE = os.environ.get("TENX_VOICE_LANGUAGE") or "auto"
+HEARD = None if LANGUAGE == "auto" else Language(LANGUAGE)
 WHISPER = os.environ.get("TENX_WHISPER") or "tenx-whisper"
 WHISPER_MODEL = os.environ.get("TENX_WHISPER_MODEL") or ""
 WHISPER_PROMPT_FILE = os.environ.get("TENX_WHISPER_PROMPT_FILE") or ""
@@ -125,6 +128,10 @@ and steer them, through the tenx tools. A task is named by its workspace and
 its slug; tool results give both.
 
 You speak with the user directly: say "you", never "the user".
+
+The user may speak German or English. Answer in English only, every
+word of it, without remarks about the language: your voice cannot
+pronounce anything else.
 
 Your words are spoken aloud: plain sentences, no Markdown, no lists, no code,
 no URLs, no file paths unless asked. Be brief — one or two sentences unless
@@ -206,7 +213,7 @@ class Whisper:
         self.lock = asyncio.Lock()
 
     async def _start(self):
-        args = [WHISPER, "--model", WHISPER_MODEL, "--language", LANGUAGE]
+        args = [WHISPER, "--model", WHISPER_MODEL, "--language", LANGUAGE]  # takes "auto"
         if WHISPER_PROMPT_FILE:
             args += ["--prompt-file", WHISPER_PROMPT_FILE]
         self.proc = await asyncio.create_subprocess_exec(
@@ -269,7 +276,7 @@ class TenxWhisperSTT(SegmentedSTTService):
             await self.stop_processing_metrics()
         if text:
             logger.debug(f"Transcription: [{text}]")
-            yield TranscriptionFrame(text, self._user_id, time_now_iso8601(), Language(LANGUAGE))
+            yield TranscriptionFrame(text, self._user_id, time_now_iso8601(), HEARD)
 
 
 WORD = re.compile(r"[^\W_]+")
@@ -284,10 +291,10 @@ async def respell(text: str, text_type) -> str:
 
 def speech_to_text():
     if WHISPER_MODEL:
-        return TenxWhisperSTT(settings=STTSettings(model=WHISPER_MODEL, language=Language(LANGUAGE)))
+        return TenxWhisperSTT(settings=STTSettings(model=WHISPER_MODEL, language=HEARD))
     from pipecat.services.whisper.stt import WhisperSTTServiceMLX
 
-    return WhisperSTTServiceMLX(model=STT_MODEL, language=Language(LANGUAGE))
+    return WhisperSTTServiceMLX(model=STT_MODEL, language=HEARD)
 
 
 class Talking(BaseObserver):

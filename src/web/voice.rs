@@ -152,7 +152,8 @@ fn start(config: &Config) -> Result<Running> {
         .env("TENX_VOICE_MODEL", &voice.model)
         .env("TENX_VOICE_TTS", &voice.voice)
         .env("TENX_VOICE_STT", &voice.stt_model)
-        .env("TENX_VOICE_LANGUAGE", &voice.language)
+        // Unset, the microphone button's: one setting for how you speak.
+        .env("TENX_VOICE_LANGUAGE", if voice.language.is_empty() { &speech.language } else { &voice.language })
         .env("TENX_WHISPER", super::whisper::program())
         .env("TENX_WHISPER_MODEL", whisper_model)
         .env("TENX_WHISPER_PROMPT_FILE", whisper_prompt)

@@ -109,7 +109,9 @@ pub struct VoiceConfig {
     /// empty = `mlx-community/whisper-large-v3-turbo`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub stt_model: String,
-    /// The language spoken, a Whisper code; empty = `en`.
+    /// The language spoken, a Whisper code or `auto`; empty = `[speech]
+    /// language`, else `auto`. The assistant answers in English whatever it
+    /// hears: its Kokoro voice speaks no German.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub language: String,
     /// The file holding the Anthropic API key (`~` expanded; keep it 600);
