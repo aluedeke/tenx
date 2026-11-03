@@ -1,4 +1,5 @@
-# sops config for the secrets committed in this repo (secrets/*.enc.env).
+# sops config for the secrets committed in this repo (secrets/*.enc.env:
+# ci.enc.env for the release workflow, ios.enc.env for mobile/ios/testflight.sh).
 # Encrypted to two age recipients: the maintainer's identity (~/.config/age/
 # keys.txt, passphrase-protected) and the CI identity, whose private key is
 # the one GitHub Actions secret, SOPS_AGE_KEY. The release workflow decrypts
