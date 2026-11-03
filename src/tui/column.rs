@@ -1436,6 +1436,7 @@ impl Column {
                     self.close_selected_tab();
                 }
             }
+            KeyCode::Char('p') if self.require_tasks() => self.toggle_pin(),
             KeyCode::Char('A') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
             KeyCode::Char('D') if self.require_tasks() => self.deny_selected(),
             KeyCode::Char('t') if self.selected_sub().is_some() => self.view_subagent(false),
@@ -1596,6 +1597,7 @@ impl Column {
             // NB: not `:repos` — that's taken above by the Repos tab switch.
             "e" | "edit" | "edit-repos" => self.start_edit_repos(),
             "x" | "close" => self.close_selected_tab(),
+            "p" | "pin" => self.toggle_pin(),
             "u" | "unlock" => self.start_unlock(),
             "a" | "approve" | "allow" => self.answer(tenx_core::dialog::Answer::Yes),
             "deny" => self.deny_selected(),
@@ -2118,6 +2120,7 @@ impl Column {
                 secrets_why: vec![],
                 section: TaskStatus::Working.group(),
                 subagents: vec![],
+                pinned: false,
             });
             self.filter.clear();
             self.sort_rows();
@@ -2297,6 +2300,7 @@ impl Column {
             secrets_why: vec![],
             section: TaskStatus::Working.group(),
             subagents: vec![],
+            pinned: false,
         }
     }
 
@@ -2793,6 +2797,30 @@ impl Column {
             },
             None => self.status_msg = Some("no open window".into()),
         }
+    }
+
+    // ── Pin ───────────────────────────────────────────────────────────────────
+
+    /// `p`: pin the selected task, or unpin it — a pinned task's window is
+    /// never closed by sweep (`.tenx-pinned`, as `tenx task pin`).
+    fn toggle_pin(&mut self) {
+        let Some(r) = self.selected_row() else {
+            return;
+        };
+        if r.pending {
+            self.status_msg = Some("still setting up".into());
+            return;
+        }
+        let (path, pin) = (r.path.clone(), !r.pinned);
+        self.status_msg = Some(match crate::cli::task::set_pinned(&path, pin) {
+            Ok(()) => {
+                if let Some(r) = self.rows.iter_mut().find(|r| r.path == path) {
+                    r.pinned = pin;
+                }
+                if pin { "pinned: sweep never closes its window" } else { "unpinned" }.into()
+            }
+            Err(e) => e.to_string(),
+        });
     }
 
     /// Background idle-window sweep (`cli::task::sweep_quiet`), run when the
@@ -3363,6 +3391,9 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
 
 // ── Help (`?`, `:help`) ──────────────────────────────────────────────────────
 
+/// A pinned task's mark on its second line (and the web row's).
+pub(crate) const PIN_GLYPH: &str = "📌";
+
 /// Every key the column answers to, by section, for the `?` overlay. Keep it
 /// in step with `handle_*_key`, `run_command` and the README's key table.
 const KEYS: &[(&str, &[(&str, &str)])] = &[
@@ -3404,6 +3435,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("r", "rename"),
             ("e", "edit repos"),
             ("x", "close window"),
+            ("p", "pin / unpin (never swept)"),
             ("dd", "delete (Work tab: dismiss)"),
             ("a", "add repo (Repos tab)"),
             ("W", "new workspace"),
@@ -3421,6 +3453,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             (":r", "rename"),
             (":e", "edit repos (:edit-repos)"),
             (":x", "close window (:close)"),
+            (":p", "pin / unpin (:pin)"),
             (":u", "unlock secrets (:unlock)"),
             (":reject", "reject secrets request"),
             (":cancel", "withdraw secrets request"),
@@ -3744,6 +3777,9 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         // such; Claude rows stay unadorned.
         if row.agent != crate::agent::AgentKind::Claude {
             pieces.push(vec![Span::styled(format!(" {}", row.agent.as_str()), Style::default().fg(palette::INFO.color()))]);
+        }
+        if row.pinned {
+            pieces.push(vec![Span::styled(PIN_GLYPH, Style::default().fg(palette::INFO.color()))]);
         }
         if matches!(row.status, TaskStatus::Blocked | TaskStatus::Signaled | TaskStatus::Done)
             && let Some(changed) = row.changed

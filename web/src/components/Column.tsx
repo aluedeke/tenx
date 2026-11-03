@@ -381,6 +381,12 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
     </span>,
   );
   if (task.agent) pieces.push(<span key="agent" style={{ color: 'var(--info)' }}>{task.agent}</span>);
+  if (task.pinned)
+    pieces.push(
+      <span key="pin" title="pinned: never swept">
+        📌
+      </span>,
+    );
   if (task.age) pieces.push(<span key="age">{task.age}</span>);
   // PRs, what was made with Claude, ports: real links, opened by the browser
   // like any other; in `f` mode each carries its letter.

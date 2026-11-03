@@ -135,6 +135,8 @@ pub(crate) struct TaskItem {
     pub(crate) chips: Vec<LinkChipView>,
     /// Everything it links to, in display order — what `L` lists.
     pub(crate) links: Vec<LinkView>,
+    /// Pinned: sweep never closes its window (`p` toggles).
+    pub(crate) pinned: bool,
 }
 
 /// One link: what it opens, its name, and its kind's `name`, icon and colour.
@@ -587,6 +589,7 @@ impl Column {
                     })
                     .collect(),
                 links: row.live.all_links().iter().map(LinkView::from).collect(),
+                pinned: row.pinned,
             })));
             for (k, a) in row.subagents.iter().enumerate() {
                 let status = a.status.as_task_status();
@@ -1089,6 +1092,8 @@ pub(crate) enum Action {
     Rename,
     EditRepos,
     Close,
+    /// Pin or unpin (`p`).
+    Pin,
     Delete,
     Unlock,
     Transcript,
@@ -1114,6 +1119,7 @@ impl Action {
             Action::Rename => &[("r", false)],
             Action::EditRepos => &[("e", false)],
             Action::Close => &[("x", false)],
+            Action::Pin => &[("p", false)],
             Action::Delete => &[("d", false), ("d", false)],
             Action::Unlock => &[("u", false)],
             Action::Transcript => &[("t", false)],
@@ -1198,6 +1204,31 @@ mod tests {
         // In a form the bar does nothing; the form has its own buttons.
         c.handle_action(Action::Help).unwrap();
         assert!(matches!(c.view().mode, ModeView::Rename { .. }));
+    }
+
+    /// The row menu's pin writes the marker sweep reads, shows on the row,
+    /// and a second press takes it away.
+    #[test]
+    fn pin_toggles_the_marker_sweep_reads() {
+        let dir = std::env::temp_dir().join(format!("tenx-pin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut c = screenshot::fixture_column();
+        c.offline = true;
+        c.handle_web_key(&key("Escape")).unwrap();
+        let (id, _) = selection(&c.view()).unwrap();
+        let i = c.filtered[c.selected];
+        c.rows[i].path = dir.clone();
+        let pinned = |c: &Column| {
+            c.view().items.iter().any(|it| matches!(it, Item::Task(t) if t.id == id && t.pinned))
+        };
+        assert!(!pinned(&c));
+        c.handle_action(Action::Pin).unwrap();
+        assert!(pinned(&c));
+        assert!(crate::cli::task::is_pinned(&dir));
+        c.handle_action(Action::Pin).unwrap();
+        assert!(!pinned(&c));
+        assert!(!crate::cli::task::is_pinned(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -710,11 +710,24 @@ pub(crate) fn is_pinned(task_dir: &Path) -> bool {
     task_dir.join(PINNED_FILE).is_file()
 }
 
+/// Write or remove the marker — `pin`/`unpin`, and the column's `p`.
+pub(crate) fn set_pinned(task_dir: &Path, pinned: bool) -> std::io::Result<()> {
+    let marker = task_dir.join(PINNED_FILE);
+    if pinned {
+        std::fs::write(marker, "")
+    } else {
+        match std::fs::remove_file(marker) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    }
+}
+
 /// Exempt a task from `sweep`.
 pub fn pin(ws_dir: Option<&str>, task: &str) -> Result<()> {
     let (ws, slug) = resolve_task(ws_dir, task)?;
     let task = ws.find_task(&slug)?;
-    std::fs::write(task.path.join(PINNED_FILE), "")?;
+    set_pinned(&task.path, true)?;
     println!("pinned '{}' — sweep will never close its tab", task.display_name);
     Ok(())
 }
@@ -723,7 +736,7 @@ pub fn pin(ws_dir: Option<&str>, task: &str) -> Result<()> {
 pub fn unpin(ws_dir: Option<&str>, task: &str) -> Result<()> {
     let (ws, slug) = resolve_task(ws_dir, task)?;
     let task = ws.find_task(&slug)?;
-    let _ = std::fs::remove_file(task.path.join(PINNED_FILE));
+    set_pinned(&task.path, false)?;
     println!("unpinned '{}'", task.display_name);
     Ok(())
 }

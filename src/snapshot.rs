@@ -83,6 +83,9 @@ pub(crate) struct Row {
     /// under the task as child lines — waiting first, then running, then the
     /// few that finished recently. Refreshed on the tick with the status.
     pub(crate) subagents: Vec<Subagent>,
+    /// `.tenx-pinned`: sweep never closes the task's window. Re-read on the
+    /// slow tick, so a `tenx task pin` elsewhere shows up.
+    pub(crate) pinned: bool,
 }
 
 impl Row {
@@ -137,6 +140,7 @@ impl Row {
         if let Some(w) = windows {
             self.window_id = w.window_of(&self.slug, &self.path);
             self.live = crate::live::read(&self.path);
+            self.pinned = crate::cli::task::is_pinned(&self.path);
         }
     }
 }
@@ -222,6 +226,7 @@ pub(crate) fn rows(workspaces: &[Workspace], sessions: &[Session], windows: &Win
                 secrets_why,
                 section,
                 subagents: state.subagents,
+                pinned: crate::cli::task::is_pinned(&task.path),
             });
         }
     }

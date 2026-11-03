@@ -116,6 +116,23 @@ test('the selected row has a menu, and a delete asks on the row', async ({ page,
   await expect(confirm).toHaveCount(0);
 });
 
+test('the row menu pins a task, and the row shows it', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the menu is the desktop path');
+  const sent = sentMessages(page);
+  await page.goto('/');
+  await page.getByText('Better loading indicators').click();
+  const row = page.locator('.row.sel');
+  await expect(row).not.toContainText('📌');
+  await row.getByTestId('more').click();
+  await page.getByTestId('menu').getByRole('menuitem', { name: /^pin/ }).click();
+  await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'pin')).toBe(true);
+  await expect(row).toContainText('📌');
+  // Pinned, the same entry unpins.
+  await row.getByTestId('more').click();
+  await page.getByTestId('menu').getByRole('menuitem', { name: /^unpin/ }).click();
+  await expect(row).not.toContainText('📌');
+});
+
 /** The `+` menu's "new task" entry (its other one is the quick task). */
 const newTaskItem = (page: import('@playwright/test').Page) => page.getByRole('menuitem', { name: /^new task/ });
 

@@ -121,7 +121,7 @@ without `seq` work as before.
 // A row's or the header's button: the list key it names, pressed with the list (not the
 // search field) focused. Ignored outside list mode — forms and prompts get
 // their buttons as plain `key` messages (Enter, Escape, y, space, ←/→).
-// open | approve | deny | rename | edit_repos | close | delete | unlock |
+// open | approve | deny | rename | edit_repos | close | pin | delete | unlock |
 // transcript | next | new | quick | add_repo | new_workspace | help | reject
 // (`quick` opens the quick task, ^⇧n: a prompt-only form on the adhoc workspace)
 // (`reject` opens the reject form for the row's pending secrets requests —
@@ -200,7 +200,7 @@ In the column, a click selects a row, a double click opens it. A row's controls 
 `task` click (select it) then an `action`: allow / deny on a blocked row's
 chip (`answerable`), and the row's menu — `⋯`, a right-click, or on touch a
 long-press (a bottom sheet) — for open, unlock (`locked`), links (`links`), rename, edit
-repos, close and delete; on touch a swipe uncovers allow / deny (left) or
+repos, close, pin / unpin (`pinned`, also a 📌 on the row) and delete; on touch a swipe uncovers allow / deny (left) or
 delete (right). The header's `+`, `● next` (shown when a task other than the
 current one needs you) and `?` send a menu of `quick` / `new` (on Repos of
 `add_repo` / `new_workspace`), `next` and `help`. The column's forms

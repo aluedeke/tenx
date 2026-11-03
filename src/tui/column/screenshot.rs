@@ -31,6 +31,7 @@ struct Fx {
     links: Vec<tenx_core::links::Link>,
     waiting_for: Option<&'static str>,
     secrets: Vec<&'static str>,
+    pinned: bool,
 }
 
 fn fx(title: &'static str, ws: &'static str, status: TaskStatus) -> Fx {
@@ -45,6 +46,7 @@ fn fx(title: &'static str, ws: &'static str, status: TaskStatus) -> Fx {
         links: vec![],
         waiting_for: None,
         secrets: vec![],
+        pinned: false,
     }
 }
 
@@ -92,6 +94,7 @@ fn row(f: Fx) -> Row {
         secrets_why: vec![],
         section,
         subagents: vec![],
+        pinned: f.pinned,
     }
 }
 

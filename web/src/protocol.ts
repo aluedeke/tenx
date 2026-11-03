@@ -86,6 +86,8 @@ export interface TaskItem {
   chips: LinkChip[];
   /** Everything it links to, in display order: what `L` lists. */
   links: LinkView[];
+  /** Pinned: sweep never closes its window (p toggles). */
+  pinned: boolean;
 }
 
 /** One link (tenx_core::links): what it opens, its name, its kind. */
@@ -261,6 +263,8 @@ export type Action =
   | 'rename'
   | 'edit_repos'
   | 'close'
+  /** Pin or unpin the row: sweep never closes a pinned task's window. */
+  | 'pin'
   | 'delete'
   | 'unlock'
   | 'transcript'

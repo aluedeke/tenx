@@ -88,7 +88,7 @@ function view(st) {
       kind: 'task', id: t.id, ws: t.ws, ws_color: t.ws_color, slug: t.id.split('/')[1], title: t.title,
       title_color: current ? C.cur : t.closed ? C.mut : C.text, glyph: t.glyph, glyph_color: t.glyph_color, status: t.status,
       selected, current, closed: !!t.closed, pending: false, reason: t.reason ?? null, agent: t.agent ?? null, age: t.age ?? null,
-      ...linksOf(t),
+      ...linksOf(t), pinned: !!st.pinned?.includes(t.id),
       answerable: t.status === 'blocked', locked: t.glyph === '🔒' && !st.rejected?.includes(t.id),
       wants: t.glyph === '🔒' && !st.rejected?.includes(t.id) ? WANTS : [],
     });
@@ -407,6 +407,12 @@ wss.on('connection', (ws, req) => {
             st.rejecting = t.id;
             st.buffer = '';
           } else st.status = 'no pending secrets for this task';
+        }
+        else if (m.name === 'pin') {
+          const id = CURSOR[st.sel].task;
+          const pinned = st.pinned ?? [];
+          st.pinned = pinned.includes(id) ? pinned.filter((x) => x !== id) : [...pinned, id];
+          st.status = st.pinned.includes(id) ? 'pinned: sweep never closes its window' : 'unpinned';
         }
         else if (m.name === 'delete') {
           st.focus = 'list';

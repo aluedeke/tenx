@@ -138,6 +138,7 @@ The column lists every task from every registered workspace, sectioned by attent
 | `e` | Edit which repos the task has worktrees for |
 | `r` | Rename the task |
 | `x` | Close the task's window (the conversation resumes on next open) |
+| `p` | Pin / unpin the task: sweep never closes a pinned task's window (📌 on its row) |
 | `u` | Unlock pending secrets |
 | `A`, `D` | Approve or deny the task's permission prompt without visiting it |
 | `D` on a secrets row | Reject its pending secrets requests, with an optional note for the agent |

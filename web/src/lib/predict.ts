@@ -215,8 +215,8 @@ function helpKey(view: ColumnView, key: string, ctrl: boolean): Predicted {
 
 /** Actions and keys whose effect needs the server, on the row under the
  * cursor: drawn busy until the answer. */
-const ROW_ACTIONS = new Set(['approve', 'deny', 'delete', 'close', 'unlock', 'rename', 'edit_repos', 'transcript', 'reject']);
-const ROW_KEYS: Record<string, string> = { A: 'approve', D: 'deny', x: 'close', u: 'unlock', r: 'rename', e: 'edit_repos', t: 'transcript', d: 'delete' };
+const ROW_ACTIONS = new Set(['approve', 'deny', 'delete', 'close', 'pin', 'unlock', 'rename', 'edit_repos', 'transcript', 'reject']);
+const ROW_KEYS: Record<string, string> = { A: 'approve', D: 'deny', x: 'close', p: 'pin', u: 'unlock', r: 'rename', e: 'edit_repos', t: 'transcript', d: 'delete' };
 
 function busyOn(view: ColumnView, msg: ClientMessage): { id: string; action: string } | null {
   if (view.mode.kind !== 'list') return null;
