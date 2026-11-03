@@ -12,6 +12,7 @@ import { Header, type MicState, type SpeakerState } from './Header';
 import { LinksMenu } from './LinksMenu';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { PasteBox } from './PasteBox';
+import { SecretsForm } from './SecretsForm';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
@@ -81,6 +82,8 @@ export function App() {
   /** The paste key's text field, open when the clipboard couldn't be read:
    * why it opened. */
   const [pasteBox, setPasteBox] = useState<string | null>(null);
+  /** The task whose secrets form owns the column (the column's `u`). */
+  const [secretsTask, setSecretsTask] = useState<string | null>(null);
   /** The current task's links, opened by the header's ↗ (not the column's
    * `L`, which is the server's mode). */
   const [ownLinks, setOwnLinks] = useState<{ title: string; links: LinkView[] } | null>(null);
@@ -286,7 +289,7 @@ export function App() {
               setFocus('terminal');
               if (state.current.narrow) setVisible(false);
             } else if (msg.request === 'focus_column') {
-              // An unlock popup closed: the column comes back, as in the TUI.
+              // The server's way to hand the keyboard back to the column.
               setVisible(true);
               setFocus('column');
             } else {
@@ -294,6 +297,12 @@ export function App() {
               setVisible(false);
               setFocus('terminal');
             }
+            break;
+          case 'unlock':
+            // The column's `u`: the page's own form, in the column's place.
+            setSecretsTask(msg.task);
+            setVisible(true);
+            setFocus('column');
             break;
           case 'link':
             // A link the column picked that the key handler didn't take
@@ -364,14 +373,10 @@ export function App() {
     wantUnlock.current = false;
     conn.current?.send({ type: 'click', kind: 'task', id });
     conn.current?.send({ type: 'action', name: unlock ? 'unlock' : 'open' });
+    // An unlock answers with the secrets form, which owns the column.
+    if (unlock) return;
     setFocus('terminal');
     if (state.current.narrow) setVisible(false);
-    // The unlock prompt wants typing, and a phone raises its keyboard only
-    // for a focus inside a tap — this runs from a notification, not a tap.
-    if (unlock && state.current.touch) {
-      setPastingTap(true);
-      setPasting('secrets requested · tap here to answer');
-    }
   };
 
   // Coming back to the last task: only one whose window is open — switching
@@ -660,16 +665,8 @@ export function App() {
 
   const onAction = useCallback(
     (name: Action) => {
-      if (name === 'unlock') {
-        // The unlock prompt opens in the terminal and wants typing: move the
-        // keyboard there now, inside this tap — the server's own request to
-        // do so arrives too late for a phone to raise its keyboard.
-        setFocus('terminal');
-        term.current?.focus();
-        if (state.current.narrow) setVisible(false);
-      } else {
-        setFocus('column');
-      }
+      // An unlock comes back as the secrets form, in the column's place.
+      setFocus('column');
       send({ type: 'action', name });
     },
     [send],
@@ -1176,6 +1173,19 @@ export function App() {
               onWantKeyboard={wantKeyboard}
               touch={touch}
               onForm={onForm}
+              pageForm={
+                secretsTask && (
+                  <SecretsForm
+                    key={secretsTask}
+                    task={secretsTask}
+                    touch={touch}
+                    onClose={(outcome) => {
+                      setSecretsTask(null);
+                      if (outcome) notice(outcome);
+                    }}
+                  />
+                )
+              }
             />
           </div>
         )}

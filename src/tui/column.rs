@@ -605,6 +605,14 @@ impl Column {
         self.workspaces.get(ws_idx)?.find_task(slug).ok()
     }
 
+    /// The row id (`<workspace>/<slug>`) of the task a `take_unlock` names —
+    /// how `tenx web` tells its page which task's form to open.
+    pub(crate) fn unlock_id(&self, ws_idx: usize, slug: &str) -> Option<String> {
+        let ws = self.workspaces.get(ws_idx)?;
+        ws.find_task(slug).ok()?;
+        Some(format!("{}/{slug}", ws.config.name))
+    }
+
     /// The session this column follows and switches (`in_session`).
     pub(crate) fn session(&self) -> &str {
         &self.session

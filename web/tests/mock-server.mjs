@@ -178,6 +178,7 @@ const SCREEN = [
 ].join('\r\n');
 
 let macClipboard = 'from the mac ✓';
+let secretsAnswer = null;
 
 /** `seconds` of 8 kHz 16-bit mono silence, as a WAV file. */
 function silentWav(seconds) {
@@ -244,6 +245,41 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === 'POST' && url.pathname === '/clipboard/get') {
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ text: macClipboard }));
+    return;
+  }
+  // A task's pending secrets (`src/web/secrets.rs`): one value request on
+  // the locked task. An answer is kept for the test to read
+  // (`/mock/secrets-answer`); the passphrase "wrong" is refused.
+  if (req.method === 'POST' && url.pathname === '/secrets') {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(
+      JSON.stringify({
+        title: 'Cloud tasks',
+        requests: [
+          { name: 'OPENAI_API_KEY', ask: 'value', why: 'to call the API', sealed_in: '' },
+          { name: 'STRIPE_KEY', ask: 'release', why: '', sealed_in: '.secrets.enc.env' },
+        ],
+        passphrase: true,
+        problem: null,
+      }),
+    );
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/secrets/answer') {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const answer = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (answer.passphrase === 'wrong') {
+      res.writeHead(422, { 'content-type': 'text/plain' }).end('wrong passphrase — nothing was changed');
+      return;
+    }
+    secretsAnswer = { task: url.searchParams.get('task'), ...answer };
+    const released = answer.granted;
+    const denied = answer.shown.filter((n) => !answer.granted.includes(n));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ denied, released, skipped: [] }));
+    return;
+  }
+  if (url.pathname === '/mock/secrets-answer') {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(secretsAnswer));
     return;
   }
   let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
@@ -353,7 +389,9 @@ wss.on('connection', (ws, req) => {
       case 'action': {
         // The list keys the real server presses for a button.
         const keys = { help: '?', open: 'Enter', next: 'n' };
-        if (m.name === 'new') key({ key: 'n', ctrl: true });
+        // The real server answers an unlock with the page's secrets form.
+        if (m.name === 'unlock') json({ type: 'unlock', task: CURSOR[st.sel].task });
+        else if (m.name === 'new') key({ key: 'n', ctrl: true });
         else if (m.name === 'quick') key({ key: 'n', ctrl: true, shift: true });
         else if (m.name === 'rename') {
           st.mode = 'rename';

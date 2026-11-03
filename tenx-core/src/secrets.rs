@@ -245,6 +245,73 @@ pub fn closed_windows(prev: &HashSet<PathBuf>, now: Option<&HashSet<PathBuf>>) -
     closed
 }
 
+/// What a pending request asks of the human who answers it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Ask {
+    /// The name is sealed somewhere: release it (the passphrase does).
+    Release,
+    /// Nothing holds it: the human types a value, which is sealed and released.
+    Value,
+}
+
+/// A whole sitting answered at once — `tenx web`'s secrets form — as what
+/// to do with each name.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Plan {
+    /// Refused, with the sitting's note.
+    pub deny: Vec<String>,
+    /// Granted value requests and the values typed for them.
+    pub seal: Vec<(String, String)>,
+    /// Granted release requests.
+    pub release: Vec<String>,
+    /// Granted value requests left empty: they stay pending, as an empty
+    /// entry at the terminal's prompt skips one.
+    pub skipped: Vec<String>,
+}
+
+impl Plan {
+    /// Whether anything needs the identity unwrapped.
+    pub fn needs_identity(&self) -> bool {
+        !self.seal.is_empty() || !self.release.is_empty()
+    }
+}
+
+/// Turn a form's answers into a [`Plan`]. `pending` is what is queued *now*,
+/// `shown` what the form listed when it opened: a name answered elsewhere
+/// since then is left alone, and a request that arrived after the form opened
+/// is neither granted nor denied — nobody saw it, so it stays pending. Of the
+/// shown names, the `granted` ones are granted and the rest denied. A value
+/// is cleaned like one typed at the terminal ([`clean_typed_value`]); a bad
+/// one refuses the whole sitting, before anything is changed.
+pub fn plan_answers(
+    pending: &[(String, Ask)],
+    shown: &[String],
+    granted: &[String],
+    values: &[(String, String)],
+) -> Result<Plan, String> {
+    let mut plan = Plan::default();
+    for (name, ask) in pending.iter().filter(|(n, _)| shown.contains(n)) {
+        if !granted.contains(name) {
+            plan.deny.push(name.clone());
+            continue;
+        }
+        match ask {
+            Ask::Release => plan.release.push(name.clone()),
+            Ask::Value => {
+                let raw = values.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str()).unwrap_or("");
+                let value = clean_typed_value(raw).map_err(|e| format!("{name}: {e}"))?;
+                if value.is_empty() {
+                    plan.skipped.push(name.clone());
+                } else {
+                    plan.seal.push((name.clone(), value));
+                }
+            }
+        }
+    }
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,5 +450,42 @@ mod tests {
         let prev = set(&[]);
         let now = set(&["/ws/tasks/a"]);
         assert!(closed_windows(&prev, Some(&now)).is_empty());
+    }
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_form_grants_the_ticked_and_denies_the_rest_it_showed() {
+        let pending = vec![("A".to_string(), Ask::Release), ("B".to_string(), Ask::Value), ("C".to_string(), Ask::Release)];
+        let values = vec![("B".to_string(), "s3cret".to_string())];
+        let plan = plan_answers(&pending, &names(&["A", "B", "C"]), &names(&["A", "B"]), &values).unwrap();
+        assert_eq!(
+            plan,
+            Plan { deny: names(&["C"]), seal: values.clone(), release: names(&["A"]), skipped: vec![] }
+        );
+        assert!(plan.needs_identity());
+    }
+
+    #[test]
+    fn a_form_leaves_alone_what_it_never_showed_or_what_was_answered_since() {
+        // D arrived after the form opened; A was answered in another tab.
+        let pending = vec![("B".to_string(), Ask::Release), ("D".to_string(), Ask::Value)];
+        let plan = plan_answers(&pending, &names(&["A", "B"]), &names(&["A"]), &[]).unwrap();
+        assert_eq!(plan, Plan { deny: names(&["B"]), ..Plan::default() });
+        assert!(!plan.needs_identity());
+    }
+
+    #[test]
+    fn an_empty_value_skips_and_a_control_character_refuses_the_sitting() {
+        let pending = vec![("B".to_string(), Ask::Value)];
+        let plan = plan_answers(&pending, &names(&["B"]), &names(&["B"]), &[]).unwrap();
+        assert_eq!(plan, Plan { skipped: names(&["B"]), ..Plan::default() });
+        let bad = vec![("B".to_string(), "x\x1b[A".to_string())];
+        assert!(plan_answers(&pending, &names(&["B"]), &names(&["B"]), &bad).unwrap_err().starts_with("B: "));
+        let pasted = vec![("B".to_string(), "token\n".to_string())];
+        let plan = plan_answers(&pending, &names(&["B"]), &names(&["B"]), &pasted).unwrap();
+        assert_eq!(plan.seal, vec![("B".to_string(), "token".to_string())]);
     }
 }

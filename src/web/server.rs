@@ -36,6 +36,8 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
         .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
         .route("/clipboard/get", post(clipboard_get))
         .route("/clipboard/set", post(clipboard_set).layer(DefaultBodyLimit::max(web::CLIPBOARD_MAX_BYTES)))
+        .route("/secrets", post(secrets_sitting))
+        .route("/secrets/answer", post(secrets_answer).layer(DefaultBodyLimit::max(web::SECRETS_MAX_BYTES)))
         .route("/speak", post(speak))
         .route("/speak/audio", post(speak_audio).layer(DefaultBodyLimit::max(web::SPEAK_MAX_BYTES)))
         .route("/transcribe", post(transcribe).layer(DefaultBodyLimit::max(web::STT_MAX_BYTES)))
@@ -132,7 +134,7 @@ struct WsQuery {
     token: Option<String>,
     /// `/transcribe`: the language spoken (a Whisper code or `auto`).
     language: Option<String>,
-    /// `/speak`: the task whose agent's reply to read (a column row's id).
+    /// `/speak`, `/secrets`: the task (a column row's id).
     task: Option<String>,
     /// `/ws`: `1` when the page applies `patch` messages; else it gets every
     /// view whole.
@@ -244,6 +246,43 @@ async fn speak(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: H
     };
     match tokio::task::spawn_blocking(move || super::speak::pieces(&task)).await {
         Ok(Ok(pieces)) => json(serde_json::json!({ "pieces": pieces })),
+        Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /secrets?task=<id>`: the task's pending secrets requests, for the
+/// page's form. A POST, like the clipboard's, so a same-origin request
+/// carries its `Origin`. `422` with the reason for an unknown task.
+async fn secrets_sitting(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let Some(task) = q.task else {
+        return (StatusCode::BAD_REQUEST, "no task").into_response();
+    };
+    match tokio::task::spawn_blocking(move || super::secrets::sitting(&task)).await {
+        Ok(Ok(sitting)) => json(serde_json::to_value(sitting).unwrap_or_default()),
+        Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /secrets/answer?task=<id>`: the form's answers (JSON, see
+/// `secrets.rs`) → `{denied, released, skipped}`. `422` with the reason —
+/// a wrong passphrase among them — when nothing was changed.
+async fn secrets_answer(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let Some(task) = q.task else {
+        return (StatusCode::BAD_REQUEST, "no task").into_response();
+    };
+    let Ok(answer) = serde_json::from_slice::<super::secrets::Answer>(&body) else {
+        return (StatusCode::BAD_REQUEST, "not an answer").into_response();
+    };
+    match tokio::task::spawn_blocking(move || super::secrets::answer(&task, answer)).await {
+        Ok(Ok(answered)) => json(serde_json::to_value(answered).unwrap_or_default()),
         Ok(Err(e)) => (StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }

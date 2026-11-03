@@ -80,6 +80,10 @@ pub const CLIPBOARD_MAX_BYTES: usize = 4 * 1024 * 1024;
 /// sentences (`tts::pieces`), and Kokoro makes audio for all of it at once.
 pub const SPEAK_MAX_BYTES: usize = 64 * 1024;
 
+/// The largest answer `/secrets/answer` takes: a few names, values and a
+/// passphrase — a certificate pasted as a value still fits.
+pub const SECRETS_MAX_BYTES: usize = 256 * 1024;
+
 /// How long a pasted image is kept. It only has to outlive the agent reading
 /// it; older ones are swept on the next paste.
 pub const PASTE_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);

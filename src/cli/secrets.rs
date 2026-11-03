@@ -418,6 +418,100 @@ pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
     with_unlocked(ws, !values.is_empty(), |id| seal_and_release(id, task, &values, &to_release))
 }
 
+/// One pending request as a form shows it.
+#[derive(Debug, serde::Serialize)]
+pub struct Request {
+    pub name: String,
+    pub ask: rules::Ask,
+    /// The agent's reason, empty when it gave none.
+    pub why: String,
+    /// For a release: where it is sealed.
+    pub sealed_in: String,
+}
+
+/// A task's pending requests, for `tenx web`'s secrets form — what
+/// [`fulfill_in`] lists before its questions.
+#[derive(Debug, serde::Serialize)]
+pub struct Sitting {
+    pub title: String,
+    pub requests: Vec<Request>,
+    /// The identity is passphrase-protected: the form asks for it.
+    pub passphrase: bool,
+    /// Why granting can't work here (no identity yet), if so — denying still can.
+    pub problem: Option<String>,
+}
+
+/// What [`answer_in`] did.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct Answered {
+    pub denied: Vec<String>,
+    pub released: Vec<String>,
+    /// Granted value requests left empty: still pending.
+    pub skipped: Vec<String>,
+}
+
+/// The [`Sitting`] for `task`: its requests, and what granting will need.
+pub fn sitting_in(ws: &Workspace, task: &Task) -> Result<Sitting> {
+    reroute(task)?;
+    let why = workspace::secrets_why(&task.path);
+    let requests = pending_asks(task)
+        .into_iter()
+        .map(|(name, ask)| Request {
+            why: why.iter().find(|(n, _)| *n == name).map(|(_, w)| w.clone()).unwrap_or_default(),
+            sealed_in: if ask == rules::Ask::Release { sealed_in(task, &name) } else { String::new() },
+            name,
+            ask,
+        })
+        .collect();
+    let (passphrase, problem) = match resolve_identity_path(ws) {
+        Ok(id) => (is_age_encrypted(&id)?, None),
+        Err(e) => (false, Some(format!("{e:#} (in a terminal: tenx secrets fulfill)"))),
+    };
+    Ok(Sitting { title: task.display_name.clone(), requests, passphrase, problem })
+}
+
+/// Answer a sitting given all at once — `tenx web`'s secrets form, the
+/// whole of [`fulfill_in`]'s questions in one go (`tenx_core::secrets::plan_answers`
+/// decides). With anything to seal or release, the identity is unwrapped
+/// first with `passphrase` and the denials are written only then, so a wrong
+/// passphrase changes nothing and the form can simply be sent again. Never
+/// creates an identity: that stays at the terminal.
+pub fn answer_in(
+    ws: &Workspace,
+    task: &Task,
+    shown: &[String],
+    granted: &[String],
+    values: &[(String, String)],
+    note: Option<&str>,
+    passphrase: Option<&str>,
+) -> Result<Answered> {
+    reroute(task)?;
+    let plan = rules::plan_answers(&pending_asks(task), shown, granted, values).map_err(anyhow::Error::msg)?;
+    let mut answered = Answered { skipped: plan.skipped.clone(), ..Answered::default() };
+    if !plan.needs_identity() {
+        answered.denied = deny_quiet(task, &plan.deny, note)?;
+        return Ok(answered);
+    }
+    let identity = resolve_identity_path(ws)?;
+    with_plain_identity(&identity, Some(passphrase.unwrap_or("")), |id| {
+        answered.denied = deny_quiet(task, &plan.deny, note)?;
+        seal_and_release(id, task, &plan.seal, &plan.release)
+    })?;
+    answered.released = plan.release.iter().cloned().chain(plan.seal.into_iter().map(|(n, _)| n)).collect();
+    Ok(answered)
+}
+
+/// Every queued name and what it asks, release queue first — the order
+/// [`fulfill_in`] lists them in.
+fn pending_asks(task: &Task) -> Vec<(String, rules::Ask)> {
+    Queue::Release
+        .names(task)
+        .into_iter()
+        .map(|n| (n, rules::Ask::Release))
+        .chain(Queue::Value.names(task).into_iter().map(|n| (n, rules::Ask::Value)))
+        .collect()
+}
+
 /// Refuse pending requests for the current task (resolved from cwd), with
 /// an optional note the waiting agent is shown.
 pub fn deny(names: &[String], note: Option<&str>) -> Result<()> {
@@ -634,7 +728,7 @@ fn with_unlocked<T>(ws: &Workspace, may_create: bool, f: impl FnOnce(&Path) -> R
         }
         Err(e) => return Err(e),
     };
-    with_plain_identity(&identity, f)
+    with_plain_identity(&identity, None, f)
 }
 
 // ── Waiting ─────────────────────────────────────────────────────────────────
@@ -904,17 +998,31 @@ const PASSPHRASE_ATTEMPTS: u32 = 3;
 /// immediately after, success or not — never longer-lived than this call,
 /// never the task folder. Shared by `sops_decrypt` and `sops_set`, the two
 /// operations that actually need decrypt access (`sops_encrypt` never does).
-fn with_plain_identity<T>(identity: &Path, f: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
+///
+/// `passphrase` is one given beforehand — `tenx web`'s secrets form — and
+/// gets one try, typed into `age`'s prompt through a pty of its own
+/// (`age_decrypt_given`); `None` leaves the prompt to the real terminal.
+fn with_plain_identity<T>(identity: &Path, passphrase: Option<&str>, f: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
     if !is_age_encrypted(identity)? {
         return f(identity);
     }
 
-    let tmp_dir = std::env::temp_dir().join(format!("tenx-sops-{}", std::process::id()));
+    // Unique per call, not just per process: `tenx web` answers two tabs'
+    // forms at once, and one call's cleanup must not shred the other's copy.
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_dir = std::env::temp_dir().join(format!("tenx-sops-{}-{call}", std::process::id()));
     std::fs::create_dir_all(&tmp_dir).with_context(|| format!("create {}", tmp_dir.display()))?;
     set_dir_permissions_700(&tmp_dir)?;
     let tmp_identity = tmp_dir.join("identity");
 
     let result = (|| -> Result<T> {
+        if let Some(passphrase) = passphrase {
+            if age_decrypt_given(identity, &tmp_identity, passphrase)? {
+                return f(&tmp_identity);
+            }
+            bail!("wrong passphrase — nothing was changed");
+        }
         // A mistyped passphrase gets another go (as `sudo` gives one) rather
         // than ending the sitting — everything typed before this point, the
         // values included, would be lost with it.
@@ -942,6 +1050,71 @@ fn with_plain_identity<T>(identity: &Path, f: impl FnOnce(&Path) -> Result<T>) -
 
     let _ = std::fs::remove_dir_all(&tmp_dir); // shred immediately, success or not
     result
+}
+
+/// `age -d` of a passphrase-protected identity with a passphrase given
+/// beforehand. `age` reads a passphrase only from its terminal — no flag, no
+/// environment variable, by design — so it runs in a pty of its own and the
+/// passphrase is typed at its prompt. Whether it decrypted; `out` is written
+/// only then. Bounded: a prompt that never comes, or an `age` that hangs, is
+/// killed after `AGE_TIMEOUT`.
+fn age_decrypt_given(identity: &Path, out: &Path, passphrase: &str) -> Result<bool> {
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+    use std::sync::mpsc;
+
+    const AGE_TIMEOUT: Duration = Duration::from_secs(30);
+    let pair = native_pty_system()
+        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .context("open a pty for age")?;
+    let mut cmd = CommandBuilder::new("age");
+    cmd.arg("-d");
+    cmd.arg("-o");
+    cmd.arg(out);
+    cmd.arg(identity);
+    let mut child = pair.slave.spawn_command(cmd).context("run age -d (identity)")?;
+    drop(pair.slave);
+    let mut reader = pair.master.try_clone_reader().context("read age's pty")?;
+    let mut writer = pair.master.take_writer().context("write age's pty")?;
+
+    // What age prints, on a thread: a read blocks, and must not hold up the
+    // wait. Only "the prompt is up" leaves it; the text itself is dropped.
+    let (prompted_tx, prompted) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        let mut buf = [0u8; 256];
+        let mut sent = false;
+        while let Ok(n) = reader.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            if !sent {
+                seen.extend_from_slice(&buf[..n]);
+                if String::from_utf8_lossy(&seen).to_lowercase().contains("passphrase") {
+                    sent = true;
+                    let _ = prompted_tx.send(());
+                }
+            }
+        }
+    });
+
+    let deadline = Instant::now() + AGE_TIMEOUT;
+    // Type it once the prompt is up — or after a few seconds regardless: the
+    // terminal keeps what is typed until age reads it.
+    let _ = prompted.recv_timeout(Duration::from_secs(5));
+    writer.write_all(passphrase.as_bytes()).context("type the passphrase")?;
+    writer.write_all(b"\r").context("type the passphrase")?;
+    writer.flush().ok();
+    loop {
+        if let Some(status) = child.try_wait().context("wait on age -d")? {
+            return Ok(status.success() && out.exists());
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("age didn't finish unlocking the identity — nothing was changed");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 // ── Sops adoption ───────────────────────────────────────────────────────────
@@ -1616,6 +1789,48 @@ fn read_tty_line(label: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `age -p` of `plain` to `out`, typing `passphrase` at both its prompts.
+    fn protect(plain: &Path, out: &Path, passphrase: &str) {
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
+        let mut cmd = CommandBuilder::new("age");
+        cmd.args(["-p", "-o"]);
+        cmd.arg(out);
+        cmd.arg(plain);
+        let mut child = pair.slave.spawn_command(cmd).unwrap();
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().unwrap();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 256];
+            while matches!(reader.read(&mut buf), Ok(n) if n > 0) {}
+        });
+        let mut writer = pair.master.take_writer().unwrap();
+        for _ in 0..2 {
+            std::thread::sleep(Duration::from_millis(500));
+            writer.write_all(format!("{passphrase}\r").as_bytes()).unwrap();
+        }
+        assert!(child.wait().unwrap().success(), "age -p failed");
+    }
+
+    #[test]
+    fn a_given_passphrase_unlocks_a_protected_identity_once() {
+        if Command::new("age").arg("--version").output().is_err() {
+            return; // no age here
+        }
+        let dir = env::temp_dir().join(format!("tenx-age-given-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (plain, protected, out) = (dir.join("plain.txt"), dir.join("keys.txt"), dir.join("out.txt"));
+        assert!(Command::new("age-keygen").arg("-o").arg(&plain).output().unwrap().status.success());
+        protect(&plain, &protected, "correct horse");
+
+        assert!(!age_decrypt_given(&protected, &out, "wrong horse").unwrap());
+        assert!(!out.exists());
+        assert!(age_decrypt_given(&protected, &out, "correct horse").unwrap());
+        assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&plain).unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn forget_released_removes_plaintext_and_keeps_sealed_and_foreign_files() {

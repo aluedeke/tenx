@@ -38,6 +38,8 @@ interface Props {
   touch: boolean;
   /** An edit in one of the column's web forms (`FormOp`). */
   onForm(op: FormOp): void;
+  /** A form of the page's own (the secrets form) that owns the column. */
+  pageForm?: ReactNode;
 }
 
 /** Keys and clicks, for the pieces below. */
@@ -103,8 +105,9 @@ export function Column(props: Props) {
   const mode = view?.mode ?? { kind: 'list' };
   const ctl: Ctl = { onClick, onKey, onWantKeyboard };
   // Keyed by the form's kind, so a new form starts with fresh inputs.
-  const form =
-    view && isForm(mode) ? (
+  const form = props.pageForm ? (
+    props.pageForm
+  ) : view && isForm(mode) ? (
       <WebForms key={mode.kind} mode={mode} status={view.status} send={sendForm} onKey={onKey} touch={props.touch} />
     ) : tracking && tracked ? (
       <WebForms

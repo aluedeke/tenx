@@ -232,6 +232,8 @@ export type ServerMessage =
   | { type: 'request'; request: 'focus_terminal' | 'focus_column' | 'hide' | 'quit' }
   /** A link the column picked that the page didn't handle itself. */
   | { type: 'link'; action: 'open' | 'copy'; url: string; label: string }
+  /** The column asked to unlock a task's secrets (`u`): the page opens its form. */
+  | { type: 'unlock'; task: string }
   | { type: 'error'; message: string };
 
 export interface KeyMessage {

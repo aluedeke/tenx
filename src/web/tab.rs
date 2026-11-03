@@ -21,7 +21,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::tui::column::view::{Click, WebKey};
 use crate::tui::column::{ClientRequest, Column, LinkAction};
-use crate::tui::host::{Ticker, Unlock, UnlockStart, Views};
+use crate::tui::host::{Ticker, Views};
 
 /// How often the driver looks at the column when no message arrives — the
 /// TUI client's frame, so jobs animate and view switches land as promptly.
@@ -194,7 +194,6 @@ impl Tab {
             column: Column::in_session(&session).with_jobs(jobs),
             session,
             views: Views::default(),
-            unlock: Unlock::default(),
             ticker: Ticker::default(),
             pty: None,
             size: None,
@@ -275,10 +274,6 @@ impl Pty {
         Ok(Pty { master: pair.master, writer, child, alive })
     }
 
-    fn pid(&self) -> Option<u32> {
-        self.child.process_id()
-    }
-
     /// End the attach and wait until its last output is read: what a dying
     /// tmux client prints (mouse off, the main screen back) must not reach the
     /// page after a new attach has set it up.
@@ -303,7 +298,6 @@ struct Driver {
     session: String,
     column: Column,
     views: Views,
-    unlock: Unlock,
     ticker: Ticker,
     /// Spawned on the page's first `resize`, so the attach starts at the
     /// page's size rather than resizing every window to 80×24 first.
@@ -495,18 +489,14 @@ impl Driver {
     /// the work it asked for, its clock — and the view, if it changed.
     fn after_input(&mut self) {
         // The unlock names its workspace by index into the column's list;
-        // serve it before the tick, whose slow refresh may renumber it.
+        // serve it before the tick, whose slow refresh may renumber it. The
+        // page answers it in a web form of its own (`secrets.rs`), not the
+        // terminal's popup: a form can paste and offer the password manager.
         if let Some((ws_idx, slug)) = self.column.take_unlock() {
-            let pid = self.pty.as_ref().and_then(Pty::pid);
-            match self.unlock.start(&mut self.column, ws_idx, &slug, pid) {
-                UnlockStart::Started(req) => self.request(req),
-                UnlockStart::NoClient => {
-                    self.column.set_status("no tmux client for this tab to open the unlock in — tenx secrets fulfill".into())
-                }
+            match self.column.unlock_id(ws_idx, &slug) {
+                Some(task) => self.send_json(serde_json::json!({ "type": "unlock", "task": task })),
+                None => self.column.set_status(format!("no task '{slug}' to unlock")),
             }
-        }
-        if self.unlock.poll(&mut self.column) {
-            self.send_json(serde_json::json!({ "type": "request", "request": "focus_column" }));
         }
         if let Some(v) = self.column.take_agent_view() {
             let req = self.views.start(&mut self.column, v);

@@ -15,6 +15,7 @@ mod clipboard;
 mod mcp;
 mod paste;
 mod push;
+mod secrets;
 mod server;
 pub mod service;
 mod speak;

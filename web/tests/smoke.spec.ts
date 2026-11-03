@@ -617,24 +617,20 @@ test('esc cancels the reject form', async ({ page, isMobile }) => {
   expect(sent().some((m) => m.type === 'form' && m.op === 'cancel')).toBe(true);
 });
 
-test('a secrets notification opens the unlock prompt', async ({ page, isMobile }) => {
+test('a secrets notification opens the secrets form', async ({ page }) => {
   const sent = sentMessages(page);
   await page.goto('/?task=tenx/cloud-tasks&unlock=1');
   await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'unlock')).toBe(true);
   expect(sent().some((m) => m.type === 'click' && m.kind === 'task' && m.id === 'tenx/cloud-tasks')).toBe(true);
   expect(sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(false);
   expect(new URL(page.url()).search).toBe('');
-  // A phone can only raise its keyboard from a tap: it's offered one.
-  if (isMobile) {
-    const prompt = page.getByText('tap here to answer');
-    await expect(prompt).toBeVisible();
-    await prompt.tap();
-    await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
-  }
+  // The page's own form, in the column's place — not the terminal's popup.
+  await expect(page.getByTestId('secrets-form')).toBeVisible();
+  await expect(page.getByTestId('secret-request')).toHaveCount(2);
 });
 
-test('unlock from the row menu hands the keyboard to the terminal in the same tap', async ({ page, isMobile }) => {
-  test.skip(!isMobile, 'the tap is what matters on a phone');
+test('unlock from the row menu opens the secrets form', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'the long-press sheet is for touch');
   await page.goto('/');
   await page.getByTestId('toggle').tap();
   const row = page.locator('[data-id="tenx/cloud-tasks"]');
@@ -644,7 +640,37 @@ test('unlock from the row menu hands the keyboard to the terminal in the same ta
   await expect(page.getByTestId('sheet')).toBeVisible({ timeout: 2000 });
   await row.dispatchEvent('pointerup', at);
   await page.getByTestId('sheet').getByRole('menuitem', { name: /unlock/ }).tap();
-  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await expect(page.getByTestId('secrets-form')).toBeVisible();
+});
+
+test('the secrets form grants, denies and asks again after a wrong passphrase', async ({ page, isMobile }) => {
+  const tap = async (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
+  await page.goto('/?task=tenx/cloud-tasks&unlock=1');
+  const form = page.getByTestId('secrets-form');
+  await expect(form).toBeVisible();
+  await form.getByLabel('value for OPENAI_API_KEY').fill('sk-123');
+  await expect(form.getByText('6 characters')).toBeVisible();
+  await tap(page.getByTestId('secret-request').nth(1).getByText('deny'));
+  await form.getByLabel('note for the agent').fill('not now');
+  await form.getByLabel('passphrase').fill('wrong');
+  await tap(form.getByRole('button', { name: /Grant 1 · deny 1/ }));
+  await expect(form.getByTestId('form-error')).toContainText('wrong passphrase');
+  // Everything typed stays; only the passphrase is asked again.
+  await expect(form.getByLabel('value for OPENAI_API_KEY')).toHaveValue('sk-123');
+  await expect(form.getByLabel('passphrase')).toHaveValue('');
+  await form.getByLabel('passphrase').fill('right');
+  await tap(form.getByRole('button', { name: /Grant 1 · deny 1/ }));
+  await expect(form).toHaveCount(0);
+  await expect(page.getByRole('status')).toContainText('released OPENAI_API_KEY · denied STRIPE_KEY');
+  const answer = await page.evaluate(async () => (await fetch('/mock/secrets-answer')).json());
+  expect(answer).toEqual({
+    task: 'tenx/cloud-tasks',
+    shown: ['OPENAI_API_KEY', 'STRIPE_KEY'],
+    granted: ['OPENAI_API_KEY'],
+    values: [['OPENAI_API_KEY', 'sk-123']],
+    note: 'not now',
+    passphrase: 'right',
+  });
 });
 
 test('a link in the terminal opens outside the app', async ({ page, isMobile }) => {
