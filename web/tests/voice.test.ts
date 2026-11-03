@@ -11,6 +11,7 @@ test('the conversation state follows who is speaking', () => {
   assert.deepEqual(voiceEvent(rtvi('user-started-speaking')), { kind: 'state', state: 'hearing' });
   assert.deepEqual(voiceEvent(rtvi('bot-llm-started')), { kind: 'state', state: 'thinking' });
   assert.deepEqual(voiceEvent(rtvi('bot-started-speaking')), { kind: 'state', state: 'speaking' });
+  assert.deepEqual(voiceEvent(rtvi('bot-llm-stopped')), { kind: 'answered' });
   assert.deepEqual(voiceEvent(rtvi('bot-stopped-speaking')), { kind: 'state', state: 'listening' });
 });
 

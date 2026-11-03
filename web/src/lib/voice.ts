@@ -27,6 +27,9 @@ export interface Caption {
 export type VoiceEvent =
   | { kind: 'state'; state: VoiceState }
   | { kind: 'caption'; caption: Caption }
+  /** The model's response ended: if nothing is said, it chose to say
+   * nothing (`Conversation` then shows listening again). */
+  | { kind: 'answered' }
   | { kind: 'renegotiate' };
 
 /** Tool names as the captions say them: `tenx_send_message` → "send message". */
@@ -52,6 +55,8 @@ export function voiceEvent(raw: unknown): VoiceEvent | null {
       return { kind: 'state', state: 'thinking' };
     case 'bot-started-speaking':
       return { kind: 'state', state: 'speaking' };
+    case 'bot-llm-stopped':
+      return { kind: 'answered' };
     case 'user-transcription':
       return data.final && typeof data.text === 'string' && data.text.trim()
         ? { kind: 'caption', caption: { who: 'you', text: data.text.trim() } }
@@ -69,6 +74,10 @@ export function voiceEvent(raw: unknown): VoiceEvent | null {
       return null;
   }
 }
+
+/** How long a finished response may stay unspoken before it counts as the
+ * assistant choosing to say nothing. */
+const QUIET_MS = 2000;
 
 /** Captions kept on screen: the last few lines are enough to follow. */
 export const CAPTIONS = 4;
@@ -107,6 +116,10 @@ export class Conversation {
   private paused = false;
   /** The program's last state, shown again when the pause ends. */
   private last: VoiceState = 'listening';
+  /** A tool runs: the model goes on once it returns, so still thinking. */
+  private calling = false;
+  /** After a response that said nothing: back to listening. */
+  private quiet: ReturnType<typeof setTimeout> | null = null;
   private h: Handlers;
   readonly audio: HTMLAudioElement;
 
@@ -163,11 +176,19 @@ export class Conversation {
       const e = voiceEvent(parsed);
       if (!e) return;
       if (e.kind === 'state') {
-        this.last = e.state;
-        if (!this.paused) this.h.onState(e.state);
-      }
-      else if (e.kind === 'caption') this.h.onCaption(e.caption);
-      else void this.negotiate().catch((err) => this.end(err instanceof Error ? err.message : String(err)));
+        this.clearQuiet();
+        if (e.state === 'thinking') this.calling = false;
+        this.show(e.state);
+      } else if (e.kind === 'caption') {
+        if (e.caption.who === 'tool') this.calling = true;
+        this.h.onCaption(e.caption);
+      } else if (e.kind === 'answered') {
+        // Speech starts well within this when there is any.
+        this.clearQuiet();
+        this.quiet = setTimeout(() => {
+          if (this.last === 'thinking' && !this.calling) this.show('listening');
+        }, QUIET_MS);
+      } else void this.negotiate().catch((err) => this.end(err instanceof Error ? err.message : String(err)));
     };
     await this.negotiate();
   }
@@ -241,6 +262,16 @@ export class Conversation {
     this.end();
   }
 
+  private show(state: VoiceState) {
+    this.last = state;
+    if (!this.paused) this.h.onState(state);
+  }
+
+  private clearQuiet() {
+    if (this.quiet) clearTimeout(this.quiet);
+    this.quiet = null;
+  }
+
   private end(error?: string) {
     if (this.ended) return;
     this.ended = true;
@@ -253,6 +284,7 @@ export class Conversation {
     this.ping = null;
     this.dc?.close();
     this.pc?.close();
+    this.clearQuiet();
     this.mic?.getTracks().forEach((t) => t.stop());
     this.audio.pause();
     this.audio.srcObject = null;
