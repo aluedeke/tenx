@@ -285,6 +285,28 @@ idle_minutes = 10       # optional: unload the model after this long unused
 
 The voice's first letter is its language, and Kokoro has no German voice. A changed `[read_aloud]` applies to the next reading. Without a model the speaker says how to set one; nothing is read aloud in the browser.
 
+### Talk mode
+
+Tap 🎧 in the header to talk with an assistant about your tasks: ask what needs you, what an agent said, or tell it to send a task a message, approve a prompt or start a new task. It hears you through the microphone, waits until you have finished, answers briefly and stays quiet when nothing needs an answer; while you talk it also tells you when a task needs you or finishes a turn. Tap the state in the header to pause, ■ to stop. In the tenx iOS app the conversation runs as a call, so it goes on with the screen locked.
+
+The assistant is a separate program, `voice/tenx-voice.py` (a [Pipecat](https://github.com/pipecat-ai/pipecat) pipeline: Silero to hear when you speak, Whisper to understand you, Claude to think, Kokoro to speak). It needs [uv](https://docs.astral.sh/uv/) and an Anthropic API key in `~/.config/tenx/anthropic-key` (readable only by you). Start it on the machine `tenx web` runs on:
+
+```sh
+uv run --script voice/tenx-voice.py
+```
+
+`tenx web` finds it within a few seconds and shows 🎧 while it runs. With a `[speech]` model it understands you through `tenx-whisper` and that model. Everything else is optional:
+
+```toml
+[voice]
+model = "claude-sonnet-5-5"   # the Claude model it thinks with
+voice = "af_heart"            # a Kokoro voice
+language = "de"               # what you speak; it answers in English
+key_file = "~/.config/tenx/anthropic-key"
+```
+
+Its tools are `tenx web`'s own `/mcp`, so it can do what a Claude on the web can, except wait for an agent.
+
 ### Tasks as tools for Claude on the web (MCP)
 
 `tenx web` also serves an [MCP](https://modelcontextprotocol.io) endpoint, `/mcp`, so an agent on another machine — Claude on the web, Claude on your phone — can list your tasks, read what their agents said, start new tasks and send them messages. The tools: `tenx_list_workspaces`, `tenx_list_tasks`, `tenx_get_task` (status, PRs, `TASK.md`), `tenx_get_output` (the agent's last reply), `tenx_read_screen` (the agent pane's last lines), `tenx_create_task`, `tenx_send_message`, `tenx_wait` (up to 60 s per call) `tenx_answer_permission` (approve or deny a permission prompt that is on screen) and `tenx_focus_task` (show a task on your screen, opening its window if it is closed: in the `tenx web` page the call comes from, when the caller names it with a `tenx-session` header, else in your tenx terminals). A new task opens its window without taking your screen; only `tenx_focus_task` moves it.

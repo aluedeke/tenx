@@ -238,8 +238,8 @@ keyboard; what it types goes over as `key` messages.
 
 ## Talk mode
 
-`tenx-voice` is not part of tenx: its user starts it (`uv run --script
-tenx-voice.py`), and it listens on a Unix socket only they can open,
+`tenx-voice` is not part of the `tenx` binary: its user starts it
+(`uv run --script voice/tenx-voice.py`), and it listens on a Unix socket only they can open,
 `~/.config/tenx/voice.sock` (`TENX_VOICE_SOCKET` overrides, for both).
 `tenx web` looks for it every 2 s, connects, and sends `setup` — the `/mcp`
 address and token, the API key, `[voice]`, `[speech]`'s model and glossary,
