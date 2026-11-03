@@ -227,6 +227,12 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'audio/wav' }).end(silentWav(0.5));
     return;
   }
+  // An image for the agent: `tenx web` saves it and answers its path.
+  if (req.method === 'POST' && url.pathname === '/paste') {
+    for await (const _ of req);
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ path: '/tmp/tenx-paste/shot.png' }));
+    return;
+  }
   // The Mac's clipboard, kept in memory: what /clipboard/set put there,
   // /clipboard/get hands back.
   if (req.method === 'POST' && url.pathname === '/clipboard/set') {

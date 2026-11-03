@@ -1510,6 +1510,26 @@ a:hover {
 }
 
 /* The action bar, pinned under the sections. */
+/* The paste key's text field (PasteBox.tsx): a form of its own over the
+   page, at the top — iOS's keyboard covers the bottom of the screen. */
+.wf.pastebox {
+  position: fixed;
+  z-index: 21;
+  top: calc(env(safe-area-inset-top) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(32em, calc(100vw - 32px));
+  flex: none;
+  border: 1px solid var(--border-active);
+  border-radius: 10px;
+  background: #1a1c25;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.wf.pastebox .wf-top {
+  padding-top: 10px;
+}
+
 .wf-bar {
   flex: none;
   display: flex;

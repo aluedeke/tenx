@@ -847,6 +847,59 @@ for (const [name, parts, expected] of [
   });
 }
 
+test('the paste key opens a text field when the browser refuses the clipboard', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'the key bar is for touch');
+  // What iOS does with text copied in another app.
+  await page.addInitScript(() => {
+    const refuse = () => Promise.reject(new DOMException('The request is not allowed', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { read: refuse, readText: refuse, writeText: () => Promise.resolve() } });
+  });
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/');
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.evaluate(() => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
+    vv.dispatchEvent(new Event('resize'));
+  });
+  await page.getByTestId('paste').tap();
+  const box = page.getByTestId('paste-box');
+  await expect(box).toBeVisible();
+  await box.getByLabel('text to paste').fill('from another app');
+  await box.getByRole('button', { name: /Paste/ }).tap();
+  await expect(box).toHaveCount(0);
+  await expect.poll(() => binary.join('')).toContain('from another app');
+});
+
+test('an image pasted into the paste box goes up and its path is typed', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'the key bar is for touch');
+  await page.addInitScript(() => {
+    const refuse = () => Promise.reject(new DOMException('The request is not allowed', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { read: refuse, readText: refuse, writeText: () => Promise.resolve() } });
+  });
+  const binary: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && binary.push(f.payload.toString())));
+  await page.goto('/');
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.evaluate(() => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
+    vv.dispatchEvent(new Event('resize'));
+  });
+  await page.getByTestId('paste').tap();
+  const box = page.getByTestId('paste-box');
+  await expect(box).toBeVisible();
+  // iOS's Paste of an image into the field: a paste event carrying the file.
+  await box.getByLabel('text to paste').evaluate((el) => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'shot.png', { type: 'image/png' }));
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect(box).toHaveCount(0);
+  await expect.poll(() => binary.join('')).toContain('/tmp/tenx-paste/shot.png');
+});
+
 test('the clipboard keys copy text to the Mac and back', async ({ page, context, isMobile }) => {
   test.skip(!isMobile, 'the key bar is for touch');
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);

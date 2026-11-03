@@ -11,6 +11,7 @@ import { Column } from './Column';
 import { Header, type MicState, type SpeakerState } from './Header';
 import { LinksMenu } from './LinksMenu';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
+import { PasteBox } from './PasteBox';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
@@ -77,6 +78,9 @@ export function App() {
   const [ipad, setIpad] = useState(false);
   /** A paste on its way up, or why it failed. */
   const [pasting, setPasting] = useState<string | null>(null);
+  /** The paste key's text field, open when the clipboard couldn't be read:
+   * why it opened. */
+  const [pasteBox, setPasteBox] = useState<string | null>(null);
   /** The current task's links, opened by the header's ↗ (not the column's
    * `L`, which is the server's mode). */
   const [ownLinks, setOwnLinks] = useState<{ title: string; links: LinkView[] } | null>(null);
@@ -744,7 +748,10 @@ export function App() {
     );
     setPasting('reading the clipboard…');
     if (!navigator.clipboard?.read && !navigator.clipboard?.readText) {
-      notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
+      // Plain http: no Clipboard API at all, but a field still takes a paste.
+      diag('no clipboard API; opened the paste box');
+      setPasting(null);
+      setPasteBox('this page can\'t read the clipboard over plain http — paste here instead');
       return;
     }
     // The full read first (text, HTML or an image — lib/clipboard), then the
@@ -776,7 +783,9 @@ export function App() {
       diag(`readText failed: ${failed(e, started)}`);
     }
     setPasting(null);
-    if (failure) notice(`couldn't read the clipboard: ${failure instanceof Error ? failure.message : String(failure)}`);
+    // Refused (iOS does, for text copied in another app): a field to paste
+    // into instead, which iOS's own Paste always reaches.
+    if (failure) setPasteBox('the browser wouldn\'t hand over the clipboard — paste here instead');
     else notice('nothing to paste: the clipboard has no text or image');
   }, [notice, pasteImages, send]);
 
@@ -1234,6 +1243,18 @@ export function App() {
           )}
         </div>
       </div>
+      {pasteBox && (
+        <PasteBox
+          why={pasteBox}
+          onClose={() => setPasteBox(null)}
+          onText={(text) => {
+            send({ type: 'log', message: `paste: box typed ${text.length} chars` });
+            setFocus('terminal');
+            term.current?.paste(text);
+          }}
+          onImages={(files) => void pasteImages(files)}
+        />
+      )}
       <div ref={keySink} className="key-sink" aria-hidden="true" tabIndex={-1} data-testid="key-sink" />
       <input
         ref={kbd}
