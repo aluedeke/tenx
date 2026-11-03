@@ -1531,7 +1531,7 @@ test('an emoji takes two cells, as tmux counts it', async ({ page, isMobile }) =
   test.skip(isMobile, 'same code path');
   // tmux (variation-selector-always-wide) gives each of these two cells; a
   // terminal that gives one draws the next character over its right half.
-  const emojis = ['📌', '⚠️', '❤️', '🥲', '👍🏽', '👨‍💻', '🇩🇪'];
+  const emojis = ['📌', '⚠️', '❤️', '🥲', '🫠', '🪿', '👍🏽', '👨‍💻', '🇩🇪'];
   await page.goto('/?renderer=dom');
   await page.locator('.xterm-helper-textarea').focus();
   // Each on its own row at column 1, then a Z at column 3: right after a

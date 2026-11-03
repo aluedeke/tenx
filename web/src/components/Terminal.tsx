@@ -4,12 +4,13 @@
 // Everything inside it — panes, borders, the status line — is tmux's own.
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import type { Terminal as XTerm } from '@xterm/xterm';
+import type { IUnicodeVersionProvider, Terminal as XTerm } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { TerminalClipboard, imagesIn } from '@/lib/clipboard';
 import { DragFilter } from '@/lib/dragfilter';
+import { VERSION as EMOJI_WIDTHS, widerEmoji } from '@/lib/emojiwidth';
 import { openExternal } from '@/lib/links';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
@@ -162,12 +163,23 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         // a window inside the app (lib/links).
         linkHandler: { activate: (_ev, uri) => openExternal(uri), allowNonHttpProtocols: false },
       });
-      // Character widths as tmux counts them: an emoji is two cells there.
-      // xterm's default Unicode 6 table makes it one, and Unicode 11 still
-      // does for an emoji with VS16 (⚠️), one newer than 11 (🫠) or a flag,
-      // so the glyph was clipped to its left half. This one (Unicode 15,
-      // grapheme clusters) sets its own active version.
-      xterm.loadAddon(new UnicodeGraphemesAddon());
+      // Character widths as tmux counts them: an emoji is two cells there,
+      // and a glyph given one is clipped to its left half. xterm's default
+      // table is Unicode 6; the graphemes add-on's is Unicode 15 with
+      // clusters (⚠️, 👍🏽, flags), but still one cell for an emoji newer than
+      // that (🫠), so its provider is caught as it registers and wrapped
+      // (lib/emojiwidth). Should that ever catch nothing, the add-on as is.
+      const providers = new Map<string, IUnicodeVersionProvider>();
+      new UnicodeGraphemesAddon().activate({
+        unicode: { register: (p: IUnicodeVersionProvider) => providers.set(p.version, p), activeVersion: '' },
+      } as unknown as XTerm);
+      const graphemes = providers.get('15-graphemes');
+      if (graphemes) {
+        xterm.unicode.register(widerEmoji(graphemes));
+        xterm.unicode.activeVersion = EMOJI_WIDTHS;
+      } else {
+        xterm.loadAddon(new UnicodeGraphemesAddon());
+      }
       const fit = new FitAddon();
       xterm.loadAddon(fit);
       // URLs spotted in the text: same.
