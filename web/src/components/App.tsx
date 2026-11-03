@@ -304,6 +304,14 @@ export function App() {
             setVisible(true);
             setFocus('column');
             break;
+          case 'show_task':
+            // The voice assistant's `tenx_focus_task`: open it as a
+            // notification's tap does, once the rows have it.
+            wantTask.current = msg.task;
+            wantUnlock.current = false;
+            restoreTask.current = null;
+            if (lastView.current) openWanted(lastView.current);
+            break;
           case 'link':
             // A link the column picked that the key handler didn't take
             // (`linkKey`): the browser may well block a window this late.

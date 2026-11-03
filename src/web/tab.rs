@@ -94,6 +94,9 @@ pub(super) enum Input {
     /// A socket (re)attached: send everything afresh. `patch`: the page
     /// takes `patch` messages after the first view.
     Attached { patch: bool },
+    /// Show the page this task (a column row's id): `tenx_focus_task` from
+    /// the voice assistant talking in this tab.
+    Show { task: String },
     /// The grace period ran out: end the tab.
     Close,
 }
@@ -166,6 +169,11 @@ impl Tabs {
                 let _ = tab.input.send(Input::Close);
             }
         });
+    }
+
+    /// The tab with session id `id`, while it lives.
+    pub(super) fn get(&self, id: &str) -> Option<Arc<Tab>> {
+        self.map.lock().unwrap().get(id).filter(|t| !t.dead.load(Ordering::SeqCst)).cloned()
     }
 
     /// Every tab, told to end now — the server is stopping. Returned so the
@@ -428,6 +436,11 @@ impl Driver {
                     self.attach_again();
                 }
             }
+            // The page opens it as it opens a notification's task — a click
+            // and `open` back here — so the page also hands the screen to
+            // the terminal, and on a phone hides the column. A page away
+            // for its grace period gets it when its socket is back.
+            Input::Show { task } => self.send_json(serde_json::json!({ "type": "show_task", "task": task })),
             Input::Close => return false,
         }
         true

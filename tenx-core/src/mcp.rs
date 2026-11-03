@@ -34,6 +34,32 @@ pub fn origin_ok(origin: Option<&str>) -> bool {
     origin.is_none()
 }
 
+/// The header naming the `tenx web` tab a caller talks from: that tab's
+/// session id (the page's `hello`). The voice assistant in the page sends
+/// it, so `tenx_focus_task` switches the page you are talking to; the model
+/// never sees it. A caller without it is on no page of ours (Claude on the
+/// web), and the task goes to the tenx session — every terminal on it.
+pub const SESSION_HEADER: &str = "tenx-session";
+
+/// Where `tenx_focus_task` shows a task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FocusTarget {
+    /// The `tenx web` tab with this session id.
+    Tab(String),
+    /// The tenx session, which every terminal client shows.
+    Terminals,
+}
+
+/// The target a request's [`SESSION_HEADER`] names. A malformed id is an
+/// error rather than the terminals: the caller meant a page.
+pub fn focus_target(header: Option<&str>) -> Result<FocusTarget, String> {
+    match header.map(str::trim).filter(|h| !h.is_empty()) {
+        None => Ok(FocusTarget::Terminals),
+        Some(id) if crate::web::valid_session_id(id) => Ok(FocusTarget::Tab(id.to_string())),
+        Some(_) => Err(format!("{SESSION_HEADER} must be a tenx web session id")),
+    }
+}
+
 /// The largest request `/mcp` takes: a message to an agent is text.
 pub const MAX_BYTES: usize = 1024 * 1024;
 
@@ -93,7 +119,8 @@ with tenx_list_tasks. A task is named by its workspace and slug. To drive one: \
 tenx_send_message, then tenx_wait until it settles, then tenx_get_output for the reply. \
 tenx_create_task starts a new one (no workspace = the adhoc workspace, for a question \
 without repos). A task whose status is 'blocked' waits on a dialog: tenx_read_screen \
-shows it, tenx_answer_permission answers a permission prompt.";
+shows it, tenx_answer_permission answers a permission prompt. tenx_focus_task shows a task \
+on the user's screen: when they ask to see one, or to switch to the task you talk about.";
 
 /// A tool call, its arguments checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +143,7 @@ pub enum Call {
     SendMessage { workspace: String, task: String, text: String, force: bool },
     Wait { workspace: String, task: String, timeout_secs: u64 },
     AnswerPermission { workspace: String, task: String, approve: bool },
+    FocusTask { workspace: String, task: String },
 }
 
 /// How long one `tenx_wait` call may block: under the 100 s a Cloudflare
@@ -196,6 +224,10 @@ pub fn parse_call(params: &Value) -> Result<Call, String> {
             let (workspace, task) = task()?;
             let approve = flag(args, "approve")?.ok_or("missing argument: approve")?;
             Call::AnswerPermission { workspace, task, approve }
+        }
+        "tenx_focus_task" => {
+            let (workspace, task) = task()?;
+            Call::FocusTask { workspace, task }
         }
         other => return Err(format!("unknown tool: {other}")),
     })
@@ -347,6 +379,16 @@ pub fn tools() -> Value {
             &["workspace", "task", "approve"],
             json!({ "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false }),
         ),
+        tool(
+            "tenx_focus_task",
+            "Focus task",
+            "Show the task on the user's screen, with its agent's history: in the tenx web page the call comes \
+             from (the voice assistant's), else in every tenx terminal. Opens the task's window first when it is \
+             closed. Use it when the user asks to see a task, or to switch to the task you are talking about.",
+            task_args,
+            &["workspace", "task"],
+            json!({ "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }),
+        ),
     ];
     json!({ "tools": tools })
 }
@@ -386,6 +428,14 @@ mod tests {
     fn any_origin_is_refused() {
         assert!(origin_ok(None));
         assert!(!origin_ok(Some("https://evil.example")));
+    }
+
+    #[test]
+    fn focus_goes_to_the_named_tab_or_the_terminals() {
+        assert_eq!(focus_target(None), Ok(FocusTarget::Terminals));
+        assert_eq!(focus_target(Some(" ")), Ok(FocusTarget::Terminals));
+        assert_eq!(focus_target(Some("3f9a0b1c2d3e4f50")), Ok(FocusTarget::Tab("3f9a0b1c2d3e4f50".into())));
+        assert!(focus_target(Some("../tenx")).is_err());
     }
 
     #[test]
@@ -429,6 +479,10 @@ mod tests {
             call(json!({"name": "tenx_answer_permission", "arguments": {"workspace": "w", "task": "t"}})),
             Err("missing argument: approve".into())
         );
+        assert_eq!(
+            call(json!({"name": "tenx_focus_task", "arguments": {"workspace": "w", "task": "t"}})),
+            Ok(Call::FocusTask { workspace: "w".into(), task: "t".into() })
+        );
         assert!(call(json!({"name": "tenx_rm"})).is_err());
     }
 
@@ -438,7 +492,7 @@ mod tests {
     fn every_listed_tool_is_callable() {
         let list = tools();
         let tools = list["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         for t in tools {
             let mut args = Map::new();
             for key in t["inputSchema"]["required"].as_array().unwrap() {

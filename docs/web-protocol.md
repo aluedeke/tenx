@@ -17,7 +17,7 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 | `POST /push/subscribe` | cookie + Origin | A `PushSubscription` as `toJSON()` gives it (`{endpoint, keys: {p256dh, auth}}`). Stored in `~/.config/tenx/web-push-subs.json` (600), one per endpoint. `400` for an endpoint that isn't HTTPS (plain HTTP only to loopback, for tests) or keys that aren't a P-256 point and a secret. |
 | `POST /push/unsubscribe` | cookie + Origin | `{endpoint}`: forget that subscription. |
 | `POST /push/test` | cookie + Origin | Push a test message to every subscription: `{sent, subscriptions}`. |
-| `POST /mcp` | bearer token, no Origin | MCP over streamable HTTP, for an agent on another machine (not the page): one JSON-RPC message per request, answered with one `application/json` body; notifications get `202`. No session id, no event stream (`GET`/`DELETE` get `405`). `Authorization: Bearer` with `~/.config/tenx/mcp-token` (`tenx web mcp-token`), never the cookie; any `Origin` header gets `403`. Tools and rules: `tenx_core::mcp`. |
+| `POST /mcp` | bearer token, no Origin | MCP over streamable HTTP, for an agent on another machine (not the page): one JSON-RPC message per request, answered with one `application/json` body; notifications get `202`. No session id, no event stream (`GET`/`DELETE` get `405`). `Authorization: Bearer` with `~/.config/tenx/mcp-token` (`tenx web mcp-token`), never the cookie; any `Origin` header gets `403`. A `tenx-session: <id>` header names the page the caller talks from (the voice assistant sends its page's session id): `tenx_focus_task` then shows the task on that page (`show_task` below) instead of in the tenx session. Tools and rules: `tenx_core::mcp`. |
 | `GET /manifest.webmanifest` | — | Public (browsers fetch it without cookies). With the cookie — the page links it `crossorigin="use-credentials"` — its `start_url` is `/?token=…`, so an app installed to an iOS Home Screen, which has cookies of its own, signs itself in on first launch. |
 | `POST /paste` | cookie + Origin | An image (`Content-Type` PNG, JPEG, GIF or WebP; at most 25 MB) saved to `~/.config/tenx/web-paste/` (600, swept after a day). Answers `{"path": …}`; the page pastes that path into the terminal, which Claude Code attaches as an image. `415` for anything else. |
 | `POST /clipboard/get` | cookie + Origin | The text on the clipboard of the machine `tenx web` runs on: `{"text": …}` (empty when it holds none). A POST so that even a same-origin request carries its `Origin` — a clipboard holds passwords. macOS `pbpaste`; elsewhere `wl-paste`, else `xclip`. `502` when there is no such program. |
@@ -87,6 +87,12 @@ Two frame kinds:
 // column's place. The terminal client opens `tenx secrets fulfill` in a tmux
 // popup instead; a web page can paste into a form, not into a terminal.
 { "type": "unlock", "task": "tenx/cloud-tasks" }
+
+// Show this task (a row id): `tenx_focus_task` from the voice assistant
+// talking in this page (`/mcp` with this page's `tenx-session`). The page
+// opens it as a notification's tap does — `click` + `open` — so the
+// terminal shows it, and a phone hides the column.
+{ "type": "show_task", "task": "tenx/cloud-tasks" }
 
 // A link the column picked (`L`, `f`) that the page didn't open itself — a
 // fallback: the page opens links inside the key press (see below).
