@@ -97,10 +97,16 @@ SAY = dict(json.loads(os.environ.get("TENX_VOICE_SAY") or "[]"))
 # each turn's context — and its latency — small.
 MAX_TOOL_CHARS = 6000
 
+# Tools about one task: using one shows that task on the page first
+# (`Session.follow`), so its history is on screen while the assistant talks
+# about it — not left to the model, which forgets.
+FOLLOWS = {"tenx_get_task", "tenx_get_output", "tenx_read_screen", "tenx_send_message", "tenx_answer_permission"}
+
 # tenx's MCP tools the voice may use. Not `tenx_wait`: it blocks for up to a
 # minute, and a conversation can't go quiet that long — tenx tells the
 # assistant when a task changes instead (`event`).
 TOOLS = [
+    "tenx_focus_task",
     "tenx_list_workspaces",
     "tenx_list_tasks",
     "tenx_get_task",
@@ -129,6 +135,12 @@ Statuses: blocked means the task's agent waits on a dialog (often a
 permission prompt); signaled means it rang a bell; working means busy; done
 means it finished its turn and waits for the next message; idle means no
 agent is running.
+
+A task you read, message or answer for is shown on the user's screen by
+itself. Use tenx_focus_task when they ask to see a task.
+
+To find a task by name, call tenx_list_tasks without a status: it lists
+every task. Never say a task doesn't exist before you have.
 
 When the user asks what a task said, read it with tenx_get_output and sum it
 up in a sentence or two; offer details only if asked. To see what a blocked
@@ -304,10 +316,12 @@ class Talking(BaseObserver):
 class Session:
     """One connected page: its pipeline, and what it is told."""
 
-    def __init__(self, voice: "Voice", connection, task: str | None):
+    def __init__(self, voice: "Voice", connection, task: str | None, page: str | None):
         self.voice = voice
         self.connection = connection
         self.task = task
+        # The page's tenx web session: `tenx_focus_task` shows tasks there.
+        self.page = page
         self.talking = Talking()
         self.pending: list[str] = []
         # The page paused the conversation: it hears nothing (its microphone
@@ -330,12 +344,19 @@ class Session:
         mcp = MCPClient(
             server_params=StreamableHttpParameters(
                 url=os.environ["TENX_MCP_URL"],
-                headers={"Authorization": f"Bearer {os.environ['TENX_MCP_TOKEN']}"},
+                headers={"Authorization": f"Bearer {os.environ['TENX_MCP_TOKEN']}"}
+                | ({"tenx-session": self.page} if self.page else {}),
             ),
             tools_filter=TOOLS,
             tools_output_filters={name: clip for name in TOOLS} | {"tenx_list_tasks": compact_tasks},
         )
         context = LLMContext(tools=await mcp.tools())
+
+        @llm.event_handler("on_function_calls_started")
+        async def on_calls(service, calls):
+            for call in calls:
+                if call.function_name in FOLLOWS:
+                    await self.follow(mcp, call.arguments)
         user, assistant = LLMContextAggregatorPair(
             context, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
         )
@@ -365,6 +386,19 @@ class Session:
             await self.runner.cancel()
 
         await self.runner.run()
+
+    async def follow(self, mcp: MCPClient, args):
+        """Show the task a tool is about, unless the page shows it already."""
+        ws, task = (args or {}).get("workspace"), (args or {}).get("task")
+        if not self.page or not ws or not task or f"{ws}/{task}" == self.task:
+            return
+        try:
+            await mcp._call_tool_text("tenx_focus_task", {"workspace": ws, "task": task})
+            # The page reports the change too (`context`); this keeps a
+            # second call for the same task from showing it again.
+            self.task = f"{ws}/{task}"
+        except Exception as e:
+            logger.warning(f"tenx_focus_task {ws}/{task}: {e}")
 
     async def tell(self, text: str):
         """Queue `text` for the assistant; said when nobody is talking."""
@@ -406,10 +440,11 @@ class Voice:
 
     async def offer(self, msg: dict):
         task = msg.get("task")
+        page = msg.get("session")
         started: list[Session] = []
 
         async def on_connection(connection):
-            session = Session(self, connection, task)
+            session = Session(self, connection, task, page)
             started.append(session)
 
             async def run():

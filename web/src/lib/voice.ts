@@ -100,6 +100,10 @@ export class Conversation {
   private ended = false;
   private early: RTCIceCandidateInit[] = [];
   private task: string | null;
+  /** This page's session id (`hello`), so the assistant's
+   * `tenx_focus_task` shows a task here rather than in the terminals —
+   * asked for when the offer goes out: a tap can come before `hello`. */
+  private session: () => string | null;
   private paused = false;
   /** The program's last state, shown again when the pause ends. */
   private last: VoiceState = 'listening';
@@ -108,8 +112,9 @@ export class Conversation {
 
   /** Call straight from the tap: iOS lets audio play, and asks for the
    * microphone, only inside one. */
-  constructor(task: string | null, h: Handlers) {
+  constructor(task: string | null, session: () => string | null, h: Handlers) {
     this.task = task;
+    this.session = session;
     this.h = h;
     this.audio = new Audio();
     this.audio.autoplay = true;
@@ -179,7 +184,7 @@ export class Conversation {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sdp: local.sdp, type: local.type, pc_id: this.pcId, restart_pc: false, task: this.task }),
+      body: JSON.stringify({ sdp: local.sdp, type: local.type, pc_id: this.pcId, restart_pc: false, task: this.task, session: this.session() }),
     });
     if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
     const answer = (await res.json()) as { sdp: string; type: RTCSdpType; pc_id: string };

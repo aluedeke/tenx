@@ -68,6 +68,10 @@ export class Connection {
   /** The last `hello` came back with the session asked for: the page is back
    * where it was (within the server's grace period), not on a new session. */
   resumed = false;
+  /** This page's session (its own, from the last `hello`; another tab may
+   * have stored a different one since): what the voice assistant names
+   * when it shows a task here. */
+  session: string | null = null;
   private closed = false;
   private encoder = new TextEncoder();
 
@@ -122,6 +126,7 @@ export class Connection {
         }
         if (msg.type === 'hello') {
           this.resumed = msg.session === this.asked;
+          this.session = msg.session;
           storeSession(msg.session);
         }
         this.handlers.message(msg);

@@ -1067,7 +1067,7 @@ export function App() {
     setCaptions([]);
     // Straight from the tap: iOS asks for the microphone, and plays audio,
     // only inside one.
-    const next = new Conversation(state.current.current || null, {
+    const next = new Conversation(state.current.current || null, () => conn.current?.session ?? null, {
       onState: (s) => {
         if (talking.current === next) setVoice(s);
       },

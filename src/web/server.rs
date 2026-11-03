@@ -316,7 +316,7 @@ async fn speak_audio(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, head
 
 /// `POST /voice/offer`: a page's WebRTC offer for the voice assistant
 /// (`voice.rs`), in the shape Pipecat's clients send — `{sdp, type, pc_id?,
-/// restart_pc?, task?}` — answered with `{sdp, type, pc_id}`. Guarded like
+/// restart_pc?, task?, session?}` — answered with `{sdp, type, pc_id}`. Guarded like
 /// `/paste`: the assistant acts on tasks. The first one starts the program,
 /// which can take minutes while it installs; `502` when it can't run.
 async fn voice_offer(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
@@ -335,6 +335,8 @@ async fn voice_offer(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, head
             pc_id: offer.pc_id,
             restart_pc: offer.restart_pc,
             task: offer.task,
+            // Checked here: it goes out as an HTTP header.
+            session: offer.session.filter(|s| tenx_core::web::valid_session_id(s)),
         })
     })
     .await;

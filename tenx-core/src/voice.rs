@@ -37,6 +37,11 @@ pub enum ToVoice {
         /// The task the page shows (a column row's id), if any.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         task: Option<String>,
+        /// The page's `tenx web` session (its `hello`), sent back to `/mcp`
+        /// as `mcp::SESSION_HEADER` so `tenx_focus_task` shows a task on
+        /// that page.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<String>,
     },
     /// ICE candidates the page found after its offer.
     Ice { id: u64, pc_id: String, candidates: Vec<Candidate> },
@@ -109,6 +114,8 @@ pub struct PageOffer {
     pub restart_pc: bool,
     #[serde(default)]
     pub task: Option<String>,
+    #[serde(default)]
+    pub session: Option<String>,
 }
 
 /// The page's `PATCH /voice/offer` body.
@@ -179,6 +186,7 @@ mod tests {
             pc_id: None,
             restart_pc: false,
             task: Some("tenx/pipecat".into()),
+            session: None,
         };
         assert_eq!(
             line(&offer),
@@ -209,6 +217,9 @@ mod tests {
         let o: PageOffer = serde_json::from_str(r#"{"sdp":"v=0","type":"offer","pc_id":null,"restart_pc":false}"#).unwrap();
         assert_eq!(o.sdp_type, "offer");
         assert_eq!(o.pc_id, None);
+        assert_eq!(o.session, None);
+        let o: PageOffer = serde_json::from_str(r#"{"sdp":"v=0","type":"offer","session":"a1b2"}"#).unwrap();
+        assert_eq!(o.session.as_deref(), Some("a1b2"));
         let i: PageIce =
             serde_json::from_str(r#"{"pc_id":"pc-1","candidates":[{"candidate":"","sdp_mid":"0","sdp_mline_index":0}]}"#).unwrap();
         assert_eq!(i.candidates[0].candidate, "");
