@@ -1,0 +1,143 @@
+# Generates public/fonts/text-symbols.woff2 (with its licence beside it) and
+# src/app/text-symbols.css:
+# a font for the characters that are emoji only on request (⏺, ⏸, ⚠, 🗒 —
+# Emoji but not Emoji_Presentation), each glyph shrunk into one terminal
+# cell.
+#
+# tmux and the programs in it give such a character one cell. A device
+# without a text glyph for it (iOS has none for ⏺, Claude Code's message
+# bullet) draws the colour emoji instead, two cells wide, and the next
+# character cuts it in half. Listed right after JetBrains Mono, this font
+# answers first; unicode-range keeps it off every other character, so real
+# emojis stay in colour.
+#
+# Source: Noto Sans Symbols 2 (OFL-1.1), the @fontsource devDependency.
+# The outputs are committed; run this only to change them:
+#
+#   python3 -m venv /tmp/venv && /tmp/venv/bin/pip install fonttools brotli
+#   /tmp/venv/bin/python scripts/text-symbols.py
+#
+# Needs node on PATH: Python's unicodedata has no emoji properties.
+
+import json
+import subprocess
+from pathlib import Path
+
+from fontTools import subset
+from fontTools.pens.recordingPen import DecomposingRecordingPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.pens.ttGlyphPen import TTGlyphPen
+from fontTools.ttLib import TTFont
+
+WEB = Path(__file__).resolve().parent.parent
+SOURCE = WEB / 'node_modules/@fontsource/noto-sans-symbols-2/files/noto-sans-symbols-2-symbols-400-normal.woff2'
+FONT = WEB / 'public/fonts/text-symbols.woff2'
+CSS = WEB / 'src/app/text-symbols.css'
+LICENSE = WEB / 'public/fonts/text-symbols-OFL.txt'
+FAMILY = 'tenx text symbols'
+
+# JetBrains Mono, 1000 units per em: the cell, and the line it sits on.
+ADVANCE = 600
+INK = 540  # what a glyph may cover of the cell's width
+ASCENT, DESCENT = 1020, 300
+X_HEIGHT = 550
+
+# Emoji, not Emoji_Presentation, from U+2000 on (leaves out #, *, digits, ©, ®).
+CODEPOINTS = json.loads(subprocess.check_output([
+    'node', '-e',
+    'const o=[];for(let c=0x2000;c<0x30000;c++){const s=String.fromCodePoint(c);'
+    'if(/\\p{Emoji}/u.test(s)&&!/\\p{Emoji_Presentation}/u.test(s))o.push(c)}'
+    'console.log(JSON.stringify(o))',
+]))
+
+
+def ranges(cps):
+    out, start, prev = [], None, None
+    for c in sorted(cps):
+        if start is None:
+            start = prev = c
+        elif c == prev + 1:
+            prev = c
+        else:
+            out.append((start, prev))
+            start = prev = c
+    if start is not None:
+        out.append((start, prev))
+    return ', '.join(f'U+{a:X}' if a == b else f'U+{a:X}-{b:X}' for a, b in out)
+
+
+def main():
+    font = TTFont(SOURCE)
+    wanted = [c for c in CODEPOINTS if c in font.getBestCmap()]
+    options = subset.Options()
+    options.hinting = False
+    options.layout_features = []
+    options.name_IDs = [0, 1, 2, 3, 4, 5, 6, 13, 14]  # copyright, names, version, licence
+    options.notdef_outline = True
+    sub = subset.Subsetter(options)
+    sub.populate(unicodes=wanted)
+    sub.subset(font)
+
+    glyf, hmtx = font['glyf'], font['hmtx']
+    glyphs = font.getGlyphSet()
+    order = font.getGlyphOrder()
+    outlines = {}
+    for name in order:
+        rec = DecomposingRecordingPen(glyphs)
+        glyphs[name].draw(rec)
+        g = glyf[name]
+        g.recalcBounds(glyf)
+        if not rec.value or not hasattr(g, 'xMin'):
+            outlines[name] = None
+            continue
+        width, height = g.xMax - g.xMin, g.yMax - g.yMin
+        # Fit the cell's width and the line's height, never grow.
+        scale = min(1.0, INK / width, (ASCENT + DESCENT) * 0.8 / height)
+        # Centred in the cell; vertically around the middle of the x-height,
+        # where the source draws its symbols too.
+        mid_y = (g.yMin + g.yMax) / 2
+        dx = (ADVANCE - width * scale) / 2 - g.xMin * scale
+        dy = X_HEIGHT / 2 - mid_y * scale
+        pen = TTGlyphPen(None)
+        rec.replay(TransformPen(pen, (scale, 0, 0, scale, dx, dy)))
+        outlines[name] = pen.glyph()
+    for name in order:
+        if outlines[name] is not None:
+            glyf[name] = outlines[name]
+            glyf[name].recalcBounds(glyf)
+            hmtx[name] = (ADVANCE, glyf[name].xMin)
+        else:
+            hmtx[name] = (ADVANCE, 0)
+
+    font['hhea'].ascent, font['hhea'].descent, font['hhea'].lineGap = ASCENT, -DESCENT, 0
+    os2 = font['OS/2']
+    os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = ASCENT, -DESCENT, 0
+    os2.usWinAscent, os2.usWinDescent = ASCENT, DESCENT
+    os2.xAvgCharWidth = ADVANCE
+    font['post'].isFixedPitch = 1
+    for rec in font['name'].names:
+        if rec.nameID in (1, 4, 16):
+            rec.string = FAMILY
+        elif rec.nameID in (3, 6):
+            rec.string = FAMILY.replace(' ', '-')
+    font.flavor = 'woff2'
+    FONT.parent.mkdir(parents=True, exist_ok=True)
+    font.save(FONT)
+    # The OFL travels with the font.
+    LICENSE.write_text((SOURCE.parent.parent / 'LICENSE').read_text())
+
+    CSS.write_text(
+        '/* Generated by scripts/text-symbols.py — do not edit. The characters\n'
+        '   that are emoji only on request, as text glyphs one cell wide. */\n'
+        '@font-face {\n'
+        f"  font-family: '{FAMILY}';\n"
+        "  src: url('/fonts/text-symbols.woff2') format('woff2');\n"
+        '  font-display: block;\n'
+        f'  unicode-range: {ranges(wanted)};\n'
+        '}\n'
+    )
+    print(f'{len(wanted)} of {len(CODEPOINTS)} characters, {FONT.stat().st_size} bytes')
+
+
+if __name__ == '__main__':
+    main()

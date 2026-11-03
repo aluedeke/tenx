@@ -16,6 +16,14 @@ import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
 import { SELECT_HOLD_MS, SelectGesture } from '@/lib/touchselect';
 
+// ⏺ (Claude Code's message bullet) and the other characters that are emoji
+// only on request: one cell in tmux, but a device without a text glyph for
+// them (iOS) draws the two-cell colour emoji, cut in half by the next
+// character. This font has them as one-cell text glyphs (app/text-symbols.css,
+// scripts/text-symbols.py), and nothing else.
+const TEXT_SYMBOLS = 'tenx text symbols';
+const FONT_FAMILY = `"JetBrains Mono", "${TEXT_SYMBOLS}", ui-monospace, Menlo, monospace`;
+
 /** The grid in cells, and its size in CSS pixels (0 before it is laid out):
  * the pty's pixel size, which image programs size their pictures by. */
 export interface TermSize {
@@ -143,13 +151,18 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       try {
         const size = propsRef.current.fontSize;
         const weight = propsRef.current.fontWeight;
-        await Promise.all([document.fonts.load(`${weight} ${size}px "JetBrains Mono"`), document.fonts.load(`bold ${size}px "JetBrains Mono"`)]);
+        await Promise.all([
+          document.fonts.load(`${weight} ${size}px "JetBrains Mono"`),
+          document.fonts.load(`bold ${size}px "JetBrains Mono"`),
+          // Downloaded only for a character it holds: ask for one.
+          document.fonts.load(`${size}px "${TEXT_SYMBOLS}"`, '⏺'),
+        ]);
       } catch {
         // Falls back to the next monospace in the stack.
       }
       if (disposed || !host.current) return;
       xterm = new XTermCtor({
-        fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace',
+        fontFamily: FONT_FAMILY,
         fontSize: propsRef.current.fontSize,
         fontWeight: propsRef.current.fontWeight as 400,
         fontWeightBold: 700,
