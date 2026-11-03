@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.22.4] - 2026-11-03
+
+### Fixed
+
+- **web:** Draw Claude's ⏺ as a text symbol on iPad and iPhone (#22)
+
+[0.22.4]: https://github.com/aluedeke/tenx/compare/v0.22.3...v0.22.4
+
 ## [0.22.3] - 2026-11-03
 
 ### Fixed
