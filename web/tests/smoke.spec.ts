@@ -1526,3 +1526,18 @@ test.describe('on an iPad', () => {
     expect(box.y).toBeLessThan(b.y + 40);
   });
 });
+
+test('an emoji takes two cells, as tmux counts it', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'same code path');
+  // tmux (variation-selector-always-wide) gives each of these two cells; a
+  // terminal that gives one draws the next character over its right half.
+  const emojis = ['📌', '⚠️', '❤️', '🥲', '👍🏽', '👨‍💻', '🇩🇪'];
+  await page.goto('/?renderer=dom');
+  await page.locator('.xterm-helper-textarea').focus();
+  // Each on its own row at column 1, then a Z at column 3: right after a
+  // two-cell emoji, one cell further after a one-cell one.
+  await page.keyboard.insertText('\x1b[2J' + emojis.map((e, i) => `\x1b[${i + 1};1H${e}\x1b[3GZ`).join(''));
+  await expect
+    .poll(async () => (await page.locator('.xterm-rows > div').allTextContents()).slice(0, emojis.length).map((r) => r.replace(/ /g, ' ').trimEnd()))
+    .toEqual(emojis.map((e) => `${e}Z`));
+});

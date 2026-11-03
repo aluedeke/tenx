@@ -128,13 +128,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
     let observer: ResizeObserver | null = null;
     let xterm: XTerm | null = null;
     (async () => {
-      const [{ Terminal: XTermCtor }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }, { ImageAddon }, { Unicode11Addon }] = await Promise.all([
+      const [{ Terminal: XTermCtor }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }, { ImageAddon }, { UnicodeGraphemesAddon }] = await Promise.all([
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
         import('@xterm/addon-web-links'),
         import('@xterm/addon-clipboard'),
         import('@xterm/addon-image'),
-        import('@xterm/addon-unicode11'),
+        import('@xterm/addon-unicode-graphemes'),
       ]);
       // Both weights before the first glyph: the WebGL renderer rasterizes a
       // glyph once into its atlas, so bold drawn before the 700 face arrives
@@ -162,11 +162,12 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         // a window inside the app (lib/links).
         linkHandler: { activate: (_ev, uri) => openExternal(uri), allowNonHttpProtocols: false },
       });
-      // Character widths as tmux counts them: xterm's default Unicode 6 table
-      // makes an emoji one cell wide, tmux two, so the glyph was clipped to
-      // its left half.
-      xterm.loadAddon(new Unicode11Addon());
-      xterm.unicode.activeVersion = '11';
+      // Character widths as tmux counts them: an emoji is two cells there.
+      // xterm's default Unicode 6 table makes it one, and Unicode 11 still
+      // does for an emoji with VS16 (⚠️), one newer than 11 (🫠) or a flag,
+      // so the glyph was clipped to its left half. This one (Unicode 15,
+      // grapheme clusters) sets its own active version.
+      xterm.loadAddon(new UnicodeGraphemesAddon());
       const fit = new FitAddon();
       xterm.loadAddon(fit);
       // URLs spotted in the text: same.
