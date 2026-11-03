@@ -5,6 +5,15 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.21.0] - 2026-11-03
+
+### Added
+
+- **web:** Open a text field to paste into when the clipboard is refused
+- **secrets:** Answer secrets requests in a web form in tenx web
+
+[0.21.0]: https://github.com/aluedeke/tenx/compare/v0.20.1...v0.21.0
+
 ## [0.20.1] - 2026-11-02
 
 ### Fixed
