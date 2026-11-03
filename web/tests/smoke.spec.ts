@@ -1541,3 +1541,23 @@ test('an emoji takes two cells, as tmux counts it', async ({ page, isMobile }) =
     .poll(async () => (await page.locator('.xterm-rows > div').allTextContents()).slice(0, emojis.length).map((r) => r.replace(/ /g, ' ').trimEnd()))
     .toEqual(emojis.map((e) => `${e}Z`));
 });
+
+test('a character that is emoji only on request is drawn as text, one cell wide', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'same code path');
+  // iOS has no text glyph for ⏺ (Claude Code's message bullet) and draws the
+  // two-cell colour emoji; 🗒 is the same on every desktop browser, so it
+  // tells whether the bundled text-symbols font answers for these.
+  await page.goto('/');
+  await expect(page.locator('.xterm')).toBeVisible();
+  const widths = await page.evaluate(async () => {
+    await document.fonts.load('14px "tenx text symbols"', '⏺');
+    const c = document.createElement('canvas').getContext('2d')!;
+    c.font = '14px "JetBrains Mono", "tenx text symbols", ui-monospace, Menlo, monospace';
+    const cell = c.measureText('M').width;
+    return ['⏺', '🗒', '📋'].map((ch) => Math.round((c.measureText(ch).width / cell) * 10) / 10);
+  });
+  // Text symbols one cell; a real emoji stays the two-cell colour one.
+  expect(widths[0]).toBe(1);
+  expect(widths[1]).toBe(1);
+  expect(widths[2]).toBeGreaterThan(1.5);
+});

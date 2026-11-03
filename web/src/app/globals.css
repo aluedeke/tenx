@@ -3,7 +3,9 @@
    hover. The colours are the generated custom properties in palette.css. */
 
 :root {
-  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  /* 'tenx text symbols' (text-symbols.css): ⏺ and the other characters
+     that are emoji only on request, as one-cell text glyphs everywhere. */
+  --mono: 'JetBrains Mono', 'tenx text symbols', ui-monospace, Menlo, monospace;
   --line: 1.45em;
   --col-bg: #13141b;
   --hover-bg: #1c2029;
