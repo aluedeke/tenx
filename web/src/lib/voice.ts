@@ -100,6 +100,28 @@ interface Handlers {
  * (the rest follow with PATCH). */
 const GATHER_MS = 1500;
 
+/** What the tenx iOS app reports about the call it makes for the page
+ * (`CallManager.swift`): the data channel's messages as they came, and
+ * what CallKit did — its mute button, a hang-up on the lock screen. */
+type NativeEvent =
+  | { kind: 'message'; data: string }
+  | { kind: 'connected' }
+  | { kind: 'paused'; paused: boolean }
+  | { kind: 'ended'; error?: string };
+
+interface NativeWindow {
+  tenxNative?: { voice?: number };
+  webkit?: { messageHandlers?: { tenx?: { postMessage(body: unknown): Promise<unknown> } } };
+  __tenxVoice?: (e: NativeEvent) => void;
+}
+
+/** The tenx iOS app makes the call itself — a CallKit call, which goes on
+ * with the screen off, where a web view's microphone stops. */
+function nativeVoice(): NativeWindow | null {
+  const w = window as unknown as NativeWindow;
+  return w.tenxNative?.voice && w.webkit?.messageHandlers?.tenx ? w : null;
+}
+
 export class Conversation {
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;
@@ -121,6 +143,9 @@ export class Conversation {
   /** After a response that said nothing: back to listening. */
   private quiet: ReturnType<typeof setTimeout> | null = null;
   private h: Handlers;
+  /** The iOS app's call stands in for the connection here. */
+  private native = nativeVoice();
+  private connected = false;
   readonly audio: HTMLAudioElement;
 
   /** Call straight from the tap: iOS lets audio play, and asks for the
@@ -130,6 +155,10 @@ export class Conversation {
     this.session = session;
     this.h = h;
     this.audio = new Audio();
+    if (this.native) {
+      this.startNative(this.native);
+      return;
+    }
     this.audio.autoplay = true;
     // Unlocks playback for when the stream arrives.
     void this.audio.play().catch(() => {});
@@ -166,31 +195,53 @@ export class Conversation {
       dc.send(JSON.stringify({ label: 'rtvi-ai', type: 'client-ready', id: crypto.randomUUID(), data: { version: '1.0.0', about: { library: 'tenx-web' } } }));
       this.ping = setInterval(() => dc.readyState === 'open' && dc.send(`ping: ${Date.now()}`), 1000);
     };
-    dc.onmessage = (ev) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(typeof ev.data === 'string' ? ev.data : '');
-      } catch {
-        return;
-      }
-      const e = voiceEvent(parsed);
-      if (!e) return;
-      if (e.kind === 'state') {
-        this.clearQuiet();
-        if (e.state === 'thinking') this.calling = false;
-        this.show(e.state);
-      } else if (e.kind === 'caption') {
-        if (e.caption.who === 'tool') this.calling = true;
-        this.h.onCaption(e.caption);
-      } else if (e.kind === 'answered') {
-        // Speech starts well within this when there is any.
-        this.clearQuiet();
-        this.quiet = setTimeout(() => {
-          if (this.last === 'thinking' && !this.calling) this.show('listening');
-        }, QUIET_MS);
-      } else void this.negotiate().catch((err) => this.end(err instanceof Error ? err.message : String(err)));
-    };
+    dc.onmessage = (ev) => this.receive(typeof ev.data === 'string' ? ev.data : '');
     await this.negotiate();
+  }
+
+  /** The app's call: started, paused and ended through it; its messages
+   * read as the data channel's here. */
+  private startNative(w: NativeWindow) {
+    w.__tenxVoice = (e) => {
+      if (this.ended) return;
+      if (e.kind === 'message') this.receive(e.data);
+      else if (e.kind === 'connected') this.connected = true;
+      else if (e.kind === 'paused') this.setPaused(e.paused);
+      else this.end(e.error);
+    };
+    this.tell({ op: 'start', task: this.task, session: this.session() });
+  }
+
+  private tell(body: Record<string, unknown>) {
+    this.native?.webkit?.messageHandlers?.tenx
+      ?.postMessage({ action: 'voice', ...body })
+      .catch((e: unknown) => body.op === 'start' && this.end(e instanceof Error ? e.message : String(e)));
+  }
+
+  /** One data channel message from the program. */
+  private receive(raw: string) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const e = voiceEvent(parsed);
+    if (!e) return;
+    if (e.kind === 'state') {
+      this.clearQuiet();
+      if (e.state === 'thinking') this.calling = false;
+      this.show(e.state);
+    } else if (e.kind === 'caption') {
+      if (e.caption.who === 'tool') this.calling = true;
+      this.h.onCaption(e.caption);
+    } else if (e.kind === 'answered') {
+      // Speech starts well within this when there is any.
+      this.clearQuiet();
+      this.quiet = setTimeout(() => {
+        if (this.last === 'thinking' && !this.calling) this.show('listening');
+      }, QUIET_MS);
+    } else if (!this.native) void this.negotiate().catch((err) => this.end(err instanceof Error ? err.message : String(err)));
   }
 
   /** An offer, its answer: the first connection or a renegotiation. */
@@ -232,6 +283,7 @@ export class Conversation {
   lookAt(task: string | null) {
     if (task === this.task) return;
     this.task = task;
+    if (this.native) return this.tell({ op: 'look', task });
     if (!this.pcId || this.ended) return;
     void fetch(apiUrl('/voice/context'), {
       method: 'POST',
@@ -245,11 +297,11 @@ export class Conversation {
    * once, here, and the program stops mid-sentence and keeps its news for
    * later. Again: go on. */
   togglePause() {
-    if (!this.pcId || this.ended) return;
-    this.paused = !this.paused;
-    this.mic?.getAudioTracks().forEach((t) => (t.enabled = !this.paused));
-    this.audio.muted = this.paused;
-    this.h.onState(this.paused ? 'paused' : this.last);
+    if (!(this.pcId || this.connected) || this.ended) return;
+    // The app pauses through CallKit, whose mute button shows it too, and
+    // says so back (`paused`).
+    if (this.native) return this.tell({ op: 'pause', paused: !this.paused });
+    this.setPaused(!this.paused);
     void fetch(apiUrl('/voice/pause'), {
       method: 'POST',
       credentials: 'include',
@@ -259,7 +311,15 @@ export class Conversation {
   }
 
   stop() {
+    if (this.native && !this.ended) this.tell({ op: 'stop' });
     this.end();
+  }
+
+  private setPaused(paused: boolean) {
+    this.paused = paused;
+    this.mic?.getAudioTracks().forEach((t) => (t.enabled = !paused));
+    this.audio.muted = paused;
+    this.h.onState(paused ? 'paused' : this.last);
   }
 
   private show(state: VoiceState) {
@@ -280,6 +340,7 @@ export class Conversation {
   }
 
   private release() {
+    if (this.native?.__tenxVoice) this.native.__tenxVoice = undefined;
     if (this.ping) clearInterval(this.ping);
     this.ping = null;
     this.dc?.close();

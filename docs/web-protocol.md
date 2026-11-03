@@ -262,6 +262,15 @@ The program sends RTVI messages, of which the page reads `bot-ready`,
 "message":{"type":"renegotiate"}}`, which the page answers with a new offer
 for its `pc_id`.
 
+In the tenx iOS app (`mobile/ios`), the app makes that connection instead
+of the page — the same requests, from its own native WebRTC, inside a
+CallKit call — because a web view's microphone stops when the screen turns
+off. The app sets `window.tenxNative.voice`; the page then asks it to
+`start`/`pause`/`look`/`stop` through the `tenx` message handler (`{action:
+"voice", op, …}`), and the app calls `window.__tenxVoice(event)` with each
+data channel message (`{kind: "message", data}`, the text as it came), and
+`connected`, `paused` (CallKit's mute) and `ended` (`error` when it failed).
+
 Its voice says the words in `[say]` (and "tenx") the way that table says,
 as the speaker does (`tenx_core::readaloud::respell`); the captions keep
 them as written.
