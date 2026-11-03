@@ -9,8 +9,8 @@ import CallKit
 ///
 /// The page starts, pauses and ends it through the `tenx` message handler
 /// (`WebViewController`); what happens goes back to it as events (`onEvent`):
-/// `message` (a data channel message, as it came), `connected`, `paused`
-/// and `ended`.
+/// `message` (a data channel message, as it came), `connected` (again after
+/// a reconnect), `reconnecting`, `paused` and `ended`.
 @MainActor
 final class CallManager: NSObject {
     static let shared = CallManager()
@@ -24,6 +24,8 @@ final class CallManager: NSObject {
     private var uuid: UUID?
     /// What to start once CallKit has said yes (`CXStartCallAction`).
     private var pending: VoiceCall?
+    /// The call CallKit was told is connected.
+    private var reported: UUID?
 
     override init() {
         let config = CXProviderConfiguration()
@@ -60,8 +62,16 @@ final class CallManager: NSObject {
         call.onMessage = { [weak self] text in self?.onEvent(["kind": "message", "data": text]) }
         call.onConnected = { [weak self] in
             guard let self, self.uuid == uuid else { return }
-            if Self.callKit { provider.reportOutgoingCall(with: uuid, connectedAt: nil) }
+            // Once: CallKit's call goes on through a reconnect.
+            if Self.callKit, reported != uuid {
+                reported = uuid
+                provider.reportOutgoingCall(with: uuid, connectedAt: nil)
+            }
             onEvent(["kind": "connected"])
+        }
+        call.onReconnecting = { [weak self] in
+            guard let self, self.uuid == uuid else { return }
+            onEvent(["kind": "reconnecting"])
         }
         call.onEnd = { [weak self] error in self?.ended(uuid, error: error) }
         self.uuid = uuid

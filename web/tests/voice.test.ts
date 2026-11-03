@@ -52,3 +52,27 @@ test('captions join a speaker’s lines and keep only the last few', () => {
   assert.equal(list.length, CAPTIONS);
   assert.equal(toolLabel('tenx_get_output'), 'get output');
 });
+
+test('in the iOS app, a lost connection shows connecting until the app has it back', async () => {
+  const sent: unknown[] = [];
+  const w = globalThis as unknown as Record<string, unknown>;
+  w.window = {
+    tenxNative: { voice: 1 },
+    webkit: { messageHandlers: { tenx: { postMessage: async (b: unknown) => void sent.push(b) } } },
+  };
+  w.Audio = class {};
+  const { Conversation } = await import('../src/lib/voice.ts');
+  const states: string[] = [];
+  let ended: string | undefined | null = null;
+  new Conversation('t1', () => 's1', { onState: (s) => states.push(s), onCaption: () => {}, onEnd: (e) => (ended = e) });
+  const app = (w.window as { __tenxVoice: (e: unknown) => void }).__tenxVoice;
+  assert.deepEqual(sent, [{ action: 'voice', op: 'start', task: 't1', session: 's1' }]);
+  app({ kind: 'connected' });
+  app({ kind: 'message', data: JSON.stringify(rtvi('bot-started-speaking')) });
+  app({ kind: 'reconnecting' });
+  app({ kind: 'connected' });
+  assert.deepEqual(states, ['speaking', 'connecting', 'listening']);
+  assert.equal(ended, null);
+  delete w.window;
+  delete w.Audio;
+});

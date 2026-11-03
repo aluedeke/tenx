@@ -15,10 +15,16 @@ let voiceLog = Logger(subsystem: "it.luedeke.mobile.tenx", category: "voice")
 ///
 /// The page still draws the conversation: every data channel message goes to
 /// it as it came (`onMessage`).
+///
+/// A connection that drops — `tenx-voice` restarted, the Wi-Fi went away —
+/// is made again (`lost`), up to `giveUp` after it went, while the CallKit
+/// call stays: a new conversation, since the program's old one is gone.
 @MainActor
 final class VoiceCall: NSObject {
     var onMessage: (String) -> Void = { _ in }
     var onConnected: () -> Void = {}
+    /// Lost, making it again (`onConnected` follows once it is back).
+    var onReconnecting: () -> Void = {}
     /// Ended on its own (`error` set), or by `stop`.
     var onEnd: (String?) -> Void = { _ in }
 
@@ -36,6 +42,12 @@ final class VoiceCall: NSObject {
     private var connected = false
     private var ended = false
     private(set) var paused = false
+    /// When the connection went, while it is being made again.
+    private var lostAt: ContinuousClock.Instant?
+    /// A connection that only says `disconnected` may come back on its own.
+    private var dropping: Task<Void, Never>?
+    /// `reconnect` runs: losses meanwhile are its business.
+    private var retrying = false
 
     /// One factory for every call. `RTCAudioSession.useManualAudio` is set
     /// before it exists: CallKit, not WebRTC, says when the audio may run.
@@ -48,6 +60,12 @@ final class VoiceCall: NSObject {
     /// How long to wait for ICE candidates before sending the offer anyway
     /// (the rest follow with PATCH), as the page does.
     private static let gatherWait: Duration = .milliseconds(1500)
+    /// How long a `disconnected` connection gets to come back by itself.
+    private static let dropWait: Duration = .seconds(4)
+    /// How long to keep trying after the connection went.
+    private static let giveUp: Duration = .seconds(120)
+    /// How long an answered offer gets to connect before the next try.
+    private static let connectWait: Duration = .seconds(15)
 
     init(server: Server, task: String?, session: String?) {
         self.server = server
@@ -165,6 +183,77 @@ final class VoiceCall: NSObject {
         post("/voice/offer", ["pc_id": pcId, "candidates": list], method: "PATCH")
     }
 
+    // MARK: - Making it again
+
+    /// The connection went: close it and make a new one, with growing waits
+    /// between tries, until `giveUp`.
+    private func lost(_ why: String) {
+        guard !ended, !retrying else { return }
+        voiceLog.info("connection lost: \(why, privacy: .public)")
+        if lostAt == nil {
+            lostAt = .now
+            onReconnecting()
+        }
+        retrying = true
+        Task {
+            await reconnect()
+            retrying = false
+        }
+    }
+
+    private func reconnect() async {
+        var wait: Duration = .seconds(1)
+        while let lostAt, !ended {
+            if ContinuousClock.now - lostAt > Self.giveUp {
+                return end("lost the connection to tenx")
+            }
+            drop()
+            do {
+                try await connect()
+                // Answered: wait for the audio to connect (`back`).
+                let deadline = ContinuousClock.now + Self.connectWait
+                while self.lostAt != nil, !ended, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(200))
+                }
+                if self.lostAt == nil || ended { return }
+            } catch {
+                voiceLog.info("reconnect failed: \(error.localizedDescription, privacy: .public)")
+            }
+            try? await Task.sleep(for: wait)
+            wait = min(wait * 2, .seconds(10))
+        }
+    }
+
+    /// Back: the pause carries over to the new conversation.
+    private func back() {
+        lostAt = nil
+        guard paused else { return }
+        mic?.isEnabled = false
+        remote?.isEnabled = false
+        if let pcId { post("/voice/pause", ["pc_id": pcId, "paused": true]) }
+    }
+
+    /// Forgets the old connection without ending the call: its own events
+    /// are ignored from now on (`isCurrent`).
+    private func drop() {
+        dropping?.cancel()
+        dropping = nil
+        ping?.invalidate()
+        ping = nil
+        let (dc, pc) = (self.dc, self.pc)
+        self.dc = nil
+        self.pc = nil
+        mic = nil
+        pcId = nil
+        early.removeAll()
+        dc?.close()
+        pc?.close()
+    }
+
+    private func isCurrent(_ id: ObjectIdentifier) -> Bool {
+        pc.map { ObjectIdentifier($0) == id } ?? false
+    }
+
     private var remote: RTCAudioTrack? {
         pc?.transceivers.first?.receiver.track as? RTCAudioTrack
     }
@@ -210,6 +299,7 @@ final class VoiceCall: NSObject {
         guard !ended else { return }
         voiceLog.info("call ended: \(error ?? "by request", privacy: .public)")
         ended = true
+        dropping?.cancel()
         ping?.invalidate()
         ping = nil
         dc?.close()
@@ -218,8 +308,8 @@ final class VoiceCall: NSObject {
         onEnd(error)
     }
 
-    private func opened() {
-        guard let dc else { return }
+    private func opened(_ id: ObjectIdentifier) {
+        guard let dc, ObjectIdentifier(dc) == id else { return }
         let ready: [String: Any] = [
             "label": "rtvi-ai", "type": "client-ready", "id": UUID().uuidString,
             "data": ["version": "1.0.0", "about": ["library": "tenx-ios"]],
@@ -244,7 +334,7 @@ final class VoiceCall: NSObject {
            msg["type"] as? String == "signalling",
            (msg["message"] as? [String: Any])?["type"] as? String == "renegotiate" {
             Task {
-                do { try await negotiate() } catch { end(error.localizedDescription) }
+                do { try await negotiate() } catch { lost(error.localizedDescription) }
             }
             return
         }
@@ -255,23 +345,39 @@ final class VoiceCall: NSObject {
 // WebRTC calls these on its own threads; everything here runs on the main one.
 extension VoiceCall: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didChange state: RTCPeerConnectionState) {
+        let id = ObjectIdentifier(pc)
         Task { @MainActor in
+            // A connection given up on (`drop`) still reports its closing.
+            guard isCurrent(id) else { return }
             voiceLog.info("connection state \(state.rawValue)")
+            dropping?.cancel()
+            dropping = nil
             switch state {
             case .connected:
                 if !connected {
                     connected = true
                     onConnected()
+                } else if lostAt != nil {
+                    back()
+                    onConnected()
                 }
-            case .failed: end("the audio connection failed")
-            case .closed: end(nil)
+            case .disconnected:
+                dropping = Task {
+                    try? await Task.sleep(for: Self.dropWait)
+                    guard !Task.isCancelled else { return }
+                    lost("disconnected")
+                }
+            case .failed: lost("failed")
+            case .closed: lost("closed")
             default: break
             }
         }
     }
 
     nonisolated func peerConnection(_ pc: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        let id = ObjectIdentifier(pc)
         Task { @MainActor in
+            guard isCurrent(id) else { return }
             if pcId != nil { trickle([candidate]) } else { early.append(candidate) }
         }
     }
@@ -288,8 +394,14 @@ extension VoiceCall: RTCPeerConnectionDelegate {
 
 extension VoiceCall: RTCDataChannelDelegate {
     nonisolated func dataChannelDidChangeState(_ channel: RTCDataChannel) {
-        let open = channel.readyState == .open
-        Task { @MainActor in if open { opened() } }
+        let state = channel.readyState
+        let id = ObjectIdentifier(channel)
+        Task { @MainActor in
+            guard let dc, ObjectIdentifier(dc) == id else { return }
+            if state == .open { opened(id) }
+            // The program went away: its side closed the channel.
+            if state == .closed { lost("the data channel closed") }
+        }
     }
 
     nonisolated func dataChannel(_ channel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {

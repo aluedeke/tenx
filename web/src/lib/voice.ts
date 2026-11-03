@@ -102,10 +102,12 @@ const GATHER_MS = 1500;
 
 /** What the tenx iOS app reports about the call it makes for the page
  * (`CallManager.swift`): the data channel's messages as they came, and
- * what CallKit did — its mute button, a hang-up on the lock screen. */
+ * what CallKit did — its mute button, a hang-up on the lock screen —, and
+ * a lost connection it is making again (`reconnecting`, then `connected`). */
 type NativeEvent =
   | { kind: 'message'; data: string }
   | { kind: 'connected' }
+  | { kind: 'reconnecting' }
   | { kind: 'paused'; paused: boolean }
   | { kind: 'ended'; error?: string };
 
@@ -205,7 +207,11 @@ export class Conversation {
     w.__tenxVoice = (e) => {
       if (this.ended) return;
       if (e.kind === 'message') this.receive(e.data);
-      else if (e.kind === 'connected') this.connected = true;
+      else if (e.kind === 'connected') {
+        // Back after a reconnect: a new conversation, which starts listening.
+        if (this.connected) this.show('listening');
+        this.connected = true;
+      } else if (e.kind === 'reconnecting') this.show('connecting');
       else if (e.kind === 'paused') this.setPaused(e.paused);
       else this.end(e.error);
     };
