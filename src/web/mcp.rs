@@ -15,9 +15,10 @@ use axum::extract::State;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{json, Value};
-use tenx_core::mcp::{self, Call, Incoming};
+use tenx_core::mcp::{self, Call, FocusTarget, Incoming};
 
 use super::server::App;
+use super::tab::{Input, Tabs};
 use crate::workspace;
 
 pub(super) async fn post(State(app): State<Arc<App>>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
@@ -32,13 +33,17 @@ pub(super) async fn post(State(app): State<Arc<App>>, headers: HeaderMap, body: 
         Ok(Incoming::Accepted) => return StatusCode::ACCEPTED.into_response(),
         Err(e) => return (StatusCode::BAD_REQUEST, json_body(e)).into_response(),
     };
+    let focus = mcp::focus_target(headers.get(mcp::SESSION_HEADER).and_then(|v| v.to_str().ok()));
     let reply = match method.as_str() {
         "initialize" => mcp::result(id, mcp::initialize(&params, env!("CARGO_PKG_VERSION"))),
         "ping" => mcp::result(id, json!({})),
         "tools/list" => mcp::result(id, mcp::tools()),
         "tools/call" => {
             let outcome = match mcp::parse_call(&params) {
-                Ok(call) => tokio::task::spawn_blocking(move || run(call)).await.unwrap_or_else(|e| Err(e.into())),
+                Ok(call) => {
+                    let tabs = app.tabs.clone();
+                    tokio::task::spawn_blocking(move || run(call, &tabs, focus)).await.unwrap_or_else(|e| Err(e.into()))
+                }
                 Err(why) => Err(anyhow::anyhow!(why)),
             };
             let result = match outcome {
@@ -68,7 +73,7 @@ fn pretty(value: &Value) -> String {
     }
 }
 
-fn run(call: Call) -> Result<Value> {
+fn run(call: Call, tabs: &Tabs, focus: Result<FocusTarget, String>) -> Result<Value> {
     match call {
         Call::ListWorkspaces => Ok(crate::tui::listing()["workspaces"].clone()),
         Call::ListTasks { workspace, status } => {
@@ -171,6 +176,26 @@ fn run(call: Call) -> Result<Value> {
             let answer = if approve { tenx_core::dialog::Answer::Yes } else { tenx_core::dialog::Answer::No };
             crate::cli::drive::answer(&task.path, &task.display_name, &crate::tmux::signals(), answer)?;
             Ok(format!("{} '{}'", answer.verb(), task.display_name).into())
+        }
+        Call::FocusTask { workspace, task } => {
+            let (ws, task) = find(&workspace, &task)?;
+            match focus.map_err(anyhow::Error::msg)? {
+                FocusTarget::Tab(id) => {
+                    let tab = tabs.get(&id).context("that tenx web page is gone (reload it)")?;
+                    let row = format!("{}/{}", ws.config.name, task.name);
+                    tab.input.send(Input::Show { task: row }).ok().context("that tenx web page is closing")?;
+                    Ok(json!({ "result": "shown on the page", "status": state(&task.path).status.token() }))
+                }
+                FocusTarget::Terminals => {
+                    let was_open = crate::tmux::find_task_window(&task.name, &task.path)?.is_some();
+                    // What ⏎ in the column and `tenx task open` do:
+                    // `select-window` on the tenx session, so every terminal
+                    // on it shows the task.
+                    crate::cli::task::open_in(&ws, &task.name)?;
+                    let how = if was_open { "focused" } else { "opened and focused" };
+                    Ok(json!({ "result": how, "status": state(&task.path).status.token() }))
+                }
+            }
         }
     }
 }

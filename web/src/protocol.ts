@@ -236,6 +236,9 @@ export type ServerMessage =
   | { type: 'link'; action: 'open' | 'copy'; url: string; label: string }
   /** The column asked to unlock a task's secrets (`u`): the page opens its form. */
   | { type: 'unlock'; task: string }
+  /** Show this task (a row id), as a notification's tap does: the voice
+   * assistant switched to the task it talks about (`tenx_focus_task`). */
+  | { type: 'show_task'; task: string }
   | { type: 'error'; message: string };
 
 export interface KeyMessage {
