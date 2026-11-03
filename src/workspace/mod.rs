@@ -97,8 +97,8 @@ fn is_zero_f32(n: &f32) -> bool {
 /// `uv` on `PATH` and an Anthropic API key.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct VoiceConfig {
-    /// The Claude model it thinks with; empty = `claude-haiku-5-5`, since a
-    /// conversation wants fast answers more than deep ones.
+    /// The Claude model it thinks with; empty = `claude-sonnet-5-5`: Haiku
+    /// is faster but answers in the middle of a message far more often.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub model: String,
     /// A Kokoro voice name (`af_heart`, `bm_george`); empty = `af_heart`.
