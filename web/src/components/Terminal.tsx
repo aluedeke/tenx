@@ -128,12 +128,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
     let observer: ResizeObserver | null = null;
     let xterm: XTerm | null = null;
     (async () => {
-      const [{ Terminal: XTermCtor }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }, { ImageAddon }] = await Promise.all([
+      const [{ Terminal: XTermCtor }, { FitAddon }, { WebLinksAddon }, { ClipboardAddon }, { ImageAddon }, { Unicode11Addon }] = await Promise.all([
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
         import('@xterm/addon-web-links'),
         import('@xterm/addon-clipboard'),
         import('@xterm/addon-image'),
+        import('@xterm/addon-unicode11'),
       ]);
       // Both weights before the first glyph: the WebGL renderer rasterizes a
       // glyph once into its atlas, so bold drawn before the 700 face arrives
@@ -161,6 +162,11 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         // a window inside the app (lib/links).
         linkHandler: { activate: (_ev, uri) => openExternal(uri), allowNonHttpProtocols: false },
       });
+      // Character widths as tmux counts them: xterm's default Unicode 6 table
+      // makes an emoji one cell wide, tmux two, so the glyph was clipped to
+      // its left half.
+      xterm.loadAddon(new Unicode11Addon());
+      xterm.unicode.activeVersion = '11';
       const fit = new FitAddon();
       xterm.loadAddon(fit);
       // URLs spotted in the text: same.
