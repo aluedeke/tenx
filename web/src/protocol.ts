@@ -239,6 +239,9 @@ export type ServerMessage =
   /** Show this task (a row id), as a notification's tap does: the voice
    * assistant switched to the task it talks about (`tenx_focus_task`). */
   | { type: 'show_task'; task: string }
+  /** Whether the voice assistant runs (its user started it): the header
+   * shows 🎧 only then. Sent on connecting and on every change. */
+  | { type: 'voice'; available: boolean }
   | { type: 'error'; message: string };
 
 export interface KeyMessage {

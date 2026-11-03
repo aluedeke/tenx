@@ -103,6 +103,8 @@ export function App() {
    * last lines said. */
   const talking = useRef<Conversation | null>(null);
   const [voice, setVoice] = useState<VoiceState | null>(null);
+  /** The voice assistant runs (`{type: "voice"}`): 🎧 is offered. */
+  const [voiceReady, setVoiceReady] = useState(false);
   const [captions, setCaptions] = useState<Caption[]>([]);
   /** What live dictation has typed into the terminal so far, and how much
    * of it is the user's now (they typed after it): never erased. */
@@ -318,6 +320,11 @@ export function App() {
             wantUnlock.current = false;
             restoreTask.current = null;
             if (lastView.current) openWanted(lastView.current);
+            break;
+          case 'voice':
+            setVoiceReady(msg.available);
+            // Gone mid-conversation: its audio went with it.
+            if (!msg.available) talking.current?.stop();
             break;
           case 'link':
             // A link the column picked that the key handler didn't take
@@ -1214,6 +1221,7 @@ export function App() {
         onSpeakStop={stopSpeaker}
         onLinks={(task) => setOwnLinks({ title: task.title, links: task.links })}
         voice={voice}
+        voiceReady={voiceReady}
         onVoice={toggleVoice}
         onVoiceStop={stopVoice}
       />

@@ -119,9 +119,6 @@ pub struct VoiceConfig {
     /// `ANTHROPIC_API_KEY`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub key_file: String,
-    /// Minutes with nobody connected before the program ends; 0 = 10.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub idle_minutes: u32,
 }
 
 impl VoiceConfig {

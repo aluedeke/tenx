@@ -211,6 +211,7 @@ impl Tab {
             patch: false,
             ack: 0,
             sent_ack: 0,
+            voice: None,
         };
         {
             let dead = dead.clone();
@@ -326,6 +327,9 @@ struct Driver {
     /// learns its input was applied even when it changed nothing.
     ack: u64,
     sent_ack: u64,
+    /// Whether the page was last told talk mode is available (`None`: not
+    /// yet, on this socket).
+    voice: Option<bool>,
 }
 
 impl Driver {
@@ -426,6 +430,7 @@ impl Driver {
                 self.patch = patch;
                 // A new socket numbers its inputs from 1 again.
                 self.ack = 0;
+                self.voice = None;
                 // A new page starts from an empty terminal, its modes
                 // included, and tmux only sends what changes: `refresh-client`
                 // redraws the screen but never sends the mouse, bracketed
@@ -523,6 +528,12 @@ impl Driver {
         // The page opens links itself, inside the key or tap that asked (a
         // browser blocks a window opened later); this is for one that got
         // past it.
+        // 🎧 only while the voice assistant runs (`voice::available`).
+        let voice = super::voice::available();
+        if self.voice != Some(voice) {
+            self.voice = Some(voice);
+            self.send_json(serde_json::json!({ "type": "voice", "available": voice }));
+        }
         if let Some(a) = self.column.take_link_action() {
             let (action, link) = match a {
                 LinkAction::Open(l) => ("open", l),

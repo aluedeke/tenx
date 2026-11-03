@@ -4,7 +4,7 @@
 // column's toggle, the wordmark, the task in front of you (the view's
 // `current`, i.e. this tab's tmux window) with what it wants from you, and
 // what doesn't depend on a row: the daily actions (next that needs you,
-// read the current task's last reply aloud, speak, talk to tenx, new) on the right, and behind ⋯ what you set once (notifications,
+// read the current task's last reply aloud, speak, talk to tenx — while its assistant runs —, new) on the right, and behind ⋯ what you set once (notifications,
 // the keys, the connection — a dot on the wordmark, words only when it's
 // lost). While you talk with tenx (🎧), the conversation's state (tap:
 // pause) and ■ stand in for the speaker, the microphone and 🎧. On a phone
@@ -46,6 +46,8 @@ interface Props {
   onLinks(task: TaskItem): void;
   /** Talk mode (lib/voice): what the conversation is doing, null when off. */
   voice: VoiceState | null;
+  /** The voice assistant runs: offer 🎧. */
+  voiceReady: boolean;
   /** Start talking with tenx; while talking, pause or go on. */
   onVoice(): void;
   /** End the conversation. */
@@ -317,17 +319,19 @@ export function Header(props: Props) {
               )}
             </button>
           )}
-          <button
-            type="button"
-            className="hbtn"
-            data-testid="talk-start"
-            title="talk to tenx — what needs you, what a task said, what to tell it"
-            aria-label="talk to tenx"
-            // Not on pointer-down: getUserMedia wants a completed tap on iOS.
-            onClick={props.onVoice}
-          >
-            <HeadsetIcon />
-          </button>
+          {props.voiceReady && (
+            <button
+              type="button"
+              className="hbtn"
+              data-testid="talk-start"
+              title="talk to tenx — what needs you, what a task said, what to tell it"
+              aria-label="talk to tenx"
+              // Not on pointer-down: getUserMedia wants a completed tap on iOS.
+              onClick={props.onVoice}
+            >
+              <HeadsetIcon />
+            </button>
+          )}
             </>
           )}
           <button

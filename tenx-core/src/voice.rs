@@ -1,30 +1,73 @@
 //! The conversation between `tenx web` and `tenx-voice`, the voice assistant
 //! (a Pipecat pipeline in Python) — and what it is told about tasks.
 //!
+//! The program runs on its own — its user starts it — and listens on a Unix
+//! socket (`socket_path`); `tenx web` connects to it when it is there, and
+//! the page offers talk mode only while it is.
+//!
 //! The browser talks to the assistant over WebRTC: its microphone and its
 //! speaker, with the browser's echo cancellation. Only the setup goes
 //! through `tenx web`, behind its cookie: the page posts its offer to
 //! `/voice/offer` (and trickles ICE candidates with `PATCH` on the same
-//! path), and `tenx web` hands both to the program as lines on its stdin.
+//! path), and `tenx web` hands both to the program as lines on the socket.
 //! The audio itself then flows between the browser and the program.
 //!
-//! `tenx web` → program, one JSON object per line (`ToVoice`): `offer`,
-//! `ice`, `context` (the task the page shows), `pause` (the page paused the
-//! conversation, or went on) and `event` (something to
-//! tell the user — `Turns` and the watcher's attention edges decide what).
-//! Program → `tenx web` (`FromVoice`): `ready` once it runs, an `answer`
-//! or `ok` or `error` for each request id, and `sessions` whenever the
-//! number of connected pages changes (`tenx web` stops an unused program).
-//! EOF on stdin ends the program.
+//! `tenx web` → program, one JSON object per line (`ToVoice`): `setup`
+//! first (what to run with — tenx's settings, read in one place — and again
+//! when they change), then `offer`, `ice`, `context` (the task the page
+//! shows), `pause` (the page paused the conversation, or went on) and
+//! `event` (something to tell the user — `Turns` and the watcher's attention
+//! edges decide what). Program → `tenx web` (`FromVoice`): `ready` once a
+//! setup is taken, an `answer` or `ok` or `error` for each request id, and
+//! `sessions` whenever the number of pages connected through this socket
+//! changes. A closed socket ends those pages' conversations.
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Where the program listens: `TENX_VOICE_SOCKET` (the given value), else
+/// `~/.config/tenx/voice.sock` under `home`.
+pub fn socket_path(home: &str, env: Option<&str>) -> std::path::PathBuf {
+    match env.filter(|p| !p.is_empty()) {
+        Some(p) => p.into(),
+        None => std::path::Path::new(home).join(".config/tenx/voice.sock"),
+    }
+}
+
+/// What the program runs with: `[voice]`, `[speech]` and `[say]` from the
+/// global config, this server's `/mcp`, and the API key. Empty strings are
+/// the program's defaults.
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Setup {
+    pub mcp_url: String,
+    pub mcp_token: String,
+    pub api_key: String,
+    pub model: String,
+    pub tts_voice: String,
+    pub stt_model: String,
+    pub language: String,
+    /// `tenx-whisper`, and `[speech]`'s model and glossary for it.
+    pub whisper: String,
+    pub whisper_model: String,
+    pub whisper_prompt_file: String,
+    /// `readaloud::say_table`.
+    pub say: Vec<(String, String)>,
+}
+
+/// Never the key or the token in a log.
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup").field("mcp_url", &self.mcp_url).field("model", &self.model).finish_non_exhaustive()
+    }
+}
+
 /// What `tenx web` writes to the program.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToVoice {
+    /// What to run with, before anything else and after a change.
+    Setup(Setup),
     /// A page's SDP offer: a new connection, or a renegotiation of `pc_id`.
     Offer {
         id: u64,
@@ -79,7 +122,7 @@ pub enum FromVoice {
         id: Option<u64>,
         error: String,
     },
-    /// How many pages are connected now.
+    /// How many pages connected through this socket talk now.
     Sessions { count: usize },
 }
 
@@ -194,6 +237,24 @@ mod tests {
         );
         let back: ToVoice = serde_json::from_str(line(&offer).trim()).unwrap();
         assert_eq!(back, offer);
+    }
+
+    #[test]
+    fn setup_goes_out_flat_and_keeps_its_secrets_out_of_logs() {
+        let setup = Setup { api_key: "sk-secret".into(), mcp_token: "tok".into(), say: vec![("tenx".into(), "ten x".into())], ..Setup::default() };
+        let line = line(&ToVoice::Setup(setup.clone()));
+        assert!(line.starts_with("{\"type\":\"setup\",\"mcp_url\":\"\""), "{line}");
+        assert!(line.contains("\"say\":[[\"tenx\",\"ten x\"]]"), "{line}");
+        assert_eq!(serde_json::from_str::<ToVoice>(line.trim()).unwrap(), ToVoice::Setup(setup.clone()));
+        let debug = format!("{:?}", ToVoice::Setup(setup));
+        assert!(!debug.contains("sk-secret") && !debug.contains("tok\""), "{debug}");
+    }
+
+    #[test]
+    fn the_socket_is_in_tenx_config_unless_set() {
+        assert_eq!(socket_path("/home/a", None), std::path::PathBuf::from("/home/a/.config/tenx/voice.sock"));
+        assert_eq!(socket_path("/home/a", Some("")), std::path::PathBuf::from("/home/a/.config/tenx/voice.sock"));
+        assert_eq!(socket_path("/home/a", Some("/tmp/v.sock")), std::path::PathBuf::from("/tmp/v.sock"));
     }
 
     #[test]
