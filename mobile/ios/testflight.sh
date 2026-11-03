@@ -37,6 +37,19 @@ xcodebuild archive -project TenX.xcodeproj -scheme TenX -configuration Release \
   OTHER_CODE_SIGN_FLAGS="--keychain $keychain --requirements '$req'"
 
 app="$work/tenx.xcarchive/Products/Applications/tenx.app"
+# The requirement above names the app's identifier, and Xcode put it on the
+# embedded frameworks too (WebRTC), whose identifier differs: Apple rejects
+# such a framework as "not properly signed". Each framework gets one naming
+# its own identifier, then the app is signed again over them.
+sign() {
+  codesign --force --sign "Apple Distribution" --keychain "$keychain" --timestamp "$@"
+}
+for fw in "$app"/Frameworks/*.framework; do
+  [ -d "$fw" ] || continue
+  id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$fw/Info.plist")
+  sign --requirements "=designated => anchor apple generic and identifier \"$id\" and certificate leaf[subject.OU] = \"$team\" and certificate 1[field.1.2.840.113635.100.6.2.1] exists" "$fw"
+done
+sign --preserve-metadata=entitlements --requirements "$req" "$app"
 codesign --verify --deep --strict "$app"
 mkdir "$work/Payload"
 cp -R "$app" "$work/Payload/"
