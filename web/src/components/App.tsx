@@ -21,6 +21,7 @@ import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { EmptyClipboard, copyFromMac, sendToMac } from '@/lib/macclip';
+import { nativeApp, nativeClipboard } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -748,11 +749,12 @@ export function App() {
       term.current?.paste(text);
     };
     const started = performance.now();
+    const native = nativeApp();
     diag(
-      `tapped; read=${!!navigator.clipboard?.read} readText=${!!navigator.clipboard?.readText} secure=${window.isSecureContext} ${describe(pageState())}`,
+      `tapped; native=${native} read=${!!navigator.clipboard?.read} readText=${!!navigator.clipboard?.readText} secure=${window.isSecureContext} ${describe(pageState())}`,
     );
     setPasting('reading the clipboard…');
-    if (!navigator.clipboard?.read && !navigator.clipboard?.readText) {
+    if (!native && !navigator.clipboard?.read && !navigator.clipboard?.readText) {
       // Plain http: no Clipboard API at all, but a field still takes a paste.
       diag('no clipboard API; opened the paste box');
       setPasting(null);
@@ -765,8 +767,9 @@ export function App() {
     // one that worked is refused and would hide what the first one found.
     let failure: unknown = null;
     try {
-      if (navigator.clipboard.read) {
-        const items = await navigator.clipboard.read();
+      // The iOS app reads the clipboard itself: no Paste bubble.
+      if (native || navigator.clipboard.read) {
+        const items = native ? await nativeClipboard() : await navigator.clipboard.read();
         diag(`read ${items.length} item(s): ${items.map((i) => `[${i.types.join(',')}]`).join(' ')}`);
         setPasting(null);
         const clip = await choose(items, htmlText);
@@ -778,6 +781,12 @@ export function App() {
     } catch (e) {
       failure = e;
       diag(`read failed: ${failed(e, started)}`);
+    }
+    if (native) {
+      setPasting(null);
+      if (failure) notice(`couldn't read the clipboard: ${failure instanceof Error ? failure.message : String(failure)}`);
+      else notice('nothing to paste: the clipboard has no text or image');
+      return;
     }
     try {
       const text = navigator.clipboard.readText ? await navigator.clipboard.readText() : '';
@@ -845,13 +854,13 @@ export function App() {
   const imagePaste = useCallback(() => {
     const diag = (message: string) => send({ type: 'log', message: `paste: ^V ${message}` });
     const started = performance.now();
-    if (!navigator.clipboard?.read) {
+    const native = nativeApp();
+    if (!native && !navigator.clipboard?.read) {
       diag('no clipboard read; typed as is');
       onTerminalData('\x16');
       return;
     }
-    navigator.clipboard
-      .read()
+    (native ? nativeClipboard() : navigator.clipboard.read())
       .then(async (items) => {
         diag(`read ${items.length} item(s): ${items.map((i) => `[${i.types.join(',')}]`).join(' ')}`);
         const files = await images(items);

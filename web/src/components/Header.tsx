@@ -13,6 +13,7 @@ import { PopupLayer, type Popup } from './RowActions';
 import type { Action, ColumnView, TaskItem } from '@/protocol';
 import type { Status } from '@/lib/connection';
 import type { PushState } from '@/lib/push';
+import { nativeApp, openNativeSettings } from '@/lib/native';
 
 interface Props {
   view: ColumnView | null;
@@ -65,6 +66,7 @@ const MIC_TITLE: Record<MicState, string> = {
 const PUSH_TITLE: Record<PushState, string> = {
   unsupported: 'notifications need HTTPS (tailscale serve) and a browser with Web Push',
   'needs-install': 'on iPhone and iPad: Share → Add to Home Screen, then enable here',
+  'native-app': 'not in the app yet: use the Home Screen web app for them',
   off: 'notify me when a task needs me',
   on: 'notifications on — click to turn off',
   denied: 'notifications are blocked in this browser’s settings',
@@ -306,7 +308,7 @@ export function Header(props: Props) {
               data-testid="push"
               data-state={push}
               title={PUSH_TITLE[push]}
-              disabled={push === 'unsupported' || push === 'denied' || push === 'needs-install'}
+              disabled={push === 'unsupported' || push === 'denied' || push === 'needs-install' || push === 'native-app'}
               onClick={props.onPushToggle}
             >
               <Icon d={BELL} />
@@ -335,6 +337,12 @@ export function Header(props: Props) {
               <span className="hmlabel">keys</span>
               <span className="k">?</span>
             </button>
+            {nativeApp() && (
+              <button type="button" role="menuitem" className="hmi" data-testid="app-settings" onClick={run(openNativeSettings)}>
+                <Icon d={['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', 'M4 12h2M18 12h2M12 4v2M12 18v2']} />
+                <span className="hmlabel">app settings</span>
+              </button>
+            )}
             <div className="msep" />
             <div className={`hmconn ${status}`} data-testid="conn">
               <span className="dot" />

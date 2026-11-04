@@ -3901,12 +3901,13 @@ fn subagent_line(a: &Subagent, width: usize, selected: bool) -> Line<'static> {
 }
 
 /// The first-run screen: the mark (`docs/logo/tenx-mark.svg`) drawn in text
-/// with the same colours — two bright bars, the amber dot, two muted bars —
-/// next to the wordmark and the one thing there is to do.
+/// with the same colours — two bright bars, the purple dot (the colour of the
+/// wordmark's `x`), two muted bars — next to the wordmark and the one thing
+/// there is to do.
 fn empty_state_lines() -> Vec<Line<'static>> {
     let bright = Style::default().fg(palette::TEXT.color());
     let muted = Style::default().fg(palette::MUTED.color());
-    let dot = Style::default().fg(palette::WARN.color());
+    let dot = Style::default().fg(palette::ACCENT.color());
     let word = Style::default().fg(palette::BRIGHT.color()).add_modifier(Modifier::BOLD);
     let x = Style::default().fg(palette::ACCENT.color()).add_modifier(Modifier::BOLD);
     vec![
