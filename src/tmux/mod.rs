@@ -960,6 +960,29 @@ pub fn current_window_id_in(session: &str) -> Option<String> {
     (!id.is_empty()).then_some(id)
 }
 
+/// A window's panes in window order, and whether it is zoomed; `None` when
+/// tmux can't be asked (the window is gone).
+pub fn window_panes(window_id: &str) -> Option<(Vec<String>, bool)> {
+    let text = run(&["list-panes", "-t", window_id, "-F", "#{pane_id}\t#{window_zoomed_flag}"]).ok()?;
+    let mut zoomed = false;
+    let panes = text
+        .lines()
+        .filter_map(|l| {
+            let (pane, flag) = l.split_once('\t')?;
+            zoomed |= flag.trim() == "1";
+            Some(pane.to_string())
+        })
+        .collect();
+    Some((panes, zoomed))
+}
+
+/// Zoom `pane` (`%40`), or unzoom its window when it is zoomed: tmux's
+/// `prefix z`. The window is shared by every session of the group, so every
+/// client showing it sees the change.
+pub fn toggle_zoom(pane: &str) -> Result<()> {
+    run(&["resize-pane", "-Z", "-t", pane]).map(|_| ())
+}
+
 /// A window option (`@name`) of `session`'s current window; empty when
 /// unset, `None` when tmux can't be asked.
 pub fn window_option_in(session: &str, option: &str) -> Option<String> {

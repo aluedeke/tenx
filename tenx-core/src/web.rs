@@ -222,6 +222,18 @@ pub fn layout(page_cols: u16, configured: u16, small_cols: u16) -> (u16, bool) {
     (crate::column::width(page_cols, configured), narrow)
 }
 
+/// The pane a narrow page (a phone) shows of a task window, zoomed: the
+/// agent's — the first of `panes` (in window order) `is_agent` says runs one
+/// — else the first pane, which is the agent's in the default layout. `None`
+/// for a window of one pane, where zooming changes nothing. The other panes
+/// stay a tmux key away (`prefix z`, `prefix o`).
+pub fn zoom_pane(panes: &[String], is_agent: impl Fn(&str) -> bool) -> Option<&str> {
+    if panes.len() < 2 {
+        return None;
+    }
+    panes.iter().find(|p| is_agent(p)).or(panes.first()).map(String::as_str)
+}
+
 /// Whether `id` can name a tab's session: lowercase hex, 8–64 long. It comes
 /// from the page (`?session=`), so it is checked before it reaches a tmux
 /// target, where `:`/`.` and the like mean something.
@@ -362,6 +374,15 @@ mod tests {
     fn layout_follows_the_tui() {
         assert_eq!(layout(200, 0, 100), (crate::column::width(200, 0), false));
         assert!(layout(60, 0, 100).1, "under 100 cells the column is an overlay");
+    }
+
+    #[test]
+    fn a_phone_zooms_the_agent_pane() {
+        let panes: Vec<String> = ["%1", "%2", "%3"].map(String::from).to_vec();
+        assert_eq!(zoom_pane(&panes, |p| p == "%2"), Some("%2"), "a layout script put the agent second");
+        assert_eq!(zoom_pane(&panes, |_| false), Some("%1"), "no session reported: the default layout's first pane");
+        assert_eq!(zoom_pane(&panes[..1], |_| true), None, "an agent-only window has nothing to hide");
+        assert_eq!(zoom_pane(&[], |_| true), None);
     }
 
     #[test]

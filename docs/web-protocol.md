@@ -78,6 +78,10 @@ Two frame kinds:
 { "type": "patch", "ack": 18, "set": { "focus": "list" }, "items": [0, {"kind": "task", …}, 2, 3] }
 
 // The column's layout for the browser's width in cells (reply to `viewport`).
+// While a page is narrow (a phone), the server zooms the agent's pane of each
+// task window the page moves to, so the phone shows the agent alone; the
+// other panes are tmux's own keys away (`Ctrl+b z`, `Ctrl+b o`). It unzooms
+// what it zoomed when the page leaves the window, grows wide, or ends.
 { "type": "layout", "column_cols": 36, "narrow": false }
 
 // What the TUI client would do with a ClientRequest — and `focus_column`,
@@ -178,7 +182,9 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
 
 - `Ctrl+w` (and `Alt+w` off macOS) cycles: terminal focused → column focused →
   column hidden → column shown and focused. Under the `narrow` layout the
-  column is an overlay over the terminal.
+  column is an overlay over the terminal. A view whose `mode` is a form or
+  the help (anything but `list` and `links`) shows a hidden column while it
+  lasts, so `+` over a phone's terminal opens a form you can see.
 - Everything else goes to whichever side has focus: the column as `key`
   messages, the terminal as binary input.
 - In the column's `links` mode (`L`) a digit, Enter, `o`, `l` or `y`, and in

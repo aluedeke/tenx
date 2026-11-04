@@ -142,6 +142,25 @@ pub fn record_for_pane(pane: &str, not_pid: u32) -> Option<(u32, Record)> {
     })
 }
 
+/// The panes (`%40`) a live agent session reports from.
+pub fn agent_panes() -> std::collections::HashSet<String> {
+    let Some(entries) = registry_dir().and_then(|d| fs::read_dir(d).ok()) else {
+        return Default::default();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let pid = read_stem_pid(&path)?;
+            if !pid_alive(pid) {
+                return None;
+            }
+            let record: Record = serde_json::from_str(&fs::read_to_string(&path).ok()?).ok()?;
+            record.tmux.as_deref().and_then(tenx_core::dialog::pane_id)
+        })
+        .collect()
+}
+
 /// Milliseconds since the Unix epoch, for `statusUpdatedAt`.
 pub fn now_millis() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)

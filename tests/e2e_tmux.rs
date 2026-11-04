@@ -1048,11 +1048,19 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
             }
         }
 
-        // The layout rule, for a phone and a desktop.
+        // The layout rule, for a phone and a desktop. A phone shows the task
+        // window's agent pane alone (zoomed); a desktop every pane again.
+        let tab = format!("tenx-web-{id}");
+        let zoomed = || h.tmux_out(&["display", "-p", "-t", &tab, "#{window_name} #{window_panes} #{window_zoomed_flag}"]);
+        assert!(zoomed().starts_with("web-task "), "the tab shows the task: {}", zoomed());
+        assert!(zoomed().ends_with(" 0"), "{}", zoomed());
         ws.send(Message::Text(r#"{"type":"viewport","cols":60}"#.into())).await.unwrap();
         assert_eq!(next_of(&mut ws, &mut term, "layout").await["narrow"], true);
+        assert!(zoomed().ends_with(" 1"), "a phone zooms the agent pane: {}", zoomed());
+        assert_eq!(h.tmux_out(&["display", "-p", "-t", &tab, "#{pane_index}"]).trim(), "0", "the agent's pane");
         ws.send(Message::Text(r#"{"type":"viewport","cols":220}"#.into())).await.unwrap();
         assert_eq!(next_of(&mut ws, &mut term, "layout").await["narrow"], false);
+        assert!(zoomed().ends_with(" 0"), "a desktop unzooms what the phone zoomed: {}", zoomed());
         ws.close(None).await.unwrap();
         drop(ws);
 

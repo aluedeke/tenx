@@ -216,6 +216,9 @@ impl Tab {
             hub,
             screen: tenx_core::mcppush::Screen::Web(id.to_string()),
             shown: None,
+            narrow: false,
+            fitted: None,
+            zoomed: None,
         };
         {
             let dead = dead.clone();
@@ -336,6 +339,15 @@ struct Driver {
     hub: Arc<super::events::Hub>,
     screen: tenx_core::mcppush::Screen,
     shown: Option<Option<String>>,
+    /// The page is narrow (a phone): its task windows show the agent's pane
+    /// alone (`fit`).
+    narrow: bool,
+    /// The window `fit` last looked at, so a pane the user picked with
+    /// tmux's own keys stays until the page moves to another window.
+    fitted: Option<String>,
+    /// The window this page zoomed, unzoomed again when it leaves it: the
+    /// window is shared, and a wider screen showing it later wants every pane.
+    zoomed: Option<String>,
 }
 
 impl Driver {
@@ -363,6 +375,8 @@ impl Driver {
         if let Some(mut pty) = self.pty.take() {
             let _ = pty.child.kill();
         }
+        self.narrow = false;
+        self.fit();
         let _ = crate::tmux::kill_session(&self.session);
         self.hub.screen_gone(&self.screen);
     }
@@ -489,6 +503,8 @@ impl Driver {
                 let configured = crate::workspace::load_global().map(|g| g.column_width).unwrap_or(0);
                 let (column_cols, narrow) =
                     tenx_core::web::layout(cols, configured, crate::tmux::SMALL_CLIENT_COLS as u16);
+                self.narrow = narrow;
+                self.fit();
                 self.send_json(serde_json::json!({ "type": "layout", "column_cols": column_cols, "narrow": narrow }));
             }
             PageMsg::Resize { cols, rows, width, height } => match &mut self.pty {
@@ -546,6 +562,7 @@ impl Driver {
         if self.shown.as_ref() != Some(&column_view.current) {
             self.hub.focus(&self.screen, column_view.current.as_deref(), false);
             self.shown = Some(column_view.current.clone());
+            self.fit();
         }
         let Ok(view) = serde_json::to_value(column_view) else { return };
         let patch = match &self.last_view {
@@ -567,6 +584,36 @@ impl Driver {
         let _ = self.out.send(Output::Text(text));
         self.last_view = Some(view);
         self.sent_ack = self.ack;
+    }
+
+    /// On a narrow page, zoom the agent's pane of the window in front
+    /// (`tenx_core::web::zoom_pane`) once, when the page moves to it; unzoom
+    /// the window it zoomed before, unless someone unzoomed it already.
+    fn fit(&mut self) {
+        let current = if self.narrow { crate::tmux::current_window_id_in(&self.session) } else { None };
+        if current == self.fitted {
+            return;
+        }
+        if let Some(w) = self.zoomed.take() {
+            if Some(&w) == current.as_ref() {
+                self.zoomed = Some(w);
+            } else if let Some((panes, true)) = crate::tmux::window_panes(&w) {
+                if let Some(p) = panes.first() {
+                    let _ = crate::tmux::toggle_zoom(p);
+                }
+            }
+        }
+        if let Some(w) = current.as_ref().filter(|w| self.zoomed.as_ref() != Some(*w)) {
+            if let Some((panes, false)) = crate::tmux::window_panes(w) {
+                let agents = crate::workspace::sessions::agent_panes();
+                if let Some(p) = tenx_core::web::zoom_pane(&panes, |p| agents.contains(p)) {
+                    if crate::tmux::toggle_zoom(p).is_ok() {
+                        self.zoomed = Some(w.clone());
+                    }
+                }
+            }
+        }
+        self.fitted = current;
     }
 
     fn request(&mut self, req: Option<ClientRequest>) {
