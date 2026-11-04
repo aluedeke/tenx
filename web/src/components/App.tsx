@@ -1123,6 +1123,29 @@ export function App() {
     setFocus('terminal');
     if (state.current.narrow) setVisible(false);
   }, [predicted?.opened]);
+  // A form (or the help) opened from the header — `+`, `⋯` — lives in the
+  // column, which a phone keeps hidden behind the terminal (and ^w may have
+  // hidden anywhere): show it while the form is open, and hide it again
+  // after. The links mode draws its own menu.
+  const modeKind = view?.mode.kind ?? 'list';
+  const shownForForm = useRef(false);
+  useEffect(() => {
+    if (modeKind === 'list' || modeKind === 'links') {
+      if (shownForForm.current) {
+        shownForForm.current = false;
+        if (state.current.visible) {
+          setVisible(false);
+          setFocus('terminal');
+        }
+      }
+      return;
+    }
+    if (!state.current.visible) {
+      shownForForm.current = true;
+      setVisible(true);
+    }
+    setFocus('column');
+  }, [modeKind]);
   const opening = predicted?.opening
     ? (shown?.items.find((i) => i.kind === 'task' && i.id === predicted.opening) as { title: string } | undefined)?.title
     : undefined;

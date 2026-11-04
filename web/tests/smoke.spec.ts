@@ -410,6 +410,20 @@ test('a closed last task is not reopened', async ({ page }) => {
   expect(sent().some((m) => m.type === 'action' && m.name === 'open')).toBe(false);
 });
 
+test('on a phone, + over the terminal shows the form, and cancel hides the column again', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'a phone starts with the column hidden');
+  await page.goto('/');
+  await expect(page.locator('.xterm')).toBeVisible();
+  await expect(page.locator('.column-wrap')).toHaveCount(0);
+  await page.getByTestId('add').tap();
+  await newTaskItem(page).tap();
+  const buttons = page.locator('.wf').getByTestId('form-buttons');
+  await expect(buttons.getByRole('button', { name: /create task/i })).toBeVisible();
+  await buttons.getByRole('button', { name: /cancel/i }).tap();
+  await expect(page.locator('.wf')).toHaveCount(0);
+  await expect(page.locator('.column-wrap')).toHaveCount(0);
+});
+
 test('the new-task form is a real web form', async ({ page, isMobile }) => {
   const sent = sentMessages(page);
   const forms = () => sent().filter((m) => m.type === 'form');
