@@ -17,7 +17,9 @@ forwards keys and clicks. This file is the contract between `src/web/` and
 | `POST /push/subscribe` | cookie + Origin | A `PushSubscription` as `toJSON()` gives it (`{endpoint, keys: {p256dh, auth}}`). Stored in `~/.config/tenx/web-push-subs.json` (600), one per endpoint. `400` for an endpoint that isn't HTTPS (plain HTTP only to loopback, for tests) or keys that aren't a P-256 point and a secret. |
 | `POST /push/unsubscribe` | cookie + Origin | `{endpoint}`: forget that subscription. |
 | `POST /push/test` | cookie + Origin | Push a test message to every subscription: `{sent, subscriptions}`. |
-| `POST /mcp` | bearer token, no Origin | MCP over streamable HTTP, for an agent on another machine (not the page): one JSON-RPC message per request, answered with one `application/json` body; notifications get `202`. No session id, no event stream (`GET`/`DELETE` get `405`). `Authorization: Bearer` with `~/.config/tenx/mcp-token` (`tenx web mcp-token`), never the cookie; any `Origin` header gets `403`. A `tenx-session: <id>` header names the page the caller talks from (the voice assistant sends its page's session id): `tenx_focus_task` then shows the task on that page (`show_task` below) instead of in the tenx session. Tools and rules: `tenx_core::mcp`. |
+| `POST /mcp` | bearer token, no Origin | MCP over streamable HTTP, for an agent on another machine (not the page): one JSON-RPC message per request, answered with one `application/json` body; notifications get `202`. `Authorization: Bearer` with `~/.config/tenx/mcp-token` (`tenx web mcp-token`), never the cookie; any `Origin` header gets `403`. `initialize` also answers `Mcp-Session-Id: <id>`: a client that sends it back on every later request has a session (see [MCP sessions and events](#mcp-sessions-and-events)); an unknown or expired one gets `404`. A client that never sends it is stateless. A `tenx-session: <id>` header names the page the caller talks from (the voice assistant sends its page's session id): `tenx_focus_task` then shows the task on that page (`show_task` below) instead of in the tenx session. Tools and rules: `tenx_core::mcp`. |
+| `GET /mcp` | bearer token, no Origin | A session's event stream (`text/event-stream`), with `Mcp-Session-Id`: `400` without one, `404` for an unknown one. |
+| `DELETE /mcp` | bearer token, no Origin | Ends the session named by `Mcp-Session-Id` (`200`; `404` unknown, `400` none). |
 | `GET /manifest.webmanifest` | — | Public (browsers fetch it without cookies). With the cookie — the page links it `crossorigin="use-credentials"` — its `start_url` is `/?token=…`, so an app installed to an iOS Home Screen, which has cookies of its own, signs itself in on first launch. |
 | `POST /paste` | cookie + Origin | An image (`Content-Type` PNG, JPEG, GIF or WebP; at most 25 MB) saved to `~/.config/tenx/web-paste/` (600, swept after a day). Answers `{"path": …}`; the page pastes that path into the terminal, which Claude Code attaches as an image. `415` for anything else. |
 | `POST /clipboard/get` | cookie + Origin | The text on the clipboard of the machine `tenx web` runs on: `{"text": …}` (empty when it holds none). A POST so that even a same-origin request carries its `Origin` — a clipboard holds passwords. macOS `pbpaste`; elsewhere `wl-paste`, else `xclip`. `502` when there is no such program. |
@@ -249,6 +251,57 @@ its own grouped session's (`tmux::current_window_id_in`).
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).
+
+## MCP sessions and events
+
+The push half of `/mcp` (`src/web/events.rs`, rules in `tenx_core::mcppush`),
+for a client that holds only the URL and the MCP token — the voice assistant —
+and should hear about tenx the moment something happens.
+
+- **Session.** `initialize` answers with `Mcp-Session-Id` (128 random bits,
+  hex). Later requests carry it; unknown or expired → `404`, and the client
+  initializes again. `DELETE /mcp` ends it. A session with no open stream and
+  no request for 10 minutes expires; at most 256 are held, a new one beyond
+  that pushing out the one idle longest.
+- **Stream.** `GET /mcp` with the session id: one SSE event per notification,
+  `id:` counting up per session, and a `: ping` comment every 15 s:
+  ```
+  id: 7
+  data: {"jsonrpc":"2.0","method":"notifications/tenx/event","params":{…}}
+
+  ```
+  One stream per session; a second `GET` replaces the first, which ends. A
+  `GET` with `Last-Event-ID: <n>` first replays the session's buffered events
+  after `n` (the last 200 are kept), then goes live; without it, only live ones.
+- **`tenx_subscribe`** `{"events": [...]}` — any of `attention`, `turn`,
+  `focus`, `reply`; `[]` for none. Replaces the earlier subscription; a session
+  starts with none. Without a session it is a tool error ("needs an MCP session
+  (Mcp-Session-Id)").
+- **`tenx_send_message`**'s result gains a last line `message_id: m<n>` (per
+  server, counting up) and `structuredContent: {"message_id": "m<n>"}` — for
+  every caller; only a session gets the `reply` for it.
+- **`tenx_current_task`** `{}` or `{"screen": "terminal" | "web:<tab id>"}`:
+  the task on that screen (default: the screen that changed last, else the
+  terminal), `{screen, workspace, task, title}` or `{screen, task: null}`.
+
+Every event's `params` has `kind`, `at` (RFC 3339, UTC) and, for a task,
+`workspace`, `task` (slug) and `title`:
+
+| kind | when | extra fields |
+|---|---|---|
+| `attention` | a task's edge into needing you, or into pending secrets: the notifier's `cli::watch::Attention` edges — the very ones the phone gets a push for | `status` (`blocked`, `signaled`, `secrets`), `reason` (may be empty) |
+| `turn` | a task's agent finished a turn: seen `working` and now `done`, or `done` again with a later status time (a turn between two 2 s polls); not through `blocked`, not a first sight | `reply`: the turn's replies as `tenx_get_output` reads them, joined by a blank line, cut to 4000 characters |
+| `reply` | the first finished turn of a task after this session's `tenx_send_message` (one per session; several messages before it are answered with the last one's id). The `turn` goes out too, to whoever subscribed | `message_id`, `reply` |
+| `focus` | the task on a screen changed: a `tenx web` tab's `view.current` (its driver reports it), or the tenx session's current window (looked at every 500 ms) | `screen` (`web:<tab session id>` or `terminal`) and the task fields — or `task: null` with no workspace or title |
+
+```json
+{"kind":"reply","at":"2026-11-04T11:49:37Z","workspace":"adhoc","task":"mcp-push-probe","title":"mcp push probe","message_id":"m1","reply":"pong"}
+{"kind":"focus","at":"2026-11-04T11:50:22Z","workspace":"adhoc","task":"mcp-push-probe","title":"mcp push probe","screen":"web:f6f0c99a9b9c61cd"}
+```
+
+`TENX_WEB_NO_PUSH=1` makes a `tenx web` compute every edge (and these events)
+but deliver no Web Push — for a second instance run to test with, which would
+otherwise send the phone every notification twice.
 
 ## Rejecting a credential request
 
