@@ -14,6 +14,7 @@ pub mod init;
 pub mod keyboard;
 pub mod links;
 pub mod mcp;
+pub mod mcppush;
 pub mod live;
 pub mod orchestrate;
 pub mod progress;

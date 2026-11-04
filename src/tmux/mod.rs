@@ -960,6 +960,12 @@ pub fn current_window_id_in(session: &str) -> Option<String> {
     (!id.is_empty()).then_some(id)
 }
 
+/// A window option (`@name`) of `session`'s current window; empty when
+/// unset, `None` when tmux can't be asked.
+pub fn window_option_in(session: &str, option: &str) -> Option<String> {
+    Some(run(&["display-message", "-p", "-t", session, &format!("#{{{option}}}")]).ok()?.trim().to_string())
+}
+
 /// What a task window needs to be built.
 pub struct TaskWindow<'a> {
     /// Window name — the immutable slug, so task↔window correlation can't drift.

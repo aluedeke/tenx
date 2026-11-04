@@ -12,6 +12,7 @@
 
 mod assets;
 mod clipboard;
+mod events;
 mod mcp;
 mod paste;
 mod push;
@@ -101,16 +102,21 @@ pub fn run(o: Options) -> Result<()> {
     }
 
     let push = Arc::new(push::Push::load().context("load the Web Push key")?);
+    let hub = Arc::new(events::Hub::default());
     {
-        let push = push.clone();
-        std::thread::Builder::new().name("push".into()).spawn(move || push::notifier(push)).context("start the push notifier")?;
+        let (push, hub) = (push.clone(), hub.clone());
+        std::thread::Builder::new()
+            .name("notifier".into())
+            .spawn(move || events::notifier(push, hub))
+            .context("start the notifier")?;
     }
     let app = Arc::new(server::App {
         token,
         mcp_token,
         dev_origins: o.dev_origins,
-        tabs: Arc::new(tab::Tabs::new(grace())),
+        tabs: Arc::new(tab::Tabs::new(grace(), hub.clone())),
         push,
+        hub,
     });
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().context("start the async runtime")?;
     runtime.block_on(server::serve(listener, app))

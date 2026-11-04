@@ -20,7 +20,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tenx_core::webpush::{self, Delivery};
 
 /// Who the push services should contact about this sender (RFC 8292 `sub`).
@@ -196,25 +196,14 @@ impl Push {
     }
 }
 
-/// The notifier: every `POLL`, the watcher's resolve pass and edge rules;
-/// each new edge pushed to every subscription. Runs for the server's life.
-pub(super) fn notifier(push: std::sync::Arc<Push>) {
-    const POLL: Duration = Duration::from_secs(2);
-    let snapshot = crate::cli::watch::resolve_all();
-    let mut attention = crate::cli::watch::Attention::primed(&snapshot);
-    loop {
-        std::thread::sleep(POLL);
-        let snapshot = crate::cli::watch::resolve_all();
-        for (note, _) in attention.step(&snapshot) {
-            let reason = note.reason.clone().unwrap_or_else(|| "waiting for you".into());
-            let msg = Message {
-                title: note.task.clone(),
-                body: format!("{reason} · {}", note.workspace),
-                tag: note.id.clone(),
-                // A secrets request opens its unlock prompt, not just the task.
-                url: if note.secrets { format!("/?task={}&unlock=1", note.id) } else { format!("/?task={}", note.id) },
-            };
-            push.send_all(&msg);
-        }
+/// What a phone shows for an attention edge (`events::notifier` sends it).
+pub(super) fn message(note: &crate::cli::watch::Note) -> Message {
+    let reason = note.reason.clone().unwrap_or_else(|| "waiting for you".into());
+    Message {
+        title: note.task.clone(),
+        body: format!("{reason} · {}", note.workspace),
+        tag: note.id.clone(),
+        // A secrets request opens its unlock prompt, not just the task.
+        url: if note.secrets { format!("/?task={}&unlock=1", note.id) } else { format!("/?task={}", note.id) },
     }
 }

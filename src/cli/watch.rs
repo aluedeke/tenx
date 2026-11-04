@@ -208,9 +208,26 @@ pub(crate) struct Note {
     /// The task's id as front ends name it: `<workspace name>/<slug>`
     /// (`column::view::row_id`).
     pub(crate) id: String,
+    /// The task's slug.
+    pub(crate) slug: String,
+    /// What the edge is into: `blocked` or `signaled` (`TaskStatus::token`),
+    /// or `secrets`.
+    pub(crate) status: &'static str,
     /// A secrets request (release or value), which a front end answers with
     /// the unlock prompt rather than by switching to the task.
     pub(crate) secrets: bool,
+}
+
+/// A task with a live session as one resolve pass saw it — what tells a
+/// finished turn (`tenx_core::mcppush::Turns`).
+pub(crate) struct TurnState {
+    /// `<workspace name>/<slug>`, as `Note::id`.
+    pub(crate) id: String,
+    pub(crate) workspace: String,
+    pub(crate) slug: String,
+    pub(crate) title: String,
+    pub(crate) status: TaskStatus,
+    pub(crate) changed: Option<std::time::SystemTime>,
 }
 
 /// A secrets notification's text: the names, then the distinct reasons the
@@ -275,6 +292,8 @@ pub(crate) struct Snapshot {
     /// tasks you have ever created; sending the live ones makes it grow with how
     /// many agents are actually running.
     tasks: Vec<serde_json::Value>,
+    /// Every task that isn't idle, for `tenx web`'s turn events.
+    pub(crate) turns: Vec<TurnState>,
 }
 
 struct LiveTarget {
@@ -307,6 +326,7 @@ pub(crate) fn resolve_all() -> Snapshot {
     let mut live_targets = Vec::new();
     let mut tasks: Vec<(Option<std::time::SystemTime>, serde_json::Value)> = Vec::new();
     let mut open_tasks = HashSet::new();
+    let mut turns = Vec::new();
     let no_pane_paths = HashMap::new();
     for ws in workspace::registered_workspaces() {
         for task in ws.tasks().unwrap_or_default() {
@@ -353,6 +373,8 @@ pub(crate) fn resolve_all() -> Snapshot {
                         workspace: ws.config.name.clone(),
                         id: format!("{}/{}", ws.config.name, task.name),
                         reason: state.waiting_for.clone(),
+                        slug: task.name.clone(),
+                        status: state.status.token(),
                         secrets: false,
                     },
                 ));
@@ -367,6 +389,8 @@ pub(crate) fn resolve_all() -> Snapshot {
                         workspace: ws.config.name.clone(),
                         id: format!("{}/{}", ws.config.name, task.name),
                         reason: Some(secrets_reason(&pending_names, &why)),
+                        slug: task.name.clone(),
+                        status: "secrets",
                         secrets: true,
                     },
                 ));
@@ -380,6 +404,8 @@ pub(crate) fn resolve_all() -> Snapshot {
                         workspace: ws.config.name.clone(),
                         id: format!("{}/{}", ws.config.name, task.name),
                         reason: Some(format!("{} (needs value)", secrets_reason(&pending_set_names, &why))),
+                        slug: task.name.clone(),
+                        status: "secrets",
                         secrets: true,
                     },
                 ));
@@ -389,6 +415,16 @@ pub(crate) fn resolve_all() -> Snapshot {
             // status bar even with no live session — that's exactly the case
             // of an agent that requested a secret and then finished or was
             // closed before you unlocked it.
+            if state.status != TaskStatus::Idle {
+                turns.push(TurnState {
+                    id: format!("{}/{}", ws.config.name, task.name),
+                    workspace: ws.config.name.clone(),
+                    slug: task.name.clone(),
+                    title: task.display_name.clone(),
+                    status: state.status,
+                    changed: state.changed,
+                });
+            }
             if state.status != TaskStatus::Idle || !pending_names.is_empty() || !pending_set_names.is_empty() {
                 tasks.push((state.changed, workspace::task_json(&ws, &task, &state)));
             }
@@ -408,6 +444,7 @@ pub(crate) fn resolve_all() -> Snapshot {
         open_tasks: (!windows.is_empty()).then_some(open_tasks),
         windows,
         tasks: tasks.into_iter().map(|(_, v)| v).collect(),
+        turns,
     }
 }
 

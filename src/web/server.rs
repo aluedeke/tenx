@@ -26,6 +26,8 @@ pub(super) struct App {
     pub(super) dev_origins: Vec<String>,
     pub(super) tabs: Arc<Tabs>,
     pub(super) push: Arc<super::push::Push>,
+    /// `/mcp`'s sessions and their event streams.
+    pub(super) hub: Arc<super::events::Hub>,
 }
 
 pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Result<()> {
@@ -47,7 +49,7 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
         .route("/push/test", post(push_test))
         .route(
             "/mcp",
-            post(super::mcp::post).get(super::mcp::other).delete(super::mcp::other).layer(DefaultBodyLimit::max(tenx_core::mcp::MAX_BYTES)),
+            post(super::mcp::post).get(super::mcp::get).delete(super::mcp::delete).layer(DefaultBodyLimit::max(tenx_core::mcp::MAX_BYTES)),
         )
         .fallback(get(page))
         .with_state(app);
