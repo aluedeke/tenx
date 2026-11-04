@@ -51,6 +51,10 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
     }
 
     let action = match agent {
+        // The turn ended but a background script will wake the session: still working.
+        AgentKind::Claude if event == "Stop" && tenx_core::session_event::claude_stop_pauses(&payload) => {
+            SessionAction::Set { status: tenx_core::status::SessionStatus::Busy, waiting_for: None }
+        }
         AgentKind::Claude => claude_action(event, tool_name, notification_type, message, is_subagent),
         AgentKind::Codex => codex_action(event, command, is_subagent),
         AgentKind::Pi => pi_action(event, message),
