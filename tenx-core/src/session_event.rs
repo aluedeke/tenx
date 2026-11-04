@@ -106,6 +106,28 @@ pub fn claude_action(
     }
 }
 
+/// Whether a Claude Code `Stop` only pauses the session: its
+/// `background_tasks` still lists work running in the background (a
+/// `run_in_background` shell, a monitor, a workflow) that will wake the
+/// session when it ends — Claude Code then submits the task notification as a
+/// prompt (`UserPromptSubmit`) and stops again with an empty list (measured on
+/// Claude Code 2.1.308). Until then the session is working, not done.
+///
+/// Two kinds of background work don't count. A background subagent has a
+/// record of its own that keeps its task working
+/// (`crate::subagent::settle_on_stop`). A `tenx pr wait` runs in the
+/// background so that the session stays free (the `/pr-watch` skill): its
+/// task is done, and shows the wait as 👀 on the PR's chip.
+pub fn claude_stop_pauses(payload: &serde_json::Value) -> bool {
+    let Some(tasks) = payload.get("background_tasks").and_then(|v| v.as_array()) else { return false };
+    tasks.iter().any(|t| {
+        let field = |k: &str| t.get(k).and_then(|v| v.as_str());
+        field("status") == Some("running")
+            && field("type") != Some("subagent")
+            && !field("command").is_some_and(|c| c.contains("tenx pr wait"))
+    })
+}
+
 /// Map a Codex CLI hook event to a session action.
 ///
 /// - `event` is `hook_event_name`.
@@ -300,6 +322,38 @@ mod tests {
     fn subagent_events_never_touch_the_session() {
         assert_eq!(claude_action("PreToolUse", Some("Bash"), None, None, true), SessionAction::Ignore);
         assert_eq!(claude_action("Stop", None, None, None, true), SessionAction::Ignore);
+    }
+
+    #[test]
+    fn stop_with_a_background_script_running_is_a_pause() {
+        // As Claude Code 2.1.308 sends it after `run_in_background: true`.
+        let shell = json!({ "hook_event_name": "Stop", "background_tasks": [
+            { "id": "b3g07y0mw", "type": "shell", "status": "running", "description": "Run the script", "command": "bash run.sh" }
+        ], "session_crons": [] });
+        assert!(claude_stop_pauses(&shell));
+        let monitor = json!({ "background_tasks": [{ "id": "m1", "type": "monitor", "status": "running", "description": "CI" }] });
+        assert!(claude_stop_pauses(&monitor));
+        // The script has reported back: the final Stop lists nothing.
+        assert!(!claude_stop_pauses(&json!({ "background_tasks": [], "session_crons": [] })));
+        assert!(!claude_stop_pauses(&json!({})));
+        let finished = json!({ "background_tasks": [{ "id": "b1", "type": "shell", "status": "completed", "command": "make" }] });
+        assert!(!claude_stop_pauses(&finished));
+    }
+
+    #[test]
+    fn background_subagents_and_pr_waits_dont_pause_a_stop() {
+        let subagent = json!({ "background_tasks": [{ "id": "a1", "type": "subagent", "status": "running" }] });
+        assert!(!claude_stop_pauses(&subagent));
+        let pr_wait = json!({ "background_tasks": [
+            { "id": "b2", "type": "shell", "status": "running", "command": "tenx pr wait https://github.com/o/r/pull/7 --since 2026-11-04T10:00:00Z" }
+        ]});
+        assert!(!claude_stop_pauses(&pr_wait));
+        // Any other running script still does, next to a PR wait.
+        let both = json!({ "background_tasks": [
+            { "id": "b2", "type": "shell", "status": "running", "command": "tenx pr wait 7" },
+            { "id": "b3", "type": "shell", "status": "running", "command": "cargo test" }
+        ]});
+        assert!(claude_stop_pauses(&both));
     }
 
     #[test]
