@@ -68,6 +68,8 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "ws",
 # The page (`web/out`, a static Next.js export) baked into the binary; build.rs
 # points it at a stub page when the frontend hasn't been built.
 rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-guess"] }
+# `/mcp`'s event stream (axum's `Sse` takes a `Stream`).
+futures-util = { version = "0.3.34", default-features = false }
 
 # tenx-whisper only (the `tenx` binary doesn't use it, so doesn't link it).
 # whisper.cpp is C++: building it needs cmake and a C/C++ compiler.

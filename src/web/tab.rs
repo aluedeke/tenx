@@ -128,11 +128,13 @@ pub(super) struct Tabs {
     /// in all of them, and outlives the tab that started it.
     jobs: crate::tui::Jobs,
     pub(super) grace: Duration,
+    /// Where each tab reports the task it shows (`/mcp`'s `focus`).
+    hub: Arc<super::events::Hub>,
 }
 
 impl Tabs {
-    pub(super) fn new(grace: Duration) -> Tabs {
-        Tabs { map: Mutex::new(HashMap::new()), jobs: crate::tui::Jobs::default(), grace }
+    pub(super) fn new(grace: Duration, hub: Arc<super::events::Hub>) -> Tabs {
+        Tabs { map: Mutex::new(HashMap::new()), jobs: crate::tui::Jobs::default(), grace, hub }
     }
 
     /// The tab `want` names, if it is still here and free, else a new one;
@@ -151,7 +153,7 @@ impl Tabs {
                 return Ok((tab, guard));
             }
         }
-        let tab = Arc::new(Tab::spawn(&super::token::random_hex(8)?, self.jobs.clone())?);
+        let tab = Arc::new(Tab::spawn(&super::token::random_hex(8)?, self.jobs.clone(), self.hub.clone())?);
         let guard = tab.output.clone().try_lock_owned().expect("a new tab's output is free");
         self.map.lock().unwrap().insert(tab.id.clone(), tab.clone());
         Ok((tab, guard))
@@ -190,7 +192,7 @@ impl Tabs {
 impl Tab {
     /// A new tab `id`: its grouped session, and the driver thread that will
     /// attach to it once the page says how big its terminal is.
-    fn spawn(id: &str, jobs: crate::tui::Jobs) -> Result<Tab> {
+    fn spawn(id: &str, jobs: crate::tui::Jobs, hub: Arc<super::events::Hub>) -> Result<Tab> {
         let session = tenx_core::web::session_name(id);
         if !crate::tmux::has_session(&session) {
             crate::tmux::new_grouped_session(&session).context("create the tab's tmux session")?;
@@ -211,6 +213,9 @@ impl Tab {
             patch: false,
             ack: 0,
             sent_ack: 0,
+            hub,
+            screen: tenx_core::mcppush::Screen::Web(id.to_string()),
+            shown: None,
         };
         {
             let dead = dead.clone();
@@ -326,6 +331,11 @@ struct Driver {
     /// learns its input was applied even when it changed nothing.
     ack: u64,
     sent_ack: u64,
+    /// `/mcp`'s focus events: this tab as a screen, and the task it last
+    /// reported (`None`: nothing reported yet).
+    hub: Arc<super::events::Hub>,
+    screen: tenx_core::mcppush::Screen,
+    shown: Option<Option<String>>,
 }
 
 impl Driver {
@@ -354,6 +364,7 @@ impl Driver {
             let _ = pty.child.kill();
         }
         let _ = crate::tmux::kill_session(&self.session);
+        self.hub.screen_gone(&self.screen);
     }
 
     /// The attach ended: if `tenx tmux restart` ended it — rebuilding now,
@@ -531,7 +542,12 @@ impl Driver {
             self.send_json(serde_json::json!({ "type": "link", "action": action, "url": link.url, "label": link.label }));
         }
 
-        let Ok(view) = serde_json::to_value(self.column.view()) else { return };
+        let column_view = self.column.view();
+        if self.shown.as_ref() != Some(&column_view.current) {
+            self.hub.focus(&self.screen, column_view.current.as_deref(), false);
+            self.shown = Some(column_view.current.clone());
+        }
+        let Ok(view) = serde_json::to_value(column_view) else { return };
         let patch = match &self.last_view {
             Some(last) if *last == view && self.ack == self.sent_ack => return,
             Some(last) if self.patch => tenx_core::viewpatch::view_patch(last, &view),

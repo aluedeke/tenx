@@ -1,12 +1,18 @@
 //! `tenx web`'s `/mcp`: tenx's tasks as MCP tools, for an agent elsewhere —
-//! Claude on the web, through a gateway that logs it in. The transport is
-//! MCP's streamable HTTP in its plainest form: one JSON-RPC message per
-//! `POST`, answered with one JSON body (never an event stream), no session
-//! id, so every request stands alone. What a request *is* — the bearer
-//! token, the message, the protocol version, a tool call's arguments — is
-//! decided here; the binary runs the call.
+//! Claude on the web, through a gateway that logs it in, or the voice
+//! assistant. The transport is MCP's streamable HTTP: one JSON-RPC message
+//! per `POST`, answered with one JSON body. A client that sends the
+//! `Mcp-Session-Id` it got from `initialize` back has a session, and can
+//! subscribe to events on a `GET` stream (`crate::mcppush`); one that
+//! doesn't stays stateless, every request standing alone. What a request
+//! *is* — the bearer token, the message, the protocol version, a tool
+//! call's arguments — is decided here; the binary runs the call.
+
+use std::collections::BTreeSet;
 
 use serde_json::{json, Map, Value};
+
+use crate::mcppush::{EventKind, Screen};
 
 /// Protocol revisions this server speaks, newest first. A client asking for
 /// one gets it; any other gets the newest, and decides itself whether it can
@@ -120,7 +126,10 @@ tenx_send_message, then tenx_wait until it settles, then tenx_get_output for the
 tenx_create_task starts a new one (no workspace = the adhoc workspace, for a question \
 without repos). A task whose status is 'blocked' waits on a dialog: tenx_read_screen \
 shows it, tenx_answer_permission answers a permission prompt. tenx_focus_task shows a task \
-on the user's screen: when they ask to see one, or to switch to the task you talk about.";
+on the user's screen: when they ask to see one, or to switch to the task you talk about; \
+tenx_current_task says which task a screen shows. A client with an MCP session (it sends \
+back the Mcp-Session-Id initialize gave it) can tenx_subscribe to events — attention, turn, \
+reply, focus — and hears them as notifications/tenx/event on its GET stream.";
 
 /// A tool call, its arguments checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,6 +153,10 @@ pub enum Call {
     Wait { workspace: String, task: String, timeout_secs: u64 },
     AnswerPermission { workspace: String, task: String, approve: bool },
     FocusTask { workspace: String, task: String },
+    /// Replace the session's subscription.
+    Subscribe { events: BTreeSet<EventKind> },
+    /// `screen: None` = the screen that changed last.
+    CurrentTask { screen: Option<Screen> },
 }
 
 /// How long one `tenx_wait` call may block: under the 100 s a Cloudflare
@@ -229,6 +242,14 @@ pub fn parse_call(params: &Value) -> Result<Call, String> {
             let (workspace, task) = task()?;
             Call::FocusTask { workspace, task }
         }
+        "tenx_subscribe" => Call::Subscribe { events: crate::mcppush::parse_events(args.get("events"))? },
+        "tenx_current_task" => {
+            let screen = match optional(args, "screen")? {
+                None => None,
+                Some(s) => Some(Screen::parse(&s).ok_or("screen must be \"terminal\" or \"web:<tab session id>\"")?),
+            };
+            Call::CurrentTask { screen }
+        }
         other => return Err(format!("unknown tool: {other}")),
     })
 }
@@ -267,6 +288,17 @@ fn flag(args: &Map<String, Value>, key: &str) -> Result<Option<bool>, String> {
 /// failed (a tool error, not a protocol one — the model reads it).
 pub fn tool_result(text: &str, is_error: bool) -> Value {
     json!({ "content": [{ "type": "text", "text": text }], "isError": is_error })
+}
+
+/// A successful `tools/call` result that also carries `structured` as
+/// `structuredContent`.
+pub fn tool_result_structured(text: &str, structured: Value) -> Value {
+    json!({ "content": [{ "type": "text", "text": text }], "structuredContent": structured, "isError": false })
+}
+
+/// `tenx_send_message`'s text with its message id as the last line.
+pub fn with_message_id(text: &str, message_id: &str) -> String {
+    format!("{text}\nmessage_id: {message_id}")
 }
 
 /// The `tools/list` result.
@@ -389,6 +421,35 @@ pub fn tools() -> Value {
             &["workspace", "task"],
             json!({ "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }),
         ),
+        tool(
+            "tenx_current_task",
+            "Current task",
+            "The task a screen shows: `terminal` (the tenx terminals) or `web:<id>` (a tenx web page); by \
+             default the screen that changed last. `task` is null when it shows none.",
+            json!({
+                "screen": { "type": "string", "description": "\"terminal\" or \"web:<tab session id>\"." },
+            }),
+            &[],
+            json!({ "readOnlyHint": true, "openWorldHint": false }),
+        ),
+        tool(
+            "tenx_subscribe",
+            "Subscribe to events",
+            "Choose which events this MCP session hears on its GET /mcp stream, as notifications/tenx/event: \
+             attention (a task started needing the user), turn (a task's agent finished a turn, with its reply), \
+             reply (the first finished turn after this session's tenx_send_message, with its message_id), focus \
+             (the task on a screen changed). Replaces the earlier subscription; [] stops them all. Needs an MCP \
+             session (Mcp-Session-Id).",
+            json!({
+                "events": {
+                    "type": "array",
+                    "items": { "type": "string", "enum": EventKind::ALL.map(EventKind::token) },
+                    "description": "The event kinds to hear.",
+                },
+            }),
+            &["events"],
+            json!({ "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }),
+        ),
     ];
     json!({ "tools": tools })
 }
@@ -483,6 +544,18 @@ mod tests {
             call(json!({"name": "tenx_focus_task", "arguments": {"workspace": "w", "task": "t"}})),
             Ok(Call::FocusTask { workspace: "w".into(), task: "t".into() })
         );
+        assert_eq!(
+            call(json!({"name": "tenx_subscribe", "arguments": {"events": ["turn", "reply"]}})),
+            Ok(Call::Subscribe { events: [EventKind::Turn, EventKind::Reply].into() })
+        );
+        assert!(call(json!({"name": "tenx_subscribe", "arguments": {}})).is_err());
+        assert_eq!(call(json!({"name": "tenx_current_task"})), Ok(Call::CurrentTask { screen: None }));
+        assert_eq!(
+            call(json!({"name": "tenx_current_task", "arguments": {"screen": "web:3f9a0b1c2d3e4f50"}})),
+            Ok(Call::CurrentTask { screen: Some(Screen::Web("3f9a0b1c2d3e4f50".into())) })
+        );
+        assert!(call(json!({"name": "tenx_current_task", "arguments": {"screen": "tv"}})).is_err());
+        assert_eq!(with_message_id("sent", "m1"), "sent\nmessage_id: m1");
         assert!(call(json!({"name": "tenx_rm"})).is_err());
     }
 
@@ -492,13 +565,18 @@ mod tests {
     fn every_listed_tool_is_callable() {
         let list = tools();
         let tools = list["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 12);
         for t in tools {
             let mut args = Map::new();
             for key in t["inputSchema"]["required"].as_array().unwrap() {
                 let key = key.as_str().unwrap();
                 let kind = t["inputSchema"]["properties"][key]["type"].as_str().unwrap_or("string");
-                args.insert(key.into(), if kind == "boolean" { json!(true) } else { json!("x") });
+                let value = match kind {
+                    "boolean" => json!(true),
+                    "array" => json!([]),
+                    _ => json!("x"),
+                };
+                args.insert(key.into(), value);
             }
             let params = json!({ "name": t["name"], "arguments": args });
             assert!(parse_call(&params).is_ok(), "{}: {:?}", t["name"], parse_call(&params));

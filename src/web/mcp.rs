@@ -1,11 +1,16 @@
-//! `POST /mcp`: tenx's tasks as MCP tools (`tenx_core::mcp`), for Claude on
-//! the web. Not the page's cookie: a bearer token of its own,
+//! `/mcp`: tenx's tasks as MCP tools (`tenx_core::mcp`), for Claude on
+//! the web and the voice assistant. `POST` takes one JSON-RPC message;
+//! `initialize` also starts an MCP session (`Mcp-Session-Id`), whose
+//! `GET` is its event stream and whose `DELETE` ends it (`events`,
+//! `tenx_core::mcppush`). A client that never sends the id back is
+//! stateless, as before. Not the page's cookie: a bearer token of its own,
 //! `~/.config/tenx/mcp-token` (`tenx web mcp-token`), which the gateway in
 //! front adds after it has logged the caller in — so a browser holding the
 //! page's cookie can't call these, and the gateway's token can't open the
 //! page. Every tool runs what the CLI runs (`cli::drive`, `cli::task`,
 //! `tui::listing`), on a blocking thread.
 
+use std::convert::Infallible;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,20 +18,48 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use axum::extract::State;
 use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
+use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tenx_core::mcp::{self, Call, FocusTarget, Incoming};
+use tenx_core::mcppush;
 
+use super::events::Hub;
 use super::server::App;
 use super::tab::{Input, Tabs};
 use crate::workspace;
 
-pub(super) async fn post(State(app): State<Arc<App>>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+/// The `Origin` and bearer checks every `/mcp` request passes first.
+fn refused(app: &App, headers: &HeaderMap) -> Option<Response> {
     if !mcp::origin_ok(headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())) {
-        return StatusCode::FORBIDDEN.into_response();
+        return Some(StatusCode::FORBIDDEN.into_response());
     }
     if !mcp::bearer_ok(headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()), &app.mcp_token) {
-        return (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Bearer")]).into_response();
+        return Some((StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Bearer")]).into_response());
+    }
+    None
+}
+
+fn header_str<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
+    headers.get(name).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty())
+}
+
+fn unknown_session() -> Response {
+    (StatusCode::NOT_FOUND, json_body(mcp::error(Value::Null, mcp::INVALID_REQUEST, "unknown or expired MCP session"))).into_response()
+}
+
+pub(super) async fn post(State(app): State<Arc<App>>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Some(r) = refused(&app, &headers) {
+        return r;
+    }
+    // A session client names its session on every request; one we don't
+    // know (expired, or from before a restart) initializes again.
+    let session = header_str(&headers, mcppush::SESSION_ID_HEADER).map(str::to_string);
+    if let Some(s) = &session
+        && !app.hub.touch(s)
+    {
+        return unknown_session();
     }
     let (id, method, params) = match mcp::parse(&body) {
         Ok(Incoming::Request { id, method, params }) => (id, method, params),
@@ -34,20 +67,31 @@ pub(super) async fn post(State(app): State<Arc<App>>, headers: HeaderMap, body: 
         Err(e) => return (StatusCode::BAD_REQUEST, json_body(e)).into_response(),
     };
     let focus = mcp::focus_target(headers.get(mcp::SESSION_HEADER).and_then(|v| v.to_str().ok()));
+    if method == "initialize" {
+        let reply = json_body(mcp::result(id, mcp::initialize(&params, env!("CARGO_PKG_VERSION"))));
+        return match app.hub.open() {
+            Ok(sid) => ([(mcppush::SESSION_ID_HEADER, sid)], reply).into_response(),
+            Err(_) => reply.into_response(),
+        };
+    }
     let reply = match method.as_str() {
-        "initialize" => mcp::result(id, mcp::initialize(&params, env!("CARGO_PKG_VERSION"))),
         "ping" => mcp::result(id, json!({})),
         "tools/list" => mcp::result(id, mcp::tools()),
         "tools/call" => {
             let outcome = match mcp::parse_call(&params) {
                 Ok(call) => {
-                    let tabs = app.tabs.clone();
-                    tokio::task::spawn_blocking(move || run(call, &tabs, focus)).await.unwrap_or_else(|e| Err(e.into()))
+                    let (tabs, hub) = (app.tabs.clone(), app.hub.clone());
+                    tokio::task::spawn_blocking(move || run(call, &tabs, &hub, session.as_deref(), focus))
+                        .await
+                        .unwrap_or_else(|e| Err(e.into()))
                 }
                 Err(why) => Err(anyhow::anyhow!(why)),
             };
             let result = match outcome {
-                Ok(value) => mcp::tool_result(&pretty(&value), false),
+                Ok(Answer { value, message_id: Some(mid) }) => {
+                    mcp::tool_result_structured(&mcp::with_message_id(&pretty(&value), &mid), json!({ "message_id": mid }))
+                }
+                Ok(Answer { value, message_id: None }) => mcp::tool_result(&pretty(&value), false),
                 Err(e) => mcp::tool_result(&format!("{e:#}"), true),
             };
             mcp::result(id, result)
@@ -57,9 +101,50 @@ pub(super) async fn post(State(app): State<Arc<App>>, headers: HeaderMap, body: 
     json_body(reply).into_response()
 }
 
-/// `GET`/`DELETE /mcp`: no event stream and no sessions here.
-pub(super) async fn other() -> Response {
-    (StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW, "POST")]).into_response()
+/// `GET /mcp`: the session's event stream — the buffered events after
+/// `Last-Event-ID` first, then live ones, a `: ping` comment every 15 s.
+/// A second stream for the session replaces the first.
+pub(super) async fn get(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
+    if let Some(r) = refused(&app, &headers) {
+        return r;
+    }
+    let Some(session) = header_str(&headers, mcppush::SESSION_ID_HEADER) else {
+        return (StatusCode::BAD_REQUEST, json_body(mcp::error(Value::Null, mcp::INVALID_REQUEST, "GET /mcp needs an Mcp-Session-Id (initialize gives one)")))
+            .into_response();
+    };
+    let last = mcppush::last_event_id(header_str(&headers, mcppush::LAST_EVENT_ID_HEADER));
+    let Some((replay, live)) = app.hub.stream(session, last) else {
+        return unknown_session();
+    };
+    let live = futures_util::stream::unfold(live, |mut rx| async move { rx.recv().await.map(|e| (e, rx)) });
+    let events = futures_util::stream::iter(replay)
+        .chain(live)
+        .map(|(n, data)| Ok::<_, Infallible>(Event::default().id(n.to_string()).data(data)));
+    Sse::new(events).keep_alive(KeepAlive::new().interval(mcppush::PING_EVERY).text("ping")).into_response()
+}
+
+/// `DELETE /mcp`: end the session.
+pub(super) async fn delete(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
+    if let Some(r) = refused(&app, &headers) {
+        return r;
+    }
+    match header_str(&headers, mcppush::SESSION_ID_HEADER) {
+        None => StatusCode::BAD_REQUEST.into_response(),
+        Some(s) if app.hub.close(s) => StatusCode::OK.into_response(),
+        Some(_) => unknown_session(),
+    }
+}
+
+/// A tool's answer; `message_id` for `tenx_send_message`.
+struct Answer {
+    value: Value,
+    message_id: Option<String>,
+}
+
+impl From<Value> for Answer {
+    fn from(value: Value) -> Answer {
+        Answer { value, message_id: None }
+    }
 }
 
 fn json_body(value: Value) -> ([(header::HeaderName, &'static str); 1], String) {
@@ -73,7 +158,21 @@ fn pretty(value: &Value) -> String {
     }
 }
 
-fn run(call: Call, tabs: &Tabs, focus: Result<FocusTarget, String>) -> Result<Value> {
+fn run(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Result<FocusTarget, String>) -> Result<Answer> {
+    if let Call::SendMessage { workspace, task, text, force } = call {
+        let (ws, task) = find(&workspace, &task)?;
+        let sent = crate::cli::drive::send_in(&ws, &task.name, &text, force)?;
+        let how = match sent {
+            crate::cli::drive::Sent::Opened => "opened the task's window with the message",
+            crate::cli::drive::Sent::Typed => "sent",
+        };
+        let message_id = hub.message(session, &format!("{}/{}", ws.config.name, task.name));
+        return Ok(Answer { value: json!({ "result": how, "status": state(&task.path).status.token() }), message_id: Some(message_id) });
+    }
+    run_tool(call, tabs, hub, session, focus).map(Answer::from)
+}
+
+fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Result<FocusTarget, String>) -> Result<Value> {
     match call {
         Call::ListWorkspaces => Ok(crate::tui::listing()["workspaces"].clone()),
         Call::ListTasks { workspace, status } => {
@@ -96,17 +195,7 @@ fn run(call: Call, tabs: &Tabs, focus: Result<FocusTarget, String>) -> Result<Va
         }
         Call::GetOutput { workspace, task } => {
             let (ws, task) = find(&workspace, &task)?;
-            let mut turn = crate::cli::drive::last_turn(&ws, &task)?;
-            let mut st = state(&task.path);
-            // A turn can be reported over a moment before its reply is in
-            // the transcript (seen on a new task's first turn): read again
-            // for a little while rather than answer "no reply".
-            let deadline = std::time::Instant::now() + REPLY_GRACE;
-            while turn.replies.is_empty() && st.status != workspace::TaskStatus::Working && std::time::Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(250));
-                turn = crate::cli::drive::last_turn(&ws, &task)?;
-                st = state(&task.path);
-            }
+            let (turn, st) = settled_turn(&ws, &task)?;
             Ok(json!({
                 "status": st.status.token(),
                 "waiting_for": st.waiting_for,
@@ -152,14 +241,18 @@ fn run(call: Call, tabs: &Tabs, focus: Result<FocusTarget, String>) -> Result<Va
             }
             Ok(json!({ "workspace": ws.config.name, "task": slug, "title": title, "status": state(&dir).status.token() }))
         }
-        Call::SendMessage { workspace, task, text, force } => {
-            let (ws, task) = find(&workspace, &task)?;
-            let sent = crate::cli::drive::send_in(&ws, &task.name, &text, force)?;
-            let how = match sent {
-                crate::cli::drive::Sent::Opened => "opened the task's window with the message",
-                crate::cli::drive::Sent::Typed => "sent",
-            };
-            Ok(json!({ "result": how, "status": state(&task.path).status.token() }))
+        Call::SendMessage { .. } => unreachable!("run answers it"),
+        Call::Subscribe { events } => {
+            let session = session.context(mcppush::NEEDS_SESSION)?;
+            if !hub.subscribe(session, events.clone()) {
+                bail!("unknown or expired MCP session");
+            }
+            Ok(mcppush::subscribed_text(&events).into())
+        }
+        Call::CurrentTask { screen } => {
+            let (screen, row) = hub.current(screen.as_ref());
+            let task = row.as_deref().and_then(super::events::task_ref);
+            Ok(mcppush::current_task(&screen, task.as_ref()))
         }
         Call::Wait { workspace, task, timeout_secs } => {
             let (_, task) = find(&workspace, &task)?;
@@ -203,6 +296,29 @@ fn run(call: Call, tabs: &Tabs, focus: Result<FocusTarget, String>) -> Result<Va
 /// How long `tenx_get_output` waits for a settled turn's reply to reach the
 /// transcript.
 const REPLY_GRACE: Duration = Duration::from_secs(3);
+
+/// The task's last turn, as `tenx_get_output` reads it. A turn can be
+/// reported over a moment before its reply is in the transcript (seen on a
+/// new task's first turn): read again for a little while rather than
+/// answer "no reply".
+fn settled_turn(ws: &workspace::Workspace, task: &workspace::Task) -> Result<(tenx_core::orchestrate::Turn, workspace::TaskState)> {
+    let mut turn = crate::cli::drive::last_turn(ws, task)?;
+    let mut st = state(&task.path);
+    let deadline = std::time::Instant::now() + REPLY_GRACE;
+    while turn.replies.is_empty() && st.status != workspace::TaskStatus::Working && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(250));
+        turn = crate::cli::drive::last_turn(ws, task)?;
+        st = state(&task.path);
+    }
+    Ok((turn, st))
+}
+
+/// A finished turn's reply as the `turn` and `reply` events carry it.
+pub(super) fn settled_reply(workspace: &str, task: &str) -> Result<String> {
+    let (ws, task) = find(workspace, task)?;
+    let (turn, _) = settled_turn(&ws, &task)?;
+    Ok(mcppush::reply_text(&turn.replies))
+}
 
 /// A task in `tenx_list_tasks`: what tells tasks apart, without the
 /// subagents' and secrets' detail (`tenx_get_task` has it all).
