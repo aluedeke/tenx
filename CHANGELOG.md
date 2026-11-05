@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.24.0] - 2026-11-05
+
+### Added
+
+- **web:** Find an MCP tool's task by its title, send without waiting
+
+[0.24.0]: https://github.com/aluedeke/tenx/compare/v0.23.2...v0.24.0
+
 ## [0.23.2] - 2026-11-04
 
 ### Fixed
