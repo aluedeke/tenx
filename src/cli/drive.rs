@@ -60,7 +60,7 @@ pub const TURN_LIMIT: Duration = Duration::from_secs(15);
 /// anyway).
 pub fn send(ws_dir: Option<&str>, task: &str, text: &str, force: bool) -> Result<()> {
     let (ws, slug) = crate::cli::task::resolve_task(ws_dir, task)?;
-    if send_in(&ws, &slug, text, force)? == Sent::Opened {
+    if send_in(&ws, &slug, text, force, true)? == Sent::Opened {
         println!("opened '{}' with the message", ws.find_task(&slug)?.display_name);
     }
     Ok(())
@@ -78,7 +78,11 @@ pub enum Sent {
 /// [`send`] for an explicit workspace and slug — also `tenx web`'s
 /// `tenx_send_message` tool. The window opens detached, so a message from
 /// elsewhere never moves the session's current window.
-pub fn send_in(ws: &workspace::Workspace, slug: &str, text: &str, force: bool) -> Result<Sent> {
+///
+/// `await_start`: return only once the agent has started on it (or 15 s
+/// passed), so a `task wait` right after sees this turn, not the last one.
+/// `tenx web`'s MCP send returns at once and does that wait in `tenx_wait`.
+pub fn send_in(ws: &workspace::Workspace, slug: &str, text: &str, force: bool, await_start: bool) -> Result<Sent> {
     let text = text.trim();
     if text.is_empty() {
         bail!("nothing to send");
@@ -91,7 +95,9 @@ pub fn send_in(ws: &workspace::Workspace, slug: &str, text: &str, force: bool) -
     let Some(window) = crate::tmux::find_task_window(slug, &task.path)? else {
         std::fs::write(task.path.join(crate::cli::task::PROMPT_FILE), text)?;
         crate::cli::task::open_window(ws, slug, true)?;
-        await_turn(&task.path, TURN_LIMIT);
+        if await_start {
+            await_turn(&task.path, TURN_LIMIT);
+        }
         return Ok(Sent::Opened);
     };
 
@@ -108,7 +114,7 @@ pub fn send_in(ws: &workspace::Workspace, slug: &str, text: &str, force: bool) -
     std::thread::sleep(Duration::from_millis(200));
     crate::tmux::send_keys(&pane, "Enter")?;
     // An agent that has never reported in won't report this turn either.
-    if st.sessions > 0 {
+    if await_start && st.sessions > 0 {
         await_turn(&task.path, TURN_LIMIT);
     }
     Ok(Sent::Typed)

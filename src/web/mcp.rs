@@ -11,9 +11,10 @@
 //! `tui::listing`), on a blocking thread.
 
 use std::convert::Infallible;
-use std::path::Path;
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use axum::extract::State;
@@ -161,13 +162,17 @@ fn pretty(value: &Value) -> String {
 fn run(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Result<FocusTarget, String>) -> Result<Answer> {
     if let Call::SendMessage { workspace, task, text, force } = call {
         let (ws, task) = find(&workspace, &task)?;
-        let sent = crate::cli::drive::send_in(&ws, &task.name, &text, force)?;
+        // Back at once: the agent's turn starting is a matter of a few
+        // hundred ms the caller needn't wait out — `tenx_wait` does, and a
+        // subscribed client hears the turn's end anyway.
+        let sent = crate::cli::drive::send_in(&ws, &task.name, &text, force, false)?;
+        mark_sent(&task.path);
         let how = match sent {
             crate::cli::drive::Sent::Opened => "opened the task's window with the message",
             crate::cli::drive::Sent::Typed => "sent",
         };
-        let message_id = hub.message(session, &format!("{}/{}", ws.config.name, task.name));
-        return Ok(Answer { value: json!({ "result": how, "status": state(&task.path).status.token() }), message_id: Some(message_id) });
+        let message_id = hub.message(session, &task_id(&ws, &task));
+        return Ok(Answer { value: json!({ "result": how, "task": task_id(&ws, &task) }), message_id: Some(message_id) });
     }
     run_tool(call, tabs, hub, session, focus).map(Answer::from)
 }
@@ -175,11 +180,13 @@ fn run(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Result<
 fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Result<FocusTarget, String>) -> Result<Value> {
     match call {
         Call::ListWorkspaces => Ok(crate::tui::listing()["workspaces"].clone()),
-        Call::ListTasks { workspace, status } => {
+        Call::ListTasks { workspace, status, query } => {
             let listing = crate::tui::listing();
             let tasks = listing["tasks"].as_array().cloned().unwrap_or_default();
-            let tasks: Vec<Value> = tasks
-                .iter()
+            let found = tenx_core::taskmatch::search(&task_names(&listing["tasks"]), query.as_deref().unwrap_or_default());
+            let tasks: Vec<Value> = found
+                .into_iter()
+                .map(|i| &tasks[i])
                 .filter(|t| workspace.as_deref().is_none_or(|w| t["ws"] == w))
                 .filter(|t| status.as_deref().is_none_or(|s| t["status"] == s))
                 .map(summary)
@@ -197,6 +204,7 @@ fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Re
             let (ws, task) = find(&workspace, &task)?;
             let (turn, st) = settled_turn(&ws, &task)?;
             Ok(json!({
+                "task": task_id(&ws, &task),
                 "status": st.status.token(),
                 "waiting_for": st.waiting_for,
                 "prompt": turn.prompt,
@@ -256,7 +264,10 @@ fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Re
         }
         Call::Wait { workspace, task, timeout_secs } => {
             let (_, task) = find(&workspace, &task)?;
-            let (outcome, st) = crate::cli::drive::wait_in(&task.path, Duration::from_secs(timeout_secs));
+            let limit = Duration::from_secs(timeout_secs);
+            let started = Instant::now();
+            await_sent(&task.path, limit);
+            let (outcome, st) = crate::cli::drive::wait_in(&task.path, limit.saturating_sub(started.elapsed()));
             let outcome = match outcome {
                 tenx_core::orchestrate::WaitOutcome::Settled => "settled",
                 tenx_core::orchestrate::WaitOutcome::NeedsYou => "needs_answer",
@@ -315,7 +326,7 @@ fn settled_turn(ws: &workspace::Workspace, task: &workspace::Task) -> Result<(te
 
 /// A finished turn's reply as the `turn` and `reply` events carry it.
 pub(super) fn settled_reply(workspace: &str, task: &str) -> Result<String> {
-    let (ws, task) = find(workspace, task)?;
+    let (ws, task) = find(&Some(workspace.to_string()), task)?;
     let (turn, _) = settled_turn(&ws, &task)?;
     Ok(mcppush::reply_text(&turn.replies))
 }
@@ -351,12 +362,61 @@ fn registered(name: &str) -> Result<workspace::Workspace> {
         .with_context(|| format!("no workspace named {name:?} (tenx_list_workspaces lists them)"))
 }
 
-/// A task by workspace name and slug (or the title it was made from).
-fn find(ws_name: &str, task: &str) -> Result<(workspace::Workspace, workspace::Task)> {
-    let ws = registered(ws_name)?;
-    let slug = crate::cli::task::slug_for(&ws, task);
-    let task = ws.find_task(&slug).with_context(|| format!("no task {task:?} in {ws_name}"))?;
-    Ok((ws, task))
+/// A task by the name a client gives it — its slug, `workspace/slug`, its
+/// title or words of it (`tenx_core::taskmatch`) — `ws_name` narrowing the
+/// search. A workspace and its exact slug skip the listing.
+fn find(ws_name: &Option<String>, task: &str) -> Result<(workspace::Workspace, workspace::Task)> {
+    if let Some(name) = ws_name {
+        let ws = registered(name)?;
+        if let Ok(found) = ws.find_task(&crate::cli::task::slug_for(&ws, task)) {
+            return Ok((ws, found));
+        }
+    }
+    let names = task_names(&crate::tui::listing()["tasks"]);
+    let i = tenx_core::taskmatch::find(&names, ws_name.as_deref(), task).map_err(anyhow::Error::msg)?;
+    let ws = registered(&names[i].workspace)?;
+    let found = ws.find_task(&names[i].slug)?;
+    Ok((ws, found))
+}
+
+/// The listing's tasks as the matcher sees them, in list order.
+fn task_names(tasks: &Value) -> Vec<tenx_core::taskmatch::TaskName> {
+    let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
+    tasks
+        .as_array()
+        .map(|tasks| {
+            tasks
+                .iter()
+                .map(|t| tenx_core::taskmatch::TaskName { workspace: text(&t["ws"]), slug: text(&t["slug"]), title: text(&t["title"]) })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// When `tenx_send_message` last typed into each task: a `tenx_wait` soon
+/// after first waits for that turn to start, which the send no longer does.
+static SENT: Mutex<BTreeMap<PathBuf, Instant>> = Mutex::new(BTreeMap::new());
+
+fn mark_sent(task_dir: &Path) {
+    let mut sent = SENT.lock().unwrap_or_else(|e| e.into_inner());
+    sent.retain(|_, at| at.elapsed() < crate::cli::drive::TURN_LIMIT);
+    sent.insert(task_dir.to_path_buf(), Instant::now());
+}
+
+/// Wait, at most `limit`, for the turn a recent send started to show.
+fn await_sent(task_dir: &Path, limit: Duration) {
+    let at = SENT.lock().unwrap_or_else(|e| e.into_inner()).remove(task_dir);
+    if let Some(at) = at {
+        let left = crate::cli::drive::TURN_LIMIT.saturating_sub(at.elapsed()).min(limit);
+        if !left.is_zero() {
+            crate::cli::drive::await_turn(task_dir, left);
+        }
+    }
+}
+
+/// `workspace/slug`, how a result names the task it acted on.
+fn task_id(ws: &workspace::Workspace, task: &workspace::Task) -> String {
+    format!("{}/{}", ws.config.name, task.name)
 }
 
 fn state(task_dir: &Path) -> workspace::TaskState {
