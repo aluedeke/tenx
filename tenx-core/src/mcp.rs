@@ -121,7 +121,8 @@ pub fn initialize(params: &Value, version: &str) -> Value {
 
 const INSTRUCTIONS: &str = "tenx runs coding-agent tasks on Andreas's Mac: each task is a \
 directory with git worktrees and an agent (usually Claude Code) in a tmux window. Start \
-with tenx_list_tasks. A task is named by its workspace and slug. To drive one: \
+with tenx_list_tasks. A task is named by its slug or a few words of its title (the \
+workspace is optional), so a task the user names needs no listing first. To drive one: \
 tenx_send_message, then tenx_wait until it settles, then tenx_get_output for the reply. \
 tenx_create_task starts a new one (no workspace = the adhoc workspace, for a question \
 without repos). A task whose status is 'blocked' waits on a dialog: tenx_read_screen \
@@ -136,10 +137,10 @@ reply, focus — and hears them as notifications/tenx/event on its GET stream.";
 pub enum Call {
     ListWorkspaces,
     /// `status`: only tasks with this status token.
-    ListTasks { workspace: Option<String>, status: Option<String> },
-    GetTask { workspace: String, task: String },
-    GetOutput { workspace: String, task: String },
-    ReadScreen { workspace: String, task: String, lines: usize },
+    ListTasks { workspace: Option<String>, status: Option<String>, query: Option<String> },
+    GetTask { workspace: Option<String>, task: String },
+    GetOutput { workspace: Option<String>, task: String },
+    ReadScreen { workspace: Option<String>, task: String, lines: usize },
     /// `workspace: None` = the adhoc workspace; `repos: None` = all of the
     /// workspace's.
     CreateTask {
@@ -149,10 +150,10 @@ pub enum Call {
         description: Option<String>,
         repos: Option<Vec<String>>,
     },
-    SendMessage { workspace: String, task: String, text: String, force: bool },
-    Wait { workspace: String, task: String, timeout_secs: u64 },
-    AnswerPermission { workspace: String, task: String, approve: bool },
-    FocusTask { workspace: String, task: String },
+    SendMessage { workspace: Option<String>, task: String, text: String, force: bool },
+    Wait { workspace: Option<String>, task: String, timeout_secs: u64 },
+    AnswerPermission { workspace: Option<String>, task: String, approve: bool },
+    FocusTask { workspace: Option<String>, task: String },
     /// Replace the session's subscription.
     Subscribe { events: BTreeSet<EventKind> },
     /// `screen: None` = the screen that changed last.
@@ -179,7 +180,7 @@ pub fn parse_call(params: &Value) -> Result<Call, String> {
         Some(Value::Object(m)) => m,
         Some(_) => return Err("arguments must be an object".into()),
     };
-    let task = || -> Result<(String, String), String> { Ok((required(args, "workspace")?, required(args, "task")?)) };
+    let task = || -> Result<(Option<String>, String), String> { Ok((optional(args, "workspace")?, required(args, "task")?)) };
     Ok(match name {
         "tenx_list_workspaces" => Call::ListWorkspaces,
         "tenx_list_tasks" => {
@@ -189,7 +190,7 @@ pub fn parse_call(params: &Value) -> Result<Call, String> {
             {
                 return Err(format!("status must be one of {}", STATUSES.join(", ")));
             }
-            Call::ListTasks { workspace: optional(args, "workspace")?, status }
+            Call::ListTasks { workspace: optional(args, "workspace")?, status, query: optional(args, "query")? }
         }
         "tenx_get_task" => {
             let (workspace, task) = task()?;
@@ -303,8 +304,8 @@ pub fn with_message_id(text: &str, message_id: &str) -> String {
 
 /// The `tools/list` result.
 pub fn tools() -> Value {
-    let ws = json!({ "type": "string", "description": "Workspace name, as tenx_list_tasks reports it (`ws`)." });
-    let task = json!({ "type": "string", "description": "The task's slug (`slug` in tenx_list_tasks)." });
+    let ws = json!({ "type": "string", "description": "Workspace name (`ws` in tenx_list_tasks). Optional: it only narrows the search for `task`." });
+    let task = json!({ "type": "string", "description": "The task: its slug, `workspace/slug`, its title or a few words of the title. tenx finds it; when several tasks match, the error lists them." });
     let task_args = json!({ "workspace": ws, "task": task });
     let read_only = json!({ "readOnlyHint": true, "openWorldHint": false });
     let tools = vec![
@@ -324,6 +325,7 @@ pub fn tools() -> Value {
              active first.",
             json!({
                 "workspace": { "type": "string", "description": "Only this workspace's tasks." },
+                "query": { "type": "string", "description": "Only tasks whose workspace, slug or title has these words." },
                 "status": { "type": "string", "enum": STATUSES, "description": "Only tasks with this status." },
             }),
             &[],
@@ -334,7 +336,7 @@ pub fn tools() -> Value {
             "Get task",
             "One task: its status and PRs, and its TASK.md (description, todo list, links, notes).",
             task_args.clone(),
-            &["workspace", "task"],
+            &["task"],
             read_only.clone(),
         ),
         tool(
@@ -342,7 +344,7 @@ pub fn tools() -> Value {
             "Get agent reply",
             "The task's last prompt and everything its agent replied since, read from the transcript.",
             task_args.clone(),
-            &["workspace", "task"],
+            &["task"],
             read_only.clone(),
         ),
         tool(
@@ -354,7 +356,7 @@ pub fn tools() -> Value {
                 "task": task,
                 "lines": { "type": "integer", "minimum": 1, "maximum": SCREEN_MAX_LINES, "description": "How many lines (default 40)." },
             }),
-            &["workspace", "task"],
+            &["task"],
             read_only.clone(),
         ),
         tool(
@@ -383,7 +385,7 @@ pub fn tools() -> Value {
                 "text": { "type": "string", "description": "The message." },
                 "force": { "type": "boolean", "description": "Type it even over an open dialog." },
             }),
-            &["workspace", "task", "text"],
+            &["task", "text"],
             json!({ "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false }),
         ),
         tool(
@@ -396,7 +398,7 @@ pub fn tools() -> Value {
                 "task": task,
                 "timeout_secs": { "type": "integer", "minimum": 1, "maximum": WAIT_MAX_SECS },
             }),
-            &["workspace", "task"],
+            &["task"],
             read_only,
         ),
         tool(
@@ -408,7 +410,7 @@ pub fn tools() -> Value {
                 "task": task,
                 "approve": { "type": "boolean", "description": "true approves, false denies." },
             }),
-            &["workspace", "task", "approve"],
+            &["task", "approve"],
             json!({ "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false }),
         ),
         tool(
@@ -418,7 +420,7 @@ pub fn tools() -> Value {
              from (the voice assistant's), else in every tenx terminal. Opens the task's window first when it is \
              closed. Use it when the user asks to see a task, or to switch to the task you are talking about.",
             task_args,
-            &["workspace", "task"],
+            &["task"],
             json!({ "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }),
         ),
         tool(
@@ -516,7 +518,7 @@ mod tests {
         assert_eq!(call(json!({"name": "tenx_list_workspaces"})), Ok(Call::ListWorkspaces));
         assert_eq!(
             call(json!({"name": "tenx_list_tasks", "arguments": {"status": "blocked", "workspace": ""}})),
-            Ok(Call::ListTasks { workspace: None, status: Some("blocked".into()) })
+            Ok(Call::ListTasks { workspace: None, status: Some("blocked".into()), query: None })
         );
         assert!(call(json!({"name": "tenx_list_tasks", "arguments": {"status": "asleep"}})).is_err());
         assert_eq!(
@@ -525,11 +527,11 @@ mod tests {
         );
         assert_eq!(
             call(json!({"name": "tenx_wait", "arguments": {"workspace": "w", "task": "t", "timeout_secs": 900}})),
-            Ok(Call::Wait { workspace: "w".into(), task: "t".into(), timeout_secs: WAIT_MAX_SECS })
+            Ok(Call::Wait { workspace: Some("w".into()), task: "t".into(), timeout_secs: WAIT_MAX_SECS })
         );
         assert_eq!(
             call(json!({"name": "tenx_read_screen", "arguments": {"workspace": "w", "task": "t"}})),
-            Ok(Call::ReadScreen { workspace: "w".into(), task: "t".into(), lines: SCREEN_DEFAULT_LINES })
+            Ok(Call::ReadScreen { workspace: Some("w".into()), task: "t".into(), lines: SCREEN_DEFAULT_LINES })
         );
         assert_eq!(
             call(json!({"name": "tenx_create_task", "arguments": {"prompt": " hi ", "repos": []}})),
@@ -542,7 +544,7 @@ mod tests {
         );
         assert_eq!(
             call(json!({"name": "tenx_focus_task", "arguments": {"workspace": "w", "task": "t"}})),
-            Ok(Call::FocusTask { workspace: "w".into(), task: "t".into() })
+            Ok(Call::FocusTask { workspace: Some("w".into()), task: "t".into() })
         );
         assert_eq!(
             call(json!({"name": "tenx_subscribe", "arguments": {"events": ["turn", "reply"]}})),
