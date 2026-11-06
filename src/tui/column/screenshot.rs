@@ -83,6 +83,7 @@ fn row(f: Fx) -> Row {
         group: f.status,
         changed,
         waiting_for: f.waiting_for.map(str::to_string),
+        background: false,
         activity: changed.unwrap_or(SystemTime::UNIX_EPOCH),
         window_id: f.open.then(|| "@1".to_string()),
         pane: (f.open && f.status != TaskStatus::Idle).then(|| "%1".to_string()),

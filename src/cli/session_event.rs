@@ -50,9 +50,11 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
         return Some(());
     }
 
+    // The turn ended but background work will wake the session: still working.
+    let background =
+        if agent == AgentKind::Claude && event == "Stop" { tenx_core::session_event::claude_stop_background(&payload) } else { None };
     let action = match agent {
-        // The turn ended but a background script will wake the session: still working.
-        AgentKind::Claude if event == "Stop" && tenx_core::session_event::claude_stop_pauses(&payload) => {
+        AgentKind::Claude if background.is_some() => {
             SessionAction::Set { status: tenx_core::status::SessionStatus::Busy, waiting_for: None }
         }
         AgentKind::Claude => claude_action(event, tool_name, notification_type, message, is_subagent),
@@ -86,6 +88,7 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
             record.agent = Some(agent.as_str().to_string());
             record.status = Some(status.token().to_string());
             record.waiting_for = waiting_for;
+            record.background = background.map(|b| b.token().to_string());
             record.status_updated_at = Some(sessions::now_millis());
             record.kind = Some(kind_for(pid)).filter(|k| !k.is_empty()).unwrap_or_else(|| "interactive".to_string());
             if let Some(cwd) = payload.get("cwd").and_then(|v| v.as_str()) {

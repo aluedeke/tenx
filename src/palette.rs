@@ -59,6 +59,9 @@ pub const SUCCESS: Rgb = Rgb(122, 194, 124);
 pub const WARN: Rgb = Rgb(228, 168, 84);
 /// Info / working (blue).
 pub const INFO: Rgb = Rgb(104, 150, 220);
+/// Working on a background script (teal): the turn is over, the agent waits
+/// on a command it started and picks up when it ends.
+pub const SCRIPT: Rgb = Rgb(86, 182, 194);
 /// Ground — the charcoal background; also the foreground on colour-filled chips.
 pub const GROUND: Rgb = Rgb(0x17, 0x18, 0x20);
 
@@ -72,6 +75,12 @@ pub fn status_color(status: tenx_core::status::TaskStatus) -> &'static Rgb {
         Done => &SUCCESS,
         Idle => &IDLE,
     }
+}
+
+/// A task row's glyph colour: [`status_color`], except a task working only on
+/// a background script (`TaskState::background`) — same glyph, [`SCRIPT`].
+pub fn task_status_color(status: tenx_core::status::TaskStatus, background: bool) -> &'static Rgb {
+    if background && status == tenx_core::status::TaskStatus::Working { &SCRIPT } else { status_color(status) }
 }
 
 /// Workspace name colours — a set of their own, softer than the status hues

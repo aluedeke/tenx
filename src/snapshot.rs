@@ -29,6 +29,9 @@ pub(crate) struct Row {
     pub(crate) changed: Option<SystemTime>,
     /// The agent's own reason for waiting, shown next to a blocked row.
     pub(crate) waiting_for: Option<String>,
+    /// `Working` only on a background script the agent waits on
+    /// (`TaskState::background`): the glyph takes its own colour.
+    pub(crate) background: bool,
     /// Sort key within a status group: last status change, or creation time for
     /// a task no agent has touched.
     pub(crate) activity: SystemTime,
@@ -134,6 +137,7 @@ impl Row {
         self.status = state.status;
         self.changed = state.changed;
         self.waiting_for = state.waiting_for;
+        self.background = state.background;
         self.pane = state.pane;
         self.subagents = state.subagents;
         self.activity = state.changed.unwrap_or(self.activity);
@@ -215,6 +219,7 @@ pub(crate) fn rows(workspaces: &[Workspace], sessions: &[Session], windows: &Win
                 group: state.status,
                 changed: state.changed,
                 waiting_for: state.waiting_for,
+                background: state.background,
                 activity: state.changed.unwrap_or(task.created_at),
                 window_id: windows.window_of(&task.name, &task.path),
                 pane: state.pane,

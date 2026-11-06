@@ -723,7 +723,8 @@ fn status_line(t: &serde_json::Value, slug: &str) -> String {
     let mut text = if has_secrets_pending(t) {
         format!("#[fg={}]🔒#[fg={text_fg},bold] {title}{ws}", crate::palette::ACCENT.hex())
     } else {
-        let glyph = format!("#[fg={}]{}", crate::palette::status_color(status).hex(), status.glyph());
+        let background = t["background"].as_bool().unwrap_or(false);
+        let glyph = format!("#[fg={}]{}", crate::palette::task_status_color(status, background).hex(), status.glyph());
         match (status, t["waiting_for"].as_str()) {
             (TaskStatus::Blocked, Some(reason)) => {
                 format!("{glyph}#[fg={text_fg},bold] {title}{ws}#[fg={},nobold] · {reason}", crate::palette::WARN.hex())
