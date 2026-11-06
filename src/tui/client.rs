@@ -265,6 +265,18 @@ impl Client {
             self.trace("key Ctrl+w");
             return Ok(());
         }
+        // Ctrl+n (Ctrl+Shift+n: a quick task) is the column's new-task form
+        // from the task too: the list comes up with the form in it.
+        if self.focus == Focus::Terminal
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('n' | 'N'))
+        {
+            if self.column_shown {
+                self.focus_column();
+            } else {
+                self.show_column();
+            }
+        }
         match self.focus {
             // Ctrl+1/2/3: a tabbed task window's tab. Most terminals send no
             // such key, so tmux can't bind it; the same tab's Alt key can.
