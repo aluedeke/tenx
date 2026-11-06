@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.24.3] - 2026-11-06
+
+### Fixed
+
+- **web:** Hide the install hint and notification switch in the iOS app (#31)
+
+[0.24.3]: https://github.com/aluedeke/tenx/compare/v0.24.2...v0.24.3
+
 ## [0.24.2] - 2026-11-06
 
 ### Fixed
