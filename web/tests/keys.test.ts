@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enterWhileDictating, keyMessage, tabKey, tapTakesKeys, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
+import { enterWhileDictating, isNewTask, keyMessage, tabKey, tapTakesKeys, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
 
 const key = (code: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ code, key: code.slice(3).toLowerCase(), ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...mods }) as KeyboardEvent;
@@ -81,8 +81,12 @@ test('a tap gives a touch page the keyboard only when nothing has it', () => {
   assert.equal(tapTakesKeys(false, body, body), false, 'a desktop browser sends keys to the body anyway');
 });
 
-test('Ctrl+1/2/3 is a tab, by the physical key', () => {
+test('Ctrl+n is the new-task form and Ctrl+1/2/3 a tab, by the physical key', () => {
   const ev = key;
+  assert.equal(isNewTask(ev('KeyN', { ctrlKey: true })), true);
+  assert.equal(isNewTask(ev('KeyN', { ctrlKey: true, shiftKey: true })), true, 'the quick task');
+  assert.equal(isNewTask(ev('KeyN', { metaKey: true, ctrlKey: true })), false);
+  assert.equal(isNewTask(ev('KeyN')), false);
   assert.equal(tabKey(ev('Digit2', { ctrlKey: true })), 2);
   assert.equal(tabKey(ev('Digit4', { ctrlKey: true })), null);
   assert.equal(tabKey(ev('Digit1')), null);

@@ -54,6 +54,12 @@ export function isSpeakerToggle(ev: KeyboardEvent): boolean {
   return ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && ev.code === 'Period';
 }
 
+/** Ctrl+n (Ctrl+Shift+n: a quick task), the column's new-task form — from
+ * the terminal too, by the physical key. */
+export function isNewTask(ev: KeyboardEvent): boolean {
+  return ev.ctrlKey && !ev.altKey && !ev.metaKey && baseLetter(ev) === 'n';
+}
+
 /** Ctrl+1/2/3: the tab (1-based) of a tabbed task window, by the physical
  * key. The page sends the tab's Alt key, which tmux binds (lib/tabclick). */
 export function tabKey(ev: KeyboardEvent): number | null {

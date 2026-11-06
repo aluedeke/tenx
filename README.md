@@ -131,7 +131,7 @@ The column lists every task from every registered workspace, sectioned by attent
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |
-| `Ctrl+n` | New task; give it a prompt and the agent starts on it, leave the name empty and Claude names it from the prompt |
+| `Ctrl+n` | New task, from the list or the task screen; give it a prompt and the agent starts on it, leave the name empty and Claude names it from the prompt |
 | `Ctrl+Shift+n` | Quick task: type a prompt, `Enter`, and a session in the adhoc workspace starts on it, named by Claude (needs a terminal that reports Shift with Ctrl, like kitty, Ghostty or iTerm2; elsewhere it opens the new-task form) |
 | `a` | Add a repo to the workspace (Repos tab) |
 | `W` | New workspace |

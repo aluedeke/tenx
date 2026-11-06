@@ -15,7 +15,7 @@ import { PasteBox } from './PasteBox';
 import { SecretsForm } from './SecretsForm';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
-import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
+import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, isNewTask, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
 import { inIosApp, keepsShortcutRoom, keyBarShown, layout } from '@/lib/viewport';
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
@@ -603,6 +603,14 @@ export function App() {
         ev.preventDefault();
         ev.stopPropagation();
         imagePasteRef.current();
+        return;
+      }
+      // ^n is the new-task form wherever the keyboard is; the form shows the
+      // column while it is open.
+      if (focus !== 'column' && isNewTask(ev)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        sendKey({ key: 'n', ctrl: true, alt: false, shift: ev.shiftKey });
         return;
       }
       if (focus !== 'column' || !visible) return; // xterm has it
