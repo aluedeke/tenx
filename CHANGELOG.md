@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.25.1] - 2026-11-06
+
+### Fixed
+
+- **tmux:** Set the tab strip apart on a bar of its own colour
+
+[0.25.1]: https://github.com/aluedeke/tenx/compare/v0.25.0...v0.25.1
+
 ## [0.25.0] - 2026-11-06
 
 ### Added
