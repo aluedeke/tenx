@@ -152,7 +152,8 @@ fn strip_text(tab: Tab) -> String {
 /// tmux's `pane-border-format`: in a tabbed window the tab strip, on the top
 /// line of its first pane (the one tabs swap through; a background agent's
 /// log below it gets an empty line), the tab on screen in `on`/`on_bg`, the
-/// others in `off`. Elsewhere tmux's own format.
+/// others in `off`. Elsewhere tmux's own format. The row's own
+/// background (`tmux::mark_tabbed`) sets it off from the tab under it.
 pub fn strip_format(on: &str, on_bg: &str, off: &str) -> String {
     let tabs: String = Tab::ALL
         .iter()

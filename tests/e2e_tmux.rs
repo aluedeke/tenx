@@ -241,7 +241,7 @@ fn task_new_open_and_list_against_real_tmux() {
     // The tab strip is the pane's top line, in a task window only.
     assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane-border-status}"]), "top");
     let line = h.tmux_out(&["show", "-wv", "-t", "tenx:smoke-test", "pane-active-border-style"]);
-    assert!(line.contains("underscore"), "a line under the strip: {line}");
+    assert!(line.contains("bg="), "the strip on a bar: {line}");
     let strip = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{T:pane-border-format}"]);
     assert!(strip.contains(" 1 agent ") && strip.contains(" 3 nvim "), "strip: {strip}");
     let home = h.tmux_out(&["display", "-p", "-t", "tenx:home", "#{pane-border-status} #{T:pane-border-format}"]);
