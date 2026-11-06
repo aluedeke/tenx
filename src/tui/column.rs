@@ -3645,7 +3645,7 @@ fn row_glyph_rgb(row: &Row, frame: usize) -> (&'static str, &'static palette::Rg
     if !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty() {
         ("🔒", &palette::ACCENT)
     } else {
-        (row.status.glyph(), palette::task_status_color(row.status, row.background))
+        (tenx_core::status::task_glyph(row.status, row.background), palette::status_color(row.status))
     }
 }
 
