@@ -49,7 +49,7 @@ User-level state lives under `~/.config/tenx/`: a global `config.toml`, the gene
 
 tenx runs its own tmux server on a dedicated socket (`tmux -L tenx`) against a config it generates. Your `~/.tmux.conf` is never read. The config carries the theme, hides the window list in favour of per-window `@tenx_status` options and turns on `monitor-bell`. It binds no keys: the task list is the client's column, outside tmux.
 
-Windows are tasks. `open_task_window` builds the default layout with `new-window` and `split-window`, or runs the workspace's layout script with the task's paths in the environment. `ensure_session` starts the server detached with window 0, `home`, as a plain shell — never a task window, so the session always has one.
+Windows are tasks. `open_task_window` builds the default layout — the agent alone, with a shell and nvim (on `TASK.md`) as tabs — or the split one with `split-window`, or runs the workspace's layout script with the task's paths in the environment. Tabs (`tmux/tabs.rs`, rules in `tenx_core::tabs`): a tab that isn't shown waits in a window of the detached session `tenx-tabs`, and showing it is `swap-pane`, so a task keeps its one window; the pane listings that must see all of a task's processes read both sessions. The strip is tmux's `pane-border-format` on the pane's top line; Alt+1/2/3 run `tenx internal tab`, and since tmux sends a click there to no binding, the client matches a click on its task screen's top line against the strip (`tenx_core::tabs::tab_at`). `ensure_session` starts the server detached with window 0, `home`, as a plain shell — never a task window, so the session always has one.
 
 tmux reads its config once at server start. After changing the generated config, kill the server and run `tenx` again.
 
@@ -147,4 +147,4 @@ Driving a task from outside is three commands in `cli::drive`. `task send` paste
 
 ## Testing
 
-Unit tests live in `tenx-core` next to the logic they cover, plus a few in the binary for parsing and platform detection. `tests/e2e_tmux.rs` drives a throwaway tmux server on its own socket to exercise task creation, the three-pane window layout, open and list end to end, and `tenx web` over a real WebSocket. CI runs all of it on macOS and Ubuntu with clippy at `-D warnings`.
+Unit tests live in `tenx-core` next to the logic they cover, plus a few in the binary for parsing and platform detection. `tests/e2e_tmux.rs` drives a throwaway tmux server on its own socket to exercise task creation, both window layouts and the tabs, open and list end to end, and `tenx web` over a real WebSocket. CI runs all of it on macOS and Ubuntu with clippy at `-D warnings`.

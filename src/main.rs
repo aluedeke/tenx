@@ -123,6 +123,8 @@ fn run() -> Result<()> {
             }
             InternalCommands::SessionEvent { agent, pid } => cli::session_event::run(&agent, pid),
             InternalCommands::RespawnAgent { plan } => cli::restart::respawn_from_json(&plan)?,
+            InternalCommands::Tab { tab, window } => tmux::tab_command(&tab, &window),
+            InternalCommands::TabEnded { pane } => tmux::tab_ended(&pane),
             InternalCommands::TmuxRebuild { snapshot } => cli::tmuxrestart::rebuild(&snapshot)?,
             InternalCommands::OpenAgent { pid, label, agent_type, nth, peers } => {
                 cli::agentview::run(pid, label.as_deref(), agent_type.as_deref(), nth, peers)?

@@ -578,7 +578,8 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
     // predate trust seeding get it here on reopen; the agent (workspace default
     // or the task's `.tenx-agent`) decides the launch command.
     trust_task_dir(&task.path);
-    let layout = ws.config.layout.as_str();
+    let global_layout = crate::workspace::load_global().map(|g| g.layout).unwrap_or_default();
+    let layout = tenx_core::tabs::layout(&ws.config.layout, &global_layout);
     let agent = crate::agent::agent_for(ws, &task.path);
     agent.prepare(&task.path);
     // A first message left by `--prompt`/`tenx ask`/`task send` rides in on
@@ -592,7 +593,7 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
         title: &task.display_name,
         task_dir: &task.path.to_string_lossy(),
         workspace_dir: &ws.dir.to_string_lossy(),
-        layout_script: if layout.is_empty() { None } else { Some(layout) },
+        layout: &layout,
         agent: agent.as_str(),
         agent_cmd: &agent_cmd,
         detached,

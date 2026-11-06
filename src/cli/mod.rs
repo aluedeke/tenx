@@ -202,6 +202,20 @@ pub enum InternalCommands {
     RespawnAgent {
         plan: String,
     },
+    /// Show a tab of a tabbed task window (`tenx_core::tabs`) — what
+    /// Alt+1/2/3 and a click on the tab strip run.
+    Tab {
+        /// `agent`, `shell`, `nvim`, or its number.
+        tab: String,
+        /// The task window (`@12`).
+        #[arg(long)]
+        window: String,
+    },
+    /// A shell or nvim tab's program ended: show the agent again. The tab's
+    /// own command runs it last.
+    TabEnded {
+        pane: String,
+    },
     /// Stop the tmux server and rebuild it from a `tenx tmux restart`
     /// snapshot (a JSON file). Runs detached, since it kills the server the
     /// restart was asked from.

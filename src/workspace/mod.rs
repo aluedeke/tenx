@@ -37,6 +37,10 @@ pub struct GlobalConfig {
     /// automatic (`tenx_core::column::width`).
     #[serde(default, alias = "sidebar_width")]
     pub column_width: u16,
+    /// How task windows are laid out when a workspace doesn't say:
+    /// `tabs` (empty) or `split`; see `WorkspaceConfig::layout`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub layout: String,
     /// Per-agent launch overrides, keyed by agent token (`claude`/`codex`/`pi`).
     /// A workspace's `[agents.<kind>]` overrides the same key here.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -148,8 +152,10 @@ pub struct WorkspaceConfig {
     /// an orchestrator). See [`Workspace::is_adhoc`].
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub kind: String,
-    /// Executable run to lay out a new task window (see `tmux::TaskWindow`);
-    /// empty = the built-in claude/nvim/shell layout.
+    /// How a new task window is laid out (`tenx_core::tabs::layout`):
+    /// `tabs` (the agent, with a shell and `TASK.md` as tabs), `split` (the
+    /// agent beside nvim and a shell), or an executable that lays it out
+    /// (see `tmux::TaskWindow`). Empty = the global `layout`, else `tabs`.
     #[serde(default)]
     pub layout: String,
     /// Default coding agent for this workspace's tasks (`claude`, `codex`,
@@ -451,10 +457,14 @@ pub fn load(dir: &Path) -> Result<Workspace> {
     Ok(Workspace { dir: dir.to_path_buf(), config })
 }
 
-/// Whether `layout` can serve as a task-window layout script: an existing,
-/// executable file, and not a zellij `.kdl` layout left over from v1.
+/// Whether `layout` can lay out a task window: one of the built-in layouts
+/// (`tabs`, `split`), or a script — an existing, executable file, and not a
+/// zellij `.kdl` layout left over from v1.
 pub fn check_layout(layout: &str) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
+    if !matches!(tenx_core::tabs::layout(layout, ""), tenx_core::tabs::Layout::Script(_)) {
+        return Ok(());
+    }
     let path = PathBuf::from(expand_home(layout));
     if layout.ends_with(".kdl") {
         bail!("{layout} is a zellij layout; tmux layouts are executables (see `tmux::TaskWindow`)");
@@ -847,6 +857,11 @@ mod tests {
         // Already current with no layout: nothing to do, no rewrite.
         let mut c = WorkspaceConfig { schema_version: CURRENT_SCHEMA, ..Default::default() };
         assert!(!migrate_config(&mut c, "ws"));
+
+        // The built-in layouts by name survive.
+        let mut c = WorkspaceConfig { schema_version: CURRENT_SCHEMA, layout: "split".into(), ..Default::default() };
+        assert!(!migrate_config(&mut c, "ws"));
+        assert_eq!(c.layout, "split");
 
         // An executable layout survives.
         let mut c = WorkspaceConfig { schema_version: CURRENT_SCHEMA, layout: "/bin/sh".into(), ..Default::default() };

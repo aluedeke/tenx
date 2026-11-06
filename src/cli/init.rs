@@ -446,10 +446,11 @@ fn prompt_repos() -> Result<Vec<crate::workspace::RepoConfig>> {
 }
 
 fn prompt_layout() -> Result<String> {
-    eprintln!("Layout script for task windows (optional, enter for the built-in claude/nvim/shell layout).");
-    eprintln!("It runs with TENX_WINDOW, TENX_SLUG, TENX_TASK_DIR, TENX_CLAUDE_CMD and TENX_TMUX set:");
+    eprintln!("Task window layout (enter for tabs: the agent, with a shell and TASK.md as tabs).");
+    eprintln!("`split` puts the agent beside nvim and a shell; a script path runs with TENX_WINDOW,");
+    eprintln!("TENX_SLUG, TENX_TASK_DIR, TENX_CLAUDE_CMD and TENX_TMUX set:");
     loop {
-        let input = prompt("  Layout script path")?;
+        let input = prompt("  Layout (tabs, split or a script path)")?;
         if input.is_empty() {
             return Ok(input);
         }

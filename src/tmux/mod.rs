@@ -27,6 +27,10 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::palette;
+use tenx_core::tabs::Layout;
+
+mod tabs;
+pub use tabs::{close_orphans, mark_tabbed, show_agents, tab_command, tab_ended, TABS_SESSION};
 
 /// The dedicated server socket name. Every tenx invocation passes `-L <socket>`.
 /// `TENX_TMUX_SOCKET` overrides it so tests (and a second, throwaway server)
@@ -42,7 +46,7 @@ pub fn socket() -> String {
 /// watcher's children) stays on the same server. Lets
 /// a build be tried side by side with an installed one: same workspaces,
 /// separate server, config and watcher.
-fn tenx_cmd(tenx_bin: &str) -> String {
+pub(crate) fn tenx_cmd(tenx_bin: &str) -> String {
     let sock = socket();
     if sock == SOCKET {
         shell_quote(tenx_bin)
@@ -402,12 +406,33 @@ set -g window-status-separator ""
 # Left: this window's task + status (pushed by `tenx watch`), else its name.
 set -g status-left-length 80
 set -g status-left " #{{?#{{@tenx_status}},#{{E:@tenx_status}},#[fg={accent}]#W}} #[default]"
+
+# A tabbed task window's tab strip (tenx_core::tabs) is the top line of its
+# pane: `mark_tabbed` turns that line on per window. Elsewhere tmux's own.
+set -g pane-border-format "{strip}"
 # Right: what else is waiting on you, pushed by `tenx watch`.
 set -g status-right-length 100
 set -g status-right "#{{E:@tenx_right}} "
 
+# Tabs: Alt+1/2/3 (and Ctrl+1/2/3) switch a tabbed task window's tab; anywhere else the key
+# goes through to the program. tmux sends a click on the strip to no binding:
+# the `tenx` client matches it against the line it shows.
+bind -n M-1 if -F "#{{@tenx_tab}}" {{ run-shell -b "{tenx} internal tab 1 --window #{{window_id}}" }} {{ send-keys M-1 }}
+bind -n M-2 if -F "#{{@tenx_tab}}" {{ run-shell -b "{tenx} internal tab 2 --window #{{window_id}}" }} {{ send-keys M-2 }}
+bind -n M-3 if -F "#{{@tenx_tab}}" {{ run-shell -b "{tenx} internal tab 3 --window #{{window_id}}" }} {{ send-keys M-3 }}
+# Ctrl+1/2/3 too, from a terminal that sends them (extended keys); the
+# `tenx` client and the web page send the Alt key for them.
+bind -n C-1 if -F "#{{@tenx_tab}}" {{ run-shell -b "{tenx} internal tab 1 --window #{{window_id}}" }} {{ send-keys C-1 }}
+bind -n C-2 if -F "#{{@tenx_tab}}" {{ run-shell -b "{tenx} internal tab 2 --window #{{window_id}}" }} {{ send-keys C-2 }}
+bind -n C-3 if -F "#{{@tenx_tab}}" {{ run-shell -b "{tenx} internal tab 3 --window #{{window_id}}" }} {{ send-keys C-3 }}
+# Hooks an earlier build of the tabs set; tabs need none now.
+set-hook -gu pane-died
+set-hook -gu pane-exited
+
 "##,
         socket = socket(),
+        strip = tenx_core::tabs::strip_format(&palette::GROUND.hex(), &palette::ACCENT.hex(), &palette::MUTED.hex()),
+        tenx = tenx_cmd(&self_bin().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "tenx".into())),
         version = env!("CARGO_PKG_VERSION"),
         ground = palette::GROUND.hex(),
         text = palette::TEXT.hex(),
@@ -590,15 +615,29 @@ pub fn list_windows_in(session: &str) -> Result<Vec<Window>> {
     Ok(text.lines().filter_map(parse_window).collect())
 }
 
-/// Every pane in the session as (window name, pane pid) — the process roots
-/// `live::ports_by_window` walks. Empty when the server is down.
+/// `format` for every pane of the session and of the waiting tabs
+/// (`TABS_SESSION`), one line each — a task's panes, wherever its tabs are.
+/// Not `-a` as is: a `tenx web` tab's grouped session lists the same panes again.
+fn task_panes(format: &str) -> Result<Vec<String>> {
+    let text = run(&["list-panes", "-a", "-F", &format!("#{{session_name}}\t{format}")])?;
+    Ok(text
+        .lines()
+        .filter_map(|l| {
+            let (session, rest) = l.split_once('\t')?;
+            (session == SESSION || session == TABS_SESSION).then(|| rest.to_string())
+        })
+        .collect())
+}
+
+/// Every pane of the tasks as (window name, pane pid) — the process roots
+/// `live::ports_by_window` walks. A waiting tab's window has its task's name.
+/// Empty when the server is down.
 pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
     if !server_running() {
         return Ok(vec![]);
     }
-    let text = run(&["list-panes", "-s", "-t", SESSION, "-F", "#{window_name}\t#{pane_pid}"])?;
-    Ok(text
-        .lines()
+    Ok(task_panes("#{window_name}\t#{pane_pid}")?
+        .iter()
         .filter_map(|l| {
             let (w, p) = l.split_once('\t')?;
             Some((w.to_string(), p.trim().parse().ok()?))
@@ -606,17 +645,16 @@ pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
         .collect())
 }
 
-/// Every pane in the session mapped to the task its window was opened for
-/// (`TASK_DIR_OPTION`), keyed by pane id (`%40`). Panes of untagged windows
-/// are left out. Empty when the server is down.
+/// Every pane of the tasks (waiting tabs too) mapped to the task its window
+/// was opened for (`TASK_DIR_OPTION`), keyed by pane id (`%40`). Panes of
+/// untagged windows are left out. Empty when the server is down.
 pub fn pane_task_dirs() -> Result<HashMap<String, PathBuf>> {
     if !server_running() {
         return Ok(HashMap::new());
     }
     let format = format!("#{{pane_id}}\t#{{{TASK_DIR_OPTION}}}");
-    let text = run(&["list-panes", "-s", "-t", SESSION, "-F", &format])?;
-    Ok(text
-        .lines()
+    Ok(task_panes(&format)?
+        .iter()
         .filter_map(|l| {
             let (pane, dir) = l.split_once('\t')?;
             (!dir.is_empty()).then(|| (pane.to_string(), PathBuf::from(dir)))
@@ -728,6 +766,8 @@ pub fn select_window_in(session: &str, id: &str) -> Result<()> {
 /// window's active one — the active pane is the window's, so every session
 /// showing it sees that.
 pub fn focus_pane_in(session: &str, pane: &str) -> Result<()> {
+    // A pane in a tab that isn't shown is put on screen first.
+    tabs::reveal(pane);
     let window = run(&["display-message", "-p", "-t", pane, "#{window_id}"])?;
     select_window_in(session, window.trim())?;
     run(&["select-pane", "-t", pane]).map(drop)
@@ -809,7 +849,12 @@ pub fn run_shell_background(command: &str) -> Result<()> {
     run(&["run-shell", "-b", command]).map(drop)
 }
 
+/// Close a task's window, and its tabs that aren't on screen with it.
 pub fn kill_window(id: &str) -> Result<()> {
+    let task_dir = run(&["display-message", "-p", "-t", id, &format!("#{{{TASK_DIR_OPTION}}}")]).ok();
+    // The waiting tabs first: a tab closing its own window
+    // (`tabs::tab_ended`) ends with it.
+    tabs::close_waiting(id, task_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()));
     run(&["kill-window", "-t", id]).map(drop)
 }
 
@@ -996,9 +1041,9 @@ pub struct TaskWindow<'a> {
     pub title: &'a str,
     pub task_dir: &'a str,
     pub workspace_dir: &'a str,
-    /// Executable to run instead of the built-in layout (`config.toml`'s
-    /// `layout`). Gets the window with a plain shell in its first pane.
-    pub layout_script: Option<&'a str>,
+    /// How the window is laid out (`config.toml`'s `layout`). A script gets
+    /// the window with a plain shell in its first pane.
+    pub layout: &'a Layout,
     /// The agent token (`claude`, `codex`, `pi`) — exported as `TENX_AGENT` for
     /// layout scripts.
     pub agent: &'a str,
@@ -1015,8 +1060,9 @@ pub struct TaskWindow<'a> {
     pub detached: bool,
     /// Just the agent, full-window: no nvim on `TASK.md`, no shell. For a
     /// task without worktrees (an adhoc session, a question about a
-    /// workspace) there is no code to edit beside it. Ignored when
-    /// `layout_script` is set — the script decides everything.
+    /// workspace) there is no code to edit beside it. Only for the split
+    /// layout — tabs cost nothing until they are opened, and a script
+    /// decides everything.
     pub agent_only: bool,
 }
 
@@ -1024,29 +1070,37 @@ pub struct TaskWindow<'a> {
 /// The window becomes the session's current one — so a client that's attached
 /// (or about to attach) lands on it — unless `opts.detached`.
 ///
-/// Built-in layout — claude on the left, nvim on `TASK.md` top-right, a shell
-/// bottom-right — mirrors the zellij default. A pane whose command exits
-/// closes (tmux's default), which is what `close_on_exit` did.
+/// The default layout is the agent over the whole window, with a shell and
+/// `TASK.md` as tabs (`tabs`). The split one — claude on the left, nvim on
+/// `TASK.md` top-right, a shell bottom-right — mirrors the zellij default. A
+/// pane whose command exits closes (tmux's default), which is what
+/// `close_on_exit` did.
 pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
     // `tenx:` (trailing colon) targets the session so the new window is
     // appended to it rather than treated as a window name to match.
     let session = format!("{SESSION}:");
-    let first_cmd = if opts.layout_script.is_some() { None } else { Some(opts.agent_cmd) };
-    let mut args = vec!["new-window", "-t", &session, "-n", opts.slug, "-c", opts.task_dir, "-P", "-F", "#{window_id}"];
+    let first_cmd = if matches!(opts.layout, Layout::Script(_)) { None } else { Some(opts.agent_cmd) };
+    let mut args = vec!["new-window", "-t", &session, "-n", opts.slug, "-c", opts.task_dir, "-P", "-F", "#{window_id} #{pane_id}"];
     if opts.detached {
         args.push("-d");
     }
     if let Some(c) = first_cmd {
         args.push(c);
     }
-    let id = run(&args)?.trim().to_string();
-    if id.is_empty() {
+    let out = run(&args)?;
+    let Some((id, pane)) = out.trim().split_once(' ') else {
         bail!("tmux new-window returned no window id");
-    }
+    };
+    let id = id.to_string();
     // Stamp the task on the window before anything can look it up.
     let _ = run(&["set-option", "-w", "-t", &id, TASK_DIR_OPTION, opts.task_dir]);
 
-    if let Some(script) = opts.layout_script {
+    if let Layout::Tabs = opts.layout {
+        // Without its options the window is still a working agent-only one.
+        let _ = mark_tabbed(&id, pane);
+        return Ok(id);
+    }
+    if let Layout::Script(script) = opts.layout {
         let status = Command::new(script)
             .env("TENX_WINDOW", &id)
             .env("TENX_SLUG", opts.slug)

@@ -64,6 +64,9 @@ pub(super) struct Client {
     quit: bool,
     unlock: Unlock,
     views: Views,
+    /// The task screen's top line as last drawn: in a tabbed window the tab
+    /// strip, which a click is matched against (`tenx_core::tabs::tab_at`).
+    top_row: String,
 }
 
 impl Client {
@@ -85,6 +88,7 @@ impl Client {
             quit: false,
             unlock: Unlock::default(),
             views: Views::default(),
+            top_row: String::new(),
         };
         let (r, w) = c.term_size();
         term.resize(r, w);
@@ -262,6 +266,14 @@ impl Client {
             return Ok(());
         }
         match self.focus {
+            // Ctrl+1/2/3: a tabbed task window's tab. Most terminals send no
+            // such key, so tmux can't bind it; the same tab's Alt key can.
+            Focus::Terminal
+                if key.modifiers == KeyModifiers::CONTROL
+                    && let KeyCode::Char(c @ '1'..='3') = key.code =>
+            {
+                self.term.write(&[0x1b, c as u8]);
+            }
             Focus::Terminal => {
                 if let Some(bytes) = self.term.key_bytes(&key) {
                     self.term.write(&bytes);
@@ -300,6 +312,20 @@ impl Client {
         if super::mouse::hit(term, m.column, m.row) {
             if click {
                 self.focus_terminal();
+            }
+            // tmux sends a click on the tab strip to no binding: switch here.
+            if matches!(m.kind, event::MouseEventKind::Down(event::MouseButton::Left))
+                && m.row == term.y
+                && let Some(tab) = tenx_core::tabs::tab_at(&self.top_row, (m.column - term.x) as usize)
+            {
+                let session = self.column.session().to_string();
+                std::thread::spawn(move || {
+                    if let Some(window) = crate::tmux::current_window_id_in(&session) {
+                        crate::tmux::tab_command(tab.name(), &window);
+                    }
+                });
+                self.trace(&format!("click on the {} tab", tab.name()));
+                return Ok(());
             }
             if let Some(bytes) = self.term.mouse_bytes(&m, m.column - term.x, m.row - term.y) {
                 self.term.write(&bytes);
@@ -343,6 +369,8 @@ impl Client {
             }
             None => self.term.render(term, f.buffer_mut()),
         };
+        let buf = f.buffer_mut();
+        self.top_row = (term.x..term.right()).map(|x| buf[(x, term.y)].symbol().chars().next().unwrap_or(' ')).collect();
         if let Some(c) = column {
             // The column paints its ground but keeps whatever symbols are
             // there; on a narrow client it covers the terminal, so wipe first.

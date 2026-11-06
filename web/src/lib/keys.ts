@@ -54,6 +54,14 @@ export function isSpeakerToggle(ev: KeyboardEvent): boolean {
   return ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && ev.code === 'Period';
 }
 
+/** Ctrl+1/2/3: the tab (1-based) of a tabbed task window, by the physical
+ * key. The page sends the tab's Alt key, which tmux binds (lib/tabclick). */
+export function tabKey(ev: KeyboardEvent): number | null {
+  if (!ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return null;
+  const m = /^Digit([1-3])$/.exec(ev.code);
+  return m ? Number(m[1]) : null;
+}
+
 /** Ctrl+V, the key Claude Code pastes an image with. It reads the clipboard
  * of the machine it runs on — not the one of a browser on another device,
  * where the image is. By the physical key, like the others. */
