@@ -87,6 +87,10 @@ pub struct Record {
     /// extension does) — its label if it is another session's subagent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
+    /// Set while `busy` only because the turn is over and background work
+    /// will wake the session (`tenx_core::status::Background`'s token).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
 }
 
 /// Directory holding tenx's session records.
@@ -212,6 +216,7 @@ pub fn sessions() -> Vec<Session> {
             permission_mode: raw.permission_mode,
             subagents: tenx_core::subagent::visible(&read_subagents(pid), SystemTime::now()),
             label: raw.prompt,
+            background: raw.background.as_deref().map(tenx_core::status::Background::from_token),
         });
     }
     if out.is_empty() {
@@ -219,6 +224,10 @@ pub fn sessions() -> Vec<Session> {
     }
     let scope = pane_scope();
     let mut out = fold_parked(in_panes(out, &scope.pane_pids, &scope.tree));
+    // A pause on background commands with none of them left running ends
+    // here (`tenx_core::status::settle_background`). One `ps` per such
+    // session, only while one is paused.
+    tenx_core::status::settle_background(&mut out, &|pid| runs_agent_shell(pid, &scope.tree));
     // The window a session runs in names its task; its cwd wanders.
     for s in &mut out {
         s.task_dir = s.pane.as_ref().and_then(|p| scope.task_dirs.get(p).cloned());
@@ -423,6 +432,21 @@ fn pane_scope() -> PaneScope {
     let scope = PaneScope { pane_pids, tree, task_dirs };
     *cache = Some((Instant::now(), scope.clone()));
     scope
+}
+
+/// Whether agent `pid` runs a command of its own: a child process shaped like
+/// Claude Code's shell (`tenx_core::status::is_agent_shell`). A failed `ps`
+/// says yes, so a pause is never ended on a guess.
+fn runs_agent_shell(pid: u32, tree: &[(u32, u32)]) -> bool {
+    let children: Vec<String> = tree.iter().filter(|(_, ppid)| *ppid == pid).map(|(p, _)| p.to_string()).collect();
+    if children.is_empty() {
+        return false;
+    }
+    let Ok(out) = std::process::Command::new("ps").args(["-ww", "-o", "command=", "-p", &children.join(",")]).output() else {
+        return true;
+    };
+    // `ps` exits 1 when a listed pid has gone since the tree was read.
+    String::from_utf8_lossy(&out.stdout).lines().any(tenx_core::status::is_agent_shell)
 }
 
 const SCOPE_TTL: Duration = Duration::from_secs(2);

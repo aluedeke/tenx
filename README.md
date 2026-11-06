@@ -33,7 +33,7 @@ A task's state is derived live, never recorded:
 |---|---|
 | Blocked | Claude is waiting on a prompt or permission. You get a desktop notification. |
 | Signaled | Something in the window rang the terminal bell (`printf '\a'`). |
-| Working | Claude is mid-turn. |
+| Working | Claude is mid-turn. In teal: the turn is over, but Claude waits on a background script it started and carries on when the script ends. |
 | Done | Claude finished its turn and nothing has happened since. |
 | Idle | No live Claude session in the task. |
 

@@ -42,6 +42,60 @@ impl SessionStatus {
     }
 }
 
+/// What a `busy` session waits on when its turn is over and background work
+/// will wake it (`crate::session_event::claude_stop_background`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Background {
+    /// Commands only (shells, command monitors): each runs as a child
+    /// process of the agent, so [`settle_background`] can tell when none is
+    /// left.
+    Processes,
+    /// Something with no process to look for (a workflow, a WebSocket
+    /// monitor): only the next hook ends the pause.
+    Other,
+}
+
+impl Background {
+    /// The record's `background` field.
+    pub fn token(self) -> &'static str {
+        match self {
+            Background::Processes => "process",
+            Background::Other => "other",
+        }
+    }
+
+    pub fn from_token(token: &str) -> Background {
+        match token {
+            "process" => Background::Processes,
+            _ => Background::Other,
+        }
+    }
+}
+
+/// Whether a command line is a command Claude Code runs for the session — a
+/// `Bash` call or a command monitor. Both run as `<shell> -c source
+/// ~/.claude/shell-snapshots/… && eval '<command>'`, a child of the agent; its
+/// MCP servers and language servers are children too, so the shape is what
+/// tells them apart. Measured on Claude Code 2.1.
+pub fn is_agent_shell(command: &str) -> bool {
+    command.contains("/.claude/shell-snapshots/")
+}
+
+/// End the pauses nothing will end: a session left `busy` by a `Stop` that
+/// waited on commands ([`Background::Processes`]) whose agent no longer runs
+/// any (`has_shell`, by pid — [`is_agent_shell`] over its child processes)
+/// is quiet. A command that ends wakes the session, which then reports a new
+/// turn; when none runs and no turn came, the `Stop` listed something that
+/// had already finished.
+pub fn settle_background(sessions: &mut [Session], has_shell: &dyn Fn(u32) -> bool) {
+    for s in sessions {
+        if s.status == SessionStatus::Busy && s.background == Some(Background::Processes) && !has_shell(s.pid) {
+            s.status = SessionStatus::Idle;
+            s.background = None;
+        }
+    }
+}
+
 /// One live Claude Code session.
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -96,6 +150,9 @@ pub struct Session {
     /// it (pi's extension does). The label it gets when it turns out to be
     /// another session's subagent ([`nest_child_sessions`]).
     pub label: Option<String>,
+    /// Set while `busy` only because the turn is over and background work
+    /// will wake the session ([`Background`]); `None` during a turn.
+    pub background: Option<Background>,
 }
 
 /// Turn every session that runs *under* another session's process into that
@@ -499,6 +556,10 @@ pub struct TaskState {
     /// task's child items. `TaskState::subagents[i].session_pid` names the
     /// session it belongs to.
     pub subagents: Vec<Subagent>,
+    /// `Working` only on background work: every busy session's turn is over
+    /// and waits on a background script ([`Session::background`]), and no
+    /// subagent runs. Drawn as the working glyph in a colour of its own.
+    pub background: bool,
 }
 
 /// Resolve a task's state from the session list plus the window's signal.
@@ -513,7 +574,9 @@ pub struct TaskState {
 ///   mid-turn in the pane next to it.
 /// - else any session `busy` or subagent running → `Working`. A background
 ///   subagent keeps its task working after its session's turn has ended: the
-///   session will pick up again when it reports back.
+///   session will pick up again when it reports back. A session whose turn
+///   is over but waits on a background script ([`Session::background`])
+///   counts only after both, as `Working` with `background` set.
 /// - else a session exists and is quiet → `Done`: the turn is over and it's
 ///   your move; `changed` is the latest busy→idle transition.
 /// - no live session at all → `Idle`. This is the line that matters: `Done`
@@ -542,6 +605,7 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
         agents,
         pane,
         subagents: subagents.clone(),
+        background: false,
     };
     if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Waiting) {
         return state(TaskStatus::Blocked, s.status_updated_at, s.waiting_for.clone(), s.pane.clone().or(pane));
@@ -559,11 +623,14 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
         // tmux records that a bell rang, not when; the age column stays blank.
         return state(TaskStatus::Signaled, None, Some("bell".to_string()), pane);
     }
-    if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Busy) {
+    if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Busy && s.background.is_none()) {
         return state(TaskStatus::Working, s.status_updated_at, None, pane);
     }
     if let Some(a) = subagents.iter().find(|a| a.status == SubagentStatus::Running) {
         return state(TaskStatus::Working, a.updated_at, None, pane);
+    }
+    if let Some(s) = live.iter().find(|s| s.status == SessionStatus::Busy) {
+        return TaskState { background: true, ..state(TaskStatus::Working, s.status_updated_at, None, pane) };
     }
     if live.is_empty() {
         return TaskState {
@@ -574,6 +641,7 @@ pub fn resolve_task_state(task_dir: &Path, sessions: &[Session], signal: Signal)
             agents: 0,
             pane: None,
             subagents: vec![],
+            background: false,
         };
     }
     let quiet_since = live.iter().filter_map(|s| s.status_updated_at).max();
@@ -606,6 +674,7 @@ mod tests {
             permission_mode: None,
             subagents: vec![],
             label: None,
+            background: None,
         }
     }
 
@@ -868,6 +937,67 @@ mod tests {
         let plain = session(TASK, SessionStatus::Idle, "interactive", 1);
         let st = resolve_task_state(Path::new(TASK), &fold_parked(vec![plain, agent]), QUIET);
         assert_eq!((st.status, st.sessions, st.agents), (TaskStatus::Working, 2, 1));
+    }
+
+    #[test]
+    fn a_turn_waiting_on_a_script_is_working_in_the_background() {
+        let mut paused = session(TASK, SessionStatus::Busy, "interactive", 10);
+        paused.background = Some(Background::Processes);
+        let st = resolve_task_state(Path::new(TASK), &[paused.clone()], QUIET);
+        assert_eq!((st.status, st.background, st.changed), (TaskStatus::Working, true, Some(at(10))));
+        // A turn in flight anywhere in the task is plain work.
+        let mut bg = session(TASK, SessionStatus::Busy, "bg", 20);
+        bg.pid = 2;
+        let st = resolve_task_state(Path::new(TASK), &[paused.clone(), bg], QUIET);
+        assert_eq!((st.status, st.background), (TaskStatus::Working, false));
+        // So is a running subagent.
+        let mut with_sub = paused.clone();
+        with_sub.subagents = vec![subagent("a1", 1, SubagentStatus::Running, 30)];
+        let st = resolve_task_state(Path::new(TASK), &[with_sub], QUIET);
+        assert_eq!((st.status, st.background), (TaskStatus::Working, false));
+    }
+
+    #[test]
+    fn a_pause_on_commands_ends_when_no_command_runs() {
+        let paused = |pid: u32, background| {
+            let mut s = session(TASK, SessionStatus::Busy, "interactive", 10);
+            s.pid = pid;
+            s.background = background;
+            s
+        };
+        let mut s = vec![
+            paused(1, Some(Background::Processes)),
+            paused(2, Some(Background::Processes)),
+            paused(3, Some(Background::Other)),
+            paused(4, None),
+        ];
+        settle_background(&mut s, &|pid| pid == 2);
+        let got: Vec<(SessionStatus, Option<Background>)> = s.iter().map(|s| (s.status, s.background)).collect();
+        assert_eq!(
+            got,
+            vec![
+                // Stale: Claude Code listed a script that had already reported back.
+                (SessionStatus::Idle, None),
+                (SessionStatus::Busy, Some(Background::Processes)),
+                // No process to look for: trusted until the next hook.
+                (SessionStatus::Busy, Some(Background::Other)),
+                // A turn in flight is never touched.
+                (SessionStatus::Busy, None),
+            ]
+        );
+        assert_eq!(resolve_task_state(Path::new(TASK), &s[..1], QUIET).status, TaskStatus::Done);
+    }
+
+    #[test]
+    fn agent_shells_are_told_apart_from_its_servers() {
+        assert!(is_agent_shell(
+            "/bin/zsh -c source /Users/me/.claude/shell-snapshots/snapshot-zsh-1793880060143-k6zvk2.sh 2>/dev/null || true && eval 'gh pr checks 272 --watch'"
+        ));
+        assert!(!is_agent_shell("node /Users/me/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp"));
+        assert!(!is_agent_shell("caffeinate -i -t 300"));
+        for b in [Background::Processes, Background::Other] {
+            assert_eq!(Background::from_token(b.token()), b);
+        }
     }
 
     #[test]

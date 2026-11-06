@@ -2109,6 +2109,7 @@ impl Column {
                 group: TaskStatus::Working,
                 changed: Some(now),
                 waiting_for: None,
+                background: false,
                 activity: now,
                 window_id: Some("@new".into()),
                 pane: None,
@@ -2289,6 +2290,7 @@ impl Column {
             group: TaskStatus::Working,
             changed: Some(now),
             waiting_for: None,
+            background: false,
             activity: now,
             window_id: None,
             pane: None,
@@ -3643,7 +3645,7 @@ fn row_glyph_rgb(row: &Row, frame: usize) -> (&'static str, &'static palette::Rg
     if !row.secrets_pending.is_empty() || !row.secrets_pending_set.is_empty() {
         ("🔒", &palette::ACCENT)
     } else {
-        (row.status.glyph(), palette::status_color(row.status))
+        (row.status.glyph(), palette::task_status_color(row.status, row.background))
     }
 }
 
