@@ -31,9 +31,10 @@ pub fn mark_tabbed(window: &str, agent_pane: &str) -> Result<()> {
     // and a background agent's log. tmux 3.4 doesn't know `spaces`, and then
     // draws the line; a separate command, so the rest is set anyway.
     let _ = run(&["set-option", "-w", "-t", window, "pane-border-lines", "spaces"]);
-    // A line between the strip and the tab under it: the strip's whole row
-    // underlined, in the border's colour.
-    let line = format!("fg={c},underscore,us={c}", c = crate::palette::BORDER_ACTIVE.hex());
+    // The strip on a bar of its own colour, which sets it off from the tab
+    // under it. A line under it was tried: a terminal draws an underline
+    // through the bottom of the letters.
+    let line = format!("fg={},bg={}", crate::palette::MUTED.hex(), crate::palette::SEL_BG.hex());
     let _ = run(&[
         "set-option", "-w", "-t", window, "pane-border-style", &line, ";",
         "set-option", "-w", "-t", window, "pane-active-border-style", &line,
