@@ -5,6 +5,19 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.25.0] - 2026-11-06
+
+### Added
+
+- **tmux:** Open task windows with tabs: the agent, a shell and nvim
+- **column:** Open the new-task form with Ctrl+n from the task screen
+
+### Fixed
+
+- **task:** Find a task created with `--ws-dir .` in the task list
+
+[0.25.0]: https://github.com/aluedeke/tenx/compare/v0.24.3...v0.25.0
+
 ## [0.24.3] - 2026-11-06
 
 ### Fixed
