@@ -533,6 +533,13 @@ impl TaskStatus {
     }
 }
 
+/// A task row's glyph: [`TaskStatus::glyph`], except a task working only on a
+/// background script (`TaskState::background`) — an hourglass, in the working
+/// colour: the shape tells it from a turn in flight, no second blue needed.
+pub fn task_glyph(status: TaskStatus, background: bool) -> &'static str {
+    if background && status == TaskStatus::Working { "⧗" } else { status.glyph() }
+}
+
 /// A task's resolved activity state.
 #[derive(Debug, Clone)]
 pub struct TaskState {
@@ -986,6 +993,14 @@ mod tests {
             ]
         );
         assert_eq!(resolve_task_state(Path::new(TASK), &s[..1], QUIET).status, TaskStatus::Done);
+    }
+
+    #[test]
+    fn a_script_wait_has_a_glyph_of_its_own() {
+        assert_eq!(task_glyph(TaskStatus::Working, true), "⧗");
+        assert_eq!(task_glyph(TaskStatus::Working, false), TaskStatus::Working.glyph());
+        // Only working can be on background work.
+        assert_eq!(task_glyph(TaskStatus::Done, true), TaskStatus::Done.glyph());
     }
 
     #[test]
