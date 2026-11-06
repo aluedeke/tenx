@@ -231,6 +231,28 @@ test('the bell turns notifications on; an iPhone outside the Home Screen is told
   await expect(phone.getByTestId('push-hint')).toContainText('Add to Home Screen');
   await expect(phone.getByTestId('push')).toHaveAttribute('data-state', 'needs-install');
   await ios.close();
+
+  // Inside the tenx iOS app (a WKWebView with its `tenx` message handler):
+  // nothing to install and no Web Push, so neither the hint nor the switch.
+  const app = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  await app.addInitScript(() => {
+    // @ts-expect-error — a WKWebView has none.
+    delete window.PushManager;
+    Object.assign(window, { webkit: { messageHandlers: { tenx: { postMessage() {} } } } });
+  });
+  const inApp = await app.newPage();
+  await inApp.goto('/');
+  await inApp.getByTestId('toggle').tap();
+  await inApp.getByTestId('hmore').tap();
+  await expect(inApp.getByTestId('hmenu')).toBeVisible();
+  await expect(inApp.getByTestId('push')).toHaveCount(0);
+  await expect(inApp.getByTestId('push-hint')).toHaveCount(0);
+  await app.close();
 });
 
 test('the manifest and service worker make it installable', async ({ request }) => {

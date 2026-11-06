@@ -65,6 +65,7 @@ const MIC_TITLE: Record<MicState, string> = {
 const PUSH_TITLE: Record<PushState, string> = {
   unsupported: 'notifications need HTTPS (tailscale serve) and a browser with Web Push',
   'needs-install': 'on iPhone and iPad: Share → Add to Home Screen, then enable here',
+  app: '',
   off: 'notify me when a task needs me',
   on: 'notifications on — click to turn off',
   denied: 'notifications are blocked in this browser’s settings',
@@ -298,24 +299,26 @@ export function Header(props: Props) {
         <div className="popup-layer" data-popup="menu">
           <div className="backdrop" onPointerDown={() => setMenu(false)} />
           <div className="hmenu" data-testid="hmenu" role="menu" style={{ right: menuAt }}>
-            <button
-              type="button"
-              role="menuitemcheckbox"
-              aria-checked={push === 'on'}
-              className="hmi"
-              data-testid="push"
-              data-state={push}
-              title={PUSH_TITLE[push]}
-              disabled={push === 'unsupported' || push === 'denied' || push === 'needs-install'}
-              onClick={props.onPushToggle}
-            >
-              <Icon d={BELL} />
-              <span className="hmlabel">
-                notifications
-                {push !== 'on' && push !== 'off' && <span className="hmwhy">{PUSH_TITLE[push]}</span>}
-              </span>
-              <span className={push === 'on' ? 'switch on' : 'switch'} />
-            </button>
+            {push !== 'app' && ( // the tenx iOS app: no Web Push to offer
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={push === 'on'}
+                className="hmi"
+                data-testid="push"
+                data-state={push}
+                title={PUSH_TITLE[push]}
+                disabled={push === 'unsupported' || push === 'denied' || push === 'needs-install'}
+                onClick={props.onPushToggle}
+              >
+                <Icon d={BELL} />
+                <span className="hmlabel">
+                  notifications
+                  {push !== 'on' && push !== 'off' && <span className="hmwhy">{PUSH_TITLE[push]}</span>}
+                </span>
+                <span className={push === 'on' ? 'switch on' : 'switch'} />
+              </button>
+            )}
             {push === 'on' && (
               <button type="button" role="menuitem" className="hmi" data-testid="push-test" onClick={run(props.onPushTest)}>
                 <Icon d={['M4 12l16-8-6 16-2-7z']} />
