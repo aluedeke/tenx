@@ -460,7 +460,11 @@ pub(crate) fn resolve_task(ws_dir: Option<&str>, task: &str) -> Result<(crate::w
 pub fn load_ws_arg(arg: &str) -> Result<crate::workspace::Workspace> {
     let path = Path::new(arg);
     if path.join("config.toml").is_file() {
-        return crate::workspace::load(path);
+        // Whole and resolved: the task's paths are stamped on its window and
+        // matched against the registry's, so `.` would make a window no
+        // column finds.
+        let full = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        return crate::workspace::load(&full);
     }
     if let Some(ws) = crate::workspace::registered_workspaces().into_iter().find(|w| w.config.name == arg) {
         return Ok(ws);
