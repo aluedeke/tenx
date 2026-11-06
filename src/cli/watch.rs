@@ -123,6 +123,7 @@ pub fn run() -> Result<()> {
         }
 
         pane_new_agents(&snapshot.agents, &snapshot.windows, &mut paned);
+        crate::tmux::close_orphans();
         confirm_dev_channels(&snapshot.windows);
         let live_changed = refresh_live(&snapshot.live_targets, &mut pr_lookups);
 

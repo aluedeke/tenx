@@ -105,6 +105,19 @@ impl Harness {
         self.root.join("ws").to_string_lossy().into_owned()
     }
 
+    /// The workspace's `layout` (empty = tabs).
+    fn layout(&self, layout: &str) {
+        let path = self.root.join("ws/config.toml");
+        let cfg = fs::read_to_string(&path).unwrap().replace("layout = \"\"", &format!("layout = \"{layout}\""));
+        fs::write(path, cfg).unwrap();
+    }
+
+    /// Show `tab` in `window`, as Alt+1/2/3 does.
+    fn tab(&self, window: &str, tab: &str) {
+        let out = self.tenx().args(["internal", "tab", tab, "--window", window]).output().unwrap();
+        assert!(out.status.success(), "tab {tab}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
     /// A second, throwaway tmux server standing in for the user's terminal:
     /// its one pane runs the client, so keys can be sent and the screen read.
     fn outer(&self) -> String {
@@ -184,7 +197,8 @@ fn task_new_open_and_list_against_real_tmux() {
         return;
     };
 
-    // task new: worktree + TASK.md + a window with the default three panes.
+    // task new: worktree + TASK.md + a window with the agent alone; the shell
+    // and nvim are tabs that start when first shown.
     let out = h.tenx().args(["task", "new", "Smoke Test!", "--ws-dir", &h.ws()]).output().unwrap();
     assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
 
@@ -196,7 +210,7 @@ fn task_new_open_and_list_against_real_tmux() {
     let smoke = windows.lines().find(|l| l.contains(" smoke-test ")).expect("smoke-test window exists");
     let mut f = smoke.split(' ');
     let id = f.next().unwrap();
-    assert_eq!(f.nth(1), Some("3"), "three panes: claude, nvim, shell");
+    assert_eq!(f.nth(1), Some("1"), "the agent alone");
     assert_eq!(f.next(), Some("1"), "new window is the session's current one");
     assert_eq!(fs::read_to_string(task_dir.join(".tenx-window-id")).unwrap().trim(), id);
 
@@ -224,13 +238,28 @@ fn task_new_open_and_list_against_real_tmux() {
     h.tmux_out(&["set-option", "-w", "-t", "tenx:smoke-test", "@tenx_status", "▷ Smoke"]);
     let left = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{T:status-left}"]);
     assert!(left.contains("▷ Smoke"), "status-left: {left}");
+    // The tab strip is the pane's top line, in a task window only.
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{pane-border-status}"]), "top");
+    let line = h.tmux_out(&["show", "-wv", "-t", "tenx:smoke-test", "pane-active-border-style"]);
+    assert!(line.contains("underscore"), "a line under the strip: {line}");
+    let strip = h.tmux_out(&["display", "-p", "-t", "tenx:smoke-test", "#{T:pane-border-format}"]);
+    assert!(strip.contains(" 1 agent ") && strip.contains(" 3 nvim "), "strip: {strip}");
+    let home = h.tmux_out(&["display", "-p", "-t", "tenx:home", "#{pane-border-status} #{T:pane-border-format}"]);
+    assert!(home.starts_with("off") && !home.contains("agent"), "no tabs outside a task: {home}");
+
+    // The shell tab: started on first show, over the whole window.
+    h.tab(id, "shell");
+    let shown = h.tmux_out(&["list-panes", "-t", id, "-F", "#{pane_current_command}"]);
+    assert_eq!(shown.lines().count(), 1, "{shown}");
+    assert!(!shown.contains("sleep"), "the shell is on screen, not the agent: {shown}");
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", id, "#{@tenx_tab}"]), "shell");
 
     // A bell from any pane in the window, while you're elsewhere, reads as
     // "signaled" — the generic attention channel.
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
     h.tmux_out(&["select-window", "-t", "tenx:home"]);
-    h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.2", "printf '\\a'", "Enter"]);
+    h.tmux_out(&["send-keys", "-t", "tenx:smoke-test", "printf '\\a'", "Enter"]);
     let mut status = String::new();
     for _ in 0..20 {
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -249,17 +278,19 @@ fn task_new_open_and_list_against_real_tmux() {
     // port (pane pid → descendants → lsof), when python3 is around to listen.
     if Command::new("python3").arg("--version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success()) {
         let listen = "python3 -c 'import socket,time;s=socket.socket();s.bind((\"127.0.0.1\",0));s.listen();print(\"PORT\",s.getsockname()[1],flush=True);time.sleep(300)'";
-        h.tmux_out(&["send-keys", "-t", "tenx:smoke-test.2", listen, "Enter"]);
+        h.tmux_out(&["send-keys", "-t", "tenx:smoke-test", listen, "Enter"]);
         let mut port = None;
         for _ in 0..50 {
             std::thread::sleep(std::time::Duration::from_millis(100));
-            let screen = h.tmux_out(&["capture-pane", "-p", "-t", "tenx:smoke-test.2"]);
+            let screen = h.tmux_out(&["capture-pane", "-p", "-t", "tenx:smoke-test"]);
             port = screen.lines().find_map(|l| l.strip_prefix("PORT ")).and_then(|p| p.trim().parse::<u16>().ok());
             if port.is_some() {
                 break;
             }
         }
         let port = port.expect("listener printed its port");
+        // Still the task's port while the shell waits behind the agent.
+        h.tab(id, "agent");
         let mut found = false;
         for _ in 0..30 {
             let out = h.tenx().args(["internal", "ports"]).output().unwrap();
@@ -393,6 +424,22 @@ fn client_column_beside_the_embedded_session() {
         assert!(std::time::Instant::now() < deadline, "the link never reached the outer terminal:\n{s}");
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
+
+    // The tab strip is the task screen's top line, and a click on a tab
+    // shows it — tmux would send that click to no binding.
+    let top = h.wait_screen("the tab strip", 3, |s| s.lines().next().is_some_and(|l| l.contains(" 2 shell ")));
+    let first = top.lines().next().unwrap();
+    let x = first[..first.find("2 shell").unwrap()].chars().count() + 1;
+    h.keys(&["-l", &format!("\x1b[<0;{x};1M\x1b[<0;{x};1m")]);
+    let tab = || h.tmux_out(&["display", "-p", "-t", "tenx:two", "#{@tenx_tab}"]);
+    for _ in 0..30 {
+        if tab() == "shell" {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert_eq!(tab(), "shell", "a click on the strip:\n{top}");
+    h.tab(&h.tmux_out(&["display", "-p", "-t", "tenx:two", "#{window_id}"]), "agent");
 
     // A workspace registered while the client runs (what `tenx init` does)
     // is listed without a restart, its tasks included. The column is the
@@ -857,6 +904,8 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         eprintln!("tmux not installed — skipping e2e");
         return;
     };
+    // The phone's zoom is a rule for a window of several panes.
+    h.layout("split");
     let out = h.tenx().args(["task", "new", "Web task", "--ws-dir", &h.ws()]).output().unwrap();
     assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
@@ -1278,6 +1327,7 @@ fn agent_restart_resumes_the_session_in_place() {
         eprintln!("tmux not installed — skipping e2e");
         return;
     };
+    h.layout("split");
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
 
@@ -1388,6 +1438,7 @@ fn tmux_restart_rebuilds_the_session() {
         eprintln!("tmux not installed — skipping e2e");
         return;
     };
+    h.layout("split");
     fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
     let home = h.root.join("home");
@@ -1472,4 +1523,124 @@ fn tmux_restart_rebuilds_the_session() {
     let line = args.lines().nth(1).unwrap_or_default();
     assert!(line.starts_with("--name rb --resume sess-1 --add-dir="), "{args}");
     assert!(line.ends_with("/tasks/rb/origin"), "{args}");
+}
+
+/// The default layout: the agent over the whole window, the shell and
+/// nvim as tabs that wait in a session of their own while hidden.
+#[test]
+fn tabs_swap_over_the_window_and_go_with_it() {
+    let Some(h) = Harness::named("-tabs") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+    // A fake claude that reports in under its own pid, as the restart tests'.
+    let home = h.root.join("home");
+    let transcript = home.join("sess-1.jsonl");
+    fs::write(&transcript, "").unwrap();
+    let script = format!(
+        "#!/bin/sh\nprintf '{{\"hook_event_name\":\"SessionStart\",\"cwd\":\"%s\",\"session_id\":\"sess-1\",\"transcript_path\":\"{tp}\"}}' \"$PWD\" | TENX_TMUX_SOCKET='{sock}' '{tenx}' internal session-event --agent claude --pid $$\nexec sleep 600\n",
+        tp = transcript.display(),
+        tenx = env!("CARGO_BIN_EXE_tenx"),
+        sock = h.socket,
+    );
+    fs::write(h.root.join("bin/claude"), script).unwrap();
+    // What tmux holds, for a failure to say what it saw.
+    let dump = || {
+        let run = |args: &[&str]| h.tmux().args(args).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        let panes = run(&["list-panes", "-a", "-F", "#{session_name} #{window_id} #{pane_id} dead=#{pane_dead} cmd=#{pane_current_command} tab=#{@tenx_tab} of=#{@tenx_tab_of}"]);
+        let opts = run(&["list-windows", "-t", "tenx", "-F", "#{window_id} agent=#{@tenx_tab_agent} shell=#{@tenx_tab_shell} nvim=#{@tenx_tab_nvim}"]);
+        format!("panes:\n{panes}windows:\n{opts}")
+    };
+    let wait = |what: &str, f: &dyn Fn() -> bool| {
+        for _ in 0..100 {
+            if f() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        panic!("timed out waiting for {what}\n{}", dump());
+    };
+    let status = || {
+        let out = h.tenx().args(["task", "list", "--json"]).output().unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+        json["tasks"].as_array().and_then(|ts| ts.iter().find(|t| t["slug"] == "tb").map(|t| t["status"].as_str().unwrap_or_default().to_string()))
+    };
+    let waiting = || h.tmux().args(["list-panes", "-s", "-t", "tenx-tabs", "-F", "#{pane_current_command}"]).output().map(|o| String::from_utf8_lossy(&o.stdout).lines().count()).unwrap_or(0);
+
+    // `--ws-dir .`: the window still carries the task's whole path.
+    let out = h.tenx().args(["task", "new", "Tb", "--ws-dir", "."]).current_dir(h.root.join("ws")).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let id = h.tmux_out(&["display", "-p", "-t", "tenx:tb", "#{window_id}"]);
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", &id, "#{@tenx_task_dir}"]), h.root.join("ws/tasks/tb").to_string_lossy());
+    let agent = h.tmux_out(&["display", "-p", "-t", &id, "#{pane_id}"]);
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", &id, "#{@tenx_tab} #{@tenx_tab_agent}"]), format!("agent {agent}"));
+    wait("the agent to report in", &|| status().as_deref() == Some("done"));
+
+    // nvim, then the shell: one pane on screen, the others waiting.
+    h.tab(&id, "3");
+    h.tab(&id, "shell");
+    assert_eq!(h.tmux_out(&["list-panes", "-t", &id, "-F", "#{pane_id}"]).lines().count(), 1);
+    assert_eq!(waiting(), 2, "the agent and nvim wait");
+    // A hidden agent is still the task's session.
+    assert_eq!(status().as_deref(), Some("done"), "the agent counts while hidden");
+
+    // A phone's tap arrives twice: switches at once still agree with the screen.
+    for _ in 0..3 {
+        for tab in ["nvim", "agent", "shell"] {
+            let a = h.tenx().args(["internal", "tab", tab, "--window", &id]).spawn().unwrap();
+            let b = h.tenx().args(["internal", "tab", tab, "--window", &id]).spawn().unwrap();
+            for mut c in [a, b] {
+                c.wait().unwrap();
+            }
+            let want = h.tmux_out(&["display", "-p", "-t", &id, &format!("#{{@tenx_tab_{tab}}}")]);
+            assert_eq!(h.tmux_out(&["display", "-p", "-t", &id, "#{@tenx_tab} #{pane_id}"]), format!("{tab} {want}"));
+        }
+    }
+    assert_eq!(waiting(), 2, "still the agent and nvim waiting");
+    // The task window keeps following its client's size (a phone's keyboard
+    // shrinks it): no switch fixes it.
+    assert_eq!(h.tmux_out(&["show", "-wv", "-t", &id, "window-size"]), "", "the window's own size setting");
+
+    // `exit` in the shell puts the agent back and drops the shell.
+    h.tmux_out(&["send-keys", "-t", &id, "exit", "Enter"]);
+    wait("the agent back on screen", &|| {
+        h.tmux_out(&["display", "-p", "-t", &id, "#{@tenx_tab} #{pane_id}"]) == format!("agent {agent}") && waiting() == 1
+    });
+
+    // `tenx tmux restart` from the shell tab: the window comes back tabbed,
+    // with the agent on screen.
+    h.tab(&id, "shell");
+    let old_server = h.tmux_out(&["display", "-p", "#{pid}"]);
+    let out = h.tenx().args(["tmux", "restart", "--now"]).output().unwrap();
+    assert!(out.status.success(), "restart: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 agent(s)"), "{}", String::from_utf8_lossy(&out.stdout));
+    let marker = home.join(format!(".config/tenx/tmux-restart-{}.pid", h.socket));
+    wait("the rebuild to finish", &|| {
+        let new_server = h.tmux().args(["display", "-p", "#{pid}"]).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        !marker.exists()
+            && new_server.is_ok_and(|p| !p.is_empty() && p != old_server)
+            && h.tmux().args(["display", "-p", "-t", "tenx:tb", "#{@tenx_tab}"]).output().is_ok_and(|o| o.stdout == b"agent\n")
+    });
+    let id = h.tmux_out(&["display", "-p", "-t", "tenx:tb", "#{window_id}"]);
+    let agent = h.tmux_out(&["display", "-p", "-t", &id, "#{pane_id}"]);
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", &id, "#{window_panes} #{@tenx_tab_agent}"]), format!("1 {agent}"));
+    h.tab(&id, "nvim");
+    h.tab(&id, "agent");
+    assert_eq!(waiting(), 1, "nvim waits");
+
+    // The agent ending closes the window, and the watcher its waiting tabs.
+    let mut watcher = h.tenx().arg("watch").stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let pid = h.tmux_out(&["display", "-p", "-t", &agent, "#{pane_pid}"]);
+    sh(&["kill", &pid]);
+    wait("the waiting tabs to close", &|| waiting() == 0);
+    let _ = watcher.kill();
+    let _ = watcher.wait();
+
+    // A window that isn't tabbed says so, and Alt+1 goes to the program.
+    let out = h.tenx().args(["internal", "tab", "shell", "--window", "@0"]).output().unwrap();
+    assert!(out.status.success());
+    let keys = h.tmux_out(&["list-keys", "-T", "root", "M-1"]);
+    assert!(keys.contains("internal tab 1") && keys.contains("send-keys M-1"), "{keys}");
 }

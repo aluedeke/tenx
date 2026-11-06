@@ -14,7 +14,7 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
 
 ```
 ~/work/                        ← a workspace (tenx init)
-├── config.toml                  name, repos, optional layout script
+├── config.toml                  name, repos, optional layout
 ├── .bare/<repo>.git             one bare clone per repo, shared by all tasks
 ├── .claude/                     shared Claude Code settings and skills
 └── tasks/
@@ -25,7 +25,7 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
         └── web/                 worktree of web on branch fix-login-timeout
 ```
 
-Each task is a tmux window named after its slug. The default layout puts `claude` on the left, `nvim TASK.md` top-right and a shell bottom-right. A workspace can supply its own layout script instead.
+Each task is a tmux window named after its slug. By default the agent fills the window, and a shell and nvim (opened on `TASK.md`) are tabs in a strip at the top of the window: `Alt+1` agent, `Alt+2` shell, `Alt+3` nvim (or `Ctrl+1/2/3`), or click or tap a tab in `tenx` and `tenx web`. A tab starts the first time you open it, and typing `exit` in the shell brings the agent back. `layout = "split"` keeps the older layout (`claude` on the left, `nvim TASK.md` top-right, a shell bottom-right), and a workspace can supply its own layout script instead.
 
 A task's state is derived live, never recorded:
 
@@ -50,7 +50,7 @@ The state comes from tenx's own session registry plus tmux's bell flag. Every su
 Optional, picked up when present:
 
 - A coding agent: `claude` (Claude Code, the default), `codex` (Codex CLI), or `pi`. The default window layout starts the task's agent — see [Choosing the agent](#choosing-the-agent) for how to set it globally, per workspace, or per task.
-- `nvim`. The default layout opens `TASK.md` in it.
+- `nvim`. The nvim tab opens `TASK.md` in it.
 - `gh`. Shows the task branch's pull request as a chip in the column and status bar.
 - `lsof`. Shows ports the task's processes are listening on.
 - `age` and `sops`. Required only for `tenx secrets`.
@@ -345,7 +345,7 @@ Workspace `config.toml`:
 ```toml
 schema_version = 1
 name = "work"
-layout = ""                  # optional path to a layout script, see below
+layout = ""                  # "tabs" (empty), "split", or a path to a layout script, see below
 agent = "codex"              # optional default agent for this workspace's tasks
 
 [[repos]]
@@ -365,6 +365,7 @@ Global `~/.config/tenx/config.toml`:
 bare_dir = ""        # optional override for where bare clones live
 column_width = 0     # the task column, in cells; 0 = a fifth of the terminal, between 30 and 48
 agent = "codex"      # optional default agent for every workspace
+layout = ""          # "tabs" (empty) or "split", for workspaces that don't set one
 adhoc_dir = ""       # where the adhoc workspace lives; default ~/.local/share/tenx/adhoc
 # [agents.pi]        # optional global per-agent launch override (a workspace's wins)
 # args = ["--provider", "openai"]
@@ -400,7 +401,7 @@ The arguments are shell words, used as written, stored in the task's `.tenx-agen
 
 Claude Code shows a full-screen warning ("Loading development channels") at every start with `--dangerously-load-development-channels`. With `--confirm-dev-channels` (stored as `.tenx-confirm-dev-channels`; off unless you set it), the watcher answers "I am using this for local development" for that task, so a restarted channel session doesn't wait for a key press. `--no-confirm-dev-channels` turns it off again. For a task that should run for good, also `tenx task pin` it, so `tenx task sweep` and the column's background sweep leave its window open, and its idle turns don't count in the status bar's "✔ N waiting".
 
-A layout script replaces the default three-pane window. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_AGENT`, `TENX_AGENT_CMD` (the resolved agent and its launch command) and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
+A layout script replaces the built-in layouts. It runs with `TENX_WINDOW`, `TENX_SLUG`, `TENX_TASK_DIR`, `TENX_WS_DIR`, `TENX_AGENT`, `TENX_AGENT_CMD` (the resolved agent and its launch command) and `TENX_TMUX` in its environment and is free to `split-window` however it likes.
 
 `TENX_TMUX_SOCKET` overrides the tmux socket name, which is how `make try` runs a second, isolated instance next to an installed one.
 

@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enterWhileDictating, keyMessage, tapTakesKeys, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
+import { enterWhileDictating, keyMessage, tabKey, tapTakesKeys, isIPad, isMicToggle, isImagePaste, isRemote, isSpeakerToggle, takesImagePaste } from '../src/lib/keys.ts';
 
 const key = (code: string, mods: Partial<KeyboardEvent> = {}) =>
   ({ code, key: code.slice(3).toLowerCase(), ctrlKey: false, altKey: false, metaKey: false, shiftKey: false, ...mods }) as KeyboardEvent;
@@ -79,4 +79,12 @@ test('a tap gives a touch page the keyboard only when nothing has it', () => {
   assert.equal(tapTakesKeys(true, null, body), true);
   assert.equal(tapTakesKeys(true, field, body), false, 'the terminal or a form field keeps it');
   assert.equal(tapTakesKeys(false, body, body), false, 'a desktop browser sends keys to the body anyway');
+});
+
+test('Ctrl+1/2/3 is a tab, by the physical key', () => {
+  const ev = key;
+  assert.equal(tabKey(ev('Digit2', { ctrlKey: true })), 2);
+  assert.equal(tabKey(ev('Digit4', { ctrlKey: true })), null);
+  assert.equal(tabKey(ev('Digit1')), null);
+  assert.equal(tabKey(ev('Digit1', { ctrlKey: true, altKey: true })), null);
 });

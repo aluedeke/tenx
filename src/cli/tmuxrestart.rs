@@ -47,6 +47,10 @@ struct WindowSnap {
     /// A pane was left out (an agent-log follower), so the saved layout no
     /// longer fits the panes.
     dropped: bool,
+    /// Built with tabs (`tenx_core::tabs`). Snapshotted on the agent's tab,
+    /// so the first pane is the agent; the other tabs start again on demand.
+    #[serde(default)]
+    tabs: bool,
     panes: Vec<PaneSnap>,
 }
 
@@ -70,6 +74,11 @@ pub fn run(now: bool, timeout: Duration, dry_run: bool) -> Result<()> {
     }
     if !now && !dry_run {
         wait_until_quiet(timeout)?;
+    }
+    // A window is rebuilt as it looks, and an agent in a tab that isn't
+    // shown would be missed.
+    if !dry_run {
+        crate::tmux::show_agents();
     }
     let (snap, stopped) = snapshot()?;
     let agents = snap.windows.iter().flat_map(|w| &w.panes).filter(|p| p.plan.is_some()).count();
@@ -153,7 +162,7 @@ fn snapshot() -> Result<(Snapshot, Vec<String>)> {
         .collect();
     let canonical = |p: &str| std::fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(p));
 
-    let wfmt = "#{window_id}\t#{window_name}\t#{window_active}\t#{window_zoomed_flag}\t#{window_width}\t#{window_height}\t#{@tenx_task_dir}\t#{window_layout}";
+    let wfmt = "#{window_id}\t#{window_name}\t#{window_active}\t#{window_zoomed_flag}\t#{window_width}\t#{window_height}\t#{@tenx_task_dir}\t#{@tenx_tab}\t#{window_layout}";
     let pfmt = "#{window_id}\t#{pane_active}\t#{pane_current_path}\t#{pane_start_path}\t#{pane_current_command}\t#{pane_id}\t#{pane_start_command}";
     let session = crate::tmux::SESSION;
     let mut panes: HashMap<String, Vec<Vec<String>>> = HashMap::new();
@@ -168,8 +177,8 @@ fn snapshot() -> Result<(Snapshot, Vec<String>)> {
     let mut stopped = Vec::new();
     let mut size = (0, 0);
     for line in crate::tmux::run(&["list-windows", "-t", session, "-F", wfmt])?.lines() {
-        let f: Vec<&str> = line.splitn(8, '\t').collect();
-        let [id, name, active, zoomed, w, h, task_dir, layout] = f[..] else { continue };
+        let f: Vec<&str> = line.splitn(9, '\t').collect();
+        let [id, name, active, zoomed, w, h, task_dir, tab, layout] = f[..] else { continue };
         // The home window comes back with the server; a transcript viewer
         // (`↳ …`) is opened again on demand.
         if name == crate::tmux::HOME_WINDOW || name.starts_with('↳') {
@@ -190,6 +199,7 @@ fn snapshot() -> Result<(Snapshot, Vec<String>)> {
             zoomed: zoomed == "1",
             active: active == "1",
             dropped: false,
+            tabs: !tab.is_empty(),
             panes: Vec::new(),
         };
         for p in panes.get(id).map(Vec::as_slice).unwrap_or_default() {
@@ -335,6 +345,9 @@ fn build_window(w: &WindowSnap) -> Result<(String, Vec<String>)> {
     if let Some(dir) = &w.task_dir {
         crate::tmux::set_window_option(&id, crate::tmux::TASK_DIR_OPTION, dir)?;
         let _ = std::fs::write(PathBuf::from(dir).join(crate::tmux::WINDOW_ID_FILE), &id);
+        if w.tabs {
+            let _ = crate::tmux::mark_tabbed(&id, &panes[0]);
+        }
     }
     for p in &w.panes[1..] {
         // Split the pane made last: tmux puts a new pane right after the one
