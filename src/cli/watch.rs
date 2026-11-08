@@ -90,7 +90,7 @@ pub fn run() -> Result<()> {
     // watcher or predate this feature; either way a pane now would be a
     // surprise, not news.
     let mut paned: HashSet<(PathBuf, u32)> = primed.agents.iter().map(|a| (a.cwd.clone(), a.pid)).collect();
-    let mut pr_lookups = PrLookups::new();
+    let mut lookups = Lookups::new();
     // Deliberately not seeded from `primed`: the session is still being created
     // at this point (see SESSION_MISSES_BEFORE_EXIT), so no status bar exists to
     // receive a push yet. Starting empty means the first tick always publishes,
@@ -130,7 +130,7 @@ pub fn run() -> Result<()> {
         pane_new_agents(&snapshot.agents, &snapshot.windows, &mut paned);
         crate::tmux::close_orphans();
         confirm_dev_channels(&snapshot.windows);
-        let live_changed = refresh_live(&snapshot.live_targets, &mut pr_lookups);
+        let live_changed = refresh_live(&snapshot.live_targets, &mut lookups);
 
         // Publish last. Only on a real change, so a quiet session sends
         // nothing at all: `digest` covers state, `live_changed` the cached
@@ -460,69 +460,106 @@ pub(crate) fn resolve_all() -> Snapshot {
     }
 }
 
-/// PR lookups in flight and their results. The helper thread only *fetches*;
-/// every write to `.tenx-live.json` happens on the watch thread, so the ports
-/// update and the PR update can't race each other's read-modify-write.
 /// A task's own PRs and the other PRs it links to.
 type PrFound = (Vec<crate::live::PrInfo>, Vec<crate::live::PrInfo>);
 
-struct PrLookups {
+/// One kind of lookup that runs on a helper thread, one batch at a time.
+/// The thread only *fetches*; every write to `.tenx-live.json` happens on
+/// the watch thread, so the lookups can't race each other's
+/// read-modify-write. An empty path is a batch's last message.
+struct Helper<T> {
     busy: bool,
-    /// A Linear lookup is running on its helper thread.
-    linear_busy: bool,
-    linear_tx: std::sync::mpsc::Sender<(PathBuf, Option<Vec<tenx_core::sidebar::LinearIssue>>)>,
-    linear_rx: std::sync::mpsc::Receiver<(PathBuf, Option<Vec<tenx_core::sidebar::LinearIssue>>)>,
-    /// Ticks so far: where this tick's round of transcript lookups starts.
-    turn: usize,
-    tx: std::sync::mpsc::Sender<(PathBuf, Option<PrFound>)>,
-    rx: std::sync::mpsc::Receiver<(PathBuf, Option<PrFound>)>,
+    tx: std::sync::mpsc::Sender<(PathBuf, Option<T>)>,
+    rx: std::sync::mpsc::Receiver<(PathBuf, Option<T>)>,
 }
 
-impl PrLookups {
+impl<T: Send + 'static> Helper<T> {
     fn new() -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
-        let (linear_tx, linear_rx) = std::sync::mpsc::channel();
-        PrLookups { busy: false, linear_busy: false, linear_tx, linear_rx, turn: 0, tx, rx }
+        Helper { busy: false, tx, rx }
+    }
+
+    /// The finished lookups: `None` is a failed one.
+    fn landed(&mut self) -> Vec<(PathBuf, Option<T>)> {
+        let mut out = Vec::new();
+        while let Ok((path, found)) = self.rx.try_recv() {
+            if path.as_os_str().is_empty() {
+                self.busy = false;
+            } else {
+                out.push((path, found));
+            }
+        }
+        out
+    }
+
+    /// Run `fetch` for each of `batch` on a thread of its own.
+    fn start<A: Send + 'static>(&mut self, batch: Vec<(PathBuf, A)>, fetch: impl Fn(A) -> Option<T> + Send + 'static) {
+        if batch.is_empty() {
+            return;
+        }
+        self.busy = true;
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            for (path, arg) in batch {
+                let _ = tx.send((path, fetch(arg)));
+            }
+            let _ = tx.send((PathBuf::new(), None));
+        });
     }
 }
 
-/// Refresh every task's `.tenx-live.json`: ports for the open windows every
-/// tick (cheap, local), PRs on a staggered schedule (network, off-thread so a
-/// slow `gh` can't hold up the notification path; one batch in flight at a
-/// time). Returns whether any cache changed, so the caller can republish.
-fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
-    let mut changed = false;
+/// The watcher's lookups that leave the watch thread: PRs and Linear issues
+/// (network), git state (local, but a slow repo must not hold up the
+/// notifications).
+struct Lookups {
+    prs: Helper<PrFound>,
+    linear: Helper<Vec<tenx_core::sidebar::LinearIssue>>,
+    git: Helper<Vec<tenx_core::sidebar::RepoGit>>,
+    /// Ticks so far: where this tick's round of transcript lookups starts.
+    turn: usize,
+}
 
-    // Land finished PR lookups first — this is the only writer of `prs`. An
-    // empty path is the batch's sentinel: the helper thread is done.
-    while let Ok((path, found)) = prs.rx.try_recv() {
-        if path.as_os_str().is_empty() {
-            prs.busy = false;
-            continue;
-        }
+impl Lookups {
+    fn new() -> Self {
+        Lookups { prs: Helper::new(), linear: Helper::new(), git: Helper::new(), turn: 0 }
+    }
+}
+
+/// Refresh every task's `.tenx-live.json`: ports, links and todos every tick
+/// (cheap, local); PRs, Linear issues and git state on a staggered schedule
+/// (`tenx_core::live::due`), off-thread so a slow `gh` or `git` can't hold up
+/// the notification path. Returns whether any cache changed in a way the
+/// status line shows, so the caller can republish.
+fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
+    let mut changed = false;
+    let now = crate::live::now_secs();
+
+    // Land finished lookups first. A failed one keeps what was known, and
+    // waits like a success.
+    for (path, found) in lookups.prs.landed() {
         let mut live = crate::live::read(&path);
-        // A failed lookup keeps what was known, and waits like a success.
         if let Some((own, linked)) = found {
-            if live.prs != own {
-                changed = true;
-            }
+            changed |= live.prs != own;
             live.prs = own;
             live.linked_prs = linked;
         }
-        live.pr_checked = crate::live::now_secs();
+        live.pr_checked = now;
         let _ = crate::live::write(&path, &live);
     }
-    while let Ok((path, found)) = prs.linear_rx.try_recv() {
-        if path.as_os_str().is_empty() {
-            prs.linear_busy = false;
-            continue;
-        }
+    for (path, found) in lookups.linear.landed() {
         let mut live = crate::live::read(&path);
-        // A failed request keeps the last state, and waits like a success.
         if let Some(found) = found {
             live.linear = found;
         }
-        live.linear_checked = crate::live::now_secs();
+        live.linear_checked = now;
+        let _ = crate::live::write(&path, &live);
+    }
+    for (path, found) in lookups.git.landed() {
+        let mut live = crate::live::read(&path);
+        if let Some(found) = found {
+            live.git = found;
+        }
+        live.git_checked = now;
         let _ = crate::live::write(&path, &live);
     }
 
@@ -537,23 +574,19 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
     // turns round: one whose transcript can't be found yet (a session that
     // hasn't written it) must not keep the others from ever being read.
     let mut backfills = crate::live::TRANSCRIPT_LOOKUPS_PER_TICK;
-    let now = crate::live::now_secs();
-    let git_due = git_due(targets, now);
-    prs.turn = prs.turn.wrapping_add(1);
-    let first = if targets.is_empty() { 0 } else { prs.turn % targets.len() };
-    for t in targets[first..].iter().chain(&targets[..first]) {
+    lookups.turn = lookups.turn.wrapping_add(1);
+    let first = if targets.is_empty() { 0 } else { lookups.turn % targets.len() };
+    // Each cache is read once per tick; the schedules below work on these.
+    let mut lives: Vec<(usize, crate::live::Live)> = Vec::with_capacity(targets.len());
+    for (i, t) in targets.iter().enumerate().skip(first).chain(targets.iter().enumerate().take(first)) {
         let mut live = crate::live::read(&t.path);
         let before = live.clone();
         live.ports = ports.get(&t.slug).cloned().unwrap_or_default();
         live.watching = crate::cli::prwatch::watched_in(&waits, &t.path);
         (live.task_links, live.todos) = crate::live::task_md(&t.path);
         crate::live::scan_links(&t.path, &t.agent, t.session.as_deref(), &mut live, &mut backfills);
-        // The sidebar's git state: local, but a few processes per repo.
         if t.repos.is_empty() {
             live.git.clear();
-        } else if git_due.contains(&t.path) {
-            live.git = t.repos.iter().filter_map(|r| crate::live::fetch_git(r, &t.path.join(r))).collect();
-            live.git_checked = now;
         }
         if live != before {
             let links_moved = live.links != before.links || live.task_links != before.task_links;
@@ -563,126 +596,69 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
             let written = crate::live::write(&t.path, &live).is_ok();
             changed |= written && shown_moved;
         }
+        lives.push((i, live));
+    }
+    lives.sort_by_key(|(i, _)| *i);
+    let lives: Vec<crate::live::Live> = lives.into_iter().map(|(_, l)| l).collect();
+    let ttl = |active: (std::time::Duration, std::time::Duration)| (active.0.as_secs(), active.1.as_secs());
+
+    if !lookups.git.busy {
+        let tasks: Vec<_> = targets.iter().zip(&lives).map(|(t, l)| tenx_core::live::Due { checked: l.git_checked, active: t.active, cost: t.repos.len() }).collect();
+        let batch = tenx_core::live::due(&tasks, now, ttl((crate::live::GIT_TTL_ACTIVE, crate::live::GIT_TTL_PARKED)), crate::live::GIT_REPOS_PER_TICK)
+            .into_iter()
+            .map(|i| (targets[i].path.clone(), (targets[i].path.clone(), targets[i].repos.clone())))
+            .collect();
+        lookups.git.start(batch, |(path, repos): (PathBuf, Vec<String>)| Some(repos.iter().filter_map(|r| crate::live::fetch_git(r, &path.join(r))).collect()));
     }
 
-    start_linear_lookups(targets, prs, now);
+    let pr_ttl = ttl((crate::live::PR_TTL_ACTIVE, crate::live::PR_TTL_PARKED));
+    if !lookups.linear.busy && crate::cli::linear::token().is_some() {
+        let keys: Vec<Vec<String>> = lives
+            .iter()
+            .map(|l| {
+                let mut keys: Vec<String> = Vec::new();
+                for k in l.all_links().iter().filter(|l| l.kind == tenx_core::links::LinkKind::Linear).filter_map(|l| tenx_core::sidebar::linear_key(&l.url)) {
+                    if !keys.contains(&k) {
+                        keys.push(k);
+                    }
+                }
+                keys
+            })
+            .collect();
+        let tasks: Vec<_> = targets.iter().zip(&lives).zip(&keys).map(|((t, l), k)| tenx_core::live::Due { checked: l.linear_checked, active: t.active, cost: usize::from(!k.is_empty()) }).collect();
+        let batch = tenx_core::live::due(&tasks, now, pr_ttl, crate::live::PR_LOOKUPS_PER_TICK).into_iter().map(|i| (targets[i].path.clone(), keys[i].clone())).collect();
+        lookups.linear.start(batch, |keys: Vec<String>| crate::cli::linear::issues(&keys));
+    }
 
-    if prs.busy || !crate::live::gh_available() {
+    if lookups.prs.busy || !crate::live::gh_available() {
         return changed;
     }
     // One GraphQL request per task: its branches' PRs and the PRs it links to.
-    // The longest waiting first, as with git (`git_due`).
-    let mut waiting: Vec<(u64, &LiveTarget, Vec<tenx_core::prstate::PrRef>)> = targets
+    let linked: Vec<Vec<tenx_core::prstate::PrRef>> = lives
         .iter()
-        .filter_map(|t| {
-            let live = crate::live::read(&t.path);
-            let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
-            if now.saturating_sub(live.pr_checked) < ttl.as_secs() {
-                return None;
-            }
-            let mut linked: Vec<tenx_core::prstate::PrRef> = Vec::new();
-            let refs = live.task_links.iter().chain(&live.links).filter(|l| l.kind == tenx_core::links::LinkKind::Pr);
+        .map(|l| {
+            let mut linked = Vec::new();
+            let refs = l.task_links.iter().chain(&l.links).filter(|l| l.kind == tenx_core::links::LinkKind::Pr);
             for r in refs.filter_map(|l| tenx_core::prstate::pr_ref(&l.url)) {
                 if !linked.contains(&r) {
                     linked.push(r);
                 }
             }
-            (!t.repos.is_empty() || !linked.is_empty()).then_some((live.pr_checked, t, linked))
+            linked
         })
         .collect();
-    waiting.sort_by_key(|(checked, t, _)| (*checked, !t.active));
-    let stale: Vec<(PathBuf, Vec<String>, Vec<tenx_core::prstate::PrRef>)> = waiting
-        .into_iter()
-        .take(crate::live::PR_LOOKUPS_PER_TICK)
-        .map(|(_, t, linked)| (t.path.clone(), t.repos.clone(), linked))
-        .collect();
-    if stale.is_empty() {
-        return changed;
-    }
-    prs.busy = true;
-    let tx = prs.tx.clone();
-    std::thread::spawn(move || {
-        for (path, repos, linked) in stale {
-            let found = crate::live::fetch_prs(&path, &repos, &linked);
-            let _ = tx.send((path, found));
-        }
-        // Sentinel: the batch is done, the next tick may start another.
-        let _ = tx.send((PathBuf::new(), None));
-    });
-    changed
-}
-
-/// The tasks whose repos' git state is read this tick: those past their
-/// time, the longest waiting first — with many open tasks, a fixed order
-/// would let the first ones take every turn —, within
-/// [`crate::live::GIT_REPOS_PER_TICK`] repos; a task with more than that goes
-/// alone, so it gets its turn too.
-fn git_due(targets: &[LiveTarget], now: u64) -> std::collections::HashSet<PathBuf> {
-    let mut waiting: Vec<(u64, &LiveTarget)> = targets
+    let tasks: Vec<_> = targets
         .iter()
-        .filter(|t| !t.repos.is_empty())
-        .filter_map(|t| {
-            let checked = crate::live::read(&t.path).git_checked;
-            let ttl = if t.active { crate::live::GIT_TTL_ACTIVE } else { crate::live::GIT_TTL_PARKED };
-            (now.saturating_sub(checked) >= ttl.as_secs()).then_some((checked, t))
-        })
+        .zip(&lives)
+        .zip(&linked)
+        .map(|((t, l), linked)| tenx_core::live::Due { checked: l.pr_checked, active: t.active, cost: usize::from(!t.repos.is_empty() || !linked.is_empty()) })
         .collect();
-    waiting.sort_by_key(|(checked, t)| (*checked, !t.active));
-    let mut due = std::collections::HashSet::new();
-    let mut budget = crate::live::GIT_REPOS_PER_TICK;
-    for (_, t) in waiting {
-        if t.repos.len() > budget && !due.is_empty() {
-            break;
-        }
-        budget = budget.saturating_sub(t.repos.len());
-        due.insert(t.path.clone());
-        if budget == 0 {
-            break;
-        }
-    }
-    due
-}
-
-/// Look up the state of the Linear issues the stalest tasks link to, one
-/// request per task, on a helper thread — with a key saved
-/// (`tenx linear login`) and on the PRs' schedule.
-fn start_linear_lookups(targets: &[LiveTarget], prs: &mut PrLookups, now: u64) {
-    if prs.linear_busy || crate::cli::linear::token().is_none() {
-        return;
-    }
-    let mut stale: Vec<(PathBuf, Vec<String>)> = Vec::new();
-    for t in targets {
-        if stale.len() >= crate::live::PR_LOOKUPS_PER_TICK {
-            break;
-        }
-        let live = crate::live::read(&t.path);
-        let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
-        if now.saturating_sub(live.linear_checked) < ttl.as_secs() {
-            continue;
-        }
-        let mut keys: Vec<String> = live
-            .all_links()
-            .iter()
-            .filter(|l| l.kind == tenx_core::links::LinkKind::Linear)
-            .filter_map(|l| tenx_core::sidebar::linear_key(&l.url))
-            .collect();
-        keys.dedup();
-        if keys.is_empty() {
-            continue;
-        }
-        stale.push((t.path.clone(), keys));
-    }
-    if stale.is_empty() {
-        return;
-    }
-    prs.linear_busy = true;
-    let tx = prs.linear_tx.clone();
-    std::thread::spawn(move || {
-        for (path, keys) in stale {
-            let _ = tx.send((path, crate::cli::linear::issues(&keys)));
-        }
-        let _ = tx.send((PathBuf::new(), None));
-    });
+    let batch = tenx_core::live::due(&tasks, now, pr_ttl, crate::live::PR_LOOKUPS_PER_TICK)
+        .into_iter()
+        .map(|i| (targets[i].path.clone(), (targets[i].path.clone(), targets[i].repos.clone(), linked[i].clone())))
+        .collect();
+    lookups.prs.start(batch, |(path, repos, linked): (PathBuf, Vec<String>, Vec<tenx_core::prstate::PrRef>)| crate::live::fetch_prs(&path, &repos, &linked));
+    changed
 }
 
 /// Give every background agent a pane in its task's window, once. An agent

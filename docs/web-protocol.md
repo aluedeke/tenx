@@ -201,9 +201,10 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
 - `request` messages from the server apply `focus_terminal` (and hide the
   column when narrow), `focus_column` (show it and focus it), `hide`,
   `quit` (= hide; the tab stays open), and `sidebar` (show or hide the
-  sidebar: a panel right of the terminal from 1000 px wide, remembered per
-  browser; a drawer over it from the right on a narrower page, where the
-  task list is a drawer from the left). The server doesn't move the column's
+  sidebar: a panel right of the terminal while the task keeps 80 columns
+  beside it — the terminal client's rule, `web/src/lib/sidebarfit.ts` —,
+  remembered per browser; else a drawer over it from the right. Below
+  1000 px the task list is a drawer from the left too). The server doesn't move the column's
   focus itself: the page reports every change with a `focus` message.
 
 The terminal attaches on the first `resize`, so send one as soon as xterm.js

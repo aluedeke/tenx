@@ -329,7 +329,7 @@ fn is_repo(path: &Path) -> bool {
 /// `clone --bare` points the bare repo's HEAD at `refs/heads/<default>` and
 /// sets no `origin/HEAD`, so HEAD's target is the name to use — even though
 /// that local ref itself is never updated by a fetch (see [`base_ref`]).
-pub(crate) fn default_remote_branch(bare_repo_path: &Path) -> Result<String> {
+fn default_remote_branch(bare_repo_path: &Path) -> Result<String> {
     let bare = bare_repo_path.to_string_lossy();
     // In a bare clone HEAD is a symref pointing to refs/heads/<default>.
     let out = Command::new("git")
@@ -367,7 +367,7 @@ pub(crate) fn default_remote_branch(bare_repo_path: &Path) -> Result<String> {
 /// branch. Then the local `<default>` is the best there is — as old as the
 /// clone, but a task that starts stale is better than no task — and the next
 /// fetch that gets through fixes it for every task after.
-fn base_ref(bare_repo_path: &Path) -> Result<String> {
+pub(crate) fn base_ref(bare_repo_path: &Path) -> Result<String> {
     let bare = bare_repo_path.to_string_lossy();
     let default = default_remote_branch(bare_repo_path)?;
     let remote_ref = format!("refs/remotes/origin/{default}");

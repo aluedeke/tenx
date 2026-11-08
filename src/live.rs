@@ -3,7 +3,8 @@
 //! per task in `.tenx-live.json`.
 //!
 //! Only `tenx watch` writes the cache (on its 2 s cadence: ports every tick,
-//! PRs on a staggered schedule, since each `gh pr view` is a network call);
+//! PRs on a staggered schedule, since each `gh api graphql` is a network
+//! call);
 //! the column and `task_json` just read it. So a task's chips can be at
 //! most a couple of seconds (ports) or a few minutes (PR) behind, and the
 //! column never blocks on `lsof` or the network.
@@ -57,16 +58,29 @@ pub fn task_md(task_dir: &Path) -> (Vec<tenx_core::links::Link>, Option<tenx_cor
 }
 
 /// A repo worktree's git state: `git status`, then how far its branch is from
-/// the default branch it started from (`origin/<default>`).
+/// the default branch it started from (`origin/<default>`, or the local one
+/// while there is no remote-tracking ref: `git::base_ref`).
+///
+/// `--no-optional-locks`: a plain `git status` may take `index.lock` to
+/// refresh the index, and the agent's `git commit` in the same worktree
+/// would then fail on it.
 pub fn fetch_git(repo: &str, worktree: &Path) -> Option<tenx_core::sidebar::RepoGit> {
     let git = |args: &[&str]| -> Option<String> {
-        let out = Command::new("git").arg("-C").arg(worktree).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+        let out = Command::new("git")
+            .arg("--no-optional-locks")
+            .arg("-C")
+            .arg(worktree)
+            .args(args)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
     };
     let mut g = tenx_core::sidebar::parse_status(repo, &git(&["status", "--porcelain=v2", "--branch"])?);
     let common = git(&["rev-parse", "--path-format=absolute", "--git-common-dir"]).map(|s| PathBuf::from(s.trim()));
-    let default = common.and_then(|c| crate::git::default_remote_branch(&c).ok()).unwrap_or_else(|| "main".to_string());
-    let base = format!("origin/{default}");
+    let base = common.and_then(|c| crate::git::base_ref(&c).ok()).unwrap_or_else(|| "origin/main".to_string());
+    g.base = base.trim_start_matches("origin/").to_string();
     if let Some((behind, ahead)) = git(&["rev-list", "--left-right", "--count", &format!("{base}...HEAD")]).and_then(|o| tenx_core::sidebar::parse_counts(&o)) {
         g.behind = behind;
         g.ahead = ahead;
@@ -177,9 +191,10 @@ pub fn ports_by_window() -> HashMap<String, Vec<u16>> {
     roots.into_iter().map(|(w, pids)| (w, tenx_core::live::ports_for(&pids, &listeners, &tree))).collect()
 }
 
-/// A task's PRs in one `gh api graphql` request (`tenx_core::prstate`): the
-/// newest PR of each repo worktree's branch, and the `linked` PRs. `None`
-/// when `gh` is missing, unauthenticated or offline, or GitHub refused the
+/// A task's PRs in one `gh api graphql` request per GitHub host
+/// (`tenx_core::prstate`): the newest PR of each repo worktree's branch, and
+/// the `linked` PRs (github.com links, asked with github.com's). `None` when
+/// `gh` is missing, unauthenticated or offline, or every host refused the
 /// request — the caller keeps what it had.
 pub fn fetch_prs(task_dir: &Path, repos: &[String], linked: &[tenx_core::prstate::PrRef]) -> Option<(Vec<PrInfo>, Vec<PrInfo>)> {
     use tenx_core::prstate;
@@ -188,30 +203,55 @@ pub fn fetch_prs(task_dir: &Path, repos: &[String], linked: &[tenx_core::prstate
         let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
         (out.status.success() && !s.is_empty()).then_some(s)
     };
-    let branches: Vec<prstate::BranchRef> = repos
-        .iter()
-        .filter_map(|r| {
-            let wt = task_dir.join(r);
-            let repo = prstate::github_repo(&git(&wt, &["remote", "get-url", "origin"])?)?;
-            Some(prstate::BranchRef { dir: r.clone(), repo, branch: git(&wt, &["branch", "--show-current"])? })
-        })
-        .collect();
-    if branches.is_empty() && linked.is_empty() {
-        return Some((Vec::new(), Vec::new()));
+    let mut hosts: Vec<(String, Vec<prstate::BranchRef>)> = vec![(GITHUB.to_string(), Vec::new())];
+    for r in repos {
+        let wt = task_dir.join(r);
+        let Some((host, repo)) = git(&wt, &["remote", "get-url", "origin"]).and_then(|u| prstate::remote_repo(&u)) else { continue };
+        let Some(branch) = git(&wt, &["branch", "--show-current"]) else { continue };
+        let host = match host {
+            prstate::Host::Web(h) => h,
+            prstate::Host::Ssh(h) => ssh_hostname(&h),
+        };
+        let b = prstate::BranchRef { dir: r.clone(), repo, branch };
+        match hosts.iter_mut().find(|(h, _)| *h == host) {
+            Some((_, list)) => list.push(b),
+            None => hosts.push((host, vec![b])),
+        }
     }
-    let query = format!("query={}", prstate::query(&branches, linked));
-    let out = Command::new("gh")
-        .args(["api", "graphql", "-f", &query])
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    // A PR that is gone fails its part of the request, and gh exits 1, but
-    // the rest of the answer is still there.
-    let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    let (own, mut others) = prstate::parse(&json, &branches, linked)?;
-    others.retain(|o| !own.iter().any(|p| p.url == o.url));
+    let (mut own, mut others, mut answered) = (Vec::new(), Vec::new(), false);
+    for (host, branches) in &hosts {
+        let linked: &[prstate::PrRef] = if host == GITHUB { linked } else { &[] };
+        if branches.is_empty() && linked.is_empty() {
+            continue;
+        }
+        let query = format!("query={}", prstate::query(branches, linked));
+        let Ok(out) = Command::new("gh").args(["api", "graphql", "--hostname", host, "-f", &query]).stdin(Stdio::null()).stderr(Stdio::null()).output() else {
+            continue;
+        };
+        // A PR that is gone fails its part of the request, and gh exits 1, but
+        // the rest of the answer is still there.
+        let Some((o, l)) = serde_json::from_slice(&out.stdout).ok().and_then(|json| prstate::parse(&json, branches, linked)) else { continue };
+        answered = true;
+        own.extend(o);
+        others.extend(l);
+    }
+    if !answered && hosts.iter().any(|(h, b)| !b.is_empty() || (h == GITHUB && !linked.is_empty())) {
+        return None;
+    }
+    others.retain(|o: &PrInfo| !own.iter().any(|p: &PrInfo| p.url == o.url));
     Some((own, others))
+}
+
+const GITHUB: &str = "github.com";
+
+/// The host an SSH remote's host name stands for: an alias in
+/// `~/.ssh/config` (`github-work`) is resolved with `ssh -G`, as git would.
+fn ssh_hostname(host: &str) -> String {
+    if host == GITHUB {
+        return host.to_string();
+    }
+    let out = run_capture("ssh", &["-G", host]);
+    out.lines().find_map(|l| l.strip_prefix("hostname ")).map(|h| h.trim().to_string()).unwrap_or_else(|| host.to_string())
 }
 
 /// Whether `gh` is on `PATH` — resolved once per process; the watcher asks

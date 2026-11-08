@@ -29,17 +29,36 @@ pub struct BranchRef {
     pub branch: String,
 }
 
-/// `origin`'s URL → the GitHub repo: `git@github.com:o/r.git`,
-/// `https://github.com/o/r(.git)`, `ssh://git@github.com/o/r`.
-pub fn github_repo(remote: &str) -> Option<Repo> {
+/// How a remote names its host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Host {
+    /// `https://host/…`: the host itself.
+    Web(String),
+    /// `git@host:…`, `ssh://git@host/…`: maybe an alias of `~/.ssh/config`,
+    /// which the caller resolves (`ssh -G`).
+    Ssh(String),
+}
+
+/// `origin`'s URL → its host and the repo: `git@github.com:o/r.git`,
+/// `https://github.com/o/r(.git)`, `ssh://git@github.com:22/o/r`, and the
+/// same on any other host (GitHub Enterprise, an SSH alias).
+pub fn remote_repo(remote: &str) -> Option<(Host, Repo)> {
     let rest = remote.trim();
-    let path = rest
-        .strip_prefix("git@github.com:")
-        .or_else(|| rest.split_once("github.com/").map(|(_, p)| p))?;
+    let (host, path) = if let Some((scheme, after)) = rest.split_once("://") {
+        let (authority, path) = after.split_once('/')?;
+        let host = authority.rsplit('@').next()?.split(':').next()?.to_string();
+        (if scheme == "ssh" { Host::Ssh(host) } else { Host::Web(host) }, path)
+    } else {
+        let (authority, path) = rest.split_once(':')?;
+        (Host::Ssh(authority.rsplit('@').next()?.to_string()), path)
+    };
     let mut seg = path.trim_end_matches('/').trim_end_matches(".git").split('/');
     let owner = seg.next().filter(|s| !s.is_empty())?;
     let name = seg.next().filter(|s| !s.is_empty())?;
-    Some(Repo { owner: owner.to_string(), name: name.to_string() })
+    if seg.next().is_some() || matches!(&host, Host::Web(h) | Host::Ssh(h) if h.is_empty()) {
+        return None;
+    }
+    Some((host, Repo { owner: owner.to_string(), name: name.to_string() }))
 }
 
 /// A PR link → the PR: `https://github.com/o/r/pull/12[/files]`.
@@ -55,7 +74,7 @@ pub fn pr_ref(url: &str) -> Option<PrRef> {
     Some(PrRef { repo: Repo { owner: owner.into(), name: name.into() }, number })
 }
 
-const FIELDS: &str = "number title url state isDraft reviewDecision \
+const FIELDS: &str = "number title url state isDraft reviewDecision headRepositoryOwner { login } \
 comments { totalCount } \
 reviewThreads(first: 100) { totalCount nodes { isResolved } } \
 commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes { \
@@ -65,13 +84,17 @@ fn quoted(s: &str) -> String {
     serde_json::Value::String(s.to_string()).to_string()
 }
 
+/// How many of a branch name's newest PRs are asked for: the name is matched
+/// in forks too, and [`parse`] keeps the one from the repo itself.
+const BRANCH_PRS: usize = 5;
+
 /// The request body for `branches`' newest PRs (`b0`, `b1`, …) and the
 /// `linked` PRs (`l0`, …), in one query.
 pub fn query(branches: &[BranchRef], linked: &[PrRef]) -> String {
     let mut parts = Vec::new();
     for (i, b) in branches.iter().enumerate() {
         parts.push(format!(
-            "b{i}: repository(owner: {}, name: {}) {{ pullRequests(headRefName: {}, first: 1, orderBy: {{field: CREATED_AT, direction: DESC}}) {{ nodes {{ {FIELDS} }} }} }}",
+            "b{i}: repository(owner: {}, name: {}) {{ pullRequests(headRefName: {}, first: {BRANCH_PRS}, orderBy: {{field: CREATED_AT, direction: DESC}}) {{ nodes {{ {FIELDS} }} }} }}",
             quoted(&b.repo.owner),
             quoted(&b.repo.name),
             quoted(&b.branch)
@@ -135,15 +158,20 @@ pub fn summarize(repo: &str, pr: &serde_json::Value) -> Option<PrInfo> {
     })
 }
 
-/// The answer to [`query`]: the branches' PRs (a branch without one left
-/// out) and the linked PRs that were found. `None` when the request failed
+/// The answer to [`query`]: the branches' PRs — the newest pushed from the
+/// repo itself, not a fork's branch of the same name; a branch without one
+/// left out — and the linked PRs that were found. `None` when the request failed
 /// as a whole (no `data`), so the caller keeps what it had.
 pub fn parse(json: &serde_json::Value, branches: &[BranchRef], linked: &[PrRef]) -> Option<(Vec<PrInfo>, Vec<PrInfo>)> {
     let data = json.get("data").filter(|d| d.is_object())?;
     let own = branches
         .iter()
         .enumerate()
-        .filter_map(|(i, b)| summarize(&b.dir, &data[format!("b{i}")]["pullRequests"]["nodes"][0]))
+        .filter_map(|(i, b)| {
+            let nodes = data[format!("b{i}")]["pullRequests"]["nodes"].as_array()?;
+            let own = nodes.iter().find(|n| n["headRepositoryOwner"]["login"].as_str().is_some_and(|l| l.eq_ignore_ascii_case(&b.repo.owner)))?;
+            summarize(&b.dir, own)
+        })
         .collect();
     let others = linked
         .iter()
@@ -160,10 +188,13 @@ mod tests {
     #[test]
     fn repos_and_pr_links_are_read() {
         let r = Repo { owner: "aluedeke".into(), name: "tenx".into() };
-        assert_eq!(github_repo("git@github.com:aluedeke/tenx.git"), Some(r.clone()));
-        assert_eq!(github_repo("https://github.com/aluedeke/tenx"), Some(r.clone()));
-        assert_eq!(github_repo("ssh://git@github.com/aluedeke/tenx.git/"), Some(r.clone()));
-        assert_eq!(github_repo("git@gitlab.com:a/b.git"), None);
+        let ssh = |h: &str| Some((Host::Ssh(h.into()), r.clone()));
+        assert_eq!(remote_repo("git@github.com:aluedeke/tenx.git"), ssh("github.com"));
+        assert_eq!(remote_repo("https://github.com/aluedeke/tenx"), Some((Host::Web("github.com".into()), r.clone())));
+        assert_eq!(remote_repo("ssh://git@github.com:22/aluedeke/tenx.git/"), ssh("github.com"));
+        assert_eq!(remote_repo("git@github-work:aluedeke/tenx.git"), ssh("github-work"), "an SSH alias");
+        assert_eq!(remote_repo("https://ghe.corp.com/aluedeke/tenx.git"), Some((Host::Web("ghe.corp.com".into()), r.clone())));
+        assert_eq!(remote_repo("/srv/git/tenx.git"), None);
         assert_eq!(pr_ref("https://github.com/aluedeke/tenx/pull/32/files"), Some(PrRef { repo: r, number: 32 }));
         assert_eq!(pr_ref("https://github.com/aluedeke/tenx/issues/3"), None);
     }
@@ -206,9 +237,10 @@ mod tests {
         let repo = Repo { owner: "o".into(), name: "r".into() };
         let branches = [BranchRef { dir: "api".into(), repo: repo.clone(), branch: "b".into() }, BranchRef { dir: "web".into(), repo: repo.clone(), branch: "c".into() }];
         let linked = [PrRef { repo, number: 30 }];
-        let pr = |n: u64| serde_json::json!({"number": n, "state": "MERGED", "url": format!("https://github.com/o/r/pull/{n}")});
+        let pr = |n: u64| serde_json::json!({"number": n, "state": "MERGED", "url": format!("https://github.com/o/r/pull/{n}"), "headRepositoryOwner": {"login": "O"}});
+        let fork = serde_json::json!({"number": 99, "state": "OPEN", "headRepositoryOwner": {"login": "stranger"}});
         let answer = serde_json::json!({"data": {
-            "b0": {"pullRequests": {"nodes": [pr(31)]}},
+            "b0": {"pullRequests": {"nodes": [fork, pr(31)]}},
             "b1": {"pullRequests": {"nodes": []}},
             "l0": {"pullRequest": pr(30)}
         }});

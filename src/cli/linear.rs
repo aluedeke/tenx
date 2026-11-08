@@ -118,9 +118,22 @@ pub(crate) fn post(key: &str, body: &str) -> Result<serde_json::Value> {
 }
 
 /// The issues `keys` name, looked up in one request. `None` without a key
-/// or when the request failed — the sidebar then shows no status.
+/// or when the request failed — the sidebar then shows no status. One issue
+/// Linear doesn't know fails the whole request, so then each key is asked
+/// for alone and the unknown ones are left out.
 pub fn issues(keys: &[String]) -> Option<Vec<tenx_core::sidebar::LinearIssue>> {
     let key = token()?;
-    let json = post(&key, &tenx_core::sidebar::linear_request(keys)).ok()?;
-    tenx_core::sidebar::parse_linear(&json, keys).ok()
+    let ask = |keys: &[String]| post(&key, &tenx_core::sidebar::linear_request(keys)).ok().and_then(|json| tenx_core::sidebar::parse_linear(&json, keys).ok());
+    if let Some(found) = ask(keys) {
+        return Some(found);
+    }
+    if keys.len() < 2 {
+        return None;
+    }
+    let found: Vec<Option<Vec<_>>> = keys.iter().map(|k| ask(std::slice::from_ref(k))).collect();
+    // None of them answered: the key or the network, not an issue.
+    if found.iter().all(Option::is_none) {
+        return None;
+    }
+    Some(found.into_iter().flatten().flatten().collect())
 }

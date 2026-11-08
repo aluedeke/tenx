@@ -68,9 +68,13 @@ pub(super) struct Client {
     /// strip, which a click is matched against (`tenx_core::tabs::tab_at`).
     top_row: String,
     /// The sidebar right of the task is wanted (`s`, `:sidebar`); it shows
-    /// when the terminal is wide enough (`tenx_core::sidebar::width`).
+    /// when the terminal is wide enough (`tenx_core::sidebar::width`). Hiding
+    /// it is remembered (`SIDEBAR_HIDDEN`).
     sidebar_shown: bool,
     sidebar_scroll: u16,
+    /// The task whose sidebar `sidebar_scroll` scrolled: another task's
+    /// starts at its top.
+    sidebar_task: Option<String>,
     /// The sidebar's rows as last drawn that open a link on a click.
     sidebar_hits: Vec<(u16, tenx_core::links::Link)>,
 }
@@ -95,8 +99,9 @@ impl Client {
             unlock: Unlock::default(),
             views: Views::default(),
             top_row: String::new(),
-            sidebar_shown: true,
+            sidebar_shown: !sidebar_hidden_path().is_some_and(|p| p.exists()),
             sidebar_scroll: 0,
+            sidebar_task: None,
             sidebar_hits: Vec::new(),
         };
         let (r, w) = c.term_size();
@@ -266,8 +271,16 @@ impl Client {
             ClientRequest::Hide => self.hide_column(),
             ClientRequest::Quit => self.quit = true,
             ClientRequest::Sidebar => {
-                self.sidebar_shown = !self.sidebar_shown;
                 let full = Rect::new(0, 0, self.size.0, self.size.1);
+                // Wanted but not on screen: hiding it would change nothing
+                // you can see, so say why it isn't there instead.
+                let visible = self.layout(full).2.is_some();
+                if visible || !self.sidebar_shown {
+                    self.sidebar_shown = !visible;
+                    if let Some(p) = sidebar_hidden_path() {
+                        let _ = if self.sidebar_shown { std::fs::remove_file(&p) } else { std::fs::write(&p, "") };
+                    }
+                }
                 if self.sidebar_shown && self.layout(full).2.is_none() {
                     self.column.set_status("no room for the sidebar: the terminal is too narrow".to_string());
                 }
@@ -422,6 +435,11 @@ impl Client {
         self.top_row = (term.x..term.right()).map(|x| buf[(x, term.y)].symbol().chars().next().unwrap_or(' ')).collect();
         if let Some(s) = sidebar {
             let view = self.column.sidebar();
+            let task = view.as_ref().map(|v| v.id.clone());
+            if task != self.sidebar_task {
+                self.sidebar_task = task;
+                self.sidebar_scroll = 0;
+            }
             let max = super::sidebar::max_scroll(view.as_ref(), s);
             self.sidebar_scroll = self.sidebar_scroll.min(max);
             self.sidebar_hits = super::sidebar::render(f, s, view.as_ref(), self.sidebar_scroll);
@@ -645,3 +663,11 @@ fn run_client(terminal: &mut ClientTerminal) -> Result<()> {
     }
     Ok(())
 }
+/// Present while the sidebar is hidden, so a new client starts as the last
+/// one was left.
+const SIDEBAR_HIDDEN: &str = "sidebar-hidden";
+
+fn sidebar_hidden_path() -> Option<std::path::PathBuf> {
+    Some(crate::workspace::home_dir().ok()?.join(".config").join("tenx").join(SIDEBAR_HIDDEN))
+}
+

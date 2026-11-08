@@ -1,7 +1,7 @@
 //! A task's links: its PRs, the Artifact pages and Claude Design projects its
 //! agent made, its Linear issue, Slack messages, its ports, and other web pages — what `L`
-//! (the picker) and `f` (hint letters) in the column open, and what tenx web
-//! lists under its ↗ button.
+//! (the picker) and `f` (hint letters) in the column open, and what the
+//! sidebar groups (`crate::sidebar`).
 //!
 //! The watcher gathers the raw text — the agent's replies from its transcript,
 //! the `## Links` section of `TASK.md` — and caches what [`find`] reads out of
@@ -25,6 +25,9 @@ pub enum LinkKind {
     Linear,
     Slack,
     Port,
+    /// Also any kind a newer tenx wrote that this one doesn't know, so its
+    /// cache still reads.
+    #[serde(other)]
     Web,
 }
 
@@ -314,6 +317,13 @@ mod tests {
 
     fn link(url: &str, label: &str, kind: LinkKind) -> Link {
         Link { url: url.into(), label: label.into(), kind }
+    }
+
+    #[test]
+    fn a_kind_from_a_newer_tenx_reads_as_web() {
+        let l: Link = serde_json::from_str(r#"{"url": "u", "label": "l", "kind": "jira"}"#).unwrap();
+        assert_eq!(l.kind, LinkKind::Web);
+        assert_eq!(serde_json::to_string(&LinkKind::Slack).unwrap(), r#""slack""#);
     }
 
     #[test]
