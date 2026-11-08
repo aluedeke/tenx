@@ -233,7 +233,7 @@
 <rect width="1280" height="740" rx="6" fill="#171820"/>
 <g id="f0" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -414,7 +414,7 @@
 </g>
 <g id="f1" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -604,7 +604,7 @@
 </g>
 <g id="f2" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -787,7 +787,7 @@
 </g>
 <g id="f3" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -966,7 +966,7 @@
 </g>
 <g id="f4" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -1136,7 +1136,7 @@
 </g>
 <g id="f5" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -1307,7 +1307,7 @@
 </g>
 <g id="f6" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -1477,7 +1477,7 @@
 </g>
 <g id="f7" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -1634,7 +1634,7 @@
 </g>
 <g id="f8" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -1770,7 +1770,7 @@
 </g>
 <g id="f9" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -1946,7 +1946,7 @@
 </g>
 <g id="f10" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -2123,7 +2123,7 @@
 </g>
 <g id="f11" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -2300,7 +2300,7 @@
 </g>
 <g id="f12" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -2477,7 +2477,7 @@
 </g>
 <g id="f13" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -2654,7 +2654,7 @@
 </g>
 <g id="f14" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -2831,7 +2831,7 @@
 </g>
 <g id="f15" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -3008,7 +3008,7 @@
 </g>
 <g id="f16" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -3185,7 +3185,7 @@
 </g>
 <g id="f17" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -3362,7 +3362,7 @@
 </g>
 <g id="f18" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -3539,7 +3539,7 @@
 </g>
 <g id="f19" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -3716,7 +3716,7 @@
 </g>
 <g id="f20" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -3893,7 +3893,7 @@
 </g>
 <g id="f21" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -4070,7 +4070,7 @@
 </g>
 <g id="f22" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -4247,7 +4247,7 @@
 </g>
 <g id="f23" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -4424,7 +4424,7 @@
 </g>
 <g id="f24" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -4601,7 +4601,7 @@
 </g>
 <g id="f25" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -4778,7 +4778,7 @@
 </g>
 <g id="f26" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -4955,7 +4955,7 @@
 </g>
 <g id="f27" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -5132,7 +5132,7 @@
 </g>
 <g id="f28" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -5309,7 +5309,7 @@
 </g>
 <g id="f29" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -5486,7 +5486,7 @@
 </g>
 <g id="f30" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -5663,7 +5663,7 @@
 </g>
 <g id="f31" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -5840,7 +5840,7 @@
 </g>
 <g id="f32" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -6025,7 +6025,7 @@
 </g>
 <g id="f33" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -6194,7 +6194,7 @@
 </g>
 <g id="f34" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -6371,7 +6371,7 @@
 </g>
 <g id="f35" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -6554,7 +6554,7 @@
 </g>
 <g id="f36" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -6730,7 +6730,7 @@
 </g>
 <g id="f37" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -9813,7 +9813,7 @@
 </g>
 <g id="f61" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -9994,7 +9994,7 @@
 </g>
 <g id="f62" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -10176,7 +10176,7 @@
 </g>
 <g id="f63" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -10358,7 +10358,7 @@
 </g>
 <g id="f64" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -10540,7 +10540,7 @@
 </g>
 <g id="f65" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -10722,7 +10722,7 @@
 </g>
 <g id="f66" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -10904,7 +10904,7 @@
 </g>
 <g id="f67" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -11086,7 +11086,7 @@
 </g>
 <g id="f68" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -11268,7 +11268,7 @@
 </g>
 <g id="f69" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -11450,7 +11450,7 @@
 </g>
 <g id="f70" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -11632,7 +11632,7 @@
 </g>
 <g id="f71" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -11814,7 +11814,7 @@
 </g>
 <g id="f72" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -11996,7 +11996,7 @@
 </g>
 <g id="f73" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -12178,7 +12178,7 @@
 </g>
 <g id="f74" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -12360,7 +12360,7 @@
 </g>
 <g id="f75" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -12542,7 +12542,7 @@
 </g>
 <g id="f76" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -12724,7 +12724,7 @@
 </g>
 <g id="f77" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -12906,7 +12906,7 @@
 </g>
 <g id="f78" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -13088,7 +13088,7 @@
 </g>
 <g id="f79" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -13270,7 +13270,7 @@
 </g>
 <g id="f80" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -13452,7 +13452,7 @@
 </g>
 <g id="f81" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -13634,7 +13634,7 @@
 </g>
 <g id="f82" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -13816,7 +13816,7 @@
 </g>
 <g id="f83" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -13998,7 +13998,7 @@
 </g>
 <g id="f84" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -14180,7 +14180,7 @@
 </g>
 <g id="f85" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -14362,7 +14362,7 @@
 </g>
 <g id="f86" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -14544,7 +14544,7 @@
 </g>
 <g id="f87" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -14726,7 +14726,7 @@
 </g>
 <g id="f88" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -14908,7 +14908,7 @@
 </g>
 <g id="f89" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -15090,7 +15090,7 @@
 </g>
 <g id="f90" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -15272,7 +15272,7 @@
 </g>
 <g id="f91" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -15454,7 +15454,7 @@
 </g>
 <g id="f92" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -15636,7 +15636,7 @@
 </g>
 <g id="f93" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -15818,7 +15818,7 @@
 </g>
 <g id="f94" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -16000,7 +16000,7 @@
 </g>
 <g id="f95" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -16182,7 +16182,7 @@
 </g>
 <g id="f96" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -16364,7 +16364,7 @@
 </g>
 <g id="f97" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -16546,7 +16546,7 @@
 </g>
 <g id="f98" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -16728,7 +16728,7 @@
 </g>
 <g id="f99" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -16910,7 +16910,7 @@
 </g>
 <g id="f100" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -17092,7 +17092,7 @@
 </g>
 <g id="f101" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -17274,7 +17274,7 @@
 </g>
 <g id="f102" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -17456,7 +17456,7 @@
 </g>
 <g id="f103" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -17638,7 +17638,7 @@
 </g>
 <g id="f104" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -17820,7 +17820,7 @@
 </g>
 <g id="f105" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -18002,7 +18002,7 @@
 </g>
 <g id="f106" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -18184,7 +18184,7 @@
 </g>
 <g id="f107" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -18366,7 +18366,7 @@
 </g>
 <g id="f108" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -18548,7 +18548,7 @@
 </g>
 <g id="f109" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -18730,7 +18730,7 @@
 </g>
 <g id="f110" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -18912,7 +18912,7 @@
 </g>
 <g id="f111" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>
@@ -19094,7 +19094,7 @@
 </g>
 <g id="f112" class="f">
 <text x="10.0" y="23.0" fill="#a78bfa" textLength="58.8" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve"> Tasks </text>
-<text x="68.8" y="23.0" fill="#787f8c" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Repos │ Work </text>
+<text x="68.8" y="23.0" fill="#787f8c" textLength="184.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│ Runs │ Repos │ Work </text>
 <text x="270.4" y="23.0" fill="#d97757" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▐▛███▜▌</text>
 <text x="354.4" y="23.0" fill="#d6dbe3" textLength="92.4" lengthAdjust="spacingAndGlyphs" font-weight="bold" xml:space="preserve">Claude Code</text>
 <text x="455.2" y="23.0" fill="#787f8c" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">v2.1.263</text>

@@ -5,6 +5,20 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.26.0] - 2026-11-08
+
+### Added
+
+- **schedule:** Add the rules that decide when a scheduled task runs
+- **schedule:** Run prompts on a timetable with tenx schedule
+- Swap the Homebrew release for a test build of a checkout, and back
+
+### Documentation
+
+- Describe scheduled tasks in the README and the tenx skill
+
+[0.26.0]: https://github.com/aluedeke/tenx/compare/v0.25.1...v0.26.0
+
 ## [0.25.1] - 2026-11-06
 
 ### Fixed
