@@ -40,6 +40,9 @@ pub struct RepoGit {
     pub upstream: bool,
     /// Commits not pushed to it yet.
     pub unpushed: u32,
+    /// The default branch it is compared with: `main`, `master`, …
+    #[serde(default)]
+    pub base: String,
     /// Commits the branch has on top of the default branch (`origin/main`).
     pub ahead: u32,
     /// Commits the default branch got since the branch left it.
@@ -84,15 +87,18 @@ pub fn todos(md: &str) -> Option<Todos> {
         }
         let item = line.trim_start().strip_prefix("- [").or_else(|| line.trim_start().strip_prefix("* ["));
         let Some(rest) = item else { continue };
-        let (mark, text) = match rest.split_once(']') {
-            Some(p) => p,
-            None => continue,
-        };
+        let Some((mark, text)) = rest.split_once(']') else { continue };
+        // A checkbox is `[ ]` or `[x]`, never a link's `[text](url)`; an
+        // empty one is the placeholder a new TASK.md starts with.
+        let text = text.trim();
+        if !matches!(mark, " " | "x" | "X" | "") || text.is_empty() || text.starts_with('(') {
+            continue;
+        }
         t.total += 1;
         if mark.trim().eq_ignore_ascii_case("x") {
             t.done += 1;
         } else if t.open.len() < OPEN_TODOS {
-            t.open.push(text.trim().to_string());
+            t.open.push(text.to_string());
         }
     }
     (t.total > 0).then_some(t)
@@ -147,7 +153,10 @@ pub fn linear_request(keys: &[String]) -> String {
 }
 
 /// The answer to [`linear_request`]. `Err` with Linear's message when the
-/// whole request failed (a wrong key); an issue it doesn't know is left out.
+/// whole request failed — a wrong key, or one issue it doesn't know: its
+/// `issue` is never null, so a missing one nulls all of `data` (the caller
+/// then asks for each key alone, [`linear_request`] with one key). An issue
+/// left out of a partial answer is left out.
 pub fn parse_linear(json: &serde_json::Value, keys: &[String]) -> Result<Vec<LinearIssue>, String> {
     let data = json.get("data").filter(|d| d.is_object());
     if data.is_none() {
@@ -204,8 +213,16 @@ pub struct Entry {
     /// What a click opens.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The link's kind by [`LinkKind::name`], as every link the page gets.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "kind_name")]
     pub kind: Option<LinkKind>,
+}
+
+fn kind_name<S: serde::Serializer>(kind: &Option<LinkKind>, s: S) -> Result<S::Ok, S::Error> {
+    match kind {
+        Some(k) => s.serialize_str(k.name()),
+        None => s.serialize_none(),
+    }
 }
 
 /// A piece of an entry's state: `2/4 pass`, `review needed`.
@@ -357,7 +374,8 @@ pub fn repo_state(g: &RepoGit) -> (String, Tone) {
         parts.insert(0, format!("{} {}", g.ahead, if g.ahead == 1 { "commit" } else { "commits" }));
     }
     if g.behind > 0 {
-        parts.push(format!("main +{}", g.behind));
+        let base = if g.base.is_empty() { "main" } else { g.base.as_str() };
+        parts.push(format!("{base} +{}", g.behind));
         if tone == Tone::Good {
             tone = Tone::Warn;
         }
@@ -399,8 +417,18 @@ pub fn build(live: &Live) -> Sidebar {
     }
 
     let same = |a: &str, b: &str| a.trim_end_matches('/') == b.trim_end_matches('/');
+    // `…/pull/12` and `…/pull/12/files` are one PR.
+    let mut seen = Vec::new();
     let prs = of(&[LinkKind::Pr])
         .into_iter()
+        .filter(|l| match crate::prstate::pr_ref(&l.url) {
+            Some(r) if seen.contains(&r) => false,
+            Some(r) => {
+                seen.push(r);
+                true
+            }
+            None => true,
+        })
         .map(|l| {
             let known = live.prs.iter().chain(&live.linked_prs).find(|p| same(&p.url, &l.url) || crate::prstate::pr_ref(&l.url).is_some_and(|r| r.number == p.number && p.url.contains(&format!("/{}/pull/", r.repo.name))));
             match known {
@@ -489,6 +517,9 @@ mod tests {
         assert_eq!((t.done, t.total), (2, 6));
         assert_eq!(t.open, vec!["two", "three", "four"]);
         assert_eq!(todos("# T\n\n## Notes\n- [ ] x\n"), None);
+        assert_eq!(todos("# T\n\n## Todo\n\n- [ ] \n"), None, "a new TASK.md's empty checkbox is no todo");
+        let links = todos("## Todo\n- [PR #12](https://x/pull/12)\n- [ ] real\n").unwrap();
+        assert_eq!((links.total, links.open.clone()), (1, vec!["real".to_string()]));
     }
 
     #[test]
@@ -510,6 +541,8 @@ mod tests {
         assert_eq!(repo_state(&local), ("3 commits · 2 changed · not pushed".into(), Tone::Warn));
         let pushed = RepoGit { ahead: 1, upstream: true, unpushed: 1, behind: 5, ..clean.clone() };
         assert_eq!(repo_state(&pushed), ("1 commit · 1 to push · main +5".into(), Tone::Warn));
+        let master = RepoGit { behind: 2, base: "master".into(), ..clean.clone() };
+        assert_eq!(repo_state(&master).0, "master +2");
         let broken = RepoGit { changed: 2, conflicts: 1, ..clean };
         assert_eq!(repo_state(&broken), ("1 conflicts · 1 changed".into(), Tone::Bad));
     }
@@ -577,6 +610,7 @@ mod tests {
             linked_prs: vec![PrInfo { repo: "tenx".into(), number: 30, state: "MERGED".into(), url: "https://github.com/a/tenx/pull/30".into(), title: "Tabs".into(), ..Default::default() }],
             task_links: vec![
                 link("https://github.com/a/tenx/pull/30", "PR 30"),
+                link("https://github.com/a/tenx/pull/30/files", "PR 30 files"),
                 link("https://linear.app/acme/issue/TNX-9/x", "TNX-9 x"),
                 link("https://acme.slack.com/archives/C1/p2", "the thread"),
                 link("https://claude.ai/design/p/1", "Mock"),
@@ -597,6 +631,9 @@ mod tests {
         assert_eq!(prs[0].icon_tone, Some(Tone::Good));
         assert_eq!(prs[1].label, "#30 Tabs", "a linked PR gets its state too");
         assert_eq!(prs[1].parts[0].text, "merged");
+        assert_eq!(prs.len(), 2, "one entry per PR, however it is linked");
+        let json = serde_json::to_value(&prs[0]).unwrap();
+        assert_eq!(json["kind"], "PR", "the kind the page's other links use");
         assert_eq!(s.sections[2].entries[0].label, "TNX-9 Sidebar");
         assert_eq!(s.sections[2].entries[0].parts, vec![Part { text: "IN REVIEW".into(), tone: Tone::Warn, pill: true }]);
         assert_eq!(s.sections[5].entries[0].parts[0].text, "1 changed");

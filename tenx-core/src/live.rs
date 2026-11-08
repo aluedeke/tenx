@@ -1,8 +1,9 @@
 //! Live, external facts about a task that neither Claude Code nor tmux
 //! know: which TCP ports its processes are listening on, and the state of
 //! its pull request(s). The binary gathers the raw material (`lsof`, `ps`,
-//! `gh pr view`) and caches the result per task; the parsing and the
-//! summaries live here so they can be tested without any of those tools.
+//! `gh api graphql`, read by `crate::prstate`) and caches the result per
+//! task; the parsing, the summaries and when to look again ([`due`]) live
+//! here so they can be tested without any of those tools.
 
 use crate::links::Link;
 use serde::{Deserialize, Serialize};
@@ -142,46 +143,42 @@ impl PrInfo {
     }
 }
 
-/// `gh pr view --json number,title,state,url,isDraft,reviewDecision,statusCheckRollup`
-/// → a summary. `None` if the document isn't a PR (e.g. `gh` printed an error
-/// object, or nothing).
-pub fn summarize_pr(repo: &str, json: &serde_json::Value) -> Option<PrInfo> {
-    let number = json["number"].as_u64()?;
-    let checks = json["statusCheckRollup"].as_array().map(|checks| {
-        let mut pending = false;
-        let mut failure = false;
-        for c in checks {
-            // Check runs carry `status`/`conclusion`; status contexts carry
-            // `state`. Normalise both.
-            let status = c["status"].as_str().unwrap_or("COMPLETED");
-            let conclusion = c["conclusion"].as_str().or_else(|| c["state"].as_str()).unwrap_or("");
-            if status != "COMPLETED" || conclusion == "PENDING" || conclusion == "EXPECTED" {
-                pending = true;
-            } else if matches!(conclusion, "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" | "ACTION_REQUIRED") {
-                failure = true;
-            }
+/// A task waiting for a lookup (its PRs, its Linear issues, its repos' git
+/// state): when it was last looked up, whether it is open or running, and
+/// what a lookup costs (repos to read; 1 for one request).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Due {
+    pub checked: u64,
+    pub active: bool,
+    pub cost: usize,
+}
+
+/// Which of `tasks` get a lookup now: those older than their time to live
+/// (`ttl.0` active, `ttl.1` not, in seconds), the longest waiting first — a
+/// fixed order would let the first tasks take every turn —, within `budget`.
+/// A task costing more than the budget goes alone, so it gets its turn too;
+/// a task costing nothing has nothing to look up.
+pub fn due(tasks: &[Due], now: u64, ttl: (u64, u64), budget: usize) -> Vec<usize> {
+    let mut waiting: Vec<usize> = (0..tasks.len())
+        .filter(|&i| {
+            let t = tasks[i];
+            t.cost > 0 && now.saturating_sub(t.checked) >= if t.active { ttl.0 } else { ttl.1 }
+        })
+        .collect();
+    waiting.sort_by_key(|&i| (tasks[i].checked, !tasks[i].active));
+    let mut chosen = Vec::new();
+    let mut left = budget;
+    for i in waiting {
+        if tasks[i].cost > left && !chosen.is_empty() {
+            break;
         }
-        if checks.is_empty() {
-            ""
-        } else if failure {
-            "failure"
-        } else if pending {
-            "pending"
-        } else {
-            "success"
+        left = left.saturating_sub(tasks[i].cost);
+        chosen.push(i);
+        if left == 0 {
+            break;
         }
-    });
-    Some(PrInfo {
-        repo: repo.to_string(),
-        number,
-        state: json["state"].as_str().unwrap_or("").to_string(),
-        url: json["url"].as_str().unwrap_or("").to_string(),
-        draft: json["isDraft"].as_bool().unwrap_or(false),
-        review: json["reviewDecision"].as_str().unwrap_or("").to_string(),
-        checks: checks.unwrap_or("").to_string(),
-        title: json["title"].as_str().unwrap_or("").to_string(),
-        ..Default::default()
-    })
+    }
+    chosen
 }
 
 /// `lsof -nP -iTCP -sTCP:LISTEN -Fpn` → (pid, port) pairs. The `-F` format is
@@ -258,8 +255,7 @@ mod tests {
 
     #[test]
     fn watched_prs_are_marked() {
-        let json = serde_json::json!({"number": 12, "state": "OPEN", "url": "u", "statusCheckRollup": []});
-        let pr = summarize_pr("api", &json).unwrap();
+        let pr = PrInfo { number: 12, state: "OPEN".into(), url: "u".into(), ..Default::default() };
         let mut l = Live { prs: vec![pr.clone()], watching: vec![12, 30], ..Default::default() };
         assert_eq!(l.chip(&pr), "#12 👀");
         assert_eq!(l.watch_only_chips(), vec!["#30 👀".to_string()]);
@@ -269,27 +265,28 @@ mod tests {
     }
 
     #[test]
-    fn pr_summary_and_chip() {
-        let json = serde_json::json!({
-            "number": 12, "state": "OPEN", "url": "https://x/pull/12", "isDraft": false,
-            "reviewDecision": "APPROVED",
-            "statusCheckRollup": [
-                {"status": "COMPLETED", "conclusion": "SUCCESS"},
-                {"status": "IN_PROGRESS", "conclusion": null}
-            ]
-        });
-        let pr = summarize_pr("api", &json).unwrap();
-        assert_eq!(pr.checks, "pending");
-        assert_eq!(pr.chip(), "#12 …");
+    fn pr_chips() {
+        let pr = |state: &str, draft: bool, checks: &str| PrInfo { number: 12, state: state.into(), draft, checks: checks.into(), ..Default::default() };
+        assert_eq!(pr("OPEN", false, "pending").chip(), "#12 …");
+        assert_eq!(pr("OPEN", false, "failure").chip(), "#12 ✗");
+        assert_eq!(pr("OPEN", false, "success").chip(), "#12 ✓");
+        assert_eq!(pr("OPEN", true, "success").chip(), "#12 draft");
+        assert_eq!(pr("MERGED", false, "").chip(), "#12 merged");
+        assert_eq!(pr("CLOSED", false, "").chip(), "#12 closed");
+    }
 
-        let json = serde_json::json!({"number": 7, "state": "MERGED", "statusCheckRollup": []});
-        assert_eq!(summarize_pr("api", &json).unwrap().chip(), "#7 merged");
-        let json = serde_json::json!({"number": 8, "state": "OPEN", "isDraft": true});
-        assert_eq!(summarize_pr("api", &json).unwrap().chip(), "#8 draft");
-        let json = serde_json::json!({"number": 9, "state": "OPEN",
-            "statusCheckRollup": [{"state": "FAILURE"}]});
-        assert_eq!(summarize_pr("api", &json).unwrap().chip(), "#9 ✗");
-        assert!(summarize_pr("api", &serde_json::json!({"message": "no pull requests found"})).is_none());
+    #[test]
+    fn the_longest_waiting_lookups_go_first_within_the_budget() {
+        let t = |checked: u64, active: bool, cost: usize| Due { checked, active, cost };
+        let ttl = (30, 600);
+        // Fresh (695), parked but young (500), nothing to look up (cost 0) wait.
+        let tasks = [t(695, true, 1), t(650, true, 2), t(10, false, 1), t(500, false, 1), t(0, true, 0), t(10, true, 1)];
+        assert_eq!(due(&tasks, 700, ttl, 4), vec![5, 2, 1], "oldest first, active before parked at a tie");
+        assert_eq!(due(&tasks, 700, ttl, 2), vec![5, 2]);
+        // A task bigger than the budget goes alone when it is first in line.
+        assert_eq!(due(&[t(0, true, 6), t(5, true, 1)], 100, ttl, 4), vec![0]);
+        assert_eq!(due(&[t(5, true, 1), t(0, true, 6)][..], 100, ttl, 4), vec![1]);
+        assert_eq!(due(&[t(9, true, 1), t(10, true, 6)], 100, ttl, 4), vec![0]);
     }
 
     #[test]

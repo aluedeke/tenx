@@ -30,6 +30,7 @@ import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import { copyText, linkHref, linkKey, openExternal } from '@/lib/links';
+import { sidebarFits } from '@/lib/sidebarfit';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, Item, KeyMessage, LinkView, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
@@ -43,8 +44,9 @@ const FONT_KEY = 'tenx-terminal-font';
 const LAST_TASK_KEY = 'tenx-last-task';
 /** Whether the sidebar is wanted beside the terminal on a wide page. */
 const SIDEBAR_KEY = 'tenx-sidebar';
-/** Narrower than this, the sidebar is a sheet over the terminal. */
-const SIDEBAR_ROOM = '(min-width: 1000px)';
+/** Narrower than this, the task list is a sheet over the terminal; the
+ * sidebar's own rule is lib/sidebarfit. */
+const COLUMN_ROOM = '(min-width: 1000px)';
 
 function lastTask(): string | null {
   try {
@@ -77,6 +79,7 @@ export function App() {
   const [sidebarWide, setSidebarWide] = useState(true);
   const [sidebarSheet, setSidebarSheet] = useState(false);
   const [roomy, setRoomy] = useState(true);
+  const [pageWidth, setPageWidth] = useState(1280);
   const [focus, setFocus] = useState<Focus>('column');
   const [touch, setTouch] = useState(false);
   const [ctrlSticky, setCtrlSticky] = useState(false);
@@ -94,8 +97,6 @@ export function App() {
   const [pasteBox, setPasteBox] = useState<string | null>(null);
   /** The task whose secrets form owns the column (the column's `u`). */
   const [secretsTask, setSecretsTask] = useState<string | null>(null);
-  /** The current task's links, opened by the header's ↗ (not the column's
-   * `L`, which is the server's mode). */
   /** What a copied link says, for a moment. */
   const [linkNote, setLinkNote] = useState<string | null>(null);
   /** The notice is a button that brings the keyboard back (after 📎). */
@@ -186,7 +187,7 @@ export function App() {
   // Latest state for the listeners registered once.
   // The task list covers the terminal (a sheet from the left) where there is
   // no room beside it: a phone (the server's `narrow`), or narrower than
-  // SIDEBAR_ROOM. Picking a task then puts it away.
+  // COLUMN_ROOM. Picking a task then puts it away.
   const overlay = narrow || !roomy;
   const state = useRef({ focus, visible, narrow, overlay, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' });
   state.current = { focus, visible, narrow, overlay, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' };
@@ -232,7 +233,7 @@ export function App() {
     // narrow page on the terminal, as the TUI does.
     const cols = Math.floor(window.innerWidth / measureCell(fontRef.current));
     if (cols < NARROW_COLS) setNarrow(true);
-    if (cols < NARROW_COLS || !window.matchMedia(SIDEBAR_ROOM).matches) {
+    if (cols < NARROW_COLS || !window.matchMedia(COLUMN_ROOM).matches) {
       setVisible(false);
       setFocus('terminal');
     }
@@ -467,20 +468,33 @@ export function App() {
     } catch {
       // Storage blocked: shown.
     }
-    const room = window.matchMedia(SIDEBAR_ROOM);
-    const onRoom = () => setRoomy(room.matches);
+    const room = window.matchMedia(COLUMN_ROOM);
+    const onRoom = () => {
+      setRoomy(room.matches);
+      setPageWidth(window.innerWidth);
+    };
     onRoom();
     room.addEventListener('change', onRoom);
-    return () => room.removeEventListener('change', onRoom);
+    window.addEventListener('resize', onRoom);
+    return () => {
+      room.removeEventListener('change', onRoom);
+      window.removeEventListener('resize', onRoom);
+    };
   }, []);
   // `s` in the column (the server's `sidebar` request) and the header's
   // button: show or hide it, as a panel or as a sheet.
   const toggleSidebar = () => {
-    if (state.current.narrow || !window.matchMedia(SIDEBAR_ROOM).matches) setSidebarSheet((v) => !v);
+    if (sidebarOverlayRef.current) setSidebarSheet((v) => !v);
     else setWide(!sidebarWideRef.current);
   };
   const sidebarWideRef = useRef(sidebarWide);
   sidebarWideRef.current = sidebarWide;
+  // The sidebar is a panel while the task keeps its columns beside it and
+  // the task list (when that is beside the terminal too), else a sheet.
+  const columnPx = overlay || !visible ? 0 : Math.ceil(columnCols * cell + 20);
+  const sidebarOverlay = overlay || !sidebarFits(pageWidth, cell, columnPx);
+  const sidebarOverlayRef = useRef(sidebarOverlay);
+  sidebarOverlayRef.current = sidebarOverlay;
   const toggleSidebarRef = useRef(toggleSidebar);
   toggleSidebarRef.current = toggleSidebar;
 
@@ -1143,7 +1157,6 @@ export function App() {
     [pasteImages],
   );
 
-  const sidebarOverlay = overlay;
   const sidebarShown = sidebarOverlay ? sidebarSheet : sidebarWide;
   // The column as drawn: the last view with the inputs it doesn't reflect
   // yet replayed on it.
