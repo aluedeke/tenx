@@ -345,7 +345,7 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
   }
 
   // Second line, in the TUI's priority order: what it wants from you, the
-  // workspace, a non-default agent, the age, PRs, ports. A permission it can
+  // workspace, a non-default agent, the age, ◇, ports. A permission it can
   // answer is a split chip: the answer sits on what it answers.
   const pieces: ReactNode[] = [];
   if (task.reason && task.answerable) {
@@ -400,7 +400,7 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
       </span>,
     );
   if (task.age) pieces.push(<span key="age">{task.age}</span>);
-  // PRs, what was made with Claude, ports: real links, opened by the browser
+  // What was made with Claude, ports: real links, opened by the browser
   // like any other; in `f` mode each carries its letter.
   task.chips.forEach((chip, i) => {
     const hint = chip.hint && <span className="lhint">{chip.hint}</span>;

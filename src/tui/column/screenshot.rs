@@ -343,7 +343,7 @@ fn column_renders_narrow() {
         "     tenx-workspace",              // second line, indented under the title
         "      permission: Bash  · 4m",    // the reason first, then what else fits
         "     acme-api · 54m · :8080",
-        "     ledger · 23h · #31 ✓ · ◇",
+        "     ledger · 23h · ◇",
         "wants STRIPE_WEBHOOK_SECRET",
         "     ◐ Map the session registry", // a subagent, under its task
         "     ✔ Check hook payloads",
@@ -404,7 +404,7 @@ fn links_box_and_hint_letters_render() {
     column.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap();
     column.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE)).unwrap();
     let text = draw(&mut column);
-    for needle in ["54m · a:8080", "23h · b#31 ✓ · c◇", links::HINTS_HINT] {
+    for needle in ["54m · a:8080", "23h · b◇", links::HINTS_HINT] {
         assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
     }
 }

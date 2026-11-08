@@ -8,7 +8,7 @@
 //! browser of the machine it runs on (copies over SSH), and tenx web opens it
 //! in the page, which needs the tap or key that asked for it.
 
-use super::{Column, Focus, Mode, pr_rgb, truncate};
+use super::{Column, Focus, Mode, truncate};
 use crate::palette;
 use crate::snapshot::Row;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -37,28 +37,18 @@ pub(super) struct LinksPicker {
     pub(super) selected: usize,
 }
 
-/// One chip on a row's second line that is about a link: a PR, the `◇` of
-/// what the agent made with Claude, a port. `link` is what it opens; a wait
-/// on a PR the lookup hasn't found has none.
+/// One chip on a row's second line that is about a link: the `◇` of what
+/// the agent made with Claude, a port. `link` is what it opens. PRs have no
+/// chip: the sidebar lists them, with their checks and reviews.
 pub(super) struct LinkChip {
     pub(super) text: String,
     pub(super) rgb: &'static palette::Rgb,
-    pub(super) link: Option<Link>,
+    pub(super) link: Link,
 }
 
 /// The link chips of `row`, in the order they are drawn.
 pub(super) fn link_chips(row: &Row) -> Vec<LinkChip> {
     let mut out = Vec::new();
-    for pr in &row.live.prs {
-        out.push(LinkChip {
-            text: row.live.chip(pr),
-            rgb: pr_rgb(&pr.checks),
-            link: (!pr.url.is_empty()).then(|| Link { url: pr.url.clone(), label: pr.label(), kind: LinkKind::Pr }),
-        });
-    }
-    for text in row.live.watch_only_chips() {
-        out.push(LinkChip { text, rgb: pr_rgb(""), link: None });
-    }
     // One chip for everything made with Claude, opening the first of them;
     // `L` lists the rest.
     let all = row.live.all_links();
@@ -69,14 +59,14 @@ pub(super) fn link_chips(row: &Row) -> Vec<LinkChip> {
         out.push(LinkChip {
             text: if more > 0 { format!("{icon}{}", more + 1) } else { icon.to_string() },
             rgb: &palette::ACCENT,
-            link: Some(first.clone()),
+            link: first.clone(),
         });
     }
     for p in &row.live.ports {
         out.push(LinkChip {
             text: format!(":{p}"),
             rgb: &palette::MUTED,
-            link: Some(Link { url: format!("http://localhost:{p}"), label: format!("localhost:{p}"), kind: LinkKind::Port }),
+            link: Link { url: format!("http://localhost:{p}"), label: format!("localhost:{p}"), kind: LinkKind::Port },
         });
     }
     out
@@ -108,10 +98,8 @@ impl Column {
         let mut out = Vec::new();
         for &i in &self.filtered {
             for (k, chip) in link_chips(&self.rows[i]).into_iter().enumerate() {
-                if let Some(link) = chip.link
-                    && out.len() < 26
-                {
-                    out.push((i, k, link));
+                if out.len() < 26 {
+                    out.push((i, k, chip.link));
                 }
             }
         }

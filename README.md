@@ -130,7 +130,7 @@ The column lists every task from every registered workspace, sectioned by attent
 | `s` | Show or hide the sidebar: the task's links with their state, git, todos |
 | `P` | Promote a scheduled run to a normal task: it moves to the Tasks tab and its schedule lets go of it |
 | `L` | The task's links in a box: its PRs, the Artifact pages and Claude Design projects its agent made, its Linear issue, its ports, other pages it named. `1`–`9` or `Enter` opens one, `y` copies it |
-| `f` | A letter on every link chip in the list (PR, `◇` for what was made with Claude, port); type the letter to open it, the capital to copy it |
+| `f` | A letter on every link chip in the list (`◇` for what was made with Claude, port); type the letter to open it, the capital to copy it |
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks, Runs, Repos and Work tabs |

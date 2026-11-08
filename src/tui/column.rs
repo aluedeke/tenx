@@ -3801,15 +3801,6 @@ fn title_rgb(row: &Row, selected: bool, is_current: bool) -> &'static palette::R
     }
 }
 
-/// A PR chip's colour, by its checks.
-fn pr_rgb(checks: &str) -> &'static palette::Rgb {
-    match checks {
-        "failure" => &palette::DANGER,
-        "success" => &palette::SUCCESS,
-        _ => &palette::INFO,
-    }
-}
-
 /// What a row wants from you, as chip text with its colours: the secrets it
 /// wants unlocked, else Claude Code's own waiting reason. `None` when it
 /// wants nothing.
@@ -3854,7 +3845,8 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
 /// a column of 30–48 cells. Each task is two lines — the glyph and the
 /// bold title on the first, taking the whole width; on the second, muted
 /// and indented under the title, the workspace, the age of a resting task,
-/// then the PR, port and reason chips, each kept only if it fits whole.
+/// then the `◇` and port chips, each kept only if it fits whole (PRs are
+/// the sidebar's).
 /// The task shown beside the column (`Column::is_shown`: its window, or a
 /// closed task's empty screen) has its title in the "current" colour, and a
 /// `▌` in that colour marks both its lines in the indent. No spacer between tasks: the headers already separate the groups,
@@ -3949,7 +3941,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         {
             pieces.push(vec![Span::styled(workspace::format_age(changed), dim)]);
         }
-        // PRs, what was made with Claude, ports — each with its hint letter
+        // What was made with Claude, ports — each with its hint letter
         // in `f` mode, the letter and the chip kept or dropped together.
         for (k, chip) in links::link_chips(row).into_iter().enumerate() {
             let style = Style::default().fg(chip.rgb.color());
@@ -4629,9 +4621,9 @@ mod tests {
 
         c.handle_key(plain('f')).unwrap();
         assert!(matches!(c.mode, Mode::Hints));
-        // a = rate limit middleware's port, b = csv export's PR.
+        // a = rate limit middleware's port, b = csv export's ◇ (PRs have no chip).
         c.handle_key(plain('B')).unwrap();
-        assert!(matches!(c.take_link_action(), Some(LinkAction::Copy(l)) if l.url.ends_with("/pull/31")));
+        assert!(matches!(c.take_link_action(), Some(LinkAction::Copy(l)) if l.label == "Link picker proposal"));
         c.handle_key(plain('f')).unwrap();
         c.handle_key(plain('a')).unwrap();
         assert!(matches!(c.take_link_action(), Some(LinkAction::Open(l)) if l.url == "http://localhost:8080"));
