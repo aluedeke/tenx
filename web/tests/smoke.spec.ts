@@ -1531,14 +1531,12 @@ test('on touch, any tap gives the page the keyboard, without raising the soft on
   await expect(page.locator('textarea[data-field=prompt]')).toBeVisible();
 });
 
-test("a task's chips are links", async ({ page, isMobile }) => {
+test("a task's row carries no link chips", async ({ page, isMobile }) => {
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
-  const chips = page.getByTestId('task').filter({ hasText: 'web version' }).locator('a.lchip');
-  await expect(chips).toHaveCount(2);
-  await expect(chips.first()).toHaveAttribute('href', 'https://claude.ai/code/artifact/0f3a9c');
-  // A port is reached through the host the page came from.
-  await expect(chips.nth(1)).toHaveAttribute('href', 'http://127.0.0.1:7070');
+  const row = page.getByTestId('task').filter({ hasText: 'web version' });
+  await expect(row).toBeVisible();
+  await expect(row.locator('a')).toHaveCount(0);
 });
 
 test.describe('on an iPad', () => {

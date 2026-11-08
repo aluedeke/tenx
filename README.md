@@ -52,7 +52,7 @@ Optional, picked up when present:
 
 - A coding agent: `claude` (Claude Code, the default), `codex` (Codex CLI), or `pi`. The default window layout starts the task's agent — see [Choosing the agent](#choosing-the-agent) for how to set it globally, per workspace, or per task.
 - `nvim`. The nvim tab opens `TASK.md` in it.
-- `gh`. Shows the task branch's pull request as a chip in the column and status bar.
+- `gh`. Shows the task branch's pull request in the sidebar and as a chip in the status bar.
 - `lsof`. Shows ports the task's processes are listening on.
 - `age` and `sops`. Required only for `tenx secrets`.
 - `terminal-notifier` on macOS, `notify-send` on Linux, for desktop notifications. macOS falls back to `osascript`.
@@ -130,7 +130,6 @@ The column lists every task from every registered workspace, sectioned by attent
 | `s` | Show or hide the sidebar: the task's links with their state, git, todos |
 | `P` | Promote a scheduled run to a normal task: it moves to the Tasks tab and its schedule lets go of it |
 | `L` | The task's links in a box: its PRs, the Artifact pages and Claude Design projects its agent made, its Linear issue, its ports, other pages it named. `1`–`9` or `Enter` opens one, `y` copies it |
-| `f` | A letter on every link chip in the list (`◇` for what was made with Claude, port); type the letter to open it, the capital to copy it |
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
 | `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks, Runs, Repos and Work tabs |
@@ -153,7 +152,7 @@ The column opens in the search field (`Ctrl+w` lands in the list instead). Typin
 
 **The sidebar**, right of the task, shows what the task is about: the open todos from `TASK.md` with a progress bar, then its links grouped — pull requests (its own and the ones it links to) with their state (a square per check, the review, comments and how many are unresolved, merged), Linear issues with their status, Claude Design projects and artifacts, Slack messages —, each repo's git state (commits, uncommitted changes, what isn't pushed, how far main has moved on), and other pages and running ports last. A click opens a link. `s` in the column (or `:sidebar`) shows and hides it; it needs a terminal wide enough to leave the task 80 columns. In `tenx web` the header's right-most button shows it, as a panel right of the terminal, or as a drawer over it on a phone or a tablet in portrait — where the left-most button opens the task list the same way from the left. Linear's status needs an API key: `tenx linear login` asks for a personal API key (Linear → Settings → Security & access) and keeps it in `~/.config/tenx/linear-token`.
 
-Links open in the browser of the machine the client runs on; over SSH there is none of yours there, so `L` and `f` copy the link to your terminal's clipboard instead (OSC 52). tenx finds a task's links in the `## Links` section of its `TASK.md` and in its agent's replies — not in tool output, where a "list my projects" result alone carries dozens of unrelated links — and keeps the newest ten of each kind. In `tenx web` the chips are plain links, the sidebar lists the current task's links, and a row's menu has them too.
+Links open in the browser of the machine the client runs on; over SSH there is none of yours there, so `L` and the sidebar copy the link to your terminal's clipboard instead (OSC 52). tenx finds a task's links in the `## Links` section of its `TASK.md` and in its agent's replies — not in tool output, where a "list my projects" result alone carries dozens of unrelated links — and keeps the newest ten of each kind. In `tenx web` the sidebar lists the current task's links, and a row's menu has them too.
 
 The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task, starting in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else. `W` (or `:init [path]`), from either tab, creates a whole new workspace: a path, a name, a first repo URL and whether to install the skills, the same questions `tenx init` asks. The column then lands on the new workspace's repo in the Repos tab, where `Ctrl+n` creates its first task; given no repo, it opens the add-repo form for it instead, since a task with no repo to work on is rarely what a new workspace is for.
 
@@ -166,7 +165,7 @@ The **mouse** selects but never opens: the wheel scrolls the view without moving
 
 `tenx` in a terminal is one process that owns it: the task list as a column on the left, about a fifth of the width, and the tmux session on the right through an embedded terminal, the layout cmux made familiar. tmux stays underneath exactly as before, so the session, the watcher, sweep and secrets are untouched, quitting the client leaves everything running, and a second terminal, or a phone over SSH, gets a column of its own.
 
-Each task takes two lines: the title, then a muted line with what it is waiting on, its workspace, how long it has been resting, and its PR and port chips, as far as they fit. Closed tasks are drawn dimmer. The column has the column's keys, minus the preview panel, since the task itself is right there.
+Each task takes two lines: the title, then a muted line with what it is waiting on, its workspace, and how long it has been resting, as far as they fit. A task's links are in the sidebar. Closed tasks are drawn dimmer. The column has the column's keys, minus the preview panel, since the task itself is right there.
 
 `Ctrl+w` puts the cursor in the column on the task you are in; `Ctrl+w` from inside hides the column and gives the width back. The arrow keys and `j`/`k` step through every task: landing on an open one switches to it, landing on a closed one shows an empty screen in its place until `Enter` opens it. `Enter` opens a task and puts the cursor in it; `Esc` or `q` puts the cursor back without switching; `/` types a filter; `:hide` hides the column; `:q` quits the client. Because the column is one process, its selection and filter survive switching tasks, and it re-groups itself as statuses change only while the keyboard is in the task, never while you are moving through the list. On a terminal under 100 columns the column is hidden and `Ctrl+w` shows the list over the whole screen.
 
