@@ -193,9 +193,8 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
   lasts, so `+` over a phone's terminal opens a form you can see.
 - Everything else goes to whichever side has focus: the column as `key`
   messages, the terminal as binary input.
-- In the column's `links` mode (`L`) a digit, Enter, `o`, `l` or `y`, and in
-  its `hints` mode (`f`) a letter, name a link: the page opens it (or copies
-  it, `y` / a capital) itself, inside the key press — a browser opens a window
+- In the column's `links` mode (`L`) a digit, Enter, `o`, `l` or `y` name a
+  link: the page opens it (or copies it, `y`) itself, inside the key press — a browser opens a window
   only then — and sends `Escape` instead of the key (`lib/links.ts`
   `linkKey`). Other keys (moving, Escape) go to the server as usual.
 - `request` messages from the server apply `focus_terminal` (and hide the
@@ -215,8 +214,8 @@ Everything is also reachable by pointer. A header runs across the page: `☰`
 overlay), then the current task (`view.current` — glyph, title, workspace,
 its reason chip; tapping it opens the column on that task with a `task`
 click), then `● next`, `+`, the notifications bell, the connection and `?`.
-A task's `chips` that carry a `link` are anchors (a port's
-`localhost` is replaced by the page's host), and `links` is everything the
+A task's rows carry no link chips (only `run`, a scheduled run's ⏰ chip);
+`links` is everything the
 task links to: the header's ↗ (the current task's; inside ⋯ on the narrowest
 phones) and the column's `links` mode show it as a menu, or a bottom sheet on
 touch, each link with a copy button.

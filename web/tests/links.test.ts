@@ -22,7 +22,7 @@ test('a port is reached through the host the page came from', () => {
   assert.equal(linkHref(link('web', 'http://localhost:9'), 'mac'), 'http://localhost:9');
 });
 
-test('keys in L and f mode name links; others go to the server', () => {
+test('keys in L mode name links; others go to the server', () => {
   const pr = link('PR', 'https://github.com/o/r/pull/1');
   const art = link('artifact', 'https://claude.ai/artifact/a');
   const base = { items: [], mode: { kind: 'list' } } as unknown as ColumnView;
@@ -33,11 +33,5 @@ test('keys in L and f mode name links; others go to the server', () => {
   assert.equal(linkKey(picker, '3', false), null);
   assert.equal(linkKey(picker, 'j', false), null);
   assert.equal(linkKey(picker, 'Enter', true), null);
-
-  const task = { kind: 'task', chips: [{ label: '#1', fg: '', link: pr, hint: 'a' }, { label: '#2 👀', fg: '', link: null, hint: null }] };
-  const hints = { ...base, items: [task], mode: { kind: 'hints' } } as unknown as ColumnView;
-  assert.deepEqual(linkKey(hints, 'a', false), { do: 'open', link: pr });
-  assert.deepEqual(linkKey(hints, 'A', false), { do: 'copy', link: pr });
-  assert.equal(linkKey(hints, 'b', false), null);
   assert.equal(linkKey(base, 'a', false), null);
 });

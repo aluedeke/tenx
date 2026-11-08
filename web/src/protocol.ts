@@ -119,8 +119,8 @@ export interface TaskItem {
   wants: Wanted[];
   agent: string | null;
   age: string | null;
-  /** The PR, ◇ and port chips, in order (column/links.rs `link_chips`). */
-  chips: LinkChip[];
+  /** A scheduled run's chip: ⏰ and how it ended. */
+  run: Chip | null;
   /** Everything it links to, in display order: what `L` lists. */
   links: LinkView[];
   /** Pinned: sweep never closes its window (p toggles). */
@@ -134,15 +134,6 @@ export interface LinkView {
   kind: 'PR' | 'artifact' | 'design' | 'linear' | 'slack' | 'port' | 'web';
   icon: string;
   color: string;
-}
-
-/** A chip about a link. `link` is null for a wait on a PR the lookup hasn't
- * found; `hint` is its letter in `f` mode. */
-export interface LinkChip {
-  label: string;
-  fg: string;
-  link: LinkView | null;
-  hint: string | null;
 }
 
 export interface SubItem {
@@ -240,9 +231,7 @@ export type ModeView =
   | { kind: 'reject'; task: string; id: string; names: Wanted[]; note: string }
   | { kind: 'help'; scroll: number }
   /** `L`: a task's links, `selected` under the cursor. */
-  | { kind: 'links'; task: string; title: string; links: LinkView[]; selected: number }
-  /** `f`: the chips carry their letters (`LinkChip.hint`). */
-  | { kind: 'hints' };
+  | { kind: 'links'; task: string; title: string; links: LinkView[]; selected: number };
 
 export interface HelpSection {
   section: string;

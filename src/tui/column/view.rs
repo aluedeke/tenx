@@ -159,8 +159,8 @@ pub(crate) struct TaskItem {
     pub(crate) agent: Option<String>,
     /// How long it has rested (blocked, signaled and done rows only).
     pub(crate) age: Option<String>,
-    /// The `◇` and port chips, in order (`links::link_chips`).
-    pub(crate) chips: Vec<LinkChipView>,
+    /// A scheduled run's chip: ⏰ and how it ended.
+    pub(crate) run: Option<Chip>,
     /// Everything it links to, in display order — what `L` lists.
     pub(crate) links: Vec<LinkView>,
     /// Pinned: sweep never closes its window (`p` toggles).
@@ -187,17 +187,6 @@ impl From<&tenx_core::links::Link> for LinkView {
             color: links::kind_rgb(l.kind).hex(),
         }
     }
-}
-
-/// A chip on a task's second line that is about a link. `link` is `None`
-/// for a wait on a PR the lookup hasn't found; `hint` is its letter in `f`
-/// mode.
-#[derive(Debug, Serialize)]
-pub(crate) struct LinkChipView {
-    pub(crate) label: String,
-    pub(crate) fg: String,
-    pub(crate) link: Option<LinkView>,
-    pub(crate) hint: Option<char>,
 }
 
 #[derive(Debug, Serialize)]
@@ -342,8 +331,6 @@ pub(crate) enum ModeView {
         links: Vec<LinkView>,
         selected: usize,
     },
-    /// `f`: the chips carry their letters (`LinkChipView::hint`).
-    Hints,
 }
 
 /// A pending secrets request: the name, and why the agent asked for it
@@ -458,7 +445,6 @@ pub(super) fn footer(column: &Column) -> Footer {
         Mode::EditRepos(_) => form_footer(EDIT_REPOS_HINT),
         Mode::Help(_) => Footer::new(FooterKind::Hint, HELP_HINT),
         Mode::Links(_) => Footer::new(FooterKind::Hint, links::LINKS_HINT),
-        Mode::Hints => Footer::new(FooterKind::Hint, links::HINTS_HINT),
         Mode::List => match &column.status_msg {
             Some(msg) => Footer::new(FooterKind::Message, msg.clone()),
             None => Footer {
@@ -559,7 +545,6 @@ impl Column {
     fn task_items(&self) -> Vec<Item> {
         let mut items = Vec::new();
         let on_sub = self.selected_sub();
-        let hints = self.hint_letters();
         let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for &i in &self.filtered {
             *counts.entry(self.row_header(&self.rows[i]).0).or_default() += 1;
@@ -607,18 +592,7 @@ impl Column {
                     .collect(),
                 agent: (row.agent != crate::agent::AgentKind::Claude).then(|| row.agent.as_str().to_string()),
                 age: row.changed.filter(|_| rested).map(workspace::format_age),
-                // A run's chip first, without a link: the page draws it like
-                // any other chip.
-                chips: run_chip(row)
-                    .map(|(label, rgb)| LinkChipView { label, fg: rgb.hex(), link: None, hint: None })
-                    .into_iter()
-                    .chain(links::link_chips(row).into_iter().enumerate().map(|(k, c)| LinkChipView {
-                        label: c.text,
-                        fg: c.rgb.hex(),
-                        link: Some(LinkView::from(&c.link)),
-                        hint: hints.iter().find(|(r, ch, _)| *r == i && *ch == k).map(|(_, _, key)| *key),
-                    }))
-                    .collect(),
+                run: run_chip(row).map(|(label, rgb)| Chip { label, fg: rgb.hex(), bg: None }),
                 links: row.live.all_links().iter().map(LinkView::from).collect(),
                 pinned: row.pinned,
             })));
@@ -826,7 +800,6 @@ impl Column {
                 links: p.links.iter().map(LinkView::from).collect(),
                 selected: p.selected,
             },
-            Mode::Hints => ModeView::Hints,
         }
     }
 

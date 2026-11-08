@@ -48,17 +48,12 @@ const TASKS = [
   { section: ['INACTIVE', C.mut], id: 'tenx/zero-permission', ws: 'tenx', ws_color: '#78b4ce', title: 'Zero permission', glyph: '·', glyph_color: C.idle, status: 'idle', closed: true },
 ];
 
-// A task's chips and links, as view.rs builds them from its PRs, what was
-// made with Claude, and its ports.
+// A task's links, as view.rs builds them from its PRs, what was made with
+// Claude, and its ports.
 const prLink = (pr) => ({ url: `https://github.com/acme/repo/pull/${pr.label.slice(1).split(' ')[0]}`, label: pr.label, kind: 'PR', icon: '⇡', color: C.ok });
 const portLink = (p) => ({ url: `http://localhost:${p}`, label: `localhost:${p}`, kind: 'port', icon: '⌁', color: C.info });
 function linksOf(t) {
-  const chips = [
-    ...(t.prs ?? []).map((pr) => ({ label: pr.label, fg: pr.fg, link: prLink(pr), hint: null })),
-    ...(t.made?.length ? [{ label: '◇', fg: C.acc, link: t.made[0], hint: null }] : []),
-    ...(t.ports ?? []).map((p) => ({ label: `:${p}`, fg: C.mut, link: portLink(p), hint: null })),
-  ];
-  return { chips, links: [...(t.prs ?? []).map(prLink), ...(t.made ?? []), ...(t.ports ?? []).map(portLink)] };
+  return { run: null, links: [...(t.prs ?? []).map(prLink), ...(t.made ?? []), ...(t.ports ?? []).map(portLink)] };
 }
 
 const HELP = [

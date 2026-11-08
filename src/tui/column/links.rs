@@ -1,6 +1,6 @@
 //! Opening a task's links from the column: `L` lists every link of the
-//! selected task in a box over the list (the picker), `f` puts a letter on
-//! every link chip in the list (hints), like Vimium in a browser.
+//! selected task in a box over the list (the picker). The list's rows carry
+//! no link chips; the sidebar lists the shown task's links.
 //!
 //! What a link *is* — where it was found, its name, its order — is
 //! `tenx_core::links`; this is the keys and the drawing. Opening or copying
@@ -10,7 +10,6 @@
 
 use super::{Column, Focus, Mode, truncate};
 use crate::palette;
-use crate::snapshot::Row;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
@@ -37,41 +36,6 @@ pub(super) struct LinksPicker {
     pub(super) selected: usize,
 }
 
-/// One chip on a row's second line that is about a link: the `◇` of what
-/// the agent made with Claude, a port. `link` is what it opens. PRs have no
-/// chip: the sidebar lists them, with their checks and reviews.
-pub(super) struct LinkChip {
-    pub(super) text: String,
-    pub(super) rgb: &'static palette::Rgb,
-    pub(super) link: Link,
-}
-
-/// The link chips of `row`, in the order they are drawn.
-pub(super) fn link_chips(row: &Row) -> Vec<LinkChip> {
-    let mut out = Vec::new();
-    // One chip for everything made with Claude, opening the first of them;
-    // `L` lists the rest.
-    let all = row.live.all_links();
-    let mut claude = all.iter().filter(|l| l.kind.is_claude());
-    if let Some(first) = claude.next() {
-        let more = claude.count();
-        let icon = first.kind.icon();
-        out.push(LinkChip {
-            text: if more > 0 { format!("{icon}{}", more + 1) } else { icon.to_string() },
-            rgb: &palette::ACCENT,
-            link: first.clone(),
-        });
-    }
-    for p in &row.live.ports {
-        out.push(LinkChip {
-            text: format!(":{p}"),
-            rgb: &palette::MUTED,
-            link: Link { url: format!("http://localhost:{p}"), label: format!("localhost:{p}"), kind: LinkKind::Port },
-        });
-    }
-    out
-}
-
 /// A link kind's colour in the picker.
 pub(super) fn kind_rgb(kind: LinkKind) -> &'static palette::Rgb {
     match kind {
@@ -85,40 +49,8 @@ pub(super) fn kind_rgb(kind: LinkKind) -> &'static palette::Rgb {
 }
 
 pub(super) const LINKS_HINT: &str = "⏎ 1-9 open · y copy · esc";
-pub(super) const HINTS_HINT: &str = "a-z open · A-Z copy · esc";
 
 impl Column {
-    /// The chips `f` puts a letter on, in list order: the row's index in
-    /// `rows`, the chip's place among its `link_chips`, and the link. At most
-    /// 26 — one letter each.
-    pub(super) fn hint_targets(&self) -> Vec<(usize, usize, Link)> {
-        if !self.tab.lists_tasks() {
-            return Vec::new();
-        }
-        let mut out = Vec::new();
-        for &i in &self.filtered {
-            for (k, chip) in link_chips(&self.rows[i]).into_iter().enumerate() {
-                if out.len() < 26 {
-                    out.push((i, k, chip.link));
-                }
-            }
-        }
-        out
-    }
-
-    /// In `f` mode, each lettered chip as (row index, chip index, letter);
-    /// otherwise none.
-    pub(super) fn hint_letters(&self) -> Vec<(usize, usize, char)> {
-        if !matches!(self.mode, Mode::Hints) {
-            return Vec::new();
-        }
-        self.hint_targets()
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, (r, c, _))| Some((r, c, tenx_core::links::hint_key(i)?)))
-            .collect()
-    }
-
     /// `L`: the selected task's links.
     pub(super) fn start_links(&mut self) {
         let Some(row) = self.selected_row() else { return };
@@ -130,16 +62,6 @@ impl Column {
         let (id, title) = (super::view::row_id(row), row.title.clone());
         self.status_msg = None;
         self.mode = Mode::Links(LinksPicker { id, title, links, selected: 0 });
-    }
-
-    /// `f`: a letter on every link chip.
-    pub(super) fn start_hints(&mut self) {
-        if self.hint_targets().is_empty() {
-            self.status_msg = Some("no links in the list".into());
-            return;
-        }
-        self.status_msg = None;
-        self.mode = Mode::Hints;
     }
 
     pub(super) fn handle_links_key(&mut self, key: KeyEvent) {
@@ -161,19 +83,6 @@ impl Column {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('L') => None,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => None,
             _ => return,
-        };
-        self.finish_links(action);
-    }
-
-    pub(super) fn handle_hints_key(&mut self, key: KeyEvent) {
-        let action = match key.code {
-            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let lower = c.to_ascii_lowercase();
-                tenx_core::links::hint_index(lower)
-                    .and_then(|i| self.hint_targets().into_iter().nth(i))
-                    .map(|(_, _, link)| if c.is_ascii_uppercase() { LinkAction::Copy(link) } else { LinkAction::Open(link) })
-            }
-            _ => None,
         };
         self.finish_links(action);
     }

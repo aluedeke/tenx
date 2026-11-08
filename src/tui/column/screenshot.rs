@@ -342,8 +342,8 @@ fn column_renders_narrow() {
         "column screenshot",
         "     tenx-workspace",              // second line, indented under the title
         "      permission: Bash  · 4m",    // the reason first, then what else fits
-        "     acme-api · 54m · :8080",
-        "     ledger · 23h · ◇",
+        "     acme-api · 54m",
+        "     ledger · 23h",
         "wants STRIPE_WEBHOOK_SECRET",
         "     ◐ Map the session registry", // a subagent, under its task
         "     ✔ Check hook payloads",
@@ -381,10 +381,9 @@ fn column_renders_narrow() {
     }
 }
 
-/// `L` draws the selected task's links in a box over the list; `f` puts a
-/// letter in front of every link chip.
+/// `L` draws the selected task's links in a box over the list.
 #[test]
-fn links_box_and_hint_letters_render() {
+fn links_box_renders() {
     let mut column = fixture_column();
     column.offline = true;
     column.selected = column.filtered.iter().position(|&i| column.rows[i].slug == "csv-export").unwrap();
@@ -398,13 +397,6 @@ fn links_box_and_hint_letters_render() {
     column.handle_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT)).unwrap();
     let text = draw(&mut column);
     for needle in ["links · csv export", "1 ⇡ #31", "PR", "2 ◇ Link picker proposal", "artifact", links::LINKS_HINT] {
-        assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
-    }
-
-    column.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).unwrap();
-    column.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE)).unwrap();
-    let text = draw(&mut column);
-    for needle in ["54m · a:8080", "23h · b◇", links::HINTS_HINT] {
         assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
     }
 }

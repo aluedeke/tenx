@@ -295,17 +295,6 @@ pub fn all(prs: &[PrInfo], task: &[Link], found: &[Link], ports: &[u16]) -> Vec<
     out
 }
 
-/// The hint letter of the `i`th link chip in `f` mode: `a`–`z`. Upper case
-/// is taken by "copy", so there are 26.
-pub fn hint_key(i: usize) -> Option<char> {
-    (i < 26).then(|| (b'a' + i as u8) as char)
-}
-
-/// Which chip a typed hint letter names.
-pub fn hint_index(c: char) -> Option<usize> {
-    c.is_ascii_lowercase().then(|| (c as u8 - b'a') as usize)
-}
-
 /// The escape sequence that puts `text` on the terminal's clipboard (OSC 52).
 pub fn osc52(text: &str) -> String {
     format!("\x1b]52;c;{}\x07", base64::engine::general_purpose::STANDARD.encode(text))
@@ -410,12 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn hints_are_lower_case_letters() {
-        assert_eq!(hint_key(0), Some('a'));
-        assert_eq!(hint_key(25), Some('z'));
-        assert_eq!(hint_key(26), None);
-        assert_eq!(hint_index('c'), Some(2));
-        assert_eq!(hint_index('C'), None);
+    fn osc52_carries_the_text_in_base64() {
         assert_eq!(osc52("hi"), "\x1b]52;c;aGk=\x07");
     }
 }

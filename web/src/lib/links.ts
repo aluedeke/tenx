@@ -23,7 +23,7 @@ export function openExternal(url: string): void {
   if (w) w.opener = null;
 }
 
-// ── A task's links (`L`, `f`, the ↗ button, the chips) ───────────────────
+// ── A task's links (`L`, the sidebar) ───────────────────
 
 
 /** Where `link` is from this page. A port's link names the machine tenx runs
@@ -37,7 +37,7 @@ export function linkHref(link: LinkView, hostname: string): string {
 
 export type LinkPick = { do: 'open' | 'copy'; link: LinkView };
 
-/** A key in the column's `L` or `f` mode that names a link — the page acts
+/** A key in the column's `L` mode that names a link — the page acts
  * on it itself, inside the key press, since a browser only lets a page open
  * a window then. Everything else (moving, Escape) goes to the server. */
 export function linkKey(view: ColumnView, key: string, mod: boolean): LinkPick | null {
@@ -53,14 +53,6 @@ export function linkKey(view: ColumnView, key: string, mod: boolean): LinkPick |
       act = 'copy';
     } else if (/^[1-9]$/.test(key)) link = at(Number(key) - 1);
     return link ? { do: act, link } : null;
-  }
-  if (m.kind === 'hints' && /^[a-zA-Z]$/.test(key)) {
-    const want = key.toLowerCase();
-    for (const item of view.items) {
-      if (item.kind !== 'task') continue;
-      const chip = item.chips.find((c) => c.hint === want && c.link);
-      if (chip?.link) return { do: key === want ? 'open' : 'copy', link: chip.link };
-    }
   }
   return null;
 }

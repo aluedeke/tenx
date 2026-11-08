@@ -320,8 +320,6 @@ enum Mode {
     Help(u16),
     /// `L` — the selected task's links in a box over the list.
     Links(links::LinksPicker),
-    /// `f` — a letter on every link chip in the list.
-    Hints,
 }
 
 /// What the column asks the client to do, since it cannot move focus or
@@ -1345,7 +1343,7 @@ impl Column {
     /// should close (a jump completed).
     pub(super) fn handle_mouse(&mut self, m: MouseEvent) -> Result<bool> {
         // A click anywhere puts the links away again.
-        if matches!(self.mode, Mode::Links(_) | Mode::Hints) && matches!(m.kind, MouseEventKind::Down(_)) {
+        if matches!(self.mode, Mode::Links(_)) && matches!(m.kind, MouseEventKind::Down(_)) {
             self.mode = Mode::List;
             return Ok(false);
         }
@@ -1405,7 +1403,6 @@ impl Column {
             Reject,
             Help,
             Links,
-            Hints,
         }
         let kind = match self.mode {
             Mode::List => Kind::List,
@@ -1419,7 +1416,6 @@ impl Column {
             Mode::Reject(_) => Kind::Reject,
             Mode::Help(_) => Kind::Help,
             Mode::Links(_) => Kind::Links,
-            Mode::Hints => Kind::Hints,
         };
         let close = match kind {
             Kind::List => self.handle_list_key(key),
@@ -1440,10 +1436,6 @@ impl Column {
             }
             Kind::Links => {
                 self.handle_links_key(key);
-                Ok(false)
-            }
-            Kind::Hints => {
-                self.handle_hints_key(key);
                 Ok(false)
             }
         }?;
@@ -1564,7 +1556,6 @@ impl Column {
             KeyCode::Char('P') if self.require_tasks() => self.promote_selected(),
             KeyCode::Char('L') if self.require_tasks() => self.start_links(),
             KeyCode::Char('s') => self.client_request = Some(ClientRequest::Sidebar),
-            KeyCode::Char('f') if self.require_tasks() => self.start_hints(),
             KeyCode::Char('u') => {
                 if self.require_tasks() {
                     self.start_unlock();
@@ -3569,7 +3560,6 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("P", "promote a run to a task"),
             ("L", "task links (y copies)"),
             ("s", "sidebar: links, git, todos"),
-            ("f", "open a link (⇧ copies)"),
             ("n", "next task that needs you"),
             ("A D", "approve / deny permission"),
             ("D", "reject pending secrets"),
@@ -3845,8 +3835,8 @@ fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static pale
 /// a column of 30–48 cells. Each task is two lines — the glyph and the
 /// bold title on the first, taking the whole width; on the second, muted
 /// and indented under the title, the workspace, the age of a resting task,
-/// then the `◇` and port chips, each kept only if it fits whole (PRs are
-/// the sidebar's).
+/// each kept only if it fits whole. No link chips: the sidebar lists the
+/// shown task's links, `L` any task's.
 /// The task shown beside the column (`Column::is_shown`: its window, or a
 /// closed task's empty screen) has its title in the "current" colour, and a
 /// `▌` in that colour marks both its lines in the indent. No spacer between tasks: the headers already separate the groups,
@@ -3865,7 +3855,6 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
     }
     let mut last_group: Option<String> = None;
     let dim = Style::default().fg(palette::MUTED.color());
-    let hints = column.hint_letters();
 
     for (pos, &row_idx) in column.filtered.iter().enumerate() {
         let row = &column.rows[row_idx];
@@ -3916,7 +3905,7 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         // Second line: pieces in priority order, each dropped whole when it
         // no longer fits, separated by a muted dot. What the task wants from
         // you comes first — it is the reason to look at the row at all — then
-        // the workspace, the age, and the live chips.
+        // the workspace and the age.
         let mut pieces: Vec<Vec<Span<'static>>> = Vec::new();
         if let Some((label, fg, bg)) = row_reason(row) {
             pieces.push(vec![Span::styled(
@@ -3940,18 +3929,6 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
             && let Some(changed) = row.changed
         {
             pieces.push(vec![Span::styled(workspace::format_age(changed), dim)]);
-        }
-        // What was made with Claude, ports — each with its hint letter
-        // in `f` mode, the letter and the chip kept or dropped together.
-        for (k, chip) in links::link_chips(row).into_iter().enumerate() {
-            let style = Style::default().fg(chip.rgb.color());
-            match hints.iter().find(|(r, c, _)| *r == row_idx && *c == k) {
-                Some((_, _, key)) => pieces.push(vec![
-                    Span::styled(key.to_string(), Style::default().fg(palette::GROUND.color()).bg(palette::WARN.color()).add_modifier(Modifier::BOLD)),
-                    Span::styled(chip.text, style),
-                ]),
-                None => pieces.push(vec![Span::styled(chip.text, style)]),
-            }
         }
         let mut second = vec![gutter(), Span::raw(" ".repeat(INDENT - 2))];
         let mut used = INDENT;
@@ -4598,7 +4575,7 @@ mod tests {
     /// to the front end; `f` letters every link chip, a letter opens it and
     /// the capital copies it. Either way the column is back in the list.
     #[test]
-    fn l_and_f_hand_a_link_to_the_front_end() {
+    fn l_hands_a_link_to_the_front_end() {
         use tenx_core::links::LinkKind;
         let mut c = screenshot::fixture_column();
         c.offline = true;
@@ -4618,20 +4595,6 @@ mod tests {
         c.handle_key(plain('k')).unwrap();
         c.handle_key(plain('y')).unwrap();
         assert!(matches!(c.take_link_action(), Some(LinkAction::Copy(l)) if l.url.ends_with("/pull/31")));
-
-        c.handle_key(plain('f')).unwrap();
-        assert!(matches!(c.mode, Mode::Hints));
-        // a = rate limit middleware's port, b = csv export's ◇ (PRs have no chip).
-        c.handle_key(plain('B')).unwrap();
-        assert!(matches!(c.take_link_action(), Some(LinkAction::Copy(l)) if l.label == "Link picker proposal"));
-        c.handle_key(plain('f')).unwrap();
-        c.handle_key(plain('a')).unwrap();
-        assert!(matches!(c.take_link_action(), Some(LinkAction::Open(l)) if l.url == "http://localhost:8080"));
-        // A letter with no chip, or esc: nothing, back in the list.
-        c.handle_key(plain('f')).unwrap();
-        c.handle_key(plain('z')).unwrap();
-        assert!(c.take_link_action().is_none());
-        assert!(matches!(c.mode, Mode::List));
 
         c.selected = c.filtered.iter().position(|&i| c.rows[i].slug == "flaky-checkout-e2e").unwrap();
         c.handle_key(plain('L')).unwrap();

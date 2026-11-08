@@ -1919,24 +1919,7 @@ a:hover {
   transition: opacity 120ms;
 }
 
-/* A task's links: chips that open, the ↗ button's count, the menu / sheet
-   (LinksMenu), and the letters of `f` mode. */
-.lchip {
-  text-decoration: none;
-  border-radius: 4px;
-}
-.lchip:hover {
-  text-decoration: underline;
-}
-.lhint {
-  display: inline-block;
-  margin-right: 2px;
-  padding: 0 3px;
-  border-radius: 3px;
-  background: var(--warn);
-  color: var(--ground);
-  font-weight: 700;
-}
+/* A task's links: the ↗ button's count, the menu / sheet (LinksMenu). */
 .hlinks .lcount {
   margin-left: 3px;
   font-size: 12px;

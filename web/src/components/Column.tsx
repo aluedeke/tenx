@@ -15,7 +15,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { PopupLayer, Slide, jobEntries, subEntries, taskEntries, useRowGestures, type Popup, type Reveal } from './RowActions';
 import type { Action, Click, ColumnView, Footer, FormOp, Item, JobItem, ModeView, SubItem, TaskItem } from '@/protocol';
-import { linkHref } from '@/lib/links';
 import { RenameForm, WebForms } from './WebForms';
 
 interface Props {
@@ -345,7 +344,7 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
   }
 
   // Second line, in the TUI's priority order: what it wants from you, the
-  // workspace, a non-default agent, the age, ◇, ports. A permission it can
+  // workspace, a non-default agent, the age, a run's chip. A permission it can
   // answer is a split chip: the answer sits on what it answers.
   const pieces: ReactNode[] = [];
   if (task.reason && task.answerable) {
@@ -400,33 +399,8 @@ function TaskRow({ task, ctl }: { task: TaskItem; ctl: RowCtl }) {
       </span>,
     );
   if (task.age) pieces.push(<span key="age">{task.age}</span>);
-  // What was made with Claude, ports: real links, opened by the browser
-  // like any other; in `f` mode each carries its letter.
-  task.chips.forEach((chip, i) => {
-    const hint = chip.hint && <span className="lhint">{chip.hint}</span>;
-    pieces.push(
-      chip.link ? (
-        <a
-          key={`l${i}`}
-          className="lchip"
-          href={linkHref(chip.link, location.hostname)}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`${chip.link.label} — ${chip.link.url}`}
-          style={{ color: chip.fg }}
-          onClick={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          {hint}
-          {chip.label}
-        </a>
-      ) : (
-        <span key={`l${i}`} style={{ color: chip.fg }}>
-          {chip.label}
-        </span>
-      ),
-    );
-  });
+  // A scheduled run's chip. No link chips: the sidebar lists the links.
+  if (task.run) pieces.push(<span key="run" style={{ color: task.run.fg }}>{task.run.label}</span>);
 
   const sel = task.selected && ctl.focused;
   // The delete prompt sits on the row it deletes (the selection).
