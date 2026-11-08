@@ -180,23 +180,46 @@ pub struct Section {
     /// Beside the title: the todos' `3/5`.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub count: String,
+    /// How far the todos are, 0–1: drawn as a bar under the title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f32>,
     pub entries: Vec<Entry>,
 }
 
-/// One line of a section, and the state under it.
+/// One entry of a section: an icon, a label, and the state under it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Entry {
     pub icon: &'static str,
+    /// The icon's colour; `None`: its link kind's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_tone: Option<Tone>,
     pub label: String,
-    /// The state: `checks pass · approved`, `In Progress`, `3 changed`; may be
-    /// empty.
-    pub detail: String,
-    pub tone: Tone,
+    /// A PR's checks, one per check (passed, failed, running), drawn as
+    /// small squares.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<Tone>,
+    /// The state under the label, in parts of their own colour.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Part>,
     /// What a click opens.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<LinkKind>,
+}
+
+/// A piece of an entry's state: `2/4 pass`, `review needed`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Part {
+    pub text: String,
+    pub tone: Tone,
+    /// Drawn as a label with a ground (a Linear status).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pill: bool,
+}
+
+fn part(text: impl Into<String>, tone: Tone) -> Part {
+    Part { text: text.into(), tone, pill: false }
 }
 
 /// The colour of an entry's state.
@@ -216,59 +239,82 @@ pub enum Tone {
     Muted,
 }
 
-/// A PR's state line and its colour.
-pub fn pr_state(pr: &PrInfo, watching: bool) -> (String, Tone) {
-    let (mut parts, mut tone): (Vec<&str>, Tone) = match pr.state.as_str() {
-        "MERGED" => (vec!["merged"], Tone::Merged),
-        "CLOSED" => (vec!["closed"], Tone::Muted),
-        _ => {
-            let mut parts = Vec::new();
-            let mut tone = Tone::Plain;
-            if pr.draft {
-                parts.push("draft");
+/// At most this many check squares; past it the count says the rest.
+pub const MAX_CHECK_SQUARES: usize = 12;
+
+/// A PR's dot colour, its check squares and its state parts: `2/4 pass`,
+/// the review, the comments (`3 comments · 2 open`, open = unresolved
+/// threads), `watching` while a `tenx pr wait` runs on it.
+pub fn pr_state(pr: &PrInfo, watching: bool) -> (Tone, Vec<Tone>, Vec<Part>) {
+    let mut parts = Vec::new();
+    let mut checks = Vec::new();
+    let comments = |parts: &mut Vec<Part>, tone_open: Tone| {
+        if pr.comments > 0 {
+            let n = if pr.comments == 1 { "1 comment".to_string() } else { format!("{} comments", pr.comments) };
+            if pr.unresolved > 0 {
+                parts.push(part(format!("{n} · {} open", pr.unresolved), tone_open));
+            } else {
+                parts.push(part(n, Tone::Muted));
             }
-            match pr.checks.as_str() {
-                "failure" => {
-                    parts.push("checks failing");
-                    tone = Tone::Bad;
-                }
-                "pending" => {
-                    parts.push("checks running");
-                    tone = Tone::Warn;
-                }
-                "success" => {
-                    parts.push("checks pass");
-                    tone = Tone::Good;
-                }
-                _ => {}
+        }
+    };
+    let dot = match pr.state.as_str() {
+        "MERGED" => {
+            parts.push(part("merged", Tone::Merged));
+            comments(&mut parts, Tone::Muted);
+            Tone::Merged
+        }
+        "CLOSED" => {
+            parts.push(part("closed", Tone::Muted));
+            comments(&mut parts, Tone::Muted);
+            Tone::Muted
+        }
+        _ => {
+            let total = pr.checks_pass + pr.checks_fail + pr.checks_pending;
+            checks.extend(std::iter::repeat_n(Tone::Good, pr.checks_pass as usize));
+            checks.extend(std::iter::repeat_n(Tone::Bad, pr.checks_fail as usize));
+            checks.extend(std::iter::repeat_n(Tone::Warn, pr.checks_pending as usize));
+            checks.truncate(MAX_CHECK_SQUARES);
+            let mut dot = Tone::Good;
+            if pr.draft {
+                parts.push(part("draft", Tone::Muted));
+                dot = Tone::Plain;
+            }
+            if total > 0 {
+                parts.push(part(format!("{}/{total} pass", pr.checks_pass), Tone::Plain));
+            } else if !pr.checks.is_empty() {
+                parts.push(part(pr.checks.clone(), Tone::Plain));
+            }
+            if pr.checks_fail > 0 || pr.checks == "failure" {
+                dot = Tone::Bad;
+            } else if pr.checks_pending > 0 || pr.checks == "pending" {
+                dot = Tone::Warn;
             }
             match pr.review.as_str() {
                 "CHANGES_REQUESTED" => {
-                    parts.push("changes requested");
-                    tone = Tone::Bad;
+                    parts.push(part("changes requested", Tone::Bad));
+                    dot = Tone::Bad;
                 }
                 "REVIEW_REQUIRED" if !pr.draft => {
-                    parts.push("review needed");
-                    if tone != Tone::Bad {
-                        tone = Tone::Warn;
+                    parts.push(part("review needed", Tone::Warn));
+                    if dot == Tone::Good {
+                        dot = Tone::Warn;
                     }
                 }
-                "APPROVED" => parts.push("approved"),
+                "APPROVED" => parts.push(part("approved", Tone::Good)),
                 _ => {}
             }
+            comments(&mut parts, Tone::Warn);
             if parts.is_empty() {
-                parts.push("open");
+                parts.push(part("open", Tone::Plain));
             }
-            (parts, tone)
+            dot
         }
     };
     if watching {
-        parts.push("watching");
-        if tone == Tone::Plain {
-            tone = Tone::Warn;
-        }
+        parts.push(part("watching", Tone::Warn));
     }
-    (parts.join(" · "), tone)
+    (dot, checks, parts)
 }
 
 /// A Linear state's colour, by its kind.
@@ -322,32 +368,58 @@ pub fn repo_state(g: &RepoGit) -> (String, Tone) {
     (parts.join(" · "), tone)
 }
 
-fn link_entry(l: &Link, detail: String, tone: Tone) -> Entry {
-    Entry { icon: l.kind.icon(), label: l.label.clone(), detail, tone, url: Some(l.url.clone()), kind: Some(l.kind) }
+fn link_entry(l: &Link, parts: Vec<Part>) -> Entry {
+    Entry { icon: l.kind.icon(), icon_tone: None, label: l.label.clone(), checks: Vec::new(), parts, url: Some(l.url.clone()), kind: Some(l.kind) }
 }
 
-/// The sidebar for a task whose cached facts are `live`.
+fn plain_entry(icon: &'static str, icon_tone: Tone, label: String, parts: Vec<Part>) -> Entry {
+    Entry { icon, icon_tone: Some(icon_tone), label, checks: Vec::new(), parts, url: None, kind: None }
+}
+
+/// The sidebar for a task whose cached facts are `live`: its todos, then its
+/// links by kind — PRs, Linear, made with Claude, Slack —, its repos, and
+/// other links last.
 pub fn build(live: &Live) -> Sidebar {
     let links = live.all_links();
     let of = |kinds: &[LinkKind]| links.iter().filter(|l| kinds.contains(&l.kind)).collect::<Vec<_>>();
     let mut sections = Vec::new();
-    let mut push = |title: &'static str, count: String, entries: Vec<Entry>| {
+    let mut push = |title: &'static str, count: String, progress: Option<f32>, entries: Vec<Entry>| {
         if !entries.is_empty() {
-            sections.push(Section { title, count, entries });
+            sections.push(Section { title, count, progress, entries });
         }
     };
 
+    if let Some(t) = &live.todos {
+        let entries = if t.open.is_empty() {
+            vec![plain_entry("✓", Tone::Good, "all done".to_string(), Vec::new())]
+        } else {
+            t.open.iter().map(|s| plain_entry("○", Tone::Muted, s.clone(), Vec::new())).collect()
+        };
+        push("Todo", format!("{}/{}", t.done, t.total), Some(t.done as f32 / t.total.max(1) as f32), entries);
+    }
+
+    let same = |a: &str, b: &str| a.trim_end_matches('/') == b.trim_end_matches('/');
     let prs = of(&[LinkKind::Pr])
         .into_iter()
-        .map(|l| match live.prs.iter().find(|p| p.url == l.url) {
-            Some(p) => {
-                let (detail, tone) = pr_state(p, live.watching.contains(&p.number));
-                link_entry(l, detail, tone)
+        .map(|l| {
+            let known = live.prs.iter().chain(&live.linked_prs).find(|p| same(&p.url, &l.url) || crate::prstate::pr_ref(&l.url).is_some_and(|r| r.number == p.number && p.url.contains(&format!("/{}/pull/", r.repo.name))));
+            match known {
+                Some(p) => {
+                    let (dot, checks, parts) = pr_state(p, live.watching.contains(&p.number));
+                    let mut e = link_entry(l, parts);
+                    e.icon = "●";
+                    e.icon_tone = Some(dot);
+                    e.checks = checks;
+                    if !p.title.is_empty() {
+                        e.label = format!("#{} {}", p.number, p.title);
+                    }
+                    e
+                }
+                None => link_entry(l, Vec::new()),
             }
-            None => link_entry(l, String::new(), Tone::Plain),
         })
         .collect();
-    push("Pull requests", String::new(), prs);
+    push("Pull requests", String::new(), None, prs);
 
     let linear = of(&[LinkKind::Linear])
         .into_iter()
@@ -355,57 +427,46 @@ pub fn build(live: &Live) -> Sidebar {
             let found = linear_key(&l.url).and_then(|k| live.linear.iter().find(|i| i.key == k));
             match found {
                 Some(i) => {
-                    let mut e = link_entry(l, i.state.clone(), linear_tone(&i.state_type));
+                    let mut e = link_entry(l, vec![Part { text: i.state.to_uppercase(), tone: linear_tone(&i.state_type), pill: true }]);
                     if !i.title.is_empty() {
                         e.label = format!("{} {}", i.key, i.title);
                     }
                     e
                 }
-                None => link_entry(l, String::new(), Tone::Plain),
+                None => link_entry(l, Vec::new()),
             }
         })
         .collect();
-    push("Linear", String::new(), linear);
+    push("Linear", String::new(), None, linear);
 
     let claude = of(&[LinkKind::Design, LinkKind::Artifact])
         .into_iter()
-        .map(|l| link_entry(l, if l.kind == LinkKind::Design { "Claude Design" } else { "artifact" }.to_string(), Tone::Muted))
+        .map(|l| link_entry(l, vec![part(if l.kind == LinkKind::Design { "Claude Design" } else { "artifact" }, Tone::Muted)]))
         .collect();
-    push("Claude", String::new(), claude);
+    push("Claude", String::new(), None, claude);
 
-    let slack = of(&[LinkKind::Slack]).into_iter().map(|l| link_entry(l, String::new(), Tone::Plain)).collect();
-    push("Slack", String::new(), slack);
-
-    let other = of(&[LinkKind::Port, LinkKind::Web])
-        .into_iter()
-        .map(|l| match l.kind {
-            LinkKind::Port => link_entry(l, "running here".to_string(), Tone::Good),
-            _ => link_entry(l, String::new(), Tone::Plain),
-        })
-        .collect();
-    push("Other", String::new(), other);
+    let slack = of(&[LinkKind::Slack]).into_iter().map(|l| link_entry(l, Vec::new())).collect();
+    push("Slack", String::new(), None, slack);
 
     let repos = live
         .git
         .iter()
         .map(|g| {
             let (detail, tone) = repo_state(g);
-            Entry { icon: "⎇", label: format!("{} · {}", g.name, g.branch), detail, tone, url: None, kind: None }
+            plain_entry("⎇", tone, format!("{} · {}", g.name, g.branch), vec![part(detail, tone)])
         })
         .collect();
-    push("Repos", String::new(), repos);
+    push("Repos", String::new(), None, repos);
 
-    if let Some(t) = &live.todos {
-        let entries = if t.open.is_empty() {
-            vec![Entry { icon: "✓", label: "all done".to_string(), detail: String::new(), tone: Tone::Good, url: None, kind: None }]
-        } else {
-            t.open
-                .iter()
-                .map(|s| Entry { icon: "○", label: s.clone(), detail: String::new(), tone: Tone::Plain, url: None, kind: None })
-                .collect()
-        };
-        push("Todo", format!("{}/{}", t.done, t.total), entries);
-    }
+    let other = of(&[LinkKind::Port, LinkKind::Web])
+        .into_iter()
+        .map(|l| match l.kind {
+            LinkKind::Port => link_entry(l, vec![part("running here", Tone::Good)]),
+            _ => link_entry(l, Vec::new()),
+        })
+        .collect();
+    push("Other", String::new(), None, other);
+
     Sidebar { sections }
 }
 
@@ -471,19 +532,32 @@ mod tests {
 
     #[test]
     fn pr_states() {
-        let pr = |state: &str, draft: bool, checks: &str, review: &str| PrInfo {
+        let pr = |state: &str, draft: bool, (p, f, w): (u32, u32, u32), review: &str| PrInfo {
             state: state.into(),
             draft,
-            checks: checks.into(),
+            checks_pass: p,
+            checks_fail: f,
+            checks_pending: w,
             review: review.into(),
             ..Default::default()
         };
-        assert_eq!(pr_state(&pr("MERGED", false, "success", "APPROVED"), false), ("merged".into(), Tone::Merged));
-        assert_eq!(pr_state(&pr("CLOSED", false, "", ""), false), ("closed".into(), Tone::Muted));
-        assert_eq!(pr_state(&pr("OPEN", false, "success", "APPROVED"), false), ("checks pass · approved".into(), Tone::Good));
-        assert_eq!(pr_state(&pr("OPEN", false, "failure", "REVIEW_REQUIRED"), false), ("checks failing · review needed".into(), Tone::Bad));
-        assert_eq!(pr_state(&pr("OPEN", true, "pending", "REVIEW_REQUIRED"), false), ("draft · checks running".into(), Tone::Warn));
-        assert_eq!(pr_state(&pr("OPEN", false, "", ""), true), ("open · watching".into(), Tone::Warn));
+        let texts = |parts: &[Part]| parts.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join(" | ");
+        let (dot, checks, parts) = pr_state(&PrInfo { comments: 1, ..pr("MERGED", false, (3, 0, 0), "APPROVED") }, false);
+        assert_eq!((dot, checks.len(), texts(&parts).as_str()), (Tone::Merged, 0, "merged | 1 comment"));
+        let (dot, _, parts) = pr_state(&pr("CLOSED", false, (0, 0, 0), ""), false);
+        assert_eq!((dot, texts(&parts).as_str()), (Tone::Muted, "closed"));
+        let (dot, checks, parts) = pr_state(&PrInfo { comments: 3, unresolved: 2, ..pr("OPEN", false, (2, 1, 1), "REVIEW_REQUIRED") }, false);
+        assert_eq!(dot, Tone::Bad);
+        assert_eq!(checks, vec![Tone::Good, Tone::Good, Tone::Bad, Tone::Warn]);
+        assert_eq!(texts(&parts), "2/4 pass | review needed | 3 comments · 2 open");
+        let (dot, _, parts) = pr_state(&pr("OPEN", false, (4, 0, 0), "APPROVED"), false);
+        assert_eq!((dot, texts(&parts).as_str()), (Tone::Good, "4/4 pass | approved"));
+        let (dot, _, parts) = pr_state(&pr("OPEN", true, (0, 0, 2), "REVIEW_REQUIRED"), false);
+        assert_eq!((dot, texts(&parts).as_str()), (Tone::Warn, "draft | 0/2 pass"));
+        let (_, _, parts) = pr_state(&pr("OPEN", false, (0, 0, 0), ""), true);
+        assert_eq!(texts(&parts), "open | watching");
+        let many = pr_state(&pr("OPEN", false, (30, 0, 0), ""), false).1;
+        assert_eq!(many.len(), MAX_CHECK_SQUARES);
     }
 
     #[test]
@@ -496,10 +570,13 @@ mod tests {
                 state: "OPEN".into(),
                 url: "https://github.com/a/tenx/pull/32".into(),
                 checks: "success".into(),
+                checks_pass: 2,
                 title: "Bar".into(),
                 ..Default::default()
             }],
+            linked_prs: vec![PrInfo { repo: "tenx".into(), number: 30, state: "MERGED".into(), url: "https://github.com/a/tenx/pull/30".into(), title: "Tabs".into(), ..Default::default() }],
             task_links: vec![
+                link("https://github.com/a/tenx/pull/30", "PR 30"),
                 link("https://linear.app/acme/issue/TNX-9/x", "TNX-9 x"),
                 link("https://acme.slack.com/archives/C1/p2", "the thread"),
                 link("https://claude.ai/design/p/1", "Mock"),
@@ -513,14 +590,17 @@ mod tests {
         };
         let s = build(&live);
         let titles: Vec<&str> = s.sections.iter().map(|s| s.title).collect();
-        assert_eq!(titles, vec!["Pull requests", "Linear", "Claude", "Slack", "Other", "Repos", "Todo"]);
-        assert_eq!(s.sections[0].entries[0].label, "#32 Bar");
-        assert_eq!(s.sections[0].entries[0].detail, "checks pass");
-        assert_eq!(s.sections[1].entries[0].label, "TNX-9 Sidebar");
-        assert_eq!((s.sections[1].entries[0].detail.as_str(), s.sections[1].entries[0].tone), ("In Review", Tone::Warn));
-        assert_eq!(s.sections[4].entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), vec!["localhost:3000", "docs"]);
-        assert_eq!(s.sections[5].entries[0].detail, "1 changed");
-        assert_eq!(s.sections[6].count, "1/2");
+        assert_eq!(titles, vec!["Todo", "Pull requests", "Linear", "Claude", "Slack", "Repos", "Other"]);
+        assert_eq!((s.sections[0].count.as_str(), s.sections[0].progress), ("1/2", Some(0.5)));
+        let prs = &s.sections[1].entries;
+        assert_eq!(prs[0].label, "#32 Bar");
+        assert_eq!(prs[0].icon_tone, Some(Tone::Good));
+        assert_eq!(prs[1].label, "#30 Tabs", "a linked PR gets its state too");
+        assert_eq!(prs[1].parts[0].text, "merged");
+        assert_eq!(s.sections[2].entries[0].label, "TNX-9 Sidebar");
+        assert_eq!(s.sections[2].entries[0].parts, vec![Part { text: "IN REVIEW".into(), tone: Tone::Warn, pill: true }]);
+        assert_eq!(s.sections[5].entries[0].parts[0].text, "1 changed");
+        assert_eq!(s.sections[6].entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), vec!["localhost:3000", "docs"]);
         assert!(build(&Live::default()).sections.is_empty());
     }
 }

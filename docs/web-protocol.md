@@ -67,9 +67,10 @@ Two frame kinds:
 // goes out after every numbered input, even one that changed nothing.
 { "type": "view", "ack": 17, "view": ColumnView }   // src/tui/column/view.rs, serialized
 // `view.sidebar` is the sidebar of the task the terminal shows (or null):
-// `{id, title, ws, ws_color, sections: [{title, count?, entries: [{icon,
-// label, detail, tone, url?, kind?}]}]}` — tenx_core::sidebar. `tone` is
-// plain | good | warn | bad | merged | muted, the colour of `detail`.
+// `{id, title, ws, ws_color, sections: [{title, count?, progress?, entries:
+// [{icon, icon_tone?, label, checks?, parts?: [{text, tone, pill?}], url?,
+// kind?}]}]}` — tenx_core::sidebar. A tone is plain | good | warn | bad |
+// merged | muted; `checks` is one tone per PR check (drawn as squares).
 
 // With `patch=1`, every view after a socket's first is sent as what changed
 // since the one before (tenx-core/src/viewpatch.rs; the page's side is
@@ -201,7 +202,8 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
   column when narrow), `focus_column` (show it and focus it), `hide`,
   `quit` (= hide; the tab stays open), and `sidebar` (show or hide the
   sidebar: a panel right of the terminal from 1000 px wide, remembered per
-  browser; a sheet over it on a narrower page). The server doesn't move the column's
+  browser; a drawer over it from the right on a narrower page, where the
+  task list is a drawer from the left). The server doesn't move the column's
   focus itself: the page reports every change with a `focus` message.
 
 The terminal attaches on the first `resize`, so send one as soon as xterm.js

@@ -25,8 +25,9 @@ pub const LIVE_FILE: &str = ".tenx-live.json";
 /// GitHub.
 pub const PR_TTL_ACTIVE: Duration = Duration::from_secs(120);
 pub const PR_TTL_PARKED: Duration = Duration::from_secs(30 * 60);
-/// `gh` calls per watch tick, at most. Two keeps a cold start (every task
-/// stale) from taking a minute of solid network per tick.
+/// Tasks whose PRs are looked up per watch tick, at most — one `gh api
+/// graphql` request each. Two keeps a cold start (every task stale) from
+/// taking a minute of solid network per tick.
 pub const PR_LOOKUPS_PER_TICK: usize = 2;
 
 /// Transcript lookups per watch tick for tasks not read yet or with a new
@@ -176,22 +177,41 @@ pub fn ports_by_window() -> HashMap<String, Vec<u16>> {
     roots.into_iter().map(|(w, pids)| (w, tenx_core::live::ports_for(&pids, &listeners, &tree))).collect()
 }
 
-/// `gh pr view` in `worktree`: the PR for its checked-out branch, if any.
-/// `None` also when `gh` is missing, unauthenticated, or offline — the chip
-/// simply doesn't appear.
-pub fn fetch_pr(repo: &str, worktree: &Path) -> Option<PrInfo> {
+/// A task's PRs in one `gh api graphql` request (`tenx_core::prstate`): the
+/// newest PR of each repo worktree's branch, and the `linked` PRs. `None`
+/// when `gh` is missing, unauthenticated or offline, or GitHub refused the
+/// request — the caller keeps what it had.
+pub fn fetch_prs(task_dir: &Path, repos: &[String], linked: &[tenx_core::prstate::PrRef]) -> Option<(Vec<PrInfo>, Vec<PrInfo>)> {
+    use tenx_core::prstate;
+    let git = |wt: &Path, args: &[&str]| -> Option<String> {
+        let out = Command::new("git").arg("-C").arg(wt).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (out.status.success() && !s.is_empty()).then_some(s)
+    };
+    let branches: Vec<prstate::BranchRef> = repos
+        .iter()
+        .filter_map(|r| {
+            let wt = task_dir.join(r);
+            let repo = prstate::github_repo(&git(&wt, &["remote", "get-url", "origin"])?)?;
+            Some(prstate::BranchRef { dir: r.clone(), repo, branch: git(&wt, &["branch", "--show-current"])? })
+        })
+        .collect();
+    if branches.is_empty() && linked.is_empty() {
+        return Some((Vec::new(), Vec::new()));
+    }
+    let query = format!("query={}", prstate::query(&branches, linked));
     let out = Command::new("gh")
-        .current_dir(worktree)
-        .args(["pr", "view", "--json", "number,title,state,url,isDraft,reviewDecision,statusCheckRollup"])
+        .args(["api", "graphql", "-f", &query])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
         .ok()?;
-    if !out.status.success() {
-        return None;
-    }
+    // A PR that is gone fails its part of the request, and gh exits 1, but
+    // the rest of the answer is still there.
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    tenx_core::live::summarize_pr(repo, &json)
+    let (own, mut others) = prstate::parse(&json, &branches, linked)?;
+    others.retain(|o| !own.iter().any(|p| p.url == o.url));
+    Some((own, others))
 }
 
 /// Whether `gh` is on `PATH` — resolved once per process; the watcher asks

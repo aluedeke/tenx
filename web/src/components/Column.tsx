@@ -40,6 +40,10 @@ interface Props {
   onForm(op: FormOp): void;
   /** A form of the page's own (the secrets form) that owns the column. */
   pageForm?: ReactNode;
+  /** ⋯ at the tab bar's right end (Header.tsx `MoreMenu`). */
+  menu?: ReactNode;
+  /** Drawn over the terminal: a × that puts it away. */
+  onClose?(): void;
 }
 
 /** Keys and clicks, for the pieces below. */
@@ -165,6 +169,14 @@ export function Column(props: Props) {
                 {t.running > 0 && <span className="jobs"> [{t.running}]</span>}
               </button>
             ))}
+            <span className="tabs-end">
+              {props.menu}
+              {props.onClose && (
+                <button type="button" className="hbtn tclose" data-testid="column-close" title="hide the tasks (^w)" aria-label="hide the tasks" onClick={props.onClose}>
+                  ×
+                </button>
+              )}
+            </span>
           </div>
           {view.mode.kind === 'rename' ? (
             <RenameForm value={view.mode.buffer} status={view.status} send={props.onForm} touch={props.touch} />

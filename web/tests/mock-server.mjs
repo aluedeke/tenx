@@ -138,8 +138,24 @@ function view(st) {
     focus: st.focus, filter: st.filter, current: shownId, items,
     shown_closed: closedSel ? (({ id, title, ws, ws_color }) => ({ id, title, ws, ws_color }))(TASKS.find((t) => t.id === closedSel)) : null, mode, footer, help: HELP, status: st.status ?? null,
     jobs: st.jobs ?? [],
+    sidebar: shownId ? SIDEBAR : null,
   };
 }
+
+// The sidebar of the task in front of you (tenx_core::sidebar).
+const SIDEBAR = {
+  id: 'acme/fix-login-timeout', title: 'Fix login timeout', ws: 'acme', ws_color: '#a78bfa',
+  sections: [
+    { title: 'Todo', count: '1/3', progress: 0.33, entries: [{ icon: '○', icon_tone: 'muted', label: 'Find the slow query' }] },
+    { title: 'Pull requests', entries: [
+      { icon: '●', icon_tone: 'bad', label: '#33 Fix the login timeout', checks: ['good', 'good', 'bad', 'warn'],
+        parts: [{ text: '2/4 pass', tone: 'plain' }, { text: 'review needed', tone: 'warn' }, { text: '3 comments · 2 open', tone: 'warn' }],
+        url: 'https://github.com/acme/api/pull/33', kind: 'PR' },
+      { icon: '●', icon_tone: 'merged', label: '#30 Session cookie', parts: [{ text: 'merged', tone: 'merged' }], url: 'https://github.com/acme/api/pull/30', kind: 'PR' },
+    ] },
+    { title: 'Linear', entries: [{ icon: '▸', label: 'ACME-12 Login times out', parts: [{ text: 'IN PROGRESS', tone: 'warn', pill: true }], url: 'https://linear.app/acme/issue/ACME-12/login', kind: 'linear' }] },
+  ],
+};
 
 // What the locked task (Cloud tasks) is waiting on, as the agent asked.
 const WANTS = [

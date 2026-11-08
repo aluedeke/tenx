@@ -1,15 +1,18 @@
 'use client';
 
-// The sidebar beside the terminal: the current task's links grouped with
-// their state (PRs, Linear, made with Claude, Slack, other), its repos' git
-// state and its todos — `view.sidebar`, built by the server
-// (tenx_core::sidebar). A panel right of the terminal on a wide page, a sheet
-// over it on a phone. A tap on an entry opens its link.
+// The sidebar beside the terminal: the current task's todos, its PRs (a dot
+// for the state, a square per check, the review, the comments), Linear
+// issues with their status, what was made with Claude, Slack messages, the
+// repos' git state and other links — `view.sidebar`, built by the server
+// (tenx_core::sidebar). A panel right of the terminal on a wide page; where
+// there is no room, a sheet over it from the right, the task list's mirror.
+// A tap on an entry opens its link.
 
 import type { LinkView, SidebarEntry, SidebarView } from '@/protocol';
 import { linkHref } from '@/lib/links';
 
 const KIND_COLOR: Partial<Record<LinkView['kind'], string>> = {
+  PR: 'var(--success)',
   artifact: 'var(--accent)',
   design: 'var(--accent)',
   linear: 'var(--current)',
@@ -20,15 +23,31 @@ const KIND_COLOR: Partial<Record<LinkView['kind'], string>> = {
 
 interface Props {
   view: SidebarView | null;
-  /** Drawn over the terminal (a phone): a close button, and a tap on a
-   * link closes it. */
+  /** Drawn over the terminal: a header with a ×, and a tap on a link puts
+   * it away. */
   overlay: boolean;
   onClose(): void;
 }
 
 export function Sidebar({ view, overlay, onClose }: Props) {
   const entry = (e: SidebarEntry, i: number) => {
-    const color = (e.kind && KIND_COLOR[e.kind]) || `var(--tone-${e.tone})`;
+    const color = e.icon_tone ? `var(--tone-${e.icon_tone})` : (e.kind && KIND_COLOR[e.kind]) || 'var(--muted)';
+    const state = (e.checks?.length || e.parts?.length) && (
+      <span className="sb-detail">
+        {!!e.checks?.length && (
+          <span className="sb-checks" aria-label={`${e.checks.length} checks`}>
+            {e.checks.map((t, j) => (
+              <i key={j} className={`sq tone-bg-${t}`} />
+            ))}
+          </span>
+        )}
+        {e.parts?.map((p, j) => (
+          <span key={j} className={p.pill ? `sb-pill pill-${p.tone}` : `tone-${p.tone}`}>
+            {p.text}
+          </span>
+        ))}
+      </span>
+    );
     const body = (
       <>
         <span className="sb-icon" style={{ color }}>
@@ -36,7 +55,7 @@ export function Sidebar({ view, overlay, onClose }: Props) {
         </span>
         <span className="sb-text">
           <span className="sb-label">{e.label}</span>
-          {e.detail && <span className={`sb-detail tone-${e.tone}`}>{e.detail}</span>}
+          {state}
         </span>
       </>
     );
@@ -64,17 +83,17 @@ export function Sidebar({ view, overlay, onClose }: Props) {
   };
 
   return (
-    <aside className={overlay ? 'sidebar overlay' : 'sidebar'} data-testid="sidebar">
-      <div className="sb-head">
-        <div className="sb-title">
-          <span className="bright bold">{view?.title ?? 'no task open'}</span>
-          {view && <span style={{ color: view.ws_color }}>{view.ws}</span>}
+    <aside className={overlay ? 'sidebar drawer' : 'sidebar'} data-testid="sidebar">
+      {overlay && (
+        <div className="sb-head">
+          <span className="sb-title">{view?.title ?? 'no task open'}</span>
+          <button type="button" className="hbtn sb-close" data-testid="sidebar-close" title="hide the sidebar (s in the column)" aria-label="hide the sidebar" onClick={onClose}>
+            ×
+          </button>
         </div>
-        <button type="button" className="sb-close" title="hide the sidebar (s in the column)" aria-label="hide the sidebar" onClick={onClose}>
-          ×
-        </button>
-      </div>
+      )}
       <div className="sb-body">
+        {!view && <div className="sb-empty">no task open</div>}
         {view && view.sections.length === 0 && (
           <div className="sb-empty">
             <div>nothing linked yet</div>
@@ -87,6 +106,11 @@ export function Sidebar({ view, overlay, onClose }: Props) {
               {s.title}
               {s.count && <span className="sb-count">{s.count}</span>}
             </div>
+            {s.progress !== undefined && (
+              <div className="sb-progress">
+                <i style={{ width: `${Math.round(s.progress * 100)}%` }} />
+              </div>
+            )}
             {s.entries.map(entry)}
           </section>
         ))}

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Column } from './Column';
-import { Header, type MicState, type SpeakerState } from './Header';
+import { Header, MoreMenu, type MicState, type SpeakerState } from './Header';
 import { LinksMenu } from './LinksMenu';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { PasteBox } from './PasteBox';
@@ -96,7 +96,6 @@ export function App() {
   const [secretsTask, setSecretsTask] = useState<string | null>(null);
   /** The current task's links, opened by the header's ↗ (not the column's
    * `L`, which is the server's mode). */
-  const [ownLinks, setOwnLinks] = useState<{ title: string; links: LinkView[] } | null>(null);
   /** What a copied link says, for a moment. */
   const [linkNote, setLinkNote] = useState<string | null>(null);
   /** The notice is a button that brings the keyboard back (after 📎). */
@@ -185,8 +184,12 @@ export function App() {
   }, []);
 
   // Latest state for the listeners registered once.
-  const state = useRef({ focus, visible, narrow, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' });
-  state.current = { focus, visible, narrow, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' };
+  // The task list covers the terminal (a sheet from the left) where there is
+  // no room beside it: a phone (the server's `narrow`), or narrower than
+  // SIDEBAR_ROOM. Picking a task then puts it away.
+  const overlay = narrow || !roomy;
+  const state = useRef({ focus, visible, narrow, overlay, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' });
+  state.current = { focus, visible, narrow, overlay, ctrlSticky, touch, kbOpen, mic, speaker, current: view?.current ?? '' };
 
   // Inputs that change the column are numbered and kept until a view
   // acknowledges them, so the column can be drawn with their effect before
@@ -228,8 +231,8 @@ export function App() {
     // Before the server's first `layout`: guess from the width, and start a
     // narrow page on the terminal, as the TUI does.
     const cols = Math.floor(window.innerWidth / measureCell(fontRef.current));
-    if (cols < NARROW_COLS) {
-      setNarrow(true);
+    if (cols < NARROW_COLS) setNarrow(true);
+    if (cols < NARROW_COLS || !window.matchMedia(SIDEBAR_ROOM).matches) {
       setVisible(false);
       setFocus('terminal');
     }
@@ -297,7 +300,7 @@ export function App() {
           case 'request':
             if (msg.request === 'focus_terminal') {
               setFocus('terminal');
-              if (state.current.narrow) setVisible(false);
+              if (state.current.overlay) setVisible(false);
             } else if (msg.request === 'sidebar') {
               toggleSidebarRef.current();
             } else if (msg.request === 'focus_column') {
@@ -396,7 +399,7 @@ export function App() {
     // An unlock answers with the secrets form, which owns the column.
     if (unlock) return;
     setFocus('terminal');
-    if (state.current.narrow) setVisible(false);
+    if (state.current.overlay) setVisible(false);
   };
 
   // Coming back to the last task: only one whose window is open — switching
@@ -410,7 +413,7 @@ export function App() {
     conn.current?.send({ type: 'click', kind: 'task', id });
     conn.current?.send({ type: 'action', name: 'open' });
     setFocus('terminal');
-    if (state.current.narrow) setVisible(false);
+    if (state.current.overlay) setVisible(false);
   };
 
   // Remember the task in front of this device.
@@ -581,7 +584,7 @@ export function App() {
   // The terminal's size follows the column's.
   useEffect(() => {
     requestAnimationFrame(() => term.current?.fit());
-  }, [visible, narrow, columnCols, fontSize]);
+  }, [visible, overlay, columnCols, fontSize]);
 
   const cycle = useCallback(() => {
     const { focus, visible } = state.current;
@@ -1097,18 +1100,6 @@ export function App() {
     }
   }, []);
 
-  /** The header's current task: the column, with that task selected. */
-  const showCurrent = useCallback(
-    (id: string) => {
-      setVisible(true);
-      setFocus('column');
-      const tasks = lastView.current?.tabs.findIndex((t) => t.label === 'Tasks') ?? 0;
-      if (!lastView.current?.tabs[tasks]?.active) send({ type: 'click', kind: 'tab', index: Math.max(0, tasks) });
-      send({ type: 'click', kind: 'task', id });
-    },
-    [send],
-  );
-
   // Called from the tap itself: a phone only raises its keyboard for a
   // focus() made inside a user gesture.
   const wantKeyboard = useCallback(() => {
@@ -1152,8 +1143,7 @@ export function App() {
     [pasteImages],
   );
 
-  const overlay = narrow;
-  const sidebarOverlay = narrow || !roomy;
+  const sidebarOverlay = overlay;
   const sidebarShown = sidebarOverlay ? sidebarSheet : sidebarWide;
   // The column as drawn: the last view with the inputs it doesn't reflect
   // yet replayed on it.
@@ -1175,7 +1165,7 @@ export function App() {
     if (seqOpened <= opened.current) return;
     opened.current = seqOpened;
     setFocus('terminal');
-    if (state.current.narrow) setVisible(false);
+    if (state.current.overlay) setVisible(false);
   }, [predicted?.opened]);
   // A form (or the help) opened from the header — `+`, `⋯` — lives in the
   // column, which a phone keeps hidden behind the terminal (and ^w may have
@@ -1207,7 +1197,7 @@ export function App() {
   const columnStyle = overlay ? undefined : { width: `${Math.ceil(columnCols * cell + 20)}px` };
 
   return (
-    <div className={`app${overlay ? ' narrow' : ''}${touch ? ' touch' : ''}${kbOpen ? ' kb-open' : ''}`}>
+    <div className={`app${narrow ? ' narrow' : ''}${touch ? ' touch' : ''}${kbOpen ? ' kb-open' : ''}`}>
       <Header
         view={shown}
         status={status}
@@ -1216,17 +1206,13 @@ export function App() {
         columnShown={visible}
         onToggle={toggleColumn}
         onAction={onAction}
-        onShowCurrent={showCurrent}
         push={pushState}
-        onPushToggle={togglePush}
-        onPushTest={testPush}
         mic={mic}
         micSeconds={micSeconds}
         onMic={toggleMic}
         speaker={speaker}
         onSpeak={toggleSpeaker}
         onSpeakStop={stopSpeaker}
-        onLinks={(task) => setOwnLinks({ title: task.title, links: task.links })}
         sidebarShown={sidebarShown}
         onSidebar={() => toggleSidebarRef.current()}
       />
@@ -1240,15 +1226,22 @@ export function App() {
           onClose={() => sendKey({ key: 'Escape', ctrl: false, alt: false, shift: false })}
           onDone={setLinkNote}
         />
-      ) : (
-        ownLinks && (
-          <LinksMenu own title={ownLinks.title} links={ownLinks.links} touch={touch} onClose={() => setOwnLinks(null)} onDone={setLinkNote} />
-        )
-      )}
+      ) : null}
       <div className="main">
-        {sidebarShown && sidebarOverlay && <div className="sb-dim" onPointerDown={() => setSidebarSheet(false)} />}
+        {((sidebarShown && sidebarOverlay) || (visible && overlay)) && (
+          <div
+            className="sb-dim"
+            onPointerDown={() => {
+              setSidebarSheet(false);
+              if (state.current.overlay && state.current.visible) {
+                setVisible(false);
+                setFocus('terminal');
+              }
+            }}
+          />
+        )}
         {visible && (
-          <div className={overlay ? 'column-wrap overlay' : 'column-wrap'} style={columnStyle}>
+          <div className={overlay ? 'column-wrap drawer' : 'column-wrap'} style={columnStyle}>
             <Column
               view={predicted?.view ?? null}
               loading={predicted?.loading ?? false}
@@ -1261,6 +1254,18 @@ export function App() {
               onWantKeyboard={wantKeyboard}
               touch={touch}
               onForm={onForm}
+              menu={
+                <MoreMenu
+                  status={status}
+                  failures={failures}
+                  host={host}
+                  push={pushState}
+                  onPushToggle={togglePush}
+                  onPushTest={testPush}
+                  onAction={onAction}
+                />
+              }
+              onClose={overlay ? toggleColumn : undefined}
               pageForm={
                 secretsTask && (
                   <SecretsForm
@@ -1287,7 +1292,7 @@ export function App() {
             onBell={bell}
             intercept={(ev) => isFocusCycle(ev, mac.current) || isMicToggle(ev) || isSpeakerToggle(ev)}
             onFocus={() => {
-              if (!state.current.narrow || !state.current.visible) setFocus('terminal');
+              if (!state.current.overlay || !state.current.visible) setFocus('terminal');
             }}
             onImages={pasteImages}
             onPasteStart={() => send({ type: 'paste' })}

@@ -59,7 +59,7 @@ fn pr(number: u64, state: &str, draft: bool, checks: &str) -> PrInfo {
         draft,
         review: String::new(),
         checks: checks.into(),
-        title: String::new(),
+        ..Default::default()
     }
 }
 

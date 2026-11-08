@@ -18,6 +18,10 @@ pub struct Live {
     /// One entry per repo that has a PR for the task's branch.
     #[serde(default)]
     pub prs: Vec<PrInfo>,
+    /// The other PRs the task links to (`TASK.md`, the agent's replies),
+    /// looked up with the task's own (`crate::prstate`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub linked_prs: Vec<PrInfo>,
     /// When the PRs were last looked up (unix seconds); 0 = never.
     #[serde(default)]
     pub pr_checked: u64,
@@ -99,6 +103,19 @@ pub struct PrInfo {
     pub checks: String,
     #[serde(default)]
     pub title: String,
+    /// The checks of its last commit, by outcome.
+    #[serde(default)]
+    pub checks_pass: u32,
+    #[serde(default)]
+    pub checks_fail: u32,
+    #[serde(default)]
+    pub checks_pending: u32,
+    /// Comments and review threads.
+    #[serde(default)]
+    pub comments: u32,
+    /// Review threads not resolved yet.
+    #[serde(default)]
+    pub unresolved: u32,
 }
 
 impl PrInfo {
@@ -163,6 +180,7 @@ pub fn summarize_pr(repo: &str, json: &serde_json::Value) -> Option<PrInfo> {
         review: json["reviewDecision"].as_str().unwrap_or("").to_string(),
         checks: checks.unwrap_or("").to_string(),
         title: json["title"].as_str().unwrap_or("").to_string(),
+        ..Default::default()
     })
 }
 
