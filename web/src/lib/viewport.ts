@@ -74,8 +74,10 @@ export function inIosApp(w: { webkit?: { messageHandlers?: { tenx?: unknown } } 
 /** The key bar (Esc, Ctrl, arrows, paste, 📎) on a touch screen: over the
  * on-screen keyboard; on an iPad always, since a hardware keyboard never
  * raises an on-screen one, and a bar that came and went with the focus
- * resized the terminal on every tap; and while recording, since the
- * microphone's stop button is on it. */
-export function keyBarShown(s: { touch: boolean; ipad: boolean; keyboard: boolean; recording: boolean }): boolean {
-  return s.touch && (s.ipad || s.keyboard || s.recording);
+ * resized the terminal on every tap — unless the iOS app says a hardware
+ * keyboard is attached (`hardwareKeyboard`; a page alone can't know), which
+ * has the keys, and the app syncs the clipboard (lib/clipsync); and while
+ * recording, since the microphone's stop button is on it. */
+export function keyBarShown(s: { touch: boolean; ipad: boolean; keyboard: boolean; recording: boolean; hardwareKeyboard: boolean }): boolean {
+  return s.touch && ((s.ipad && !s.hardwareKeyboard) || s.keyboard || s.recording);
 }

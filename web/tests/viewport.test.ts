@@ -45,12 +45,19 @@ test('without a focused text field nothing is a keyboard', () => {
 });
 
 test('the key bar: always on an iPad, over the keyboard on a phone, while recording', () => {
-  const none = { touch: true, ipad: false, keyboard: false, recording: false };
+  const none = { touch: true, ipad: false, keyboard: false, recording: false, hardwareKeyboard: false };
   assert.equal(keyBarShown(none), false, 'a phone with its keyboard down');
   assert.equal(keyBarShown({ ...none, ipad: true }), true, 'an iPad, focused or not');
   assert.equal(keyBarShown({ ...none, keyboard: true }), true);
   assert.equal(keyBarShown({ ...none, recording: true }), true);
   assert.equal(keyBarShown({ ...none, touch: false, ipad: true, keyboard: true }), false, 'never without a touch screen');
+});
+
+test('the key bar: not on an iPad the app knows has a hardware keyboard', () => {
+  const ipad = { touch: true, ipad: true, keyboard: false, recording: false, hardwareKeyboard: true };
+  assert.equal(keyBarShown(ipad), false);
+  assert.equal(keyBarShown({ ...ipad, recording: true }), true, "the microphone's stop button is on it");
+  assert.equal(keyBarShown({ ...ipad, keyboard: true }), true, 'the on-screen keyboard brought up anyway');
 });
 
 test("the shortcut bar's room is kept on an iPad in Safari, not in an app", () => {

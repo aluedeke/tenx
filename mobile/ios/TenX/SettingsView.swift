@@ -12,6 +12,7 @@ struct SettingsView: View {
 
     @State private var address = ""
     @State private var error: String?
+    @AppStorage(Pasteboard.syncKey) private var clipboardSync = true
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -36,6 +37,13 @@ struct SettingsView: View {
                 } footer: {
                     Text(error ?? "Run `tenx web` on your Mac and paste the address it prints, with ?token=. It must be https: put tenx web behind `tailscale serve`.")
                         .foregroundStyle(error == nil ? Color.secondary : Color.red)
+                }
+                if current != nil {
+                    Section {
+                        Toggle("Sync clipboard with the Mac", isOn: $clipboardSync)
+                    } footer: {
+                        Text("Text you copy here lands on the Mac's clipboard, and the other way round, while the app is open. Passwords from a password manager stay here. Needs Settings → Apps → tenx → Paste from Other Apps → Allow.")
+                    }
                 }
                 if let current {
                     Section {

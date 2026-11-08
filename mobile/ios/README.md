@@ -9,6 +9,18 @@ web app can't do:
   clipboard (`web/src/lib/native.ts` → the `tenx` message handler). Set
   *Settings → Apps → tenx → Paste from Other Apps → Allow* once; on "Ask",
   iOS hands the app nothing and the page says so.
+- **The clipboard in step with the Mac's.** While the app is open, text
+  copied on the device lands on the Mac's clipboard within a second, and
+  text copied on the Mac on the device's (`web/src/lib/clipsync.ts`; the
+  app reads the change count and writes the pasteboard, the page carries
+  the text through `/clipboard/get` and `/set`). Concealed copies (password
+  managers) stay on the device. Same *Paste from Other Apps → Allow*
+  setting; a switch in the app's settings turns it off. Over Tailscale it
+  works from anywhere; turn off Handoff on the Mac if Universal Clipboard
+  shouldn't move the same text too (the sync ignores an echo either way).
+- **No key bar over a hardware keyboard.** The app tells the page when one
+  is attached (GameController's `GCKeyboard`; a web page can't know), and
+  the page's Esc/Ctrl/paste bar goes away until it is detached.
 - **No iPadOS shortcut bar** over a hardware keyboard (`ShortcutBar.swift`;
   it reaches into WebKit's private content view, so a future iOS may bring
   the bar back — it can't crash).

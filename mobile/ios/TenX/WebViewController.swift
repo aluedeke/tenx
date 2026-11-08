@@ -1,10 +1,12 @@
+import GameController
 import UIKit
 import WebKit
 
 /// The tenx web page, full screen. What it adds to the page in Safari:
 /// the microphone granted by the app (no WebKit prompt per visit), the
-/// clipboard read without the Paste bubble (`tenx` message handler,
-/// web/src/lib/native.ts), and no iPadOS shortcut bar over a hardware keyboard.
+/// clipboard read and written without the Paste bubble, kept in step with
+/// the Mac's (`tenx` message handler, web/src/lib/native.ts and clipsync.ts),
+/// whether a hardware keyboard is attached, and no iPadOS shortcut bar over it.
 final class WebViewController: UIViewController {
     let server: Server
     /// The page can't be shown: the server refused the token, or isn't there.
@@ -54,6 +56,8 @@ final class WebViewController: UIViewController {
         webView.addGestureRecognizer(hold)
 
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hardwareKeyboardChanged), name: .GCKeyboardDidConnect, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hardwareKeyboardChanged), name: .GCKeyboardDidDisconnect, object: nil)
     }
 
     override func viewDidLoad() {
@@ -72,6 +76,22 @@ final class WebViewController: UIViewController {
     @objc func openSettings() { onSettings() }
 
     @objc private func keyboardWillShow() { ShortcutBar.hide(in: webView) }
+
+    /// The page hides its key bar while a hardware keyboard is attached
+    /// (web/src/lib/native.ts `HARDWARE_KEYBOARD_EVENT`). The notification
+    /// can come before `coalesced` has caught up, so the next turn reads it.
+    @objc private func hardwareKeyboardChanged() {
+        DispatchQueue.main.async { [weak self] in
+            let js = "window.dispatchEvent(new CustomEvent('tenx-hardware-keyboard', { detail: \(HardwareKeyboard.attached) }))"
+            self?.webView.evaluateJavaScript(js)
+        }
+    }
+}
+
+/// A hardware keyboard (Magic Keyboard, Smart Keyboard, Bluetooth) is
+/// attached: GameController sees every one, and no web API does.
+enum HardwareKeyboard {
+    static var attached: Bool { GCKeyboard.coalesced != nil }
 }
 
 extension WebViewController: WKNavigationDelegate {
@@ -144,6 +164,13 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
                 return (nil, "iOS kept the clipboard from the app. Settings → Apps → tenx → Paste from Other Apps → Allow")
             }
             return (items, nil)
+        case "clipboardPeek":
+            return (Pasteboard.peek(since: body?["since"] as? Int), nil)
+        case "clipboardWrite":
+            guard let text = body?["text"] as? String, let ifCount = body?["ifCount"] as? Int else { return (nil, "no text") }
+            return (Pasteboard.write(text, ifCount: ifCount) ?? NSNull(), nil)
+        case "hardwareKeyboard":
+            return (HardwareKeyboard.attached, nil)
         case "settings":
             owner.openSettings()
             return (nil, nil)

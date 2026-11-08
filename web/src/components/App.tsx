@@ -21,8 +21,9 @@ import { inIosApp, keepsShortcutRoom, keyBarShown, layout } from '@/lib/viewport
 import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
-import { EmptyClipboard, copyFromMac, sendToMac } from '@/lib/macclip';
-import { nativeApp, nativeClipboard } from '@/lib/native';
+import { ClipSync } from '@/lib/clipsync';
+import { EmptyClipboard, copyFromMac, fetchFromMac, sendToMac } from '@/lib/macclip';
+import { HARDWARE_KEYBOARD_EVENT, nativeApp, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -91,6 +92,8 @@ export function App() {
   /** An iPad: room for the key bar all the time, and often a hardware
    * keyboard (or the floating one), which never shows as a keyboard here. */
   const [ipad, setIpad] = useState(false);
+  /** The iOS app says a hardware keyboard is attached (a page can't tell). */
+  const [hardwareKeyboard, setHardwareKeyboard] = useState(false);
   /** A paste on its way up, or why it failed. */
   const [pasting, setPasting] = useState<string | null>(null);
   /** The paste key's text field, open when the clipboard couldn't be read:
@@ -804,6 +807,60 @@ export function App() {
     setTimeout(() => setPasting(null), 4000);
   }, []);
 
+  // ── The iOS app: hardware keyboard and clipboard sync ───────────────────
+  useEffect(() => {
+    if (!nativeApp()) return;
+    const onChange = (e: Event) => setHardwareKeyboard((e as CustomEvent<boolean>).detail === true);
+    window.addEventListener(HARDWARE_KEYBOARD_EVENT, onChange);
+    nativeHardwareKeyboard().then(setHardwareKeyboard, () => {});
+    return () => window.removeEventListener(HARDWARE_KEYBOARD_EVENT, onChange);
+  }, []);
+
+  // A copy on the device lands on the Mac and back, about once a second
+  // while the page is on screen (lib/clipsync). Types and outcomes go to the
+  // server's log, never the text.
+  useEffect(() => {
+    if (!nativeApp()) return;
+    const diag = (message: string) => send({ type: 'log', message: `clipboard sync: ${message}` });
+    const sync = new ClipSync({
+      peek: nativePeek,
+      write: nativeWrite,
+      getMac: () => fetchFromMac().catch((e) => (e instanceof EmptyClipboard ? '' : Promise.reject(e))),
+      setMac: sendToMac,
+    });
+    let busy = false;
+    let toldBlocked = false;
+    let lastError = '';
+    const tick = async () => {
+      if (busy || document.hidden) return;
+      busy = true;
+      try {
+        const step = await sync.tick();
+        lastError = '';
+        if (step === 'to-mac' || step === 'from-mac') diag(step);
+        if (step === 'blocked' && !toldBlocked) {
+          toldBlocked = true;
+          notice('iOS keeps the clipboard from the app: Settings → Apps → tenx → Paste from Other Apps → Allow');
+        }
+      } catch (e) {
+        // Once per kind of failure: the Mac away for a minute isn't news every second.
+        const message = e instanceof Error ? e.message : String(e);
+        if (message !== lastError) diag(`failed: ${message}`);
+        lastError = message;
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = setInterval(tick, 1000);
+    // Back from another app: what was copied there goes over at once.
+    const onVisible = () => void tick();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [notice, send]);
+
   /** The paste key: whatever is on the phone's clipboard — an image goes up
    * like a picked one, text is pasted as typed. The Clipboard API only
    * exists on HTTPS (or localhost), so over plain http this can only say so. */
@@ -1426,10 +1483,12 @@ export function App() {
           on-screen one to wait for — yet the 📎, the paste key and Esc
           (missing on some iPad keyboards) are only here. Not only while
           the terminal has the focus: the bar coming and going with every
-          tap resized the terminal each time.
+          tap resized the terminal each time. Not on an iPad the iOS app
+          knows has a hardware keyboard: that has the keys, and the app
+          syncs the clipboard with the Mac by itself.
           And while the microphone is on: its stop button is here, even if
           iOS took the keyboard down (asking for the microphone does). */}
-      {keyBarShown({ touch, ipad, keyboard: kbOpen, recording: mic !== 'idle' }) && (
+      {keyBarShown({ touch, ipad, keyboard: kbOpen, recording: mic !== 'idle', hardwareKeyboard }) && (
         <KeyBar
           column={columnHasKeys}
           ctrlSticky={ctrlSticky}
