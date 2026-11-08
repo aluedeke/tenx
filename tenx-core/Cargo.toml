@@ -33,3 +33,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
 base64 = "0.22"
+# `schedule`: cron slots in local time across daylight-saving changes. Only
+# civil and timestamp arithmetic here; the caller hands in the time zone
+# (the binary reads the system one), so nothing in this crate touches tzdb files.
+jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
