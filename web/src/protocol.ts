@@ -42,6 +42,8 @@ export interface SidebarSection {
   title: string;
   /** Beside the title: the todos' `3/5`. */
   count?: string;
+  /** How far the todos are, 0–1: a bar under the title. */
+  progress?: number;
   entries: SidebarEntry[];
 }
 
@@ -49,10 +51,13 @@ export type SidebarTone = 'plain' | 'good' | 'warn' | 'bad' | 'merged' | 'muted'
 
 export interface SidebarEntry {
   icon: string;
+  /** The icon's colour; absent: its link kind's. */
+  icon_tone?: SidebarTone;
   label: string;
-  /** The state under the label; may be empty. */
-  detail: string;
-  tone: SidebarTone;
+  /** A PR's checks, one per check: drawn as small squares. */
+  checks?: SidebarTone[];
+  /** The state under the label, each part in its colour. */
+  parts?: { text: string; tone: SidebarTone; pill?: boolean }[];
   /** What a click opens. */
   url?: string;
   kind?: LinkView['kind'];

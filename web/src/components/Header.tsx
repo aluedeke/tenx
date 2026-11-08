@@ -1,12 +1,13 @@
 'use client';
 
-// The header, across the whole page above the column and the terminal: the
-// column's toggle, the wordmark, the task in front of you (the view's
-// `current`, i.e. this tab's tmux window) with what it wants from you, and
-// what doesn't depend on a row: the daily actions (next that needs you,
-// read the current task's last reply aloud, speak, new) on the right, and behind ⋯ what you set once (notifications,
-// the keys, the connection — a dot on the wordmark, words only when it's
-// lost). On a phone it is how the column opens.
+// The header, across the whole page above the column and the terminal: on
+// the left the task list's button and the wordmark (its dot is the
+// connection, words only when it's lost), on the right what doesn't depend
+// on a row — next that needs you, read the current task's last reply aloud,
+// speak, new — and the sidebar's button, the task list's mirror, last. The
+// task in front of you is on tmux's status line, not here. What you set once
+// (notifications, the keys, the connection) is behind ⋯, which the task
+// list carries (`MoreMenu`).
 
 import { useEffect, useRef, useState } from 'react';
 import { PopupLayer, type Popup } from './RowActions';
@@ -23,11 +24,7 @@ interface Props {
   columnShown: boolean;
   onToggle(): void;
   onAction(action: Action): void;
-  /** Show the column with the current task selected. */
-  onShowCurrent(id: string): void;
   push: PushState;
-  onPushToggle(): void;
-  onPushTest(): void;
   mic: MicState;
   /** Seconds recorded so far, while recording. */
   micSeconds: number;
@@ -38,8 +35,6 @@ interface Props {
   onSpeak(taskId: string): void;
   /** Stop reading. */
   onSpeakStop(): void;
-  /** The current task's links (↗). */
-  onLinks(task: TaskItem): void;
   /** The sidebar is shown; its button shows or hides it. */
   sidebarShown: boolean;
   onSidebar(): void;
@@ -75,28 +70,12 @@ const PUSH_TITLE: Record<PushState, string> = {
 };
 
 const MENU_W = 218;
+/** The ⋯ menu's width (`.hmenu`). */
+const MORE_W = 270;
 
 export function Header(props: Props) {
   const { view, status, failures, host, columnShown, onToggle, onAction, push } = props;
   const [popup, setPopup] = useState<Popup | null>(null);
-  const [menu, setMenu] = useState(false);
-  /** The menu's right edge, from the window's (under its button). */
-  const [menuAt, setMenuAt] = useState(8);
-  const run = (fn: () => void) => () => {
-    setMenu(false);
-    fn();
-  };
-  useEffect(() => {
-    if (!menu) return;
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') {
-        ev.preventDefault();
-        setMenu(false);
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [menu]);
 
   // The current task, as the Tasks tab last listed it: on the Repos or Work
   // tab the view's items are repos or jobs, and the header keeps showing the
@@ -133,28 +112,21 @@ export function Header(props: Props) {
     });
   };
 
-  const label =
-    status === 'open'
-      ? host || (typeof location !== 'undefined' ? location.host : '')
-      : status === 'connecting'
-        ? 'connecting…'
-        : failures > 5
-          ? 'offline — is tenx web running?'
-          : 'reconnecting…';
+  const label = connLabel(status, failures, host);
 
   return (
     <>
       <header className="header" data-testid="header">
         <button
           type="button"
-          className="hbtn toggle"
+          className={columnShown ? 'hbtn toggle on' : 'hbtn toggle'}
           data-testid="toggle"
           title={columnShown ? 'hide the tasks (^w)' : 'show the tasks (^w)'}
           aria-label={columnShown ? 'hide the tasks' : 'show the tasks'}
           aria-expanded={columnShown}
           onClick={onToggle}
         >
-          {columnShown ? '⟨' : '☰'}
+          <Icon d={PANEL_LEFT} />
         </button>
         <span className="wordmark" title={label}>
           <span className="wtext">
@@ -162,31 +134,7 @@ export function Header(props: Props) {
           </span>
           <span className={`cdot ${status}`} data-testid="conn-dot" />
         </span>
-        <button
-          type="button"
-          className="current"
-          data-testid="current"
-          disabled={!current}
-          title={current ? `${current.title} — show it in the tasks` : undefined}
-          onClick={() => current && props.onShowCurrent(current.id)}
-        >
-          {current && (
-            <>
-              <span className="glyph" style={{ color: current.glyph_color }}>
-                {current.glyph}
-              </span>
-              <span className="ctitle">{current.title}</span>
-              <span className="cws" style={{ color: current.ws_color }}>
-                {current.ws}
-              </span>
-              {current.reason && (
-                <span className="chip" style={{ color: current.reason.fg, background: current.reason.bg }}>
-                  {current.reason.label}
-                </span>
-              )}
-            </>
-          )}
-        </button>
+        <span className="hgrow" />
         <span className="hright">
           {status !== 'open' && (
             <span className={`hstatus ${status}`} data-testid="conn-alert">
@@ -197,32 +145,6 @@ export function Header(props: Props) {
             <button type="button" className="hbtn hot" data-testid="next" title="next task that needs you (n)" onClick={() => onAction('next')}>
               <span className="hotdot" />
               <span className="nlabel">next</span>
-            </button>
-          )}
-          {current && current.links.length > 0 && (
-            <button
-              type="button"
-              className="hbtn hlinks"
-              data-testid="links"
-              title="this task's links: PRs, artifacts, pages (L in the column)"
-              aria-label={`${current.links.length} links of this task`}
-              onClick={() => props.onLinks(current)}
-            >
-              <Icon d={LINK_ARROW} />
-              <span className="lcount">{current.links.length}</span>
-            </button>
-          )}
-          {current && (
-            <button
-              type="button"
-              className={props.sidebarShown ? 'hbtn hsidebar on' : 'hbtn hsidebar'}
-              data-testid="sidebar-toggle"
-              title="sidebar: links, git, todos (s in the column)"
-              aria-label="show or hide the sidebar"
-              aria-pressed={props.sidebarShown}
-              onClick={props.onSidebar}
-            >
-              <Icon d={PANEL_RIGHT} />
             </button>
           )}
           <button
@@ -290,31 +212,94 @@ export function Header(props: Props) {
           >
             <Icon d={['M12 5v14', 'M5 12h14']} />
           </button>
-          <span className="hsep" />
           <button
             type="button"
-            className={menu ? 'hbtn primary' : 'hbtn'}
-            data-testid="hmore"
-            title="notifications, keys, connection"
-            aria-label="more: notifications, keys, connection"
-            aria-haspopup="menu"
-            aria-expanded={menu}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setMenuAt(window.innerWidth - r.right);
-              setMenu((m) => !m);
-            }}
+            className={props.sidebarShown ? 'hbtn hsidebar on' : 'hbtn hsidebar'}
+            data-testid="sidebar-toggle"
+            title="sidebar: the task's todos, PRs, links, git (s in the column)"
+            aria-label={props.sidebarShown ? 'hide the sidebar' : 'show the sidebar'}
+            aria-pressed={props.sidebarShown}
+            onClick={props.onSidebar}
           >
-            <Icon d={[]} dots />
+            <Icon d={PANEL_RIGHT} />
           </button>
         </span>
       </header>
+      {push === 'needs-install' && (
+        <div className="hint" data-testid="push-hint">
+          Add to Home Screen, then enable notifications
+        </div>
+      )}
+      <PopupLayer popup={popup} onClose={() => setPopup(null)} />
+    </>
+  );
+}
+
+function connLabel(status: Status, failures: number, host: string): string {
+  return status === 'open'
+    ? host || (typeof location !== 'undefined' ? location.host : '')
+    : status === 'connecting'
+      ? 'connecting…'
+      : failures > 5
+        ? 'offline — is tenx web running?'
+        : 'reconnecting…';
+}
+
+interface MoreProps {
+  status: Status;
+  failures: number;
+  host: string;
+  push: PushState;
+  onPushToggle(): void;
+  onPushTest(): void;
+  onAction(action: Action): void;
+}
+
+/** ⋯ at the task list's top right: what you set once, out of the way of the
+ * daily actions — notifications, the keys, where this page is connected. */
+export function MoreMenu(props: MoreProps) {
+  const { status, push, onAction } = props;
+  const [menu, setMenu] = useState(false);
+  /** The menu's place: under its button, inside the window. */
+  const [menuAt, setMenuAt] = useState({ left: 8, top: 40 });
+  const label = connLabel(status, props.failures, props.host);
+  const run = (fn: () => void) => () => {
+    setMenu(false);
+    fn();
+  };
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        setMenu(false);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [menu]);
+  return (
+    <>
+      <button
+        type="button"
+        className={menu ? 'hbtn tmore on' : 'hbtn tmore'}
+        data-testid="hmore"
+        title="notifications, keys, connection"
+        aria-label="more: notifications, keys, connection"
+        aria-haspopup="menu"
+        aria-expanded={menu}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setMenuAt({ left: Math.max(8, Math.min(r.right - MORE_W, window.innerWidth - MORE_W - 8)), top: r.bottom + 4 });
+          setMenu((m) => !m);
+        }}
+      >
+        <Icon d={[]} dots />
+      </button>
       {menu && (
-        // Things set once, out of the way of the daily ones: notifications,
-        // the keys, where this page is connected.
         <div className="popup-layer" data-popup="menu">
           <div className="backdrop" onPointerDown={() => setMenu(false)} />
-          <div className="hmenu" data-testid="hmenu" role="menu" style={{ right: menuAt }}>
+          <div className="hmenu" data-testid="hmenu" role="menu" style={menuAt}>
             {push !== 'app' && ( // the tenx iOS app: no Web Push to offer
               <button
                 type="button"
@@ -341,23 +326,6 @@ export function Header(props: Props) {
                 <span className="hmlabel">send a test notification</span>
               </button>
             )}
-            {current && current.links.length > 0 && (
-              // On the narrowest phones ↗ has no room in the header: here.
-              <button type="button" role="menuitem" className="hmi hmlinks" data-testid="links-item" onClick={run(() => props.onLinks(current))}>
-                <Icon d={LINK_ARROW} />
-                <span className="hmlabel">links of this task</span>
-                <span className="k">{current.links.length}</span>
-              </button>
-            )}
-            {current && (
-              // On the narrowest phones the sidebar's button has no room in
-              // the header: here.
-              <button type="button" role="menuitem" className="hmi hmsidebar" data-testid="sidebar-item" onClick={run(props.onSidebar)}>
-                <Icon d={PANEL_RIGHT} />
-                <span className="hmlabel">sidebar: links, git, todos</span>
-                <span className="k">s</span>
-              </button>
-            )}
             <button type="button" role="menuitem" className="hmi" data-testid="keys" onClick={run(() => onAction('help'))}>
               <Icon d={['M4.5 6h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z', 'M6 10h.01M10 10h.01M14 10h.01M18 10h.01', 'M8 14h8']} />
               <span className="hmlabel">keys</span>
@@ -371,12 +339,6 @@ export function Header(props: Props) {
           </div>
         </div>
       )}
-      {push === 'needs-install' && (
-        <div className="hint" data-testid="push-hint">
-          Add to Home Screen, then enable notifications
-        </div>
-      )}
-      <PopupLayer popup={popup} onClose={() => setPopup(null)} />
     </>
   );
 }
@@ -415,9 +377,9 @@ function PauseIcon() {
 const BELL = ['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0 0 0 3.4 0'];
 
 /** A line icon in the header's one style; `dots` draws ⋯. */
-/** ↗: a task's links. */
-const LINK_ARROW = ['M7 17 17 7', 'M8 7h9v9'];
-/** The sidebar's button: a window with a panel on its right. */
+/** The task list's button: a window with a panel on its left; the
+ * sidebar's is its mirror. */
+const PANEL_LEFT = ['M4 5h16v14H4z', 'M9 5v14'];
 const PANEL_RIGHT = ['M4 5h16v14H4z', 'M15 5v14'];
 
 function Icon({ d, dots }: { d: string[]; dots?: boolean }) {

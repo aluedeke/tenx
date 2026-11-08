@@ -463,6 +463,9 @@ pub(crate) fn resolve_all() -> Snapshot {
 /// PR lookups in flight and their results. The helper thread only *fetches*;
 /// every write to `.tenx-live.json` happens on the watch thread, so the ports
 /// update and the PR update can't race each other's read-modify-write.
+/// A task's own PRs and the other PRs it links to.
+type PrFound = (Vec<crate::live::PrInfo>, Vec<crate::live::PrInfo>);
+
 struct PrLookups {
     busy: bool,
     /// A Linear lookup is running on its helper thread.
@@ -471,8 +474,8 @@ struct PrLookups {
     linear_rx: std::sync::mpsc::Receiver<(PathBuf, Option<Vec<tenx_core::sidebar::LinearIssue>>)>,
     /// Ticks so far: where this tick's round of transcript lookups starts.
     turn: usize,
-    tx: std::sync::mpsc::Sender<(PathBuf, Vec<crate::live::PrInfo>)>,
-    rx: std::sync::mpsc::Receiver<(PathBuf, Vec<crate::live::PrInfo>)>,
+    tx: std::sync::mpsc::Sender<(PathBuf, Option<PrFound>)>,
+    rx: std::sync::mpsc::Receiver<(PathBuf, Option<PrFound>)>,
 }
 
 impl PrLookups {
@@ -498,10 +501,14 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
             continue;
         }
         let mut live = crate::live::read(&path);
-        if live.prs != found {
-            changed = true;
+        // A failed lookup keeps what was known, and waits like a success.
+        if let Some((own, linked)) = found {
+            if live.prs != own {
+                changed = true;
+            }
+            live.prs = own;
+            live.linked_prs = linked;
         }
-        live.prs = found;
         live.pr_checked = crate::live::now_secs();
         let _ = crate::live::write(&path, &live);
     }
@@ -563,37 +570,44 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
     if prs.busy || !crate::live::gh_available() {
         return changed;
     }
-    if !targets.iter().any(|t| !t.repos.is_empty()) {
-        return changed;
-    }
-    // Budget counts `gh` calls (one per repo), not tasks: a five-repo task
-    // is five network round trips.
-    let mut budget = crate::live::PR_LOOKUPS_PER_TICK;
-    let mut stale: Vec<(PathBuf, Vec<String>)> = Vec::new();
-    for t in targets.iter().filter(|t| !t.repos.is_empty()) {
-        if budget == 0 {
-            break;
-        }
-        let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
-        if now.saturating_sub(crate::live::read(&t.path).pr_checked) < ttl.as_secs() {
-            continue;
-        }
-        let repos: Vec<String> = t.repos.iter().take(budget).cloned().collect();
-        budget -= repos.len();
-        stale.push((t.path.clone(), repos));
-    }
+    // One GraphQL request per task: its branches' PRs and the PRs it links to.
+    // The longest waiting first, as with git (`git_due`).
+    let mut waiting: Vec<(u64, &LiveTarget, Vec<tenx_core::prstate::PrRef>)> = targets
+        .iter()
+        .filter_map(|t| {
+            let live = crate::live::read(&t.path);
+            let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
+            if now.saturating_sub(live.pr_checked) < ttl.as_secs() {
+                return None;
+            }
+            let mut linked: Vec<tenx_core::prstate::PrRef> = Vec::new();
+            let refs = live.task_links.iter().chain(&live.links).filter(|l| l.kind == tenx_core::links::LinkKind::Pr);
+            for r in refs.filter_map(|l| tenx_core::prstate::pr_ref(&l.url)) {
+                if !linked.contains(&r) {
+                    linked.push(r);
+                }
+            }
+            (!t.repos.is_empty() || !linked.is_empty()).then_some((live.pr_checked, t, linked))
+        })
+        .collect();
+    waiting.sort_by_key(|(checked, t, _)| (*checked, !t.active));
+    let stale: Vec<(PathBuf, Vec<String>, Vec<tenx_core::prstate::PrRef>)> = waiting
+        .into_iter()
+        .take(crate::live::PR_LOOKUPS_PER_TICK)
+        .map(|(_, t, linked)| (t.path.clone(), t.repos.clone(), linked))
+        .collect();
     if stale.is_empty() {
         return changed;
     }
     prs.busy = true;
     let tx = prs.tx.clone();
     std::thread::spawn(move || {
-        for (path, repos) in stale {
-            let found: Vec<_> = repos.iter().filter_map(|r| crate::live::fetch_pr(r, &path.join(r))).collect();
+        for (path, repos, linked) in stale {
+            let found = crate::live::fetch_prs(&path, &repos, &linked);
             let _ = tx.send((path, found));
         }
         // Sentinel: the batch is done, the next tick may start another.
-        let _ = tx.send((PathBuf::new(), Vec::new()));
+        let _ = tx.send((PathBuf::new(), None));
     });
     changed
 }

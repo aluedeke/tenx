@@ -18,6 +18,7 @@ pub mod mcppush;
 pub mod live;
 pub mod orchestrate;
 pub mod progress;
+pub mod prstate;
 pub mod readaloud;
 pub mod restart;
 pub mod prwatch;

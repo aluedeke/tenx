@@ -366,39 +366,62 @@ test('a sliver of a viewport while switching apps keeps the whole page', async (
   await expect(page.getByTestId('keybar')).toHaveCount(0);
 });
 
-test('the header names the task you are in and drives the column', async ({ page, isMobile }) => {
+test('the header opens the task list and the sidebar; ⋯ is in the task list', async ({ page, isMobile }) => {
   const sent = sentMessages(page);
   await page.goto('/');
   const tap = async (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
   const header = page.getByTestId('header');
-  const current = header.getByTestId('current');
-  await expect(current).toContainText('Fix login timeout');
-  await expect(current).toContainText('permission: Bash');
+  // The task you're in is on tmux's status line, not in the header.
+  await expect(header.getByTestId('current')).toHaveCount(0);
   // Only the task you're in needs you: nothing to jump to.
   await expect(header.getByTestId('next')).toHaveCount(0);
 
-  // The toggle: the column appears (on a phone, over the terminal, under the
-  // header) and goes again.
+  // Wide: the sidebar beside the terminal, with the PR's checks and comments.
+  // A phone: nothing over the terminal until a button says so.
+  const sidebar = page.getByTestId('sidebar');
+  if (isMobile) {
+    await expect(sidebar).toHaveCount(0);
+    await tap(header.getByTestId('sidebar-toggle'));
+  }
+  await expect(sidebar).toContainText('#33 Fix the login timeout');
+  await expect(sidebar).toContainText('3 comments · 2 open');
+  await expect(sidebar.locator('.sb-checks .sq')).toHaveCount(4);
+  await expect(sidebar.getByRole('link', { name: /#33/ })).toHaveAttribute('href', 'https://github.com/acme/api/pull/33');
+  // The sidebar's button is the header's last.
+  const buttons = header.locator('button');
+  await expect(buttons.last()).toHaveAttribute('data-testid', 'sidebar-toggle');
+  if (isMobile) {
+    // A sheet from the right; its × puts it away.
+    await tap(page.getByTestId('sidebar-close'));
+    await expect(sidebar).toHaveCount(0);
+  } else {
+    await tap(header.getByTestId('sidebar-toggle'));
+    await expect(sidebar).toHaveCount(0);
+    await tap(header.getByTestId('sidebar-toggle'));
+    await expect(sidebar).toBeVisible();
+  }
+
+  // The task list's button: on a phone a sheet from the left, not the whole
+  // width, with a × of its own.
   if (isMobile) {
     await tap(header.getByTestId('toggle'));
-    await expect(page.getByTestId('column')).toBeVisible();
-    const h = (await header.boundingBox())!;
-    const c = (await page.getByTestId('column').boundingBox())!;
-    expect(c.y).toBeGreaterThanOrEqual(h.y + h.height - 1);
+    const column = page.getByTestId('column');
+    await expect(column).toBeVisible();
+    const c = (await column.boundingBox())!;
+    const width = await page.evaluate(() => window.innerWidth);
+    expect(c.width).toBeLessThan(width);
+    await tap(page.getByTestId('column-close'));
+    await expect(column).toHaveCount(0);
     await tap(header.getByTestId('toggle'));
-    await expect(page.getByTestId('column')).toHaveCount(0);
   } else {
     await tap(header.getByTestId('toggle'));
     await expect(page.getByTestId('column')).toHaveCount(0);
+    await tap(header.getByTestId('toggle'));
   }
 
-  // The current task: back in the column, selected.
-  await tap(current);
-  await expect(page.getByTestId('column')).toBeVisible();
-  await expect.poll(() => sent().some((m) => m.type === 'click' && m.kind === 'task' && m.id === 'acme/fix-login-timeout')).toBe(true);
-
-  // + and ⋯ → keys are the new-task and keys actions.
-  await tap(header.getByTestId('hmore'));
+  // ⋯ sits in the task list's tab bar; keys and + are the help and new-task actions.
+  const more = page.getByTestId('column').getByTestId('hmore');
+  await tap(more);
   await tap(page.getByTestId('keys'));
   await expect.poll(() => sent().some((m) => m.type === 'action' && m.name === 'help')).toBe(true);
   await tap(page.getByTestId('help'));
@@ -1508,7 +1531,7 @@ test('on touch, any tap gives the page the keyboard, without raising the soft on
   await expect(page.locator('textarea[data-field=prompt]')).toBeVisible();
 });
 
-test("a task's chips are links and the header lists the current task's", async ({ page, isMobile }) => {
+test("a task's chips are links", async ({ page, isMobile }) => {
   await page.goto('/');
   if (isMobile) await page.getByTestId('toggle').tap();
   const chips = page.getByTestId('task').filter({ hasText: 'web version' }).locator('a.lchip');
@@ -1516,37 +1539,34 @@ test("a task's chips are links and the header lists the current task's", async (
   await expect(chips.first()).toHaveAttribute('href', 'https://claude.ai/code/artifact/0f3a9c');
   // A port is reached through the host the page came from.
   await expect(chips.nth(1)).toHaveAttribute('href', 'http://127.0.0.1:7070');
-
-  // The current task (Fix login timeout) has its PR.
-  const button = page.getByTestId('links');
-  await (isMobile ? button.tap() : button.click());
-  const menu = page.getByTestId(isMobile ? 'links-sheet' : 'links-menu');
-  await expect(menu).toContainText('#412');
-  await expect(menu.locator('a.lopen')).toHaveAttribute('href', 'https://github.com/acme/repo/pull/412');
-  await page.keyboard.press('Escape');
-  await expect(menu).toHaveCount(0);
 });
 
 test.describe('on an iPad', () => {
   // The device without its browser choice, which a group can't change.
   const { defaultBrowserType: _, ...ipad } = devices['iPad Pro 11'];
   test.use(ipad);
-  test('the links open as a menu under the header, not a sheet across the screen', async ({ page }, info) => {
+  test('in portrait the task list and the sidebar open over the terminal, one from each side', async ({ page }, info) => {
     test.skip(info.project.name !== 'desktop', 'one run is enough');
     await page.goto('/');
-    await page.getByTestId('links').tap();
-    const menu = page.getByTestId('links-menu');
-    await expect(menu).toContainText('#412');
-    await expect(page.getByTestId('links-sheet')).toHaveCount(0);
-    const box = (await menu.boundingBox())!;
-    expect(box.width).toBeLessThanOrEqual(360);
-    const row = (await menu.locator('a.lopen').first().boundingBox())!;
-    expect(row.height).toBeGreaterThanOrEqual(44);
+    const width = await page.evaluate(() => window.innerWidth);
+    // No room beside the terminal: both start put away.
+    await expect(page.getByTestId('column')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar')).toHaveCount(0);
+    await page.getByTestId('toggle').tap();
+    const column = (await page.getByTestId('column').boundingBox())!;
+    expect(column.x).toBeLessThanOrEqual(1);
+    expect(column.width).toBeLessThanOrEqual(360);
+    await page.getByTestId('column-close').tap();
+    await page.getByTestId('sidebar-toggle').tap();
+    const sidebar = (await page.getByTestId('sidebar').boundingBox())!;
+    expect(sidebar.x + sidebar.width).toBeGreaterThanOrEqual(width - 1);
+    expect(sidebar.width).toBeLessThanOrEqual(360);
   });
 
   test("a row's long-press opens a card beside the finger, not a sheet across the screen", async ({ page }, info) => {
     test.skip(info.project.name !== 'desktop', 'one run is enough');
     await page.goto('/');
+    await page.getByTestId('toggle').tap();
     const row = page.locator('[data-id="web/better-loading"]');
     const b = (await row.boundingBox())!;
     const at = { pointerType: 'touch', pointerId: 9, isPrimary: true, bubbles: true, clientX: b.x + 40, clientY: b.y + 10 };

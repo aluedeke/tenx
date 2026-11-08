@@ -2045,22 +2045,7 @@ a:hover {
 .sheet.links .lcopy {
   min-height: 34px;
 }
-/* The narrowest phones: ↗ and the sidebar's button move from the header
-   into ⋯. */
-.hmi.hmlinks,
-.hmi.hmsidebar {
-  display: none;
-}
-@media (max-width: 360px) {
-  .hbtn.hlinks,
-  .hbtn.hsidebar {
-    display: none;
-  }
-  .hmi.hmlinks,
-  .hmi.hmsidebar {
-    display: flex;
-  }
-}
+
 /* An iPad gets the menu, with rows for a finger. */
 .touch .menu.links .lopen {
   min-height: 44px;
@@ -2080,8 +2065,9 @@ a:hover {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
-/* The sidebar (Sidebar.tsx): the current task's links, git state and todos,
-   right of the terminal; over it on a phone. */
+/* The sidebar (Sidebar.tsx): the current task's todos, PRs, links and git
+   state, right of the terminal; over it from the right where there is no
+   room. The task list does the same from the left (.column-wrap.drawer). */
 :root {
   --tone-plain: var(--muted);
   --tone-good: var(--success);
@@ -2104,48 +2090,70 @@ a:hover {
   line-height: var(--line);
 }
 
-.sidebar.overlay {
+.sidebar.drawer,
+.column-wrap.drawer {
   position: absolute;
-  inset: 0 0 0 auto;
+  top: 0;
+  bottom: 0;
   width: min(340px, 88vw);
   z-index: 12;
-  box-shadow: -8px 0 24px rgb(0 0 0 / 0.45);
+}
+
+.sidebar.drawer {
+  right: 0;
+  box-shadow: -10px 0 30px rgb(0 0 0 / 0.5);
+}
+
+.column-wrap.drawer {
+  left: 0;
+  box-shadow: 10px 0 30px rgb(0 0 0 / 0.5);
+}
+
+.sb-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  background: rgb(0 0 0 / 0.4);
+}
+
+.tabs-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hgrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.hbtn.toggle.on,
+.hbtn.hsidebar.on,
+.hbtn.tmore.on {
+  color: var(--bright);
+  background: var(--sel-bg);
 }
 
 .sb-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  padding: 10px 10px 8px 14px;
+  padding: 6px 8px 6px 14px;
   border-bottom: 1px solid var(--border);
 }
 
 .sb-title {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.sb-title > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sb-close {
-  flex: none;
-  background: none;
-  border: none;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
-  padding: 2px 4px;
-  cursor: pointer;
-}
-
-.sb-close:hover {
-  color: var(--bright);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .sb-body {
@@ -2179,6 +2187,21 @@ a:hover {
   margin-left: 6px;
   color: var(--text);
   font-weight: 400;
+  letter-spacing: 0;
+}
+
+.sb-progress {
+  height: 3px;
+  margin: 3px 14px 5px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.sb-progress i {
+  display: block;
+  height: 100%;
+  background: var(--success);
 }
 
 .sb-entry {
@@ -2206,6 +2229,7 @@ a:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .sb-label {
@@ -2215,7 +2239,30 @@ a:hover {
 }
 
 .sb-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
   font-size: 12px;
+}
+
+.sb-checks {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.sb-checks .sq {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.sb-pill {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
 }
 
 .tone-plain { color: var(--tone-plain); }
@@ -2224,14 +2271,15 @@ a:hover {
 .tone-bad { color: var(--tone-bad); }
 .tone-merged { color: var(--tone-merged); }
 .tone-muted { color: var(--tone-muted); }
-
-.sb-dim {
-  position: absolute;
-  inset: 0;
-  z-index: 11;
-  background: rgb(0 0 0 / 0.35);
-}
-
-.hsidebar.on {
-  color: var(--bright);
-}
+.tone-bg-plain { background: var(--tone-plain); }
+.tone-bg-good { background: var(--tone-good); }
+.tone-bg-warn { background: var(--tone-warn); }
+.tone-bg-bad { background: var(--tone-bad); }
+.tone-bg-merged { background: var(--tone-merged); }
+.tone-bg-muted { background: var(--tone-muted); }
+.pill-plain { color: var(--text); background: var(--sel-bg); }
+.pill-good { color: var(--success); border: 1px solid var(--success); }
+.pill-warn { color: var(--warn); background: var(--chip-input-bg); }
+.pill-bad { color: var(--danger); border: 1px solid var(--danger); }
+.pill-merged { color: var(--accent); background: var(--chip-secrets-bg); }
+.pill-muted { color: var(--idle); background: var(--sel-bg); }

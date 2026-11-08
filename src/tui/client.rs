@@ -337,7 +337,7 @@ impl Client {
                     }
                 }
                 event::MouseEventKind::ScrollDown => {
-                    let max = super::sidebar::max_scroll(self.column.sidebar().as_ref(), s.height);
+                    let max = super::sidebar::max_scroll(self.column.sidebar().as_ref(), s);
                     self.sidebar_scroll = (self.sidebar_scroll + 3).min(max);
                 }
                 event::MouseEventKind::ScrollUp => self.sidebar_scroll = self.sidebar_scroll.saturating_sub(3),
@@ -422,7 +422,7 @@ impl Client {
         self.top_row = (term.x..term.right()).map(|x| buf[(x, term.y)].symbol().chars().next().unwrap_or(' ')).collect();
         if let Some(s) = sidebar {
             let view = self.column.sidebar();
-            let max = super::sidebar::max_scroll(view.as_ref(), s.height);
+            let max = super::sidebar::max_scroll(view.as_ref(), s);
             self.sidebar_scroll = self.sidebar_scroll.min(max);
             self.sidebar_hits = super::sidebar::render(f, s, view.as_ref(), self.sidebar_scroll);
         } else {
