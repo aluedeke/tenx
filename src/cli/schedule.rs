@@ -206,7 +206,8 @@ pub fn add(ws_dir: Option<&str>, name: &str, mut file: ScheduleFile, replace: bo
     if slug.is_empty() || slug != name {
         bail!("schedule names are lowercase letters, digits and dashes — e.g. {:?}", if slug.is_empty() { "nightly-deps" } else { &slug });
     }
-    if ws.is_adhoc() && file.repos.as_ref().is_none_or(|r| !r.is_empty()) && file.target.is_empty() {
+    // The adhoc workspace has no repos, so "all of them" is none.
+    if ws.is_adhoc() && file.repos.is_none() && file.target.is_empty() {
         file.repos = Some(Vec::new());
     }
     let s = rules::parse(name, &file).map_err(|e| anyhow::anyhow!(e))?;
@@ -725,7 +726,14 @@ fn start(ws: &Workspace, s: &Schedule, slot: Timestamp, tz: &TimeZone) -> Result
             let title = rules::run_title(&s.title, slot, tz);
             let args = (!s.agent_args.is_empty()).then_some(s.agent_args.as_str());
             let kind = (!s.agent.is_empty()).then(|| crate::agent::AgentKind::from_token(&s.agent));
-            let slug = crate::cli::task::plan_slug(ws, &title)?;
+            let slug = match crate::cli::task::plan_slug(ws, &title) {
+                Ok(slug) => slug,
+                Err(e) => {
+                    let failed = Outcome::Failed { reason: format!("{e:#}") };
+                    append_history(ws, &s.name, &RunRecord { outcome: Some(failed), ended: Some(Timestamp::now()), ..record("") });
+                    return Err(e);
+                }
+            };
             // The record is written with the directory, before any clone, so
             // the run never shows on the Tasks list; `started` is set again
             // when the agent starts, so cloning doesn't eat the timeout.
@@ -924,6 +932,18 @@ mod tests {
         append_history(&ws, "nightly", &rec);
         append_history(&ws, "nightly", &rec);
         assert_eq!(history(&ws, "nightly").len(), 2);
+    }
+
+    /// The README's example schedule file is one `tenx schedule` reads.
+    #[test]
+    fn the_readme_example_parses() {
+        let readme = include_str!("../../README.md");
+        let section = &readme[readme.find("## Scheduled tasks").expect("README section")..];
+        let start = section.find("```toml\n").expect("a toml example") + "```toml\n".len();
+        let example = &section[start..start + section[start..].find("```").unwrap()];
+        let file: ScheduleFile = toml::from_str(example).unwrap();
+        let s = rules::parse("nightly-deps", &file).unwrap();
+        assert_eq!((s.keep_ok, s.keep_failed, s.timeout), (3, 5, Some(rules::DEFAULT_TIMEOUT)));
     }
 
     #[test]

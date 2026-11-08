@@ -37,6 +37,7 @@ The only per-task files tenx owns:
 | `.tenx-window-id` | Cache of the tmux window id. A fast path only; the window is always looked up by slug. |
 | `.tenx-pinned` | Marker that exempts the task from sweep. |
 | `.tenx-prompt` | A new task's first message, until the window that launches the agent with it opens. |
+| `.tenx-run` | A scheduled run's record (`tenx_core::schedule::RunRecord`): which schedule, when it started, how it ended. Keeps the task off the Tasks list. |
 
 A task's window is additionally tagged, on the tmux side, with the `@tenx_task_dir` window option — the identity `find_task_window` correlates on. Unlike `.tenx-window-id` (a cache that a server restart can alias onto another task's window) it is written by the server that owns the window, so it cannot go stale without the window going with it.
 | `.tenx-live.json` | Cache of ports and PR facts, written only by the watcher. |
@@ -71,6 +72,7 @@ Blocked and Signaled are the "needs you" states. The watcher notifies on the edg
 - A desktop notification on the edge into Blocked, debounced. Tasks already waiting at start are treated as already notified. Done never notifies, since it fires after every turn.
 - The status bar: `@tenx_status` per task window (glyph, lock when secrets are pending, PR and port chips) and the global right corner, which counts tasks needing you other than the current one. Done is gated on sixty seconds unanswered so the corner does not flicker. Nothing is sent when nothing changed.
 - A log pane for each background agent, once per working directory and pid, running `tenx internal agent-log`, which follows the agent's transcript and exits with it.
+- About once a minute, the scheduler (`cli::schedule::Ticker`, see [Scheduled tasks](#scheduled-tasks)).
 
 The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on a helper thread with a time-to-live that lengthens for parked tasks. It exits when the tmux server is gone.
 
@@ -113,6 +115,17 @@ A task's worktrees are optional. Without any, its agent runs in the task directo
 Sessions that belong to no workspace at all live in the **adhoc** workspace, which tenx creates and registers for itself (`cli::adhoc::ensure`, on every launch) at `~/.local/share/tenx/adhoc`: `kind = "adhoc"` in its `config.toml`, never any repos. Releases up to 0.2.3 called it the *detached* workspace, at `~/.local/share/tenx/detached`. The first launch that finds none of its tasks open moves it to the new path, renaming each task's Claude and pi transcript directories with it, since both agents file a conversation under its directory's path (Codex threads record the path inside and start fresh). Its `kind` and `name` are rewritten, and the registry drops the old path on its own. It is a real workspace on purpose, so the column, the watcher, sweep, secrets and the web front end handle its sessions without knowing about it. What differs is small. A repeated title counts up (`-2`) instead of being refused, because nothing there is a branch name. Its sessions get `--add-dir` for every other registered workspace, an `/orchestrate` skill, and a seeded `settings.json` allowing the commands that drive other tasks.
 
 Driving a task from outside is three commands in `cli::drive`. `task send` pastes a message into the agent's pane (bracketed, then Enter), or opens a closed task with the message as its launch prompt. `task wait` polls the resolved status. `task output` reads the replies since the last prompt from the agent's transcript. The agent is not run headless beside the window: every message goes through the live session, where you can watch it and take over. `send` refuses to type into an agent that is waiting on a dialog, because typed text would answer it.
+
+## Scheduled tasks
+
+A schedule is a file, `<workspace>/schedules/<name>.toml` (`tenx_core::schedule::ScheduleFile`). The watcher runs `cli::schedule::Ticker::tick` about every thirty polls; there is no timer of the operating system's, so schedules fire while the tmux server is up (on a headless machine, `tenx web service install` brings server and watcher up at login). Every decision is a pure function in `tenx_core::schedule`, and the files are the only state:
+
+- `due` decides per schedule from its timetable (5-field cron in local time, or an interval from when the watcher first saw it) and `.state/<name>.json` (first sighting, last slot decided). Only the latest due slot counts; older than `catch_up` it is recorded as missed; while the schedule's previous run goes on it is skipped. The slot is written to the state before the run starts, so no tick starts it twice. At most `MAX_PARALLEL` runs go on; a due run beyond that stays due.
+- A run starts on a thread of its own, since a task of its own clones and branches. It is created by `cli::task::new_with` with its `.tenx-run` record written into the directory before any worktree (`TaskMd::run`), so it never shows on the Tasks list, and its window opens detached. A run with `target = "<slug>"` is a `cli::drive::send_in` to that task instead, its record kept in the schedule's state, since a marker would hide the user's own task.
+- `settle` ends a running run from its task's resolved state (Done after the run started, an agent that exited, or one that never registered); `stop_step` steps it to its timeout: the interrupt key (Escape, for all three agents), then, for a run in its own task, closing the window as sweep does. Each ended run and each skipped slot is a line of `.state/<name>.jsonl`.
+- `prunable` picks old runs past `keep_ok`/`keep_failed`; the binary deletes only those with nothing to lose (no uncommitted change, no commit not on a remote, no open PR).
+
+Runs are hidden from the Tasks tab, the status bar's corner and `task list` unless they need you (`Row::hidden_from_tasks`); the column's Runs tab lists the same rows, grouped by schedule. A schedule added without a terminal (by an agent) is written paused, and resuming needs one.
 
 ## Task lifecycle
 

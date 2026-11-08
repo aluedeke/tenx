@@ -1,5 +1,5 @@
 ---
-description: Show tenx workspace status and task list. Use when the user asks about tasks, workspace structure, active work, or how to migrate existing work into tenx — and also when you (the agent) need a credential, API key, token, or other secret to do your own work, even if the user never asked about tenx at all.
+description: Show tenx workspace status and task list. Use when the user asks about tasks, workspace structure, active work, scheduled tasks (something that should run on a timetable, or the runs of one), or how to migrate existing work into tenx — and also when you (the agent) need a credential, API key, token, or other secret to do your own work, even if the user never asked about tenx at all.
 allowed-tools: Bash Read
 ---
 
@@ -17,6 +17,7 @@ allowed-tools: Bash Read
 ├── .claude/             # shared Claude config (settings, skills)
 │   ├── settings.json
 │   └── skills/
+├── schedules/           # scheduled tasks, one <name>.toml each (see below)
 └── tasks/
     └── <name>/          # one directory per task  ← your working area
         ├── TASK.md      # task notes, todos, links
@@ -97,6 +98,24 @@ If you no longer need something you asked for, withdraw it so nobody is chased f
 
 `cancel` and `tenx secrets status` only read or edit the request queues, never values, so both are safe from your Bash tool.
 
+## Scheduled tasks
+
+A schedule runs a prompt in the workspace on a timetable. Each run is a fresh task of its own (worktrees, branch, window), or — with `--task` — a message to an existing task. The tenx watcher starts runs while the tenx tmux server is up; a slot missed while it was down runs once afterwards if it is less than 12 hours old.
+
+    tenx schedule add nightly-deps --cron "0 6 * * 1-5" --title "Nightly dependency check" \
+      --prompt "Run cargo outdated; open a PR if a bump is safe. Last run: {last_run}, its PR: {last_run_pr}" \
+      --repos tenx --agent-args "--permission-mode acceptEdits --allowedTools 'Bash(cargo *)'"
+
+- **When**: `--cron` (5 fields, local time, or `@daily` etc.) or `--every 4h`. `{date}`, `{last_run}` and `{last_run_pr}` in the prompt are filled in per run.
+- **Unattended**: nobody may be there to answer a permission prompt. Give the agent what it needs with `--agent-args`, or every run stops at its first prompt until its timeout.
+- **Timeout**: a run is stopped after `--timeout` (default `1h`), time waiting for a person included: the agent is interrupted, and a run's own window is closed 30 s later. Nothing on disk is deleted.
+- **Secrets**: a new task never has secrets released (that takes a person typing a passphrase). A schedule that needs some must use `--task <slug>` and `--secret NAME`; the run is skipped while the name isn't released in that task.
+- **Created by you, it starts paused.** `tenx schedule add` from your Bash tool writes the schedule paused; a person turns it on with `tenx schedule resume <name>` in a terminal. A schedule is workspace-level state: ask the user before adding one.
+
+**Inside a run** (the prompt says "This is a scheduled run of …"): do the job, and if you find nothing that needs a person's attention, run `tenx schedule quiet` before you finish — the run is then filed as "nothing to report" instead of shown as unread.
+
+Runs stay off the task list (unless one waits on a person); the column's **Runs** tab lists them per schedule. Old runs are deleted automatically only when they have nothing to lose (no uncommitted change, no unpushed commit, no open PR); `--keep` / `--keep-failed` set how many stay.
+
 ## Common commands
 
     tenx task new "<title>" [--description …] [--link "Label: value"]…
@@ -112,6 +131,13 @@ If you no longer need something you asked for, withdraw it so nobody is chased f
     tenx task agent <name> [--args "…"] [--confirm-dev-channels]
                                show or set extra start options for the task's agent
     tenx repo add <url>        add a repo to the workspace
+    tenx schedule add <name> --cron "…" --prompt "…"   a scheduled task (see above)
+    tenx schedule list         every schedule: next run, last outcome
+    tenx schedule runs [name]  runs, newest first (--json)
+    tenx schedule run <name>   start a run now, to try a schedule out
+    tenx schedule pause <name> stop starting runs (--all); resume needs a person
+    tenx schedule quiet        inside a run: nothing to report
+    tenx schedule promote      inside a run: make it a normal task
     tenx secrets need <n>… --why "…"   ask for credentials and wait (see Secrets above)
     tenx secrets cancel <n>    withdraw a request you no longer need
     tenx secrets status        check sealed/unlocked/pending state

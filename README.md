@@ -6,7 +6,7 @@
 
 Coding agents make it cheap to have several pieces of work in flight at once. The expensive part is everything around them: each task needs its own branch and checkout in every repo it touches, its own agent session, an editor and a shell, and you need to know at a glance which agent is stuck waiting on you and which is still working. Switching between five terminal tabs to find out does not scale.
 
-`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running a coding agent (Claude Code, Codex, or pi), an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back.
+`tenx` turns a task into that whole setup with one command: a **task** gets its own branch and git worktree in every repo of its **workspace**, a `TASK.md` for notes, and a tmux window running a coding agent (Claude Code, Codex, or pi), an editor and a shell. Every task across every workspace lives in one tmux session, and `tenx` shows it beside a column that lists them grouped by what they need from you: waiting for input, working, done, idle. Because it is a tmux session, you can attach from anywhere, including a phone or tablet over SSH, and answer a waiting agent from the couch. Tasks that need nothing get their agent's window swept away and resume exactly where they left off when you come back. And a workspace can run prompts on a timetable — a nightly dependency check, a morning PR sweep — as [scheduled tasks](#scheduled-tasks) that stay out of your task list until one needs you.
 
 ![A tenx session in motion: the task column beside an agent, switching tasks, filtering, and an agent that stops and needs you](docs/demo.gif)
 
@@ -17,6 +17,7 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
 ├── config.toml                  name, repos, optional layout
 ├── .bare/<repo>.git             one bare clone per repo, shared by all tasks
 ├── .claude/                     shared Claude Code settings and skills
+├── schedules/<name>.toml        scheduled tasks (tenx schedule add)
 └── tasks/
     └── fix-login-timeout/       ← a task (tenx task new "Fix login timeout")
         ├── TASK.md              title, description, todos, links
@@ -125,12 +126,13 @@ The column lists every task from every registered workspace, sectioned by attent
 | `↓`, `↑`, `j`, `k`, `gg`, `G` | Move; an open task shows as you land on it; landing on a Claude subagent shows it in the task's pane, landing on the task shows main again |
 | `n` | Next task that needs you (blocked, rang the bell, or secrets pending), cycling |
 | `Enter`, `o`, `l` | Open the task, creating its window if needed, and put the cursor in it; on a subagent, the same for its view (or its transcript, once Claude no longer lists it) |
-| `t` | On a subagent: follow its transcript in a tmux window |
+| `t` | On a subagent: follow its transcript in a tmux window; on a scheduled run, its agent's transcript, read-only |
+| `P` | Promote a scheduled run to a normal task: it moves to the Tasks tab and its schedule lets go of it |
 | `L` | The task's links in a box: its PRs, the Artifact pages and Claude Design projects its agent made, its Linear issue, its ports, other pages it named. `1`–`9` or `Enter` opens one, `y` copies it |
 | `f` | A letter on every link chip in the list (PR, `◇` for what was made with Claude, port); type the letter to open it, the capital to copy it |
 | `Esc`, `q`, `Ctrl+c` | Back to the task, leaving the column showing |
 | `/`, `i` | To the search field |
-| `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks and Repos tabs |
+| `Tab`, `Shift+Tab`, `gt`, `gT` | Switch between the Tasks, Runs, Repos and Work tabs |
 | `Ctrl+n` | New task, from the list or the task screen; give it a prompt and the agent starts on it, leave the name empty and Claude names it from the prompt |
 | `Ctrl+Shift+n` | Quick task: type a prompt, `Enter`, and a session in the adhoc workspace starts on it, named by Claude (needs a terminal that reports Shift with Ctrl, like kitty, Ghostty or iTerm2; elsewhere it opens the new-task form) |
 | `a` | Add a repo to the workspace (Repos tab) |
@@ -152,7 +154,7 @@ Links open in the browser of the machine the client runs on; over SSH there is n
 
 The **Repos** tab lists every workspace's repos with their clone status and last commit. `a` adds a repo there; `:n` creates a task, starting in the selected repo's workspace; the task keys tell you to switch back (`gt`) for anything else. `W` (or `:init [path]`), from either tab, creates a whole new workspace: a path, a name, a first repo URL and whether to install the skills, the same questions `tenx init` asks. The column then lands on the new workspace's repo in the Repos tab, where `Ctrl+n` creates its first task; given no repo, it opens the add-repo form for it instead, since a task with no repo to work on is rarely what a new workspace is for.
 
-The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`, `:init [path]`. The rest have no key: `:ask <question>` starts a detached session on the question (see [Sessions outside a repo](#sessions-outside-a-repo)), `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:reject` rejects a pending secrets request (what `D` does on a secrets row), `:cancel` withdraws one, `:tasks` and `:repos` switch tabs, `:hide` hides the column, `:help` lists every key, `:q` quits the client.
+The **command line** (`:`) takes a verb and runs it on the selected task. Every key above has a verb: `:new`, `:open`, `:rename`, `:edit-repos` (`:e`), `:close` (`:x`), `:unlock` (`:u`), `:approve` (`:a`, `:allow`), `:deny`, `:delete` (`:d`, `:rm`), `:next`, `:init [path]`. The rest have no key: `:ask <question>` starts a detached session on the question (see [Sessions outside a repo](#sessions-outside-a-repo)), `:agent` shows the task's agent and `:agent <kind>` or `:agent default` sets it, `:reject` rejects a pending secrets request (what `D` does on a secrets row), `:cancel` withdraws one, `:tasks`, `:runs`, `:repos` and `:work` switch tabs, `:hide` hides the column, `:help` lists every key, `:q` quits the client.
 
 The **forms** (new task, new workspace, add repo, edit repos, rename, delete) are keyboard-only. `Tab`/`↓` and `Shift+Tab`/`↑` move between fields, `Space` toggles a repo, `Enter` submits, `Esc` cancels. In the new-task form, the workspace starts as the selected item's and `←`/`→` on that field move it to another registered workspace (the repo list follows), and `←`/`→` on the agent field cycle the choice; in the new-workspace form, `Space` on the skills field toggles it. In the edit-repos form, `j`/`k` also move, `x` also toggles, `a` picks every repo and `n` none. Deleting a task, or removing a worktree from the edit-repos form, asks once more; `y` or `Enter` confirms, any other key cancels.
 
@@ -192,6 +194,9 @@ tenx tmux reload         load this tenx's tmux config into the running server
 tenx tmux restart        stop the tmux server and build it again as it was [--now] [--timeout 30m] [--dry-run]
 tenx watch               the attention watcher (started automatically)
 tenx standup             summarize recent activity across tasks
+tenx schedule add <NAME> a scheduled task (--cron ".." | --every 4h) --prompt ".." [--task SLUG | --repos a,b]
+                         [--agent-args ".."] [--timeout 1h] [--catch-up 12h] [--keep 3] [--keep-failed 5]
+tenx schedule list|runs [NAME]|run <NAME>|pause|resume|rm <NAME>   see Scheduled tasks
 tenx secrets ...         per-task encrypted secrets, see below
 ```
 
@@ -218,6 +223,55 @@ tenx task output bump-the-sdk --ws-dir work    # what it said since the last pro
 ```
 
 A message is pasted into the task's live agent, so every exchange is visible in its window and you can take over at any point. `send` opens a closed task with the message as its first prompt, and refuses to type into an agent that is waiting on a dialog (`--force` overrides). It never answers a permission prompt; that stays with you. The permission rules are seeded once into the adhoc workspace's `.claude/settings.json`, which you can edit.
+
+## Scheduled tasks
+
+A schedule runs a prompt in a workspace on a timetable: a nightly dependency check, a weekly cleanup, a look at your open PRs every morning.
+
+```sh
+tenx schedule add nightly-deps --cron "0 6 * * 1-5" --title "Nightly dependency check" \
+  --prompt "Run cargo outdated and open a PR if a bump is safe. Last run: {last_run} ({last_run_pr})" \
+  --repos tenx --agent-args "--permission-mode acceptEdits --allowedTools 'Bash(cargo *)'"
+```
+
+Each schedule is one file, `<workspace>/schedules/<name>.toml`, which you can also write by hand:
+
+```toml
+title = "Nightly dependency check"
+cron = "0 6 * * 1-5"       # local time; or @daily, @weekly …, or: every = "4h"
+prompt = "Run cargo outdated …  {date}, {last_run} and {last_run_pr} are filled in"
+repos = ["tenx"]           # each run is a fresh task with these worktrees (default: all)
+# target = "my-task"       # instead: send the prompt to this existing task
+agent_args = "--permission-mode acceptEdits"
+timeout = "1h"             # the default; "0" = never
+catch_up = "12h"           # a slot missed by less than this runs once afterwards
+keep_ok = 3                # finished runs kept; older ones with nothing to lose are deleted
+keep_failed = 5
+# secrets = ["GH_TOKEN"]   # with target only, see below
+paused = false
+```
+
+**Runs.** When a slot comes, a run starts: a task of its own, named after the schedule and the slot (`nightly-dependency-check-2026-11-08-06-00`), with its agent started on the prompt, or the prompt sent to the `target` task. At most five runs go on at once; a due run waits for a place. A slot is skipped while the schedule's previous run is still going. The agent can say it found nothing worth your time with `tenx schedule quiet`; the `/tenx` skill tells it so.
+
+**Out of your way.** Runs are not on the Tasks tab, the status bar or `tenx task list`. The column's **Runs** tab lists them per schedule, newest first, with how each ended — done, nothing to report, timed out, failed — and a `[n]` of the ones you haven't opened. `t` reads a run's transcript without waking its agent, `Enter` opens it, `P` turns it into a normal task to carry on with. A run that waits on you (a permission prompt, a question) is on the Tasks tab, notified like any task, until it carries on. `tenx schedule runs [name]` lists the same, and a schedule's history (`schedules/.state/<name>.jsonl`) keeps every run and skipped slot after the runs themselves are gone.
+
+**Unattended.** A run has no one to click "allow". Give its agent what it may do with `agent_args`; `tenx schedule add` warns when you don't. Every run stops after its `timeout`, time spent waiting on you included: tenx interrupts the agent, and closes a run's own window 30 seconds later. Nothing on disk is deleted. Secrets are released only by a person typing the passphrase into an open window, so a fresh run never has any: a schedule that needs secrets sends its prompt to an existing task (`target`) and lists them under `secrets`, and a slot is skipped, with the reason recorded, while one isn't released there.
+
+**Cleanup.** Past `keep_ok` finished or `keep_failed` failed runs, the oldest are deleted, but only when they have nothing to lose: no uncommitted change, no commit that isn't on a remote, no open PR, not pinned.
+
+**When it runs.** The watcher checks the schedules once a minute, so runs start while the tenx tmux server is up — closing every terminal doesn't stop it, a reboot does. On a machine you don't sit at, `tenx web service install` starts the server and the watcher at login (with auto-login, after every reboot). A slot missed while tenx was down runs once when it is back, if it is less than `catch_up` old; older ones are recorded as missed. On macOS the watcher keeps the machine from idle sleep while a run goes on.
+
+**Safety.** A schedule an agent adds (`tenx schedule add` from its shell tool, which has no terminal) is written paused, and only a person can turn it on, with `tenx schedule resume <name>` in a terminal. `tenx schedule pause --all` stops every schedule at once.
+
+```
+tenx schedule list [--json]          every schedule: when, next run, last outcome
+tenx schedule runs [NAME] [--json]   runs, newest first; with a name, its history too
+tenx schedule run <NAME>             start a run now, to try a schedule out
+tenx schedule pause|resume <NAME>    (--all for every schedule)
+tenx schedule rm <NAME>              delete a schedule; its runs and history stay
+tenx schedule quiet                  inside a run: nothing to report
+tenx schedule promote [TASK]         make a run a normal task
+```
 
 ## From a phone or tablet
 

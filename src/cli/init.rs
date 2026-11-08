@@ -286,6 +286,9 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x8bf80e322020228e, // tenx: task agent start options portable
     0x5d5720929d048b86, // tenx: task open --no-focus
     0xb672274985e96c97, // tenx: task open --no-focus portable
+    0x1cbbe2822029d049, // tenx: scheduled tasks
+    0xd84c248b3680afc8, // tenx: scheduled tasks, portable
+    0x73b757e345484f1d, // agentsmd: scheduled tasks
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
@@ -366,9 +369,13 @@ after `gh pr create`; record decisions and gotchas under `## Notes`.
     tenx task open <name>      switch to a task's window
     tenx secrets need <n> --why "…"   ask for a credential (safe to run; waits for a human)
     tenx secrets status        show sealed/unlocked/pending state
+    tenx schedule list         scheduled tasks (`schedules/`) and their runs
+
+Inside a scheduled run with nothing for a person to look at, run `tenx
+schedule quiet` before you finish.
 
 The `/tenx` skill (in `.agents/skills/tenx`) has the full detail on tasks,
-tickets, and secrets.
+tickets, secrets and schedules.
 "#;
 
 const STANDUP_SKILL_MD: &str = r#"---
