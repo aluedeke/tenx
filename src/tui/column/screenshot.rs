@@ -96,6 +96,7 @@ fn row(f: Fx) -> Row {
         section,
         subagents: vec![],
         pinned: f.pinned,
+        run: None,
     }
 }
 
@@ -583,9 +584,11 @@ mod work_tab {
     }
 
     #[test]
-    fn tabs_cycle_both_ways_through_all_three() {
+    fn tabs_cycle_both_ways_through_all_four() {
         let mut c = fixture_column();
         assert_eq!(c.tab, Tab::Tasks);
+        c.cycle_tab(false);
+        assert_eq!(c.tab, Tab::Runs);
         c.cycle_tab(false);
         assert_eq!(c.tab, Tab::Repos);
         c.cycle_tab(false);
@@ -617,7 +620,7 @@ mod work_tab {
         let mut c = column_with_jobs(1);
         let _ = render(&mut c, 24);
         let spans = c.tab_spans.clone();
-        assert_eq!(spans.len(), 3, "three tabs recorded");
+        assert_eq!(spans.len(), 4, "four tabs recorded");
         for (i, tab) in Tab::ALL.iter().enumerate() {
             let (a, b) = spans[i];
             assert!(b > a, "tab {i} has no width");
@@ -707,7 +710,7 @@ mod shared_jobs {
         std::mem::forget(tx);
         a.push_job(job);
         assert_eq!(b.active_jobs(), 1);
-        assert_eq!(b.view().tabs[2].running, 1, "the other tab's bar counts it");
+        assert_eq!(b.view().tabs.iter().find(|t| t.label == "Work").map(|t| t.running), Some(1), "the other tab's bar counts it");
         assert_ne!(a.jobs.lock()[0].owner, b.id, "only the column that started it finishes it");
     }
 
@@ -765,5 +768,99 @@ mod secrets_on_disk {
         std::fs::remove_file(dir.join(crate::workspace::SECRETS_PENDING_SET_FILE)).unwrap();
         assert!(r.secrets_changed_on_disk(), "answered from another client");
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+/// Scheduled runs: off the Tasks tab unless one needs you, grouped by
+/// schedule on the Runs tab.
+#[cfg(test)]
+mod runs_tab {
+    use super::*;
+    use tenx_core::schedule::{Outcome, RunRecord};
+
+    fn render(column: &mut Column, rows: u16) -> Vec<String> {
+        let mut term = ratatui::Terminal::new(TestBackend::new(COLS, rows)).unwrap();
+        term.draw(|f| render_in(f, column, f.area())).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())
+            .collect()
+    }
+
+    fn run(schedule: &str, task: &str, minutes_ago: u64, outcome: Option<Outcome>) -> RunRecord {
+        let started = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(minutes_ago as i64);
+        RunRecord {
+            schedule: schedule.into(),
+            task: task.into(),
+            slot: started,
+            started,
+            interrupted: None,
+            ended: outcome.as_ref().map(|_| started),
+            outcome,
+            nothing_to_report: false,
+            read: false,
+            pr: None,
+        }
+    }
+
+    fn column() -> Column {
+        let mut c = fixture_column();
+        let mut add = |title: &'static str, status: TaskStatus, rec: RunRecord| {
+            let mut r = row(Fx { open: true, age: 60, ..fx(title, "tenx", status) });
+            r.run = Some(rec);
+            c.rows.push(r);
+        };
+        add("nightly deps · 2026-11-07 06:00", TaskStatus::Done, run("nightly-deps", "nightly-deps-2026-11-07-06-00", 1500, Some(Outcome::NothingToReport)));
+        add("nightly deps · 2026-11-08 06:00", TaskStatus::Done, run("nightly-deps", "nightly-deps-2026-11-08-06-00", 60, Some(Outcome::Done)));
+        add("pr sweep · 2026-11-08 08:00", TaskStatus::Blocked, run("pr-sweep", "pr-sweep-2026-11-08-08-00", 5, None));
+        c.offline = true;
+        c.apply_filter();
+        c
+    }
+
+    fn titles(c: &Column) -> Vec<String> {
+        c.filtered.iter().map(|&i| c.rows[i].title.clone()).collect()
+    }
+
+    #[test]
+    fn tasks_tab_hides_runs_unless_they_need_you() {
+        let c = column();
+        let t = titles(&c);
+        assert!(!t.iter().any(|t| t.starts_with("nightly deps")), "{t:?}");
+        assert!(t.iter().any(|t| t.starts_with("pr sweep")), "a blocked run is listed: {t:?}");
+        assert!(t.iter().any(|t| t == "add release workflow"));
+    }
+
+    #[test]
+    fn runs_tab_groups_by_schedule_newest_first() {
+        let mut c = column();
+        c.select_tab(Tab::Runs);
+        assert_eq!(
+            titles(&c),
+            vec!["nightly deps · 2026-11-08 06:00", "nightly deps · 2026-11-07 06:00", "pr sweep · 2026-11-08 08:00"]
+        );
+        let screen = render(&mut c, 30).join("\n");
+        assert!(screen.contains("Runs [1]"), "one ended run unread:\n{screen}");
+        // ⏰ is two cells wide, so the buffer holds it with a blank after.
+        assert!(screen.contains("nightly-deps  2"), "{screen}");
+        assert!(screen.contains("pr-sweep  1"), "{screen}");
+        assert!(screen.contains("● done"), "{screen}");
+        assert!(screen.contains("nothing to report"), "{screen}");
+        let view = c.view();
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("⏰ nightly-deps"), "the web view groups the same way");
+    }
+
+    #[test]
+    fn opening_marks_read_and_promote_moves_it_to_tasks() {
+        let mut c = column();
+        c.select_tab(Tab::Runs);
+        c.selected = 0;
+        c.mark_selected_read();
+        assert!(!c.rows.iter().any(|r| r.run.as_ref().is_some_and(|r| r.unread())));
+        c.promote_selected();
+        assert_eq!(c.filtered.len(), 2, "promoted run left the Runs tab");
+        c.select_tab(Tab::Tasks);
+        assert!(titles(&c).contains(&"nightly deps · 2026-11-08 06:00".to_string()));
     }
 }

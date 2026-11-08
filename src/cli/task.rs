@@ -14,6 +14,10 @@ pub struct TaskMd<'a> {
     /// Not part of `TASK.md`: the agent's first message (`--prompt`, `tenx
     /// ask`). Empty = none. Kept in [`PROMPT_FILE`] until the window opens.
     pub prompt: &'a str,
+    /// Not part of `TASK.md` either: a scheduled run's record
+    /// (`tenx_core::schedule::RUN_FILE`), written before the worktrees so the
+    /// run stays off the Tasks list while its repos clone.
+    pub run: Option<&'a str>,
 }
 
 /// A new task's first message, waiting for its window: written at creation,
@@ -197,6 +201,9 @@ pub fn new_with(
     let bare_dir = ws.bare_dir(&global);
     let task_dir = ws.tasks_dir().join(slug);
     std::fs::create_dir_all(&task_dir)?;
+    if let Some(run) = md.run {
+        std::fs::write(task_dir.join(tenx_core::schedule::RUN_FILE), run)?;
+    }
     write_task_md(&task_dir, &display_name, md)?;
     write_claude_hooks(&task_dir)?;
     trust_task_dir(&task_dir);
@@ -676,7 +683,7 @@ pub fn list() -> Result<()> {
 
     println!("{:<20} {:<25} {:<20} {:<6} OPEN", "NAME", "REPOS", "BRANCH", "AGE");
     println!("{}", "-".repeat(80));
-    for task in &tasks {
+    for task in tasks.iter().filter(|t| !crate::cli::schedule::is_run(&t.path)) {
         let repos = task.repos.join(", ");
         let age = crate::workspace::format_age(task.created_at);
         // Tabs are named by slug (task.name), not the display title.

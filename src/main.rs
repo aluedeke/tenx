@@ -29,7 +29,7 @@ fn run() -> Result<()> {
     // A workspace command run from inside a workspace re-registers it: one
     // that was moved after `tenx init` has lost its entry (see
     // `register_enclosing`). Hooks (`internal`) run far too often for this.
-    if matches!(cli.command, None | Some(Commands::Repo { .. }) | Some(Commands::Task { .. })) {
+    if matches!(cli.command, None | Some(Commands::Repo { .. }) | Some(Commands::Task { .. }) | Some(Commands::Schedule { .. })) {
         if let Ok(cwd) = env::current_dir() {
             workspace::register_enclosing(&cwd);
         }
@@ -118,6 +118,11 @@ fn run() -> Result<()> {
 
         Some(Commands::Internal { command }) => match command {
             InternalCommands::TmuxConf => print!("{}", tmux::render_config()),
+            InternalCommands::ScheduleTick => {
+                let mut ticker = cli::schedule::Ticker::default();
+                println!("{} running", ticker.tick());
+                ticker.wait_for_starts();
+            }
             InternalCommands::Ports => {
                 println!("{}", serde_json::to_string(&live::ports_by_window())?);
             }
@@ -142,6 +147,53 @@ fn run() -> Result<()> {
             }
         },
 
+        Some(Commands::Schedule { command }) => match command {
+            cli::ScheduleCommands::Add(add) => {
+                let cli::ScheduleAdd {
+                    name,
+                    cron,
+                    every,
+                    prompt,
+                    title,
+                    task,
+                    repos,
+                    agent,
+                    agent_args,
+                    timeout,
+                    catch_up,
+                    secrets,
+                    keep,
+                    keep_failed,
+                    replace,
+                    ws_dir,
+                } = *add;
+                let file = tenx_core::schedule::ScheduleFile {
+                    title: title.unwrap_or_default(),
+                    cron,
+                    every,
+                    prompt,
+                    target: task.unwrap_or_default(),
+                    repos,
+                    agent: agent.unwrap_or_default(),
+                    agent_args: agent_args.unwrap_or_default(),
+                    timeout: timeout.unwrap_or_default(),
+                    catch_up: catch_up.unwrap_or_default(),
+                    secrets,
+                    keep_ok: keep,
+                    keep_failed,
+                    paused: false,
+                };
+                cli::schedule::add(ws_dir.as_deref(), &name, file, replace)?;
+            }
+            cli::ScheduleCommands::List { json } => cli::schedule::list(json)?,
+            cli::ScheduleCommands::Runs { name, json, ws_dir } => cli::schedule::runs(ws_dir.as_deref(), name.as_deref(), json)?,
+            cli::ScheduleCommands::Run { name, ws_dir } => cli::schedule::run_now(ws_dir.as_deref(), &name)?,
+            cli::ScheduleCommands::Pause { name, all: _, ws_dir } => cli::schedule::set_paused(ws_dir.as_deref(), name.as_deref(), true)?,
+            cli::ScheduleCommands::Resume { name, all: _, ws_dir } => cli::schedule::set_paused(ws_dir.as_deref(), name.as_deref(), false)?,
+            cli::ScheduleCommands::Rm { name, ws_dir } => cli::schedule::rm(ws_dir.as_deref(), &name)?,
+            cli::ScheduleCommands::Quiet => cli::schedule::quiet()?,
+            cli::ScheduleCommands::Promote { task, ws_dir } => cli::schedule::promote(ws_dir.as_deref(), task.as_deref())?,
+        },
         Some(Commands::Secrets { command }) => match command {
             SecretsCommands::Init => cli::secrets::init()?,
             SecretsCommands::Encrypt { task, file } => cli::secrets::encrypt(&task, &file)?,
@@ -185,6 +237,7 @@ fn run() -> Result<()> {
                     description: description.as_deref().unwrap_or(""),
                     links: &links,
                     prompt: prompt.as_deref().unwrap_or(""),
+                    run: None,
                 };
                 let agent = cli::task::AgentSetup {
                     kind: agent.as_deref().map(agent::AgentKind::from_token),

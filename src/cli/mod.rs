@@ -9,6 +9,7 @@ pub mod notify;
 pub mod prwatch;
 pub mod repo;
 pub mod restart;
+pub mod schedule;
 pub mod secrets;
 pub mod session_event;
 pub mod standup;
@@ -129,6 +130,17 @@ pub enum Commands {
         #[arg(long)]
         reset_skills: bool,
     },
+    /// Scheduled tasks: run a prompt in a workspace on a timetable
+    ///
+    /// A schedule is `<workspace>/schedules/<name>.toml`. When it is due, the
+    /// watcher starts a run — a fresh task of its own (kept off the Tasks
+    /// list, shown on the column's Runs tab) or a message to an existing
+    /// task. Runs stop after their timeout (default 1h). The timer runs while
+    /// the tenx tmux server does.
+    Schedule {
+        #[command(subcommand)]
+        command: ScheduleCommands,
+    },
     /// Manage per-task encrypted secrets (age + sops)
     ///
     /// Commands are named and behave like their `sops` equivalents:
@@ -152,6 +164,9 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum InternalCommands {
+    /// One pass of the watcher's scheduler (`cli::schedule::Ticker`), then
+    /// wait for the runs it started to be set up — for debugging and tests.
+    ScheduleTick,
     /// Print the tmux config tenx generates for its server (what
     /// `~/.config/tenx/tmux.conf` will contain on the next session creation).
     TmuxConf,
@@ -478,6 +493,120 @@ pub enum AgentCommands {
         /// Print what would be restarted, and when, without restarting
         #[arg(long)]
         dry_run: bool,
+    },
+}
+
+#[derive(clap::Args)]
+pub struct ScheduleAdd {
+    /// Its name: lowercase letters, digits and dashes (the file's name)
+    pub name: String,
+    /// When, as cron: minute hour day-of-month month weekday, local
+    /// time — e.g. "0 6 * * 1-5" — or @hourly/@daily/@weekly/@monthly
+    #[arg(long, conflicts_with = "every", required_unless_present = "every")]
+    pub cron: Option<String>,
+    /// When, as an interval from now: "30m", "4h", "1d"
+    #[arg(long)]
+    pub every: Option<String>,
+    /// What the agent is asked. {date}, {last_run} and {last_run_pr} are
+    /// filled in
+    #[arg(long)]
+    pub prompt: String,
+    /// Shown on the Runs tab and in each run's title (default: the name)
+    #[arg(long)]
+    pub title: Option<String>,
+    /// Send the prompt to this existing task instead of starting a new one
+    #[arg(long)]
+    pub task: Option<String>,
+    /// Comma-separated repos for each new run (default: all)
+    #[arg(long, value_delimiter = ',', conflicts_with = "task")]
+    pub repos: Option<Vec<String>>,
+    /// Coding agent (`claude`, `codex`, `pi`); default as for any task
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// Extra agent arguments, as shell words — what an unattended run may
+    /// do without asking, e.g. "--permission-mode acceptEdits"
+    #[arg(long, allow_hyphen_values = true, value_name = "ARGS")]
+    pub agent_args: Option<String>,
+    /// Stop a run after this long, waiting on you included ("45m"; "0" = never; default 1h)
+    #[arg(long)]
+    pub timeout: Option<String>,
+    /// How old a missed slot may be and still run once (default 12h)
+    #[arg(long)]
+    pub catch_up: Option<String>,
+    /// A secret the run needs (repeatable); with --task only. The run is
+    /// skipped when it isn't released in that task
+    #[arg(long = "secret", requires = "task")]
+    pub secrets: Vec<String>,
+    /// Finished runs to keep (default 3); older ones with nothing to lose are deleted
+    #[arg(long)]
+    pub keep: Option<usize>,
+    /// Failed or timed-out runs to keep (default 5)
+    #[arg(long)]
+    pub keep_failed: Option<usize>,
+    /// Overwrite a schedule of the same name
+    #[arg(long)]
+    pub replace: bool,
+    /// Add it to this workspace (directory or registered name)
+    #[arg(long)]
+    pub ws_dir: Option<String>,
+}
+
+#[derive(Subcommand)]
+pub enum ScheduleCommands {
+    /// Add a schedule to the workspace (paused when an agent adds it)
+    Add(Box<ScheduleAdd>),
+    /// List every schedule: when, next run, last outcome
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// List runs, newest first; with a name, its history too
+    Runs {
+        /// `name` or `workspace/name`
+        name: Option<String>,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Start a run now, whatever the timetable says
+    Run {
+        name: String,
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Stop starting runs of a schedule (or all of them)
+    Pause {
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        name: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Start running a paused schedule again (needs a terminal)
+    Resume {
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        name: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Delete a schedule (its runs and history stay)
+    Rm {
+        name: String,
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
+    /// Inside a run: there is nothing for a person to look at
+    Quiet,
+    /// Make a run a normal task: listed under Tasks, no longer the schedule's
+    Promote {
+        /// The run's task (default: the one around the current directory)
+        task: Option<String>,
+        #[arg(long)]
+        ws_dir: Option<String>,
     },
 }
 

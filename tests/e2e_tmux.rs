@@ -1644,3 +1644,119 @@ fn tabs_swap_over_the_window_and_go_with_it() {
     let keys = h.tmux_out(&["list-keys", "-T", "root", "M-1"]);
     assert!(keys.contains("internal tab 1") && keys.contains("send-keys M-1"), "{keys}");
 }
+
+/// `tenx schedule`: a run starts as a task of its own that the task list
+/// leaves out, ends when its agent's turn is over (as "nothing to report"
+/// when it says so), is interrupted at its timeout, and a schedule fires on
+/// its timetable — each pass of the scheduler driven by `internal
+/// schedule-tick`, the watcher's minute without the minute.
+#[test]
+fn scheduled_runs_start_end_time_out_and_stay_off_the_task_list() {
+    let Some(h) = Harness::named("-schedule") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let claude = h.root.join("bin/claude");
+    fs::write(&claude, "#!/bin/sh\nprintf '%s\\n' \"$@\" > .agent-args\nexec cat > .agent-input\n").unwrap();
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+    let ok = |args: &[&str]| -> String {
+        let out = h.tenx().args(args).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let tick = || ok(&["internal", "schedule-tick"]);
+    let runs = |name: &str| -> Vec<serde_json::Value> {
+        let out = ok(&["schedule", "runs", name, "--ws-dir", &h.ws(), "--json"]);
+        serde_json::from_str::<Vec<serde_json::Value>>(&out).unwrap().into_iter().map(|r| r["run"].clone()).collect()
+    };
+    let event = |slug: &str, task: &Path, name: &str| {
+        let pane_pid = h.tmux_out(&["list-panes", "-t", &format!("tenx:{slug}"), "-F", "#{pane_pid}"]);
+        let payload = format!(r#"{{"hook_event_name":"{name}","cwd":"{}","session_id":"{slug}"}}"#, task.display());
+        let mut child = h
+            .tenx()
+            .args(["internal", "session-event", "--agent", "claude", "--pid", pane_pid.trim()])
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        use std::io::Write;
+        child.stdin.take().unwrap().write_all(payload.as_bytes()).unwrap();
+        assert!(child.wait().unwrap().success());
+    };
+    let wait_file = |p: &Path, pred: &dyn Fn(&str) -> bool| -> String {
+        for _ in 0..50 {
+            if let Ok(t) = fs::read_to_string(p)
+                && pred(&t)
+            {
+                return t;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        panic!("{}: {}", p.display(), fs::read_to_string(p).unwrap_or_default());
+    };
+    let schedules = h.root.join("ws/schedules");
+
+    // add: checked, then written as a file of the workspace.
+    ok(&["schedule", "add", "deps", "--every", "1h", "--prompt", "check deps on {date}", "--repos", "origin",
+        "--agent-args", "--permission-mode acceptEdits", "--ws-dir", &h.ws()]);
+    let file = fs::read_to_string(schedules.join("deps.toml")).unwrap();
+    assert!(file.contains("every = \"1h\"") && file.contains("acceptEdits"), "{file}");
+    let out = h.tenx().args(["schedule", "add", "bad", "--cron", "61 * * * *", "--prompt", "x", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(!out.status.success(), "a cron minute of 61 is refused");
+    let list: serde_json::Value = serde_json::from_str(&ok(&["schedule", "list", "--json"])).unwrap();
+    assert_eq!(list[0]["name"], "deps", "{list}");
+
+    // run: a task of its own, its agent started on the prompt, off the list.
+    ok(&["schedule", "run", "deps", "--ws-dir", &h.ws()]);
+    let run = runs("deps").pop().expect("a run");
+    let slug = run["task"].as_str().unwrap().to_string();
+    assert!(run["outcome"].is_null(), "{run}");
+    let task = h.root.join("ws/tasks").join(&slug);
+    assert!(task.join(".tenx-run").is_file() && task.join("origin").is_dir(), "{slug}: marker and worktree");
+    let args = wait_file(&task.join(".agent-args"), &|t| t.contains("check deps on"));
+    assert!(args.contains("--permission-mode") && args.contains("tenx schedule quiet"), "{args}");
+    let tasks: serde_json::Value = serde_json::from_str(&ok(&["task", "list", "--json"])).unwrap();
+    assert!(!tasks["tasks"].as_array().unwrap().iter().any(|t| t["slug"] == slug.as_str()), "a run is not on the task list");
+
+    // It works, says there's nothing to report, and stops: the run ends so.
+    event(&slug, &task, "UserPromptSubmit");
+    tick();
+    assert!(runs("deps")[0]["outcome"].is_null(), "still going while the agent works");
+    let out = h.tenx().args(["schedule", "quiet"]).current_dir(&task).output().unwrap();
+    assert!(out.status.success(), "quiet: {}", String::from_utf8_lossy(&out.stderr));
+    event(&slug, &task, "Stop");
+    tick();
+    assert_eq!(runs("deps")[0]["outcome"]["kind"], "nothing_to_report");
+    let history = fs::read_to_string(schedules.join(".state/deps.jsonl")).unwrap();
+    assert!(history.contains("nothing_to_report"), "{history}");
+
+    // A timeout: interrupted on the first pass past it, timed out once quiet.
+    fs::write(schedules.join("slow.toml"), "title = \"Slow\"\nevery = \"1h\"\nprompt = \"take your time\"\nrepos = []\ntimeout = \"1s\"\n").unwrap();
+    ok(&["schedule", "run", "slow", "--ws-dir", &h.ws()]);
+    let slow = runs("slow").pop().unwrap()["task"].as_str().unwrap().to_string();
+    let slow_dir = h.root.join("ws/tasks").join(&slow);
+    wait_file(&slow_dir.join(".agent-args"), &|t| t.contains("take your time"));
+    event(&slow, &slow_dir, "UserPromptSubmit");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    tick();
+    let marker = fs::read_to_string(slow_dir.join(".tenx-run")).unwrap();
+    assert!(marker.contains("interrupted"), "{marker}");
+    event(&slow, &slow_dir, "Stop");
+    tick();
+    assert_eq!(runs("slow")[0]["outcome"]["kind"], "timed_out");
+
+    // On the timetable: every 30m, first seen 40m ago — one run is due. A
+    // paused schedule with the same timetable starts none.
+    let seen = (jiff::Timestamp::now() - jiff::SignedDuration::from_mins(40)).to_string();
+    for (name, paused) in [("hourly", false), ("held", true)] {
+        fs::write(schedules.join(format!("{name}.toml")), format!("every = \"30m\"\nprompt = \"tick\"\nrepos = []\npaused = {paused}\n")).unwrap();
+        fs::write(schedules.join(format!(".state/{name}.json")), format!("{{\"created\": \"{seen}\"}}")).unwrap();
+    }
+    tick();
+    let hourly = runs("hourly");
+    assert_eq!(hourly.len(), 1, "{hourly:?}");
+    assert!(h.root.join("ws/tasks").join(hourly[0]["task"].as_str().unwrap()).join(".tenx-run").is_file());
+    assert!(runs("held").is_empty(), "paused");
+    tick();
+    assert_eq!(runs("hourly").len(), 1, "the same slot never runs twice");
+}

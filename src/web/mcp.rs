@@ -233,7 +233,7 @@ fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Re
                 Some(t) => t,
                 None => unique_title(&ws, crate::cli::task::title_for_prompt(&ws, &prompt)),
             };
-            let md = crate::cli::task::TaskMd { description: description.as_deref().unwrap_or(""), links: &[], prompt: &prompt };
+            let md = crate::cli::task::TaskMd { description: description.as_deref().unwrap_or(""), links: &[], prompt: &prompt, run: None };
             let slug = crate::cli::task::new_with(
                 &ws,
                 &title,

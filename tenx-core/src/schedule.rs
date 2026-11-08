@@ -54,8 +54,9 @@ pub struct ScheduleFile {
     pub repos: Option<Vec<String>>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub agent: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub agent_args: Vec<String>,
+    /// Extra agent arguments as shell words, like a task's `.tenx-agent-args`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub agent_args: String,
     /// "45m"; "0" for none. Empty = `DEFAULT_TIMEOUT`.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub timeout: String,
@@ -86,7 +87,7 @@ pub struct Schedule {
     pub target: Target,
     pub repos: Option<Vec<String>>,
     pub agent: String,
-    pub agent_args: Vec<String>,
+    pub agent_args: String,
     pub timeout: Option<Duration>,
     pub catch_up: Duration,
     pub secrets: Vec<String>,
@@ -138,7 +139,7 @@ pub fn parse(name: &str, file: &ScheduleFile) -> Result<Schedule, String> {
         target,
         repos: file.repos.clone(),
         agent: file.agent.clone(),
-        agent_args: file.agent_args.clone(),
+        agent_args: file.agent_args.trim().to_string(),
         timeout,
         catch_up,
         secrets: file.secrets.clone(),
@@ -392,13 +393,16 @@ pub enum Outcome {
     Done,
     NothingToReport,
     TimedOut,
+    /// Made a normal task (`tenx schedule promote`, `P` in the column)
+    /// before it ended; from then on it's the user's, not the schedule's.
+    Promoted,
     Skipped { reason: String },
     Failed { reason: String },
 }
 
 impl Outcome {
     pub fn ok(&self) -> bool {
-        matches!(self, Outcome::Done | Outcome::NothingToReport)
+        matches!(self, Outcome::Done | Outcome::NothingToReport | Outcome::Promoted)
     }
 
     pub fn label(&self) -> String {
@@ -406,6 +410,7 @@ impl Outcome {
             Outcome::Done => "done".into(),
             Outcome::NothingToReport => "nothing to report".into(),
             Outcome::TimedOut => "timed out".into(),
+            Outcome::Promoted => "promoted to a task".into(),
             Outcome::Skipped { reason } => format!("skipped: {reason}"),
             Outcome::Failed { reason } => format!("failed: {reason}"),
         }
@@ -496,13 +501,9 @@ pub fn stop_step(rec: &RunRecord, timeout: Option<Duration>, own_task: bool, now
     }
 }
 
-/// A run's task slug: the schedule's name and the slot, local time, to the
-/// minute — "nightly-deps-2026-11-08-0600".
-pub fn run_slug(schedule: &str, slot: Timestamp, tz: &TimeZone) -> String {
-    crate::slug::slugify(&format!("{schedule} {}", slot.to_zoned(tz.clone()).strftime("%Y-%m-%d %H%M")))
-}
-
-/// A run's display name: the schedule's title and the slot.
+/// A run's display name: the schedule's title and the slot, to the minute.
+/// Its slug (the task's directory and branch) is made from it, so two slots
+/// never share a task.
 pub fn run_title(title: &str, slot: Timestamp, tz: &TimeZone) -> String {
     format!("{title} · {}", slot.to_zoned(tz.clone()).strftime("%Y-%m-%d %H:%M"))
 }
@@ -754,7 +755,7 @@ mod tests {
     #[test]
     fn slug_title_and_prompt() {
         let slot = at("2026-11-08T06:00");
-        assert_eq!(run_slug("nightly-deps", slot, &berlin()), "nightly-deps-2026-11-08-0600");
+        assert_eq!(crate::slug::slugify(&run_title("Nightly deps", slot, &berlin())), "nightly-deps-2026-11-08-06-00");
         assert_eq!(run_title("Nightly deps", slot, &berlin()), "Nightly deps · 2026-11-08 06:00");
         let mut s = sched(Some("@daily"), None);
         s.prompt = "Since {last_run} ({last_run_pr}) on {date}: {keep}".into();

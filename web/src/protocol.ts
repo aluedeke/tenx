@@ -38,7 +38,7 @@ export interface JobProgress {
 export interface TabView {
   label: string;
   active: boolean;
-  /** Running jobs, on the Work tab only; 0 means no `[n]`. */
+  /** The tab's `[n]`: running jobs on Work, runs that ended unread on Runs; 0 means none. */
   running: number;
 }
 

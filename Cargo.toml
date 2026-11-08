@@ -48,6 +48,9 @@ tenx-core = { version = "0.25.1", path = "tenx-core" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+# `tenx schedule`: the system time zone for cron slots (tenx-core does the
+# arithmetic and takes the zone as an argument).
+jiff = "0.2"
 ratatui = "0.29"
 crossterm = "0.28"
 anyhow = "1"

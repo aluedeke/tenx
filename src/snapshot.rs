@@ -89,6 +89,10 @@ pub(crate) struct Row {
     /// `.tenx-pinned`: sweep never closes the task's window. Re-read on the
     /// slow tick, so a `tenx task pin` elsewhere shows up.
     pub(crate) pinned: bool,
+    /// A scheduled run's record (`.tenx-run`): such a task is listed on the
+    /// Runs tab, and on the Tasks tab only while it needs you. Re-read on the
+    /// slow tick, which is how an ending or `tenx schedule quiet` shows up.
+    pub(crate) run: Option<tenx_core::schedule::RunRecord>,
 }
 
 impl Row {
@@ -120,6 +124,12 @@ impl Row {
                 || workspace::secrets_pending_set(&self.path) != self.secrets_pending_set)
     }
 
+    /// Whether the Tasks tab leaves it out: a scheduled run, unless it is
+    /// waiting on you — then it is listed until it carries on.
+    pub(crate) fn hidden_from_tasks(&self) -> bool {
+        self.run.is_some() && !self.needs_you()
+    }
+
     /// What the filter matches against: the workspace and the title.
     pub(crate) fn matches(&self, needle: &str) -> bool {
         needle.is_empty() || tenx_core::column::filter_matches(needle, &format!("{} {}", self.ws_name, self.title))
@@ -145,6 +155,7 @@ impl Row {
             self.window_id = w.window_of(&self.slug, &self.path);
             self.live = crate::live::read(&self.path);
             self.pinned = crate::cli::task::is_pinned(&self.path);
+            self.run = crate::cli::schedule::read_run(&self.path);
         }
     }
 }
@@ -232,6 +243,7 @@ pub(crate) fn rows(workspaces: &[Workspace], sessions: &[Session], windows: &Win
                 section,
                 subagents: state.subagents,
                 pinned: crate::cli::task::is_pinned(&task.path),
+                run: crate::cli::schedule::read_run(&task.path),
             });
         }
     }

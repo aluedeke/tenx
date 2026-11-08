@@ -841,7 +841,7 @@ fn fmt_wait(d: Duration) -> String {
 /// not stdin, specifically so it still works when stdin/stdout are
 /// redirected). An agent's Bash tool child process normally has none; a
 /// human's real shell, or a pane the column just spawned, always does.
-fn tty_available() -> bool {
+pub(crate) fn tty_available() -> bool {
     std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").is_ok()
 }
 
@@ -849,7 +849,7 @@ fn tty_available() -> bool {
 
 /// Where `name` has already been released to, if anywhere: a key of
 /// `.secrets.env`, or an adopted file it matches whose plaintext is in place.
-fn released_at(task: &Task, name: &str) -> Option<PathBuf> {
+pub(crate) fn released_at(task: &Task, name: &str) -> Option<PathBuf> {
     let env_file = released_path(task);
     let released = std::fs::read_to_string(&env_file).unwrap_or_default();
     if rules::dotenv_keys(&released).iter().any(|k| k == name) {

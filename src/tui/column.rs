@@ -240,6 +240,10 @@ struct RenameForm {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Tab {
     Tasks,
+    /// Scheduled runs (`tenx schedule`), grouped by schedule, newest first —
+    /// the same task rows the Tasks tab leaves out. Its label carries a `[n]`
+    /// of the runs that ended and haven't been opened.
+    Runs,
     Repos,
     /// The long operations running off the UI thread, and the last few that
     /// finished. Its label carries a `[n]` of what is still going, so the
@@ -249,11 +253,12 @@ enum Tab {
 
 impl Tab {
     /// Left-to-right order, for cycling and for laying the bar out.
-    const ALL: [Tab; 3] = [Tab::Tasks, Tab::Repos, Tab::Work];
+    const ALL: [Tab; 4] = [Tab::Tasks, Tab::Runs, Tab::Repos, Tab::Work];
 
     fn label(self) -> &'static str {
         match self {
             Tab::Tasks => "Tasks",
+            Tab::Runs => "Runs",
             Tab::Repos => "Repos",
             Tab::Work => "Work",
         }
@@ -261,6 +266,12 @@ impl Tab {
 
     fn index(self) -> usize {
         Tab::ALL.iter().position(|t| *t == self).unwrap_or(0)
+    }
+
+    /// The tabs that list task rows (`Column::filtered`), where every task
+    /// key works.
+    fn lists_tasks(self) -> bool {
+        matches!(self, Tab::Tasks | Tab::Runs)
     }
 }
 
@@ -683,8 +694,33 @@ impl Column {
         self.select_tab(Tab::ALL[next]);
     }
 
+    /// The header a row is listed under on the current tab, and its colour:
+    /// its section on Tasks, its schedule on Runs.
+    fn row_header(&self, row: &Row) -> (String, &'static palette::Rgb) {
+        match (&row.run, self.tab) {
+            (Some(run), Tab::Runs) => (format!("⏰ {}", run.schedule), &palette::ACCENT),
+            _ => (row.section.label().to_string(), group_rgb(row.section)),
+        }
+    }
+
+    /// The `[n]` a tab's label carries: running jobs on Work (`active`),
+    /// runs that ended and haven't been opened on Runs.
+    fn tab_count(&self, tab: Tab, active: usize) -> usize {
+        match tab {
+            Tab::Work => active,
+            Tab::Runs => self.rows.iter().filter(|r| r.run.as_ref().is_some_and(|run| run.unread())).count(),
+            Tab::Tasks | Tab::Repos => 0,
+        }
+    }
+
     fn select_tab(&mut self, tab: Tab) {
+        let relist = tab.lists_tasks() && tab != self.tab;
         self.tab = tab;
+        if relist {
+            self.selected = 0;
+            self.sub = None;
+            self.apply_filter();
+        }
         if self.tab == Tab::Repos && self.repo_rows.is_empty() {
             self.rebuild_repo_rows();
         }
@@ -829,7 +865,22 @@ impl Column {
 
     fn apply_filter(&mut self) {
         let needle = self.filter.as_str();
-        self.filtered = self.rows.iter().enumerate().filter(|(_, r)| r.matches(needle)).map(|(i, _)| i).collect();
+        let runs = self.tab == Tab::Runs;
+        self.filtered = self
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.matches(needle) && if runs { r.run.is_some() } else { !r.hidden_from_tasks() })
+            .map(|(i, _)| i)
+            .collect();
+        if runs {
+            // Grouped by schedule, newest run first.
+            let key = |i: &usize| {
+                let r = self.rows[*i].run.as_ref();
+                (r.map(|r| r.schedule.clone()), std::cmp::Reverse(r.map(|r| r.started)))
+            };
+            self.filtered.sort_by_key(key);
+        }
         self.repo_filtered = self
             .repo_rows
             .iter()
@@ -849,7 +900,7 @@ impl Column {
 
     fn cur_len(&self) -> usize {
         match self.tab {
-            Tab::Tasks => self.filtered.len(),
+            Tab::Tasks | Tab::Runs => self.filtered.len(),
             Tab::Repos => self.repo_filtered.len(),
             Tab::Work => self.jobs.lock().len(),
         }
@@ -857,7 +908,7 @@ impl Column {
 
     fn cur_sel(&self) -> usize {
         match self.tab {
-            Tab::Tasks => self.selected,
+            Tab::Tasks | Tab::Runs => self.selected,
             Tab::Repos => self.repo_selected,
             Tab::Work => self.work_selected,
         }
@@ -865,7 +916,7 @@ impl Column {
 
     fn set_cur_sel(&mut self, i: usize) {
         match self.tab {
-            Tab::Tasks => {
+            Tab::Tasks | Tab::Runs => {
                 self.selected = i;
                 self.sub = None;
             }
@@ -936,7 +987,7 @@ impl Column {
     }
 
     fn selected_closed_row(&self) -> Option<&Row> {
-        if self.tab != Tab::Tasks || self.focus != Focus::List {
+        if !self.tab.lists_tasks() || self.focus != Focus::List {
             return None;
         }
         self.selected_row().filter(|r| r.window_id.is_none())
@@ -968,7 +1019,7 @@ impl Column {
             }
             Focus::List => {
                 // Through the selected task's subagents before the next task.
-                if self.tab == Tab::Tasks
+                if self.tab.lists_tasks()
                     && let Some(row) = self.selected_row()
                 {
                     let next = self.selected_sub().map_or(0, |k| k + 1);
@@ -1002,7 +1053,7 @@ impl Column {
                 } else {
                     self.set_cur_sel(self.cur_sel() - 1);
                     // Up into a task from below lands on its last subagent.
-                    if self.tab == Tab::Tasks {
+                    if self.tab.lists_tasks() {
                         self.sub = self.selected_row().and_then(|r| r.subagents.last()).map(|a| a.id.clone());
                     }
                 }
@@ -1050,7 +1101,7 @@ impl Column {
     /// Position (in `filtered`) of the task the column sits beside; `None`
     /// on the other surfaces, or when the filter hides it.
     fn own_row(&self) -> Option<usize> {
-        if self.tab != Tab::Tasks {
+        if !self.tab.lists_tasks() {
             return None;
         }
         self.filtered.iter().position(|&i| self.is_current(&self.rows[i]))
@@ -1068,7 +1119,7 @@ impl Column {
     /// on the task's own line puts the session's main view back
     /// (`follow_agent`). The cursor stays here either way; ⏎ moves it over.
     fn follow_selection(&mut self) {
-        if self.tab != Tab::Tasks || self.focus != Focus::List {
+        if !self.tab.lists_tasks() || self.focus != Focus::List {
             return;
         }
         let Some(row) = self.selected_row() else { return };
@@ -1157,6 +1208,73 @@ impl Column {
         }
     }
 
+    /// `t` on a scheduled run: its agent's transcript in tenx's read-only
+    /// viewer — reading a finished run never types into it or wakes it.
+    fn view_run_transcript(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        let agent = row.agent.as_str().to_string();
+        let cwd = row.path.to_string_lossy().into_owned();
+        let Some(transcript) = crate::cli::agentlog::locate_transcript(&agent, &cwd, None) else {
+            self.status_msg = Some(format!("no transcript for '{}' yet", row.title));
+            return;
+        };
+        let view = AgentView {
+            in_claude: false,
+            main: true,
+            focus: true,
+            label: row.title.clone(),
+            agent_type: String::new(),
+            nth: None,
+            peers: 0,
+            title: format!(" {} ", row.title),
+            transcript: Some(transcript),
+            agent,
+            session_pid: 0,
+            task_path: row.path.clone(),
+        };
+        self.mark_selected_read();
+        if self.offline {
+            return;
+        }
+        self.pending_view = Some(view);
+    }
+
+    /// Opening a run that ended takes its unread mark off, on disk and in
+    /// the row (the slow tick would only catch up later).
+    fn mark_selected_read(&mut self) {
+        let Some(&i) = self.filtered.get(self.selected) else { return };
+        let row = &mut self.rows[i];
+        if let Some(run) = row.run.as_mut()
+            && run.unread()
+        {
+            run.read = true;
+            if !self.offline {
+                crate::cli::schedule::mark_read(&row.path);
+            }
+        }
+    }
+
+    /// `P`: the run under the cursor becomes a normal task.
+    fn promote_selected(&mut self) {
+        let Some(row) = self.selected_row() else { return };
+        if row.run.is_none() {
+            self.status_msg = Some("not a scheduled run".into());
+            return;
+        }
+        let (path, title) = (row.path.clone(), row.title.clone());
+        let done = if self.offline { Ok(()) } else { crate::cli::schedule::promote_dir(&path) };
+        match done {
+            Ok(()) => {
+                if let Some(&i) = self.filtered.get(self.selected) {
+                    self.rows[i].run = None;
+                }
+                self.apply_filter();
+                self.status_msg = Some(format!("'{title}' is a task now — it's on the Tasks tab"));
+            }
+            Err(e) => self.status_msg = Some(format!("couldn't promote: {e:#}")),
+        }
+    }
+
     fn selected_row(&self) -> Option<&Row> {
         self.filtered.get(self.selected).and_then(|&i| self.rows.get(i))
     }
@@ -1164,7 +1282,7 @@ impl Column {
     /// Position of the subagent under the cursor in the selected task's list,
     /// or `None` when the cursor is on the task itself.
     fn selected_sub(&self) -> Option<usize> {
-        if self.tab != Tab::Tasks || self.focus != Focus::List {
+        if !self.tab.lists_tasks() || self.focus != Focus::List {
             return None;
         }
         let id = self.sub.as_deref()?;
@@ -1258,7 +1376,7 @@ impl Column {
                 {
                     self.focus_list();
                     self.set_cur_sel(pos);
-                    if self.tab == Tab::Tasks {
+                    if self.tab.lists_tasks() {
                         self.sub = self.line_to_sub.get(line).cloned().flatten();
                     }
                     self.follow_selection();
@@ -1350,7 +1468,7 @@ impl Column {
             KeyCode::Tab => self.cycle_tab(false),
             KeyCode::BackTab => self.cycle_tab(true),
             KeyCode::Enter => {
-                if self.tab == Tab::Tasks {
+                if self.tab.lists_tasks() {
                     // Enter from the search field opens the top match.
                     if self.focus == Focus::Search {
                         self.set_cur_sel(0);
@@ -1417,7 +1535,7 @@ impl Column {
             // `a` to add a repo — distinct verbs, distinct letters.
             KeyCode::Char('n' | 'N') if ctrl && is_shifted(&key) => self.start_quick(),
             KeyCode::Char('n') if ctrl => self.start_create(),
-            KeyCode::Char('n') if self.tab == Tab::Tasks => self.jump_needs_you(),
+            KeyCode::Char('n') if self.tab.lists_tasks() => self.jump_needs_you(),
             KeyCode::Char('a') if self.tab == Tab::Repos => self.start_add_repo(),
             // `W` for a whole new workspace (`:init [path]`), from either tab.
             KeyCode::Char('W') => self.start_new_workspace(""),
@@ -1440,6 +1558,8 @@ impl Column {
             KeyCode::Char('A') if self.require_tasks() => self.answer(tenx_core::dialog::Answer::Yes),
             KeyCode::Char('D') if self.require_tasks() => self.deny_selected(),
             KeyCode::Char('t') if self.selected_sub().is_some() => self.view_subagent(false),
+            KeyCode::Char('t') if self.selected_row().is_some_and(|r| r.run.is_some()) => self.view_run_transcript(),
+            KeyCode::Char('P') if self.require_tasks() => self.promote_selected(),
             KeyCode::Char('L') if self.require_tasks() => self.start_links(),
             KeyCode::Char('f') if self.require_tasks() => self.start_hints(),
             KeyCode::Char('u') => {
@@ -1448,11 +1568,12 @@ impl Column {
                 }
             }
             KeyCode::Enter | KeyCode::Char('o') | KeyCode::Char('l') => {
-                if self.tab == Tab::Tasks {
+                if self.tab.lists_tasks() {
                     if self.selected_sub().is_some() {
                         self.view_subagent(true);
                         return Ok(false);
                     }
+                    self.mark_selected_read();
                     return self.jump();
                 }
             }
@@ -1485,7 +1606,7 @@ impl Column {
     }
 
     fn require_tasks(&mut self) -> bool {
-        if self.tab == Tab::Tasks {
+        if self.tab.lists_tasks() {
             true
         } else {
             self.status_msg = Some("switch to Tasks (gt) for that".into());
@@ -1536,7 +1657,11 @@ impl Column {
         // Tab switches and quit work from either tab.
         match cmd {
             "tasks" => {
-                self.tab = Tab::Tasks;
+                self.select_tab(Tab::Tasks);
+                return Ok(false);
+            }
+            "runs" => {
+                self.select_tab(Tab::Runs);
                 return Ok(false);
             }
             "repos" => {
@@ -1582,7 +1707,7 @@ impl Column {
             _ => {}
         }
         // The remaining actions operate on the selected task.
-        if self.tab != Tab::Tasks {
+        if !self.tab.lists_tasks() {
             self.status_msg = Some("switch to Tasks (:tasks) for that".into());
             return Ok(false);
         }
@@ -1745,7 +1870,7 @@ impl Column {
     /// Workspace index of whatever is currently highlighted (task or repo).
     fn selected_ws_idx(&self) -> Option<usize> {
         match self.tab {
-            Tab::Tasks => self.selected_row().map(|r| r.ws_idx),
+            Tab::Tasks | Tab::Runs => self.selected_row().map(|r| r.ws_idx),
             Tab::Work => None,
             Tab::Repos => self
                 .repo_filtered
@@ -2034,7 +2159,11 @@ impl Column {
             .iter()
             .position(|&i| self.rows[i].ws_idx == ws_idx && self.rows[i].slug == slug)
         {
-            self.tab = Tab::Tasks;
+            // `filtered` is the list of the tab it was found on: Runs keeps
+            // its own; from Repos or Work it is the Tasks list.
+            if !self.tab.lists_tasks() {
+                self.tab = Tab::Tasks;
+            }
             self.selected = pos;
         }
     }
@@ -2121,6 +2250,7 @@ impl Column {
                 secrets_why: vec![],
                 section: TaskStatus::Working.group(),
                 subagents: vec![],
+            run: None,
                 pinned: false,
             });
             self.filter.clear();
@@ -2172,7 +2302,9 @@ impl Column {
                 .iter()
                 .position(|&i| self.rows[i].ws_idx == ws_idx && self.rows[i].slug == slug);
             if let Some(pos) = selected {
-                self.tab = Tab::Tasks;
+                if !self.tab.lists_tasks() {
+                    self.tab = Tab::Tasks;
+                }
                 self.selected = pos;
             }
             return Ok(false);
@@ -2183,7 +2315,9 @@ impl Column {
             .position(|&i| self.rows[i].ws_idx == ws_idx && self.rows[i].slug == slug)
         {
             Some(pos) => {
-                self.tab = Tab::Tasks;
+                if !self.tab.lists_tasks() {
+                    self.tab = Tab::Tasks;
+                }
                 self.selected = pos;
                 true
             }
@@ -2302,6 +2436,7 @@ impl Column {
             secrets_why: vec![],
             section: TaskStatus::Working.group(),
             subagents: vec![],
+            run: None,
             pinned: false,
         }
     }
@@ -3314,10 +3449,11 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
         let label = format!(" {} ", t.label());
         x += label.width() as u16;
         spans.push(Span::styled(label, style));
-        if *t == Tab::Work && active > 0 {
+        let n = column.tab_count(*t, active);
+        if n > 0 {
             // Always the attention colour, selected or not: the point of the
             // count is to be seen from the other tabs.
-            let count = format!("[{active}] ");
+            let count = format!("[{n}] ");
             x += count.width() as u16;
             spans.push(Span::styled(
                 count,
@@ -3363,7 +3499,7 @@ fn render_list(f: &mut ratatui::Frame, column: &mut Column, area: Rect) {
     // ── Body list (tasks or repos) ────────────────────────────────────────────
     let list_width = list_area.width.saturating_sub(2) as usize;
     let (items, line_of_selected, line_to_pos, line_to_sub) = match column.tab {
-        Tab::Tasks => column_items(column, list_width),
+        Tab::Tasks | Tab::Runs => column_items(column, list_width),
         Tab::Repos => no_subs(repo_items(column, list_width)),
         Tab::Work => no_subs(work_items(column, list_width)),
     };
@@ -3425,7 +3561,8 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("j k ↓ ↑", "move"),
             ("gg G", "top / bottom"),
             ("⏎ o l", "open task / agent"),
-            ("t", "agent transcript"),
+            ("t", "transcript (agent, run)"),
+            ("P", "promote a run to a task"),
             ("L", "task links (y copies)"),
             ("f", "open a link (⇧ copies)"),
             ("n", "next task that needs you"),
@@ -3465,7 +3602,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             (":next", "next needing you"),
             (":agent", "show / set agent [kind]"),
             (":init", "new workspace [path]"),
-            (":tasks", "Tasks tab (:repos :work)"),
+            (":tasks", "tab (:runs :repos :work)"),
             (":hide", "hide the column"),
             (":q :q!", "quit client"),
             (":help", "this help"),
@@ -3612,10 +3749,6 @@ fn pad_cell(s: &str, w: usize) -> String {
 
 /// Header colour per section: amber for the pile that wants you, blue for
 /// what's running, grey for what isn't.
-fn group_color(group: workspace::TaskGroup) -> ratatui::style::Color {
-    group_rgb(group).color()
-}
-
 fn group_rgb(group: workspace::TaskGroup) -> &'static palette::Rgb {
     match group {
         // Same reasoning as the status bar's glyph priority: a pending
@@ -3675,6 +3808,26 @@ fn pr_rgb(checks: &str) -> &'static palette::Rgb {
 /// What a row wants from you, as chip text with its colours: the secrets it
 /// wants unlocked, else Claude Code's own waiting reason. `None` when it
 /// wants nothing.
+/// A scheduled run's chip: ⏰ and how it ended (or that it is going), with
+/// a ● while it ended and hasn't been opened.
+fn run_chip(row: &Row) -> Option<(String, &'static palette::Rgb)> {
+    let run = row.run.as_ref()?;
+    let unread = if run.unread() { "● " } else { "" };
+    Some(match &run.outcome {
+        None => ("⏰ running".to_string(), &palette::MUTED),
+        Some(o) => {
+            let rgb = if run.unread() {
+                &palette::INFO
+            } else if o.ok() {
+                &palette::SUCCESS
+            } else {
+                &palette::DANGER
+            };
+            (format!("⏰ {unread}{}", o.label()), rgb)
+        }
+    })
+}
+
 fn row_reason(row: &Row) -> Option<(String, &'static palette::Rgb, &'static palette::Rgb)> {
     if row.pending {
         return Some(("setting up".to_string(), &palette::ACCENT, &palette::CHIP_SECRETS_BG));
@@ -3709,31 +3862,31 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
     let on_sub = column.selected_sub();
     let mut selected_line = None;
 
-    let mut group_counts: [usize; 4] = [0; 4];
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for &i in &column.filtered {
-        group_counts[column.rows[i].section.rank() as usize] += 1;
+        *counts.entry(column.row_header(&column.rows[i]).0).or_default() += 1;
     }
-    let mut last_group: Option<workspace::TaskGroup> = None;
+    let mut last_group: Option<String> = None;
     let dim = Style::default().fg(palette::MUTED.color());
     let hints = column.hint_letters();
 
     for (pos, &row_idx) in column.filtered.iter().enumerate() {
         let row = &column.rows[row_idx];
-        let group = row.section;
-        if last_group != Some(group) {
+        let (label, rgb) = column.row_header(row);
+        if last_group.as_deref() != Some(label.as_str()) {
             if last_group.is_some() {
                 items.push(ListItem::new(Line::from("")));
                 line_to_pos.push(None);
                 line_to_sub.push(None);
             }
-            let count = group_counts[group.rank() as usize];
+            let count = counts.get(&label).copied().unwrap_or(0);
             items.push(ListItem::new(Line::from(vec![
-                Span::styled(group.label().to_string(), Style::default().fg(group_color(group)).add_modifier(Modifier::BOLD)),
+                Span::styled(label.clone(), Style::default().fg(rgb.color()).add_modifier(Modifier::BOLD)),
                 Span::styled(format!("  {count}"), dim),
             ])));
             line_to_pos.push(None);
             line_to_sub.push(None);
-            last_group = Some(group);
+            last_group = Some(label);
         }
         if pos == column.selected && on_sub.is_none() {
             selected_line = Some(items.len());
@@ -3782,6 +3935,9 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         }
         if row.pinned {
             pieces.push(vec![Span::styled(PIN_GLYPH, Style::default().fg(palette::INFO.color()))]);
+        }
+        if let Some((text, rgb)) = run_chip(row) {
+            pieces.push(vec![Span::styled(text, Style::default().fg(rgb.color()))]);
         }
         if matches!(row.status, TaskStatus::Blocked | TaskStatus::Signaled | TaskStatus::Done)
             && let Some(changed) = row.changed

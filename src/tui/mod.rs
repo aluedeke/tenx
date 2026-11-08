@@ -23,7 +23,8 @@ pub fn dump_json() -> anyhow::Result<()> {
 }
 
 /// `{workspaces, tasks}`: what `task list --json` prints, and what
-/// `tenx web`'s MCP tools list from.
+/// `tenx web`'s MCP tools list from. Scheduled runs are left out unless one
+/// needs you (`tenx schedule runs --json` lists them).
 pub fn listing() -> serde_json::Value {
     let global = crate::workspace::load_global().unwrap_or_default();
     // One registry read for the whole dump — every task's live state is resolved
@@ -51,6 +52,11 @@ pub fn listing() -> serde_json::Value {
         }));
         for task in ws.tasks().unwrap_or_default() {
             let state = crate::workspace::resolve_task_state(&task.path, &sessions, &signals);
+            // Scheduled runs are listed by `tenx schedule runs`; here only
+            // while one waits on you, as on the column's Tasks tab.
+            if crate::cli::schedule::is_run(&task.path) && !state.status.needs_you() {
+                continue;
+            }
             let activity = state.changed.unwrap_or(task.created_at);
             entries.push((activity, crate::workspace::task_json(&ws, &task, &state)));
         }

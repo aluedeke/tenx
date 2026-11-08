@@ -46,6 +46,9 @@ use crate::workspace::{self, TaskStatus};
 /// How often to resolve every task. Cheap enough (~5 ms) that the interval is
 /// set by how fast you want to hear, not by cost.
 const POLL: Duration = Duration::from_secs(2);
+/// Scheduled tasks are looked at every this many polls (about a minute): a
+/// slot is a minute, and a tick reads every schedule and run on disk.
+const SCHEDULE_POLLS: u32 = 30;
 
 /// A task must still be waiting on the *next* poll before it earns a
 /// notification. Approving a permission prompt within a couple of seconds is
@@ -100,6 +103,8 @@ pub fn run() -> Result<()> {
     // without tenx closing it — its last pane exited, `tmux kill-window`, the
     // server stopped — still ends the session its secrets were released to.
     let mut open_tasks = primed.open_tasks.clone().unwrap_or_default();
+    let mut scheduler = crate::cli::schedule::Ticker::default();
+    let mut awake = crate::cli::schedule::Awake::default();
 
     loop {
         std::thread::sleep(POLL);
@@ -134,6 +139,12 @@ pub fn run() -> Result<()> {
         if current != published || live_changed {
             published = current;
             push_status(&snapshot.tasks, &snapshot.windows, &mut pushed);
+        }
+
+        // The first pass soon after start, so a slot missed while the server
+        // was down is caught up at once, then about once a minute.
+        if tick % SCHEDULE_POLLS == 1 {
+            awake.set(scheduler.tick() > 0);
         }
 
         if tick.is_multiple_of(SESSION_CHECK_POLLS) {
@@ -648,6 +659,9 @@ fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window], pus
     // The corner is about the tasks you are *not* looking at.
     let (mut locked, mut need, mut waiting) = (0usize, 0usize, 0usize);
     for t in tasks.iter().filter(|t| t["slug"].as_str() != current) {
+        // A finished scheduled run waits on nobody: it's on the Runs tab.
+        // One that needs you counts like any task.
+        let run = !t["schedule"].is_null();
         if has_secrets_pending(t) {
             locked += 1;
             continue;
@@ -656,7 +670,7 @@ fn push_status(tasks: &[serde_json::Value], windows: &[crate::tmux::Window], pus
             s if s.needs_you() => need += 1,
             // A pinned task is kept open on purpose (a channel bot, say): its
             // finished turn is it idling, not waiting on you.
-            TaskStatus::Done if t["pinned"].as_bool() == Some(true) => {}
+            TaskStatus::Done if t["pinned"].as_bool() == Some(true) || run => {}
             TaskStatus::Done if t["age_secs"].as_u64().unwrap_or(0) >= RIGHT_WAIT_GATE_SECS => waiting += 1,
             _ => {}
         }

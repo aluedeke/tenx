@@ -8,7 +8,7 @@
 //! browser of the machine it runs on (copies over SSH), and tenx web opens it
 //! in the page, which needs the tap or key that asked for it.
 
-use super::{Column, Focus, Mode, Tab, pr_rgb, truncate};
+use super::{Column, Focus, Mode, pr_rgb, truncate};
 use crate::palette;
 use crate::snapshot::Row;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -101,7 +101,7 @@ impl Column {
     /// `rows`, the chip's place among its `link_chips`, and the link. At most
     /// 26 — one letter each.
     pub(super) fn hint_targets(&self) -> Vec<(usize, usize, Link)> {
-        if self.tab != Tab::Tasks {
+        if !self.tab.lists_tasks() {
             return Vec::new();
         }
         let mut out = Vec::new();

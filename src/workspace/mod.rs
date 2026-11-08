@@ -141,7 +141,7 @@ pub struct RepoConfig {
 /// added (serde defaults cover additions).
 pub const CURRENT_SCHEMA: u32 = 1;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct WorkspaceConfig {
     /// Which `CURRENT_SCHEMA` wrote this file; 0 = predates versioning.
     #[serde(default)]
@@ -188,6 +188,7 @@ pub struct Task {
     pub created_at: SystemTime,
 }
 
+#[derive(Clone)]
 pub struct Workspace {
     pub dir: PathBuf,
     pub config: WorkspaceConfig,
@@ -706,6 +707,8 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "title": task.display_name,
         "agent": crate::agent::agent_for(ws, &task.path).as_str(),
         "pinned": crate::cli::task::is_pinned(&task.path),
+        // The schedule a scheduled run belongs to; null for any other task.
+        "schedule": crate::cli::schedule::read_run(&task.path).map(|r| r.schedule),
         "status": state.status.token(),
         "waiting_for": state.waiting_for,
         "background": state.background,

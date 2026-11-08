@@ -458,6 +458,9 @@ fn list_hint(column: &Column) -> &'static str {
         }
         (InputMode::Normal, Tab::Tasks) if column.another_needs_you() => "n needs you · ⏎ open · ^n new",
         (InputMode::Normal, Tab::Tasks) => "↓↑ switch · ⏎ open · ^n new · ? keys",
+        (InputMode::Normal, Tab::Runs) if column.selected_answerable() => "A/D answer · ⏎ open",
+        (InputMode::Normal, Tab::Runs) if column.filtered.is_empty() => "no runs yet · tenx schedule add",
+        (InputMode::Normal, Tab::Runs) => "⏎ open · t transcript · P promote",
         (InputMode::Normal, Tab::Repos) => "a add-repo · gt tab · ? keys",
         (InputMode::Normal, Tab::Work) if column.jobs.lock().is_empty() => "gt tab · ? keys",
         (InputMode::Normal, Tab::Work) => "dd dismiss · gt tab",
@@ -479,11 +482,11 @@ impl Column {
             .map(|t| TabView {
                 label: t.label(),
                 active: *t == self.tab,
-                running: if *t == Tab::Work { active } else { 0 },
+                running: self.tab_count(*t, active),
             })
             .collect();
         let items = match self.tab {
-            Tab::Tasks => self.task_items(),
+            Tab::Tasks | Tab::Runs => self.task_items(),
             Tab::Repos => self.repo_view_items(),
             Tab::Work => self.job_items(),
         };
@@ -528,20 +531,17 @@ impl Column {
         let mut items = Vec::new();
         let on_sub = self.selected_sub();
         let hints = self.hint_letters();
-        let mut counts: [usize; 4] = [0; 4];
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for &i in &self.filtered {
-            counts[self.rows[i].section.rank() as usize] += 1;
+            *counts.entry(self.row_header(&self.rows[i]).0).or_default() += 1;
         }
-        let mut last_group = None;
+        let mut last_group: Option<String> = None;
         for (pos, &i) in self.filtered.iter().enumerate() {
             let row = &self.rows[i];
-            if last_group != Some(row.section) {
-                items.push(Item::Header {
-                    label: row.section.label().to_string(),
-                    count: Some(counts[row.section.rank() as usize]),
-                    color: group_rgb(row.section).hex(),
-                });
-                last_group = Some(row.section);
+            let (label, rgb) = self.row_header(row);
+            if last_group.as_deref() != Some(label.as_str()) {
+                items.push(Item::Header { count: counts.get(&label).copied(), label: label.clone(), color: rgb.hex() });
+                last_group = Some(label);
             }
             let on_row = pos == self.selected && self.focus == Focus::List;
             let selected = on_row && on_sub.is_none();
@@ -578,15 +578,17 @@ impl Column {
                     .collect(),
                 agent: (row.agent != crate::agent::AgentKind::Claude).then(|| row.agent.as_str().to_string()),
                 age: row.changed.filter(|_| rested).map(workspace::format_age),
-                chips: links::link_chips(row)
+                // A run's chip first, without a link: the page draws it like
+                // any other chip.
+                chips: run_chip(row)
+                    .map(|(label, rgb)| LinkChipView { label, fg: rgb.hex(), link: None, hint: None })
                     .into_iter()
-                    .enumerate()
-                    .map(|(k, c)| LinkChipView {
+                    .chain(links::link_chips(row).into_iter().enumerate().map(|(k, c)| LinkChipView {
                         label: c.text,
                         fg: c.rgb.hex(),
                         link: c.link.as_ref().map(LinkView::from),
                         hint: hints.iter().find(|(r, ch, _)| *r == i && *ch == k).map(|(_, _, key)| *key),
-                    })
+                    }))
                     .collect(),
                 links: row.live.all_links().iter().map(LinkView::from).collect(),
                 pinned: row.pinned,
@@ -828,7 +830,7 @@ impl Column {
             }
             Click::Search => self.focus_search(),
             Click::Task { id, sub } => {
-                if self.tab != Tab::Tasks {
+                if !self.tab.lists_tasks() {
                     return;
                 }
                 let Some(pos) = self.filtered.iter().position(|&i| row_id(&self.rows[i]) == *id) else { return };
@@ -838,7 +840,7 @@ impl Column {
                 self.follow_selection();
             }
             Click::Item { pos } => {
-                if self.tab == Tab::Tasks || *pos >= self.cur_len() {
+                if self.tab.lists_tasks() || *pos >= self.cur_len() {
                     return;
                 }
                 self.focus_list();
