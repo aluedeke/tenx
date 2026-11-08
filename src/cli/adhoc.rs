@@ -5,10 +5,10 @@
 //! It is an ordinary registered workspace with `kind = "adhoc"` and no
 //! repos (see `workspace::ADHOC_KIND`), so the column, the watcher, sweep,
 //! and secrets all treat its sessions as tasks without
-//! knowing anything about it. What is special lives in three places: slugs
-//! count up instead of colliding (`task::plan_slug`), the window is the agent
-//! alone (`tmux::TaskWindow::agent_only`), and the agent may read every other
-//! workspace (`task::readable_dirs`).
+//! knowing anything about it. What is special lives in two places: slugs
+//! count up instead of colliding (`task::plan_slug`), and the agent may read
+//! every other workspace (`task::readable_dirs`). Its window is any task's:
+//! the agent, a shell and nvim on `TASK.md`.
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};

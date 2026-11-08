@@ -726,14 +726,14 @@ fn repo_less_and_adhoc_sessions_are_tasks_that_can_be_driven() {
     };
     let panes = |slug: &str| h.tmux_out(&["list-panes", "-t", &format!("tenx:{slug}"), "-F", "#{pane_id}"]).lines().count();
 
-    // A repo-less task in an ordinary workspace: no worktree, the agent alone
-    // in its window, and the workspace readable from it.
+    // A repo-less task in an ordinary workspace: no worktree, the window's
+    // usual tabs, and the workspace readable from it.
     let out = h.tenx().args(["task", "new", "Plain Q", "--no-repos", "--no-focus", "--ws-dir", &h.ws()]).output().unwrap();
     assert!(out.status.success(), "task new --no-repos: {}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "plain-q", "prints the slug");
     let plain = h.root.join("ws/tasks/plain-q");
     assert!(!plain.join("origin").exists(), "no worktree");
-    assert_eq!(panes("plain-q"), 1, "agent-only window");
+    assert_eq!(panes("plain-q"), 1, "the agent's tab on screen");
     let args = wait_file(&plain.join(".agent-args"), "agent args", &|t| t.contains("--add-dir="));
     assert!(args.contains(&format!("--add-dir={}", h.ws())), "the workspace is readable: {args}");
     let current = h.tmux_out(&["display-message", "-p", "-t", "tenx", "#{window_name}"]);
@@ -755,7 +755,16 @@ fn repo_less_and_adhoc_sessions_are_tasks_that_can_be_driven() {
     let args = wait_file(&task.join(".agent-args"), "ask args", &|t| t.contains("how does sweep work?"));
     assert!(args.contains(&h.ws()), "every registered workspace is readable: {args}");
     assert!(!task.join(".tenx-prompt").exists(), "the prompt is consumed by the launch");
-    assert_eq!(panes(&slug), 1, "agent-only window");
+    assert_eq!(panes(&slug), 1, "the agent's tab on screen");
+    // The same tabs as any task, the agent's on screen.
+    let tab = |slug: &str| h.tmux_out(&["display", "-p", "-t", &format!("tenx:{slug}"), "#{@tenx_tab}"]);
+    assert_eq!(tab(&slug), "agent", "an adhoc window is tabbed");
+    assert_eq!(tab("plain-q"), "agent", "a repo-less window is tabbed");
+    let id = h.tmux_out(&["display", "-p", "-t", &format!("tenx:{slug}"), "#{window_id}"]);
+    for t in ["shell", "nvim", "agent"] {
+        h.tab(&id, t);
+        assert_eq!(tab(&slug), t, "the {t} tab shows");
+    }
     let json: serde_json::Value = serde_json::from_slice(&h.tenx().args(["task", "list", "--json"]).output().unwrap().stdout).unwrap();
     assert!(json["workspaces"].as_array().unwrap().iter().any(|w| w["adhoc"] == true), "listed as adhoc");
     assert!(json["tasks"].as_array().unwrap().iter().any(|t| t["slug"] == slug.as_str() && t["ws"] == "adhoc"));
@@ -763,6 +772,18 @@ fn repo_less_and_adhoc_sessions_are_tasks_that_can_be_driven() {
     // The same question again counts up instead of failing.
     let out = h.tenx().args(["ask", "--no-focus", "how does sweep work?"]).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), format!("{slug}-2"));
+
+    // The split layout: nvim and a shell beside the agent, as any task has,
+    // with the agent's pane the active one.
+    let global = h.root.join("home/.config/tenx/config.toml");
+    let before = fs::read_to_string(&global).unwrap_or_default();
+    fs::write(&global, format!("layout = \"split\"\n{before}")).unwrap();
+    let out = h.tenx().args(["ask", "--no-focus", "a split question"]).output().unwrap();
+    assert!(out.status.success(), "ask: {}", String::from_utf8_lossy(&out.stderr));
+    let split = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    assert_eq!(panes(&split), 3, "agent, nvim and a shell");
+    assert_eq!(h.tmux_out(&["display", "-p", "-t", &format!("tenx:{split}"), "#{pane_index}"]), "0", "the agent's pane is active");
+    fs::write(&global, before).unwrap();
 
     // No repos in the adhoc workspace.
     let out = h.tenx().args(["repo", "add", "file:///nowhere.git", "--ws-dir", "adhoc"]).output().unwrap();

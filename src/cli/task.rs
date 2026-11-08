@@ -597,7 +597,6 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
         agent: agent.as_str(),
         agent_cmd: &agent_cmd,
         detached,
-        agent_only: task.repos.is_empty(),
     };
     let id = crate::tmux::open_task_window(&opts)?;
     let _ = std::fs::remove_file(&prompt_file);
