@@ -1,4 +1,4 @@
-.PHONY: build install test clean try try-stop screenshot demo demo-gif release auto patch minor major hooks web web-dev web-test
+.PHONY: build install uninstall installed test clean try try-stop screenshot demo demo-gif release auto patch minor major hooks web web-dev web-test
 
 build:
 	cargo build --release
@@ -39,17 +39,25 @@ try: build
 try-stop:
 	-tmux -L try kill-server
 
-# Installs the binary to ~/.cargo/bin (cargo's default, same as `cargo install`).
-# Nothing else to place: the tmux config is generated at `~/.config/tenx/tmux.conf`
-# whenever the tenx session is created, and it embeds this binary's path.
-#
-# A running tenx server keeps the config it started with (tmux reads it once,
-# at server start). After an install that changes the generated config, restart
-# the session to pick it up: `tmux -L tenx kill-server`, then `tenx`.
+# By default the Homebrew release runs (`brew install aluedeke/tap/tenx`,
+# `brew upgrade tenx`). `make install` swaps in a test build of this checkout
+# behind the same path, page included, and restarts `tenx web` and the
+# watcher; `make uninstall` puts the release back; `make installed` says which
+# one runs (scripts/test-version.sh). The generated tmux config and the web
+# service both name `$(brew --prefix)/bin/tenx`, so neither needs installing
+# again. Without Homebrew, `make install` is `cargo install` to ~/.cargo/bin.
 install:
-	cargo install --path .
-	@"$${CARGO_HOME:-$$HOME/.cargo}/bin/tenx" web service restart
-	@echo "  ✓ installed — run 'tenx' to (re)create the session"
+	@if command -v brew >/dev/null && brew list --versions tenx >/dev/null 2>&1; then \
+		scripts/test-version.sh on; \
+	else \
+		cargo install --path . && "$${CARGO_HOME:-$$HOME/.cargo}/bin/tenx" web service restart; \
+	fi
+
+uninstall:
+	@scripts/test-version.sh off
+
+installed:
+	@scripts/test-version.sh status
 
 test:
 	cargo test -p tenx-cli -p tenx-core
