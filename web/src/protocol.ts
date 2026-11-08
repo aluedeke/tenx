@@ -24,6 +24,38 @@ export interface ColumnView {
    * follows the one it started (a new `id`). */
   jobs: JobProgress[];
   help: HelpSection[];
+  /** The sidebar of the task the terminal area shows (tenx_core::sidebar). */
+  sidebar: SidebarView | null;
+}
+
+/** A task's sidebar: its links grouped with their state, its repos' git
+ * state, its todos. */
+export interface SidebarView {
+  id: string;
+  title: string;
+  ws: string;
+  ws_color: string;
+  sections: SidebarSection[];
+}
+
+export interface SidebarSection {
+  title: string;
+  /** Beside the title: the todos' `3/5`. */
+  count?: string;
+  entries: SidebarEntry[];
+}
+
+export type SidebarTone = 'plain' | 'good' | 'warn' | 'bad' | 'merged' | 'muted';
+
+export interface SidebarEntry {
+  icon: string;
+  label: string;
+  /** The state under the label; may be empty. */
+  detail: string;
+  tone: SidebarTone;
+  /** What a click opens. */
+  url?: string;
+  kind?: LinkView['kind'];
 }
 
 export interface JobProgress {
@@ -94,7 +126,7 @@ export interface TaskItem {
 export interface LinkView {
   url: string;
   label: string;
-  kind: 'PR' | 'artifact' | 'design' | 'linear' | 'port' | 'web';
+  kind: 'PR' | 'artifact' | 'design' | 'linear' | 'slack' | 'port' | 'web';
   icon: string;
   color: string;
 }
@@ -231,7 +263,7 @@ export type ServerMessage =
    * socket opened with `?patch=1`. */
   | ({ type: 'patch'; ack: number } & ViewPatch)
   | { type: 'layout'; column_cols: number; narrow: boolean }
-  | { type: 'request'; request: 'focus_terminal' | 'focus_column' | 'hide' | 'quit' }
+  | { type: 'request'; request: 'focus_terminal' | 'focus_column' | 'hide' | 'quit' | 'sidebar' }
   /** A link the column picked that the page didn't handle itself. */
   | { type: 'link'; action: 'open' | 'copy'; url: string; label: string }
   /** The column asked to unlock a task's secrets (`u`): the page opens its form. */

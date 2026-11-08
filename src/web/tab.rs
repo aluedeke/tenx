@@ -622,6 +622,7 @@ impl Driver {
             ClientRequest::FocusTerminal => "focus_terminal",
             ClientRequest::Hide => "hide",
             ClientRequest::Quit => "quit",
+            ClientRequest::Sidebar => "sidebar",
         };
         self.send_json(serde_json::json!({ "type": "request", "request": name }));
     }

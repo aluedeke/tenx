@@ -67,6 +67,12 @@ pub(super) struct Client {
     /// The task screen's top line as last drawn: in a tabbed window the tab
     /// strip, which a click is matched against (`tenx_core::tabs::tab_at`).
     top_row: String,
+    /// The sidebar right of the task is wanted (`s`, `:sidebar`); it shows
+    /// when the terminal is wide enough (`tenx_core::sidebar::width`).
+    sidebar_shown: bool,
+    sidebar_scroll: u16,
+    /// The sidebar's rows as last drawn that open a link on a click.
+    sidebar_hits: Vec<(u16, tenx_core::links::Link)>,
 }
 
 impl Client {
@@ -89,6 +95,9 @@ impl Client {
             unlock: Unlock::default(),
             views: Views::default(),
             top_row: String::new(),
+            sidebar_shown: true,
+            sidebar_scroll: 0,
+            sidebar_hits: Vec::new(),
         };
         let (r, w) = c.term_size();
         term.resize(r, w);
@@ -96,25 +105,25 @@ impl Client {
         c
     }
 
-    /// The column's and the terminal's areas for the current state.
-    fn layout(&self, full: Rect) -> (Option<Rect>, Rect) {
-        if !self.column_shown {
-            return (None, full);
+    /// The column's, the terminal's and the sidebar's areas for the current
+    /// state.
+    fn layout(&self, full: Rect) -> (Option<Rect>, Rect, Option<Rect>) {
+        if self.column_shown && self.narrow {
+            return (Some(full), full, None);
         }
-        if self.narrow {
-            return (Some(full), full);
-        }
-        let w = self.column_width.min(full.width / 2);
-        let column = Rect { x: full.x, y: full.y, width: w, height: full.height };
-        let term = Rect { x: full.x + w, y: full.y, width: full.width - w, height: full.height };
-        (Some(column), term)
+        let w = if self.column_shown { self.column_width.min(full.width / 2) } else { 0 };
+        let side = if self.sidebar_shown && !self.narrow { tenx_core::sidebar::width(full.width, w) } else { 0 };
+        let column = (w > 0).then_some(Rect { x: full.x, y: full.y, width: w, height: full.height });
+        let term = Rect { x: full.x + w, y: full.y, width: full.width - w - side, height: full.height };
+        let sidebar = (side > 0).then_some(Rect { x: term.right(), y: full.y, width: side, height: full.height });
+        (column, term, sidebar)
     }
 
     /// The pty's size for the current state — the terminal keeps the whole
     /// screen on a narrow client, where the column only covers it.
     fn term_size(&self) -> (u16, u16) {
         let full = Rect::new(0, 0, self.size.0, self.size.1);
-        let (_, term) = self.layout(full);
+        let (_, term, _) = self.layout(full);
         (term.height.max(1), term.width.max(1))
     }
 
@@ -256,6 +265,15 @@ impl Client {
             }
             ClientRequest::Hide => self.hide_column(),
             ClientRequest::Quit => self.quit = true,
+            ClientRequest::Sidebar => {
+                self.sidebar_shown = !self.sidebar_shown;
+                let full = Rect::new(0, 0, self.size.0, self.size.1);
+                if self.sidebar_shown && self.layout(full).2.is_none() {
+                    self.column.set_status("no room for the sidebar: the terminal is too narrow".to_string());
+                }
+                let (r, c) = self.term_size();
+                self.term.resize(r, c);
+            }
         }
     }
 
@@ -304,10 +322,29 @@ impl Client {
 
     fn handle_mouse(&mut self, m: MouseEvent) -> Result<()> {
         let full = Rect::new(0, 0, self.size.0, self.size.1);
-        let (column, term) = self.layout(full);
+        let (column, term, sidebar) = self.layout(full);
         // Only a click moves the keyboard; the pointer resting or scrolling
         // over the column must not.
         let click = matches!(m.kind, event::MouseEventKind::Down(_));
+        if let Some(s) = sidebar
+            && super::mouse::hit(s, m.column, m.row)
+        {
+            match m.kind {
+                event::MouseEventKind::Down(event::MouseButton::Left) => {
+                    let link = self.sidebar_hits.iter().find(|(y, _)| *y == m.row).map(|(_, l)| l.clone());
+                    if let Some(l) = link {
+                        self.link(column::LinkAction::Open(l));
+                    }
+                }
+                event::MouseEventKind::ScrollDown => {
+                    let max = super::sidebar::max_scroll(self.column.sidebar().as_ref(), s.height);
+                    self.sidebar_scroll = (self.sidebar_scroll + 3).min(max);
+                }
+                event::MouseEventKind::ScrollUp => self.sidebar_scroll = self.sidebar_scroll.saturating_sub(3),
+                _ => {}
+            }
+            return Ok(());
+        }
         if let Some(c) = column
             && super::mouse::hit(c, m.column, m.row)
         {
@@ -369,7 +406,7 @@ impl Client {
 
     pub(super) fn draw(&mut self, f: &mut ratatui::Frame) {
         let full = f.area();
-        let (column, term) = self.layout(full);
+        let (column, term, sidebar) = self.layout(full);
         // Moving onto a closed task shows an empty screen in its place; the
         // session keeps running behind it and returns the moment focus does.
         let closed = if self.focus == Focus::Column { self.column.selected_closed() } else { None };
@@ -383,6 +420,14 @@ impl Client {
         };
         let buf = f.buffer_mut();
         self.top_row = (term.x..term.right()).map(|x| buf[(x, term.y)].symbol().chars().next().unwrap_or(' ')).collect();
+        if let Some(s) = sidebar {
+            let view = self.column.sidebar();
+            let max = super::sidebar::max_scroll(view.as_ref(), s.height);
+            self.sidebar_scroll = self.sidebar_scroll.min(max);
+            self.sidebar_hits = super::sidebar::render(f, s, view.as_ref(), self.sidebar_scroll);
+        } else {
+            self.sidebar_hits.clear();
+        }
         if let Some(c) = column {
             // The column paints its ground but keeps whatever symbols are
             // there; on a narrow client it covers the terminal, so wipe first.

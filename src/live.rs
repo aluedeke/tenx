@@ -40,9 +40,37 @@ pub const TRANSCRIPT_LOOKUPS_PER_TICK: usize = 1;
 /// tens of megabytes.
 const FIRST_READ_MAX: u64 = 8 << 20;
 
-/// The links in the task's `TASK.md` `## Links` section.
-pub fn task_links(task_dir: &Path) -> Vec<tenx_core::links::Link> {
-    std::fs::read_to_string(task_dir.join("TASK.md")).map(|md| tenx_core::links::task_md_links(&md)).unwrap_or_default()
+/// How stale a repo's git state may get: it is local and cheap, but a few
+/// processes per repo, so a parked task's is read seldom.
+pub const GIT_TTL_ACTIVE: Duration = Duration::from_secs(30);
+pub const GIT_TTL_PARKED: Duration = Duration::from_secs(10 * 60);
+/// Repos whose git state is read per watch tick, at most.
+pub const GIT_REPOS_PER_TICK: usize = 4;
+
+/// The links in the task's `TASK.md` `## Links` section, and its todos.
+pub fn task_md(task_dir: &Path) -> (Vec<tenx_core::links::Link>, Option<tenx_core::sidebar::Todos>) {
+    match std::fs::read_to_string(task_dir.join("TASK.md")) {
+        Ok(md) => (tenx_core::links::task_md_links(&md), tenx_core::sidebar::todos(&md)),
+        Err(_) => (Vec::new(), None),
+    }
+}
+
+/// A repo worktree's git state: `git status`, then how far its branch is from
+/// the default branch it started from (`origin/<default>`).
+pub fn fetch_git(repo: &str, worktree: &Path) -> Option<tenx_core::sidebar::RepoGit> {
+    let git = |args: &[&str]| -> Option<String> {
+        let out = Command::new("git").arg("-C").arg(worktree).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let mut g = tenx_core::sidebar::parse_status(repo, &git(&["status", "--porcelain=v2", "--branch"])?);
+    let common = git(&["rev-parse", "--path-format=absolute", "--git-common-dir"]).map(|s| PathBuf::from(s.trim()));
+    let default = common.and_then(|c| crate::git::default_remote_branch(&c).ok()).unwrap_or_else(|| "main".to_string());
+    let base = format!("origin/{default}");
+    if let Some((behind, ahead)) = git(&["rev-list", "--left-right", "--count", &format!("{base}...HEAD")]).and_then(|o| tenx_core::sidebar::parse_counts(&o)) {
+        g.behind = behind;
+        g.ahead = ahead;
+    }
+    Some(g)
 }
 
 /// Read the agent's replies written since the last look and merge the links

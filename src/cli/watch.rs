@@ -465,6 +465,10 @@ pub(crate) fn resolve_all() -> Snapshot {
 /// update and the PR update can't race each other's read-modify-write.
 struct PrLookups {
     busy: bool,
+    /// A Linear lookup is running on its helper thread.
+    linear_busy: bool,
+    linear_tx: std::sync::mpsc::Sender<(PathBuf, Option<Vec<tenx_core::sidebar::LinearIssue>>)>,
+    linear_rx: std::sync::mpsc::Receiver<(PathBuf, Option<Vec<tenx_core::sidebar::LinearIssue>>)>,
     /// Ticks so far: where this tick's round of transcript lookups starts.
     turn: usize,
     tx: std::sync::mpsc::Sender<(PathBuf, Vec<crate::live::PrInfo>)>,
@@ -474,7 +478,8 @@ struct PrLookups {
 impl PrLookups {
     fn new() -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
-        PrLookups { busy: false, turn: 0, tx, rx }
+        let (linear_tx, linear_rx) = std::sync::mpsc::channel();
+        PrLookups { busy: false, linear_busy: false, linear_tx, linear_rx, turn: 0, tx, rx }
     }
 }
 
@@ -500,6 +505,19 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
         live.pr_checked = crate::live::now_secs();
         let _ = crate::live::write(&path, &live);
     }
+    while let Ok((path, found)) = prs.linear_rx.try_recv() {
+        if path.as_os_str().is_empty() {
+            prs.linear_busy = false;
+            continue;
+        }
+        let mut live = crate::live::read(&path);
+        // A failed request keeps the last state, and waits like a success.
+        if let Some(found) = found {
+            live.linear = found;
+        }
+        live.linear_checked = crate::live::now_secs();
+        let _ = crate::live::write(&path, &live);
+    }
 
     // A task with no window (closed, swept, server gone) has no ports — clear
     // them, don't keep showing the last observed set.
@@ -512,6 +530,8 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
     // turns round: one whose transcript can't be found yet (a session that
     // hasn't written it) must not keep the others from ever being read.
     let mut backfills = crate::live::TRANSCRIPT_LOOKUPS_PER_TICK;
+    let now = crate::live::now_secs();
+    let git_due = git_due(targets, now);
     prs.turn = prs.turn.wrapping_add(1);
     let first = if targets.is_empty() { 0 } else { prs.turn % targets.len() };
     for t in targets[first..].iter().chain(&targets[..first]) {
@@ -519,8 +539,15 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
         let before = live.clone();
         live.ports = ports.get(&t.slug).cloned().unwrap_or_default();
         live.watching = crate::cli::prwatch::watched_in(&waits, &t.path);
-        live.task_links = crate::live::task_links(&t.path);
+        (live.task_links, live.todos) = crate::live::task_md(&t.path);
         crate::live::scan_links(&t.path, &t.agent, t.session.as_deref(), &mut live, &mut backfills);
+        // The sidebar's git state: local, but a few processes per repo.
+        if t.repos.is_empty() {
+            live.git.clear();
+        } else if git_due.contains(&t.path) {
+            live.git = t.repos.iter().filter_map(|r| crate::live::fetch_git(r, &t.path.join(r))).collect();
+            live.git_checked = now;
+        }
         if live != before {
             let links_moved = live.links != before.links || live.task_links != before.task_links;
             let shown_moved = live.ports != before.ports || live.watching != before.watching || links_moved;
@@ -531,6 +558,8 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
         }
     }
 
+    start_linear_lookups(targets, prs, now);
+
     if prs.busy || !crate::live::gh_available() {
         return changed;
     }
@@ -539,7 +568,6 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
     }
     // Budget counts `gh` calls (one per repo), not tasks: a five-repo task
     // is five network round trips.
-    let now = crate::live::now_secs();
     let mut budget = crate::live::PR_LOOKUPS_PER_TICK;
     let mut stale: Vec<(PathBuf, Vec<String>)> = Vec::new();
     for t in targets.iter().filter(|t| !t.repos.is_empty()) {
@@ -568,6 +596,79 @@ fn refresh_live(targets: &[LiveTarget], prs: &mut PrLookups) -> bool {
         let _ = tx.send((PathBuf::new(), Vec::new()));
     });
     changed
+}
+
+/// The tasks whose repos' git state is read this tick: those past their
+/// time, the longest waiting first — with many open tasks, a fixed order
+/// would let the first ones take every turn —, within
+/// [`crate::live::GIT_REPOS_PER_TICK`] repos; a task with more than that goes
+/// alone, so it gets its turn too.
+fn git_due(targets: &[LiveTarget], now: u64) -> std::collections::HashSet<PathBuf> {
+    let mut waiting: Vec<(u64, &LiveTarget)> = targets
+        .iter()
+        .filter(|t| !t.repos.is_empty())
+        .filter_map(|t| {
+            let checked = crate::live::read(&t.path).git_checked;
+            let ttl = if t.active { crate::live::GIT_TTL_ACTIVE } else { crate::live::GIT_TTL_PARKED };
+            (now.saturating_sub(checked) >= ttl.as_secs()).then_some((checked, t))
+        })
+        .collect();
+    waiting.sort_by_key(|(checked, t)| (*checked, !t.active));
+    let mut due = std::collections::HashSet::new();
+    let mut budget = crate::live::GIT_REPOS_PER_TICK;
+    for (_, t) in waiting {
+        if t.repos.len() > budget && !due.is_empty() {
+            break;
+        }
+        budget = budget.saturating_sub(t.repos.len());
+        due.insert(t.path.clone());
+        if budget == 0 {
+            break;
+        }
+    }
+    due
+}
+
+/// Look up the state of the Linear issues the stalest tasks link to, one
+/// request per task, on a helper thread — with a key saved
+/// (`tenx linear login`) and on the PRs' schedule.
+fn start_linear_lookups(targets: &[LiveTarget], prs: &mut PrLookups, now: u64) {
+    if prs.linear_busy || crate::cli::linear::token().is_none() {
+        return;
+    }
+    let mut stale: Vec<(PathBuf, Vec<String>)> = Vec::new();
+    for t in targets {
+        if stale.len() >= crate::live::PR_LOOKUPS_PER_TICK {
+            break;
+        }
+        let live = crate::live::read(&t.path);
+        let ttl = if t.active { crate::live::PR_TTL_ACTIVE } else { crate::live::PR_TTL_PARKED };
+        if now.saturating_sub(live.linear_checked) < ttl.as_secs() {
+            continue;
+        }
+        let mut keys: Vec<String> = live
+            .all_links()
+            .iter()
+            .filter(|l| l.kind == tenx_core::links::LinkKind::Linear)
+            .filter_map(|l| tenx_core::sidebar::linear_key(&l.url))
+            .collect();
+        keys.dedup();
+        if keys.is_empty() {
+            continue;
+        }
+        stale.push((t.path.clone(), keys));
+    }
+    if stale.is_empty() {
+        return;
+    }
+    prs.linear_busy = true;
+    let tx = prs.linear_tx.clone();
+    std::thread::spawn(move || {
+        for (path, keys) in stale {
+            let _ = tx.send((path, crate::cli::linear::issues(&keys)));
+        }
+        let _ = tx.send((PathBuf::new(), None));
+    });
 }
 
 /// Give every background agent a pane in its task's window, once. An agent

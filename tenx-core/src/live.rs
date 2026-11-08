@@ -35,6 +35,21 @@ pub struct Live {
     /// How far the agent's transcript has been read for `links`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scanned: Option<Scanned>,
+    /// The state of the Linear issues among the links (the sidebar's).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub linear: Vec<crate::sidebar::LinearIssue>,
+    /// When they were last looked up (unix seconds); 0 = never.
+    #[serde(default)]
+    pub linear_checked: u64,
+    /// Each repo worktree's git state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub git: Vec<crate::sidebar::RepoGit>,
+    /// When it was last read (unix seconds); 0 = never.
+    #[serde(default)]
+    pub git_checked: u64,
+    /// `TASK.md`'s todo checklist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub todos: Option<crate::sidebar::Todos>,
 }
 
 /// A transcript read up to `offset` bytes: the next read starts there.

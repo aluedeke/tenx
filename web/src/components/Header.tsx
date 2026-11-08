@@ -40,6 +40,9 @@ interface Props {
   onSpeakStop(): void;
   /** The current task's links (↗). */
   onLinks(task: TaskItem): void;
+  /** The sidebar is shown; its button shows or hides it. */
+  sidebarShown: boolean;
+  onSidebar(): void;
 }
 
 /** The speaker button: off, waiting for the audio, reading aloud, or
@@ -209,6 +212,19 @@ export function Header(props: Props) {
               <span className="lcount">{current.links.length}</span>
             </button>
           )}
+          {current && (
+            <button
+              type="button"
+              className={props.sidebarShown ? 'hbtn hsidebar on' : 'hbtn hsidebar'}
+              data-testid="sidebar-toggle"
+              title="sidebar: links, git, todos (s in the column)"
+              aria-label="show or hide the sidebar"
+              aria-pressed={props.sidebarShown}
+              onClick={props.onSidebar}
+            >
+              <Icon d={PANEL_RIGHT} />
+            </button>
+          )}
           <button
             type="button"
             className={`hbtn speaker ${props.speaker}`}
@@ -333,6 +349,15 @@ export function Header(props: Props) {
                 <span className="k">{current.links.length}</span>
               </button>
             )}
+            {current && (
+              // On the narrowest phones the sidebar's button has no room in
+              // the header: here.
+              <button type="button" role="menuitem" className="hmi hmsidebar" data-testid="sidebar-item" onClick={run(props.onSidebar)}>
+                <Icon d={PANEL_RIGHT} />
+                <span className="hmlabel">sidebar: links, git, todos</span>
+                <span className="k">s</span>
+              </button>
+            )}
             <button type="button" role="menuitem" className="hmi" data-testid="keys" onClick={run(() => onAction('help'))}>
               <Icon d={['M4.5 6h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z', 'M6 10h.01M10 10h.01M14 10h.01M18 10h.01', 'M8 14h8']} />
               <span className="hmlabel">keys</span>
@@ -392,6 +417,8 @@ const BELL = ['M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0
 /** A line icon in the header's one style; `dots` draws ⋯. */
 /** ↗: a task's links. */
 const LINK_ARROW = ['M7 17 17 7', 'M8 7h9v9'];
+/** The sidebar's button: a window with a panel on its right. */
+const PANEL_RIGHT = ['M4 5h16v14H4z', 'M15 5v14'];
 
 function Icon({ d, dots }: { d: string[]; dots?: boolean }) {
   return (

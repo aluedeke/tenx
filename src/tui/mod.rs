@@ -4,6 +4,7 @@ pub(crate) mod host;
 mod hyperlink;
 mod job;
 mod mouse;
+mod sidebar;
 mod term;
 mod vt;
 

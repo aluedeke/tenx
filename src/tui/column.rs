@@ -335,6 +335,8 @@ pub(crate) enum ClientRequest {
     Hide,
     /// `:q` — leave the client altogether.
     Quit,
+    /// `s`, `:sidebar` — show or hide the sidebar beside the task.
+    Sidebar,
 }
 
 /// What the client needs to put a view in front of you: landing on a subagent
@@ -1561,6 +1563,7 @@ impl Column {
             KeyCode::Char('t') if self.selected_row().is_some_and(|r| r.run.is_some()) => self.view_run_transcript(),
             KeyCode::Char('P') if self.require_tasks() => self.promote_selected(),
             KeyCode::Char('L') if self.require_tasks() => self.start_links(),
+            KeyCode::Char('s') => self.client_request = Some(ClientRequest::Sidebar),
             KeyCode::Char('f') if self.require_tasks() => self.start_hints(),
             KeyCode::Char('u') => {
                 if self.require_tasks() {
@@ -1729,6 +1732,7 @@ impl Column {
             "reject" => self.start_reject(),
             "cancel" => self.cancel_secrets(),
             "hide" => self.client_request = Some(ClientRequest::Hide),
+            "sidebar" => self.client_request = Some(ClientRequest::Sidebar),
             "o" | "open" => return self.jump(),
             "next" => self.jump_needs_you(),
             other => self.status_msg = Some(format!("unknown command: :{other}")),
@@ -3564,6 +3568,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("t", "transcript (agent, run)"),
             ("P", "promote a run to a task"),
             ("L", "task links (y copies)"),
+            ("s", "sidebar: links, git, todos"),
             ("f", "open a link (⇧ copies)"),
             ("n", "next task that needs you"),
             ("A D", "approve / deny permission"),

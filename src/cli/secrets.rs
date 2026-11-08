@@ -1688,7 +1688,7 @@ fn prompt(label: &str) -> Result<String> {
 /// mode on — and the human is shown its length and tail
 /// (`describe_value`), since they can't see what they entered. Falls back
 /// to a plain line read if `/dev/tty` isn't a real terminal after all.
-fn read_masked_line(label: &str) -> Result<String> {
+pub(crate) fn read_masked_line(label: &str) -> Result<String> {
     use std::os::fd::AsRawFd;
 
     let tty = std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").context("open /dev/tty")?;

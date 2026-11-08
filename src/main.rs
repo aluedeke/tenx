@@ -12,7 +12,7 @@ mod workspace;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, PrCommands, RepoCommands, SecretsCommands, TaskCommands, TmuxCommands};
+use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, LinearCommands, PrCommands, RepoCommands, SecretsCommands, TaskCommands, TmuxCommands};
 use std::env;
 
 fn main() {
@@ -64,6 +64,11 @@ fn run() -> Result<()> {
             }
         },
 
+        Some(Commands::Linear { command }) => match command {
+            LinearCommands::Login => cli::linear::login()?,
+            LinearCommands::Logout => cli::linear::logout()?,
+            LinearCommands::Status => cli::linear::status()?,
+        },
         Some(Commands::Pr { command }) => match command {
             PrCommands::Wait { pr, since, interval, timeout } => {
                 let interval = cli::task::parse_duration(&interval)?;

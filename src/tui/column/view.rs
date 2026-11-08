@@ -44,6 +44,34 @@ pub(crate) struct ColumnView {
     pub(crate) jobs: Vec<JobProgress>,
     /// The `?` overlay's table: section, then (keys, action) rows.
     pub(crate) help: Vec<HelpSection>,
+    /// The sidebar of the task the task area shows.
+    pub(crate) sidebar: Option<SidebarView>,
+}
+
+/// The sidebar beside a task: its title, then its sections
+/// (`tenx_core::sidebar`).
+#[derive(Debug, Serialize, PartialEq)]
+pub(crate) struct SidebarView {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) ws: String,
+    pub(crate) ws_color: String,
+    #[serde(flatten)]
+    pub(crate) sidebar: tenx_core::sidebar::Sidebar,
+}
+
+impl Column {
+    /// The sidebar of the task the task area shows (`Column::is_shown`).
+    pub(crate) fn sidebar(&self) -> Option<SidebarView> {
+        let row = self.rows.iter().find(|r| self.is_shown(r) && !r.pending)?;
+        Some(SidebarView {
+            id: row_id(row),
+            title: row.title.clone(),
+            ws: row.ws_name.clone(),
+            ws_color: palette::workspace_color(&row.ws_name).hex(),
+            sidebar: tenx_core::sidebar::build(&row.live),
+        })
+    }
 }
 
 /// A running job, as a form's progress bar shows it.
@@ -524,6 +552,7 @@ impl Column {
                 })
                 .collect(),
             help: KEYS.iter().map(|(section, keys)| HelpSection { section, keys: keys.to_vec() }).collect(),
+            sidebar: self.sidebar(),
         }
     }
 
