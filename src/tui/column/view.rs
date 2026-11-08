@@ -159,7 +159,7 @@ pub(crate) struct TaskItem {
     pub(crate) agent: Option<String>,
     /// How long it has rested (blocked, signaled and done rows only).
     pub(crate) age: Option<String>,
-    /// The PR, `◇` and port chips, in order (`links::link_chips`).
+    /// The `◇` and port chips, in order (`links::link_chips`).
     pub(crate) chips: Vec<LinkChipView>,
     /// Everything it links to, in display order — what `L` lists.
     pub(crate) links: Vec<LinkView>,
@@ -615,7 +615,7 @@ impl Column {
                     .chain(links::link_chips(row).into_iter().enumerate().map(|(k, c)| LinkChipView {
                         label: c.text,
                         fg: c.rgb.hex(),
-                        link: c.link.as_ref().map(LinkView::from),
+                        link: Some(LinkView::from(&c.link)),
                         hint: hints.iter().find(|(r, ch, _)| *r == i && *ch == k).map(|(_, _, key)| *key),
                     }))
                     .collect(),

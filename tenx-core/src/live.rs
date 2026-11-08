@@ -77,16 +77,6 @@ impl Live {
     pub fn all_links(&self) -> Vec<Link> {
         crate::links::all(&self.prs, &self.task_links, &self.links, &self.ports)
     }
-
-    /// Chips for waits on PRs the PR lookup hasn't found for this task (a
-    /// repo it doesn't know, or not looked up yet): `#12 👀`.
-    pub fn watch_only_chips(&self) -> Vec<String> {
-        self.watching
-            .iter()
-            .filter(|n| !self.prs.iter().any(|p| p.number == **n))
-            .map(|n| format!("#{n} {WATCHING}"))
-            .collect()
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -258,10 +248,8 @@ mod tests {
         let pr = PrInfo { number: 12, state: "OPEN".into(), url: "u".into(), ..Default::default() };
         let mut l = Live { prs: vec![pr.clone()], watching: vec![12, 30], ..Default::default() };
         assert_eq!(l.chip(&pr), "#12 👀");
-        assert_eq!(l.watch_only_chips(), vec!["#30 👀".to_string()]);
         l.watching.clear();
         assert_eq!(l.chip(&pr), "#12");
-        assert!(l.watch_only_chips().is_empty());
     }
 
     #[test]
