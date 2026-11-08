@@ -5,6 +5,19 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.27.0] - 2026-11-08
+
+### Added
+
+- **sidebar:** Show a task's links with their state, git and todos
+- **sidebar:** Show every linked PR's checks and comments
+
+### Fixed
+
+- **sidebar:** Stop blocking agent commits and show the right PRs
+
+[0.27.0]: https://github.com/aluedeke/tenx/compare/v0.26.0...v0.27.0
+
 ## [0.26.0] - 2026-11-08
 
 ### Added
