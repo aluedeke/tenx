@@ -66,6 +66,10 @@ Two frame kinds:
 // `ack` is the highest input `seq` the view reflects (0: none yet); a view
 // goes out after every numbered input, even one that changed nothing.
 { "type": "view", "ack": 17, "view": ColumnView }   // src/tui/column/view.rs, serialized
+// `view.sidebar` is the sidebar of the task the terminal shows (or null):
+// `{id, title, ws, ws_color, sections: [{title, count?, entries: [{icon,
+// label, detail, tone, url?, kind?}]}]}` — tenx_core::sidebar. `tone` is
+// plain | good | warn | bad | merged | muted, the colour of `detail`.
 
 // With `patch=1`, every view after a socket's first is sent as what changed
 // since the one before (tenx-core/src/viewpatch.rs; the page's side is
@@ -85,8 +89,9 @@ Two frame kinds:
 { "type": "layout", "column_cols": 36, "narrow": false }
 
 // What the TUI client would do with a ClientRequest — and `focus_column`,
-// to hand the keyboard back to the column.
-{ "type": "request", "request": "focus_terminal" | "focus_column" | "hide" | "quit" }
+// to hand the keyboard back to the column. `sidebar` (`s`, `:sidebar`):
+// show or hide the sidebar.
+{ "type": "request", "request": "focus_terminal" | "focus_column" | "hide" | "quit" | "sidebar" }
 
 // The column asked to unlock a task's secrets (`u`, `:unlock`, a row's
 // unlock): the page opens its secrets form (`/secrets` above) in the
@@ -193,8 +198,10 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
   only then — and sends `Escape` instead of the key (`lib/links.ts`
   `linkKey`). Other keys (moving, Escape) go to the server as usual.
 - `request` messages from the server apply `focus_terminal` (and hide the
-  column when narrow), `focus_column` (show it and focus it), `hide`, and
-  `quit` (= hide; the tab stays open). The server doesn't move the column's
+  column when narrow), `focus_column` (show it and focus it), `hide`,
+  `quit` (= hide; the tab stays open), and `sidebar` (show or hide the
+  sidebar: a panel right of the terminal from 1000 px wide, remembered per
+  browser; a sheet over it on a narrower page). The server doesn't move the column's
   focus itself: the page reports every change with a `focus` message.
 
 The terminal attaches on the first `resize`, so send one as soon as xterm.js

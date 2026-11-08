@@ -13,6 +13,7 @@ import { LinksMenu } from './LinksMenu';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { PasteBox } from './PasteBox';
 import { SecretsForm } from './SecretsForm';
+import { Sidebar } from './Sidebar';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, isNewTask, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
@@ -40,6 +41,10 @@ const NARROW_COLS = 100;
 const FONT_KEY = 'tenx-terminal-font';
 /** The task this device last had in front of it, to come back to. */
 const LAST_TASK_KEY = 'tenx-last-task';
+/** Whether the sidebar is wanted beside the terminal on a wide page. */
+const SIDEBAR_KEY = 'tenx-sidebar';
+/** Narrower than this, the sidebar is a sheet over the terminal. */
+const SIDEBAR_ROOM = '(min-width: 1000px)';
 
 function lastTask(): string | null {
   try {
@@ -67,6 +72,11 @@ export function App() {
   const [columnCols, setColumnCols] = useState(36);
   const [narrow, setNarrow] = useState(false);
   const [visible, setVisible] = useState(true);
+  // The sidebar: wanted beside the terminal on a wide page (remembered), or
+  // opened over it as a sheet where there is no room.
+  const [sidebarWide, setSidebarWide] = useState(true);
+  const [sidebarSheet, setSidebarSheet] = useState(false);
+  const [roomy, setRoomy] = useState(true);
   const [focus, setFocus] = useState<Focus>('column');
   const [touch, setTouch] = useState(false);
   const [ctrlSticky, setCtrlSticky] = useState(false);
@@ -288,6 +298,8 @@ export function App() {
             if (msg.request === 'focus_terminal') {
               setFocus('terminal');
               if (state.current.narrow) setVisible(false);
+            } else if (msg.request === 'sidebar') {
+              toggleSidebarRef.current();
             } else if (msg.request === 'focus_column') {
               // The server's way to hand the keyboard back to the column.
               setVisible(true);
@@ -436,6 +448,38 @@ export function App() {
 
   const needsYou = view?.items.filter((i) => i.kind === 'task' && (i.status === 'blocked' || i.status === 'signaled')).length ?? 0;
   useEffect(() => push.badge(needsYou), [needsYou]);
+
+  // ── The sidebar ─────────────────────────────────────────────────────────
+  const setWide = useCallback((on: boolean) => {
+    setSidebarWide(on);
+    try {
+      localStorage.setItem(SIDEBAR_KEY, on ? '1' : '0');
+    } catch {
+      // Storage blocked: it is shown again next time.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(SIDEBAR_KEY) === '0') setSidebarWide(false);
+    } catch {
+      // Storage blocked: shown.
+    }
+    const room = window.matchMedia(SIDEBAR_ROOM);
+    const onRoom = () => setRoomy(room.matches);
+    onRoom();
+    room.addEventListener('change', onRoom);
+    return () => room.removeEventListener('change', onRoom);
+  }, []);
+  // `s` in the column (the server's `sidebar` request) and the header's
+  // button: show or hide it, as a panel or as a sheet.
+  const toggleSidebar = () => {
+    if (state.current.narrow || !window.matchMedia(SIDEBAR_ROOM).matches) setSidebarSheet((v) => !v);
+    else setWide(!sidebarWideRef.current);
+  };
+  const sidebarWideRef = useRef(sidebarWide);
+  sidebarWideRef.current = sidebarWide;
+  const toggleSidebarRef = useRef(toggleSidebar);
+  toggleSidebarRef.current = toggleSidebar;
 
   // ── The visible area ────────────────────────────────────────────────────
   // A phone's keyboard covers the page rather than shrinking it (iOS ignores
@@ -1109,6 +1153,8 @@ export function App() {
   );
 
   const overlay = narrow;
+  const sidebarOverlay = narrow || !roomy;
+  const sidebarShown = sidebarOverlay ? sidebarSheet : sidebarWide;
   // The column as drawn: the last view with the inputs it doesn't reflect
   // yet replayed on it.
   // The last unfiltered Tasks list, for a filter typed shorter again.
@@ -1181,6 +1227,8 @@ export function App() {
         onSpeak={toggleSpeaker}
         onSpeakStop={stopSpeaker}
         onLinks={(task) => setOwnLinks({ title: task.title, links: task.links })}
+        sidebarShown={sidebarShown}
+        onSidebar={() => toggleSidebarRef.current()}
       />
       {shown?.mode.kind === 'links' ? (
         <LinksMenu
@@ -1198,6 +1246,7 @@ export function App() {
         )
       )}
       <div className="main">
+        {sidebarShown && sidebarOverlay && <div className="sb-dim" onPointerDown={() => setSidebarSheet(false)} />}
         {visible && (
           <div className={overlay ? 'column-wrap overlay' : 'column-wrap'} style={columnStyle}>
             <Column
@@ -1291,6 +1340,13 @@ export function App() {
             </div>
           )}
         </div>
+        {sidebarShown && (
+          <Sidebar
+            view={shown?.sidebar ?? null}
+            overlay={sidebarOverlay}
+            onClose={() => (sidebarOverlay ? setSidebarSheet(false) : setWide(false))}
+          />
+        )}
       </div>
       {pasteBox && (
         <PasteBox

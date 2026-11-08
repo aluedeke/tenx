@@ -1,5 +1,5 @@
 //! A task's links: its PRs, the Artifact pages and Claude Design projects its
-//! agent made, its Linear issue, its ports, and other web pages — what `L`
+//! agent made, its Linear issue, Slack messages, its ports, and other web pages — what `L`
 //! (the picker) and `f` (hint letters) in the column open, and what tenx web
 //! lists under its ↗ button.
 //!
@@ -23,6 +23,7 @@ pub enum LinkKind {
     Artifact,
     Design,
     Linear,
+    Slack,
     Port,
     Web,
 }
@@ -34,6 +35,7 @@ impl LinkKind {
             LinkKind::Artifact => "◇",
             LinkKind::Design => "◆",
             LinkKind::Linear => "▸",
+            LinkKind::Slack => "#",
             LinkKind::Port => "⌁",
             LinkKind::Web => "↗",
         }
@@ -45,6 +47,7 @@ impl LinkKind {
             LinkKind::Artifact => "artifact",
             LinkKind::Design => "design",
             LinkKind::Linear => "linear",
+            LinkKind::Slack => "slack",
             LinkKind::Port => "port",
             LinkKind::Web => "web",
         }
@@ -78,6 +81,9 @@ pub fn classify(url: &str) -> LinkKind {
         "claude.ai" if path.starts_with("design/") => LinkKind::Design,
         "linear.app" if path.contains("/issue/") => LinkKind::Linear,
         "github.com" if pr_number(path).is_some() => LinkKind::Pr,
+        h if (h == "slack.com" || h.ends_with(".slack.com")) && (path.starts_with("archives/") || path.starts_with("client/")) => {
+            LinkKind::Slack
+        }
         "localhost" | "127.0.0.1" => LinkKind::Port,
         h if h.starts_with("localhost:") || h.starts_with("127.0.0.1:") => LinkKind::Port,
         _ => LinkKind::Web,
@@ -118,6 +124,10 @@ pub fn derived_label(url: &str, kind: LinkKind) -> String {
         }
         LinkKind::Design => query_param(rest, "file").map(|f| file_title(&f)).unwrap_or_else(|| "Claude Design project".to_string()),
         LinkKind::Artifact => "Artifact".to_string(),
+        LinkKind::Slack => match host.trim_end_matches(".slack.com") {
+            w if w != host && w != "app" => format!("Slack message in {w}"),
+            _ => "Slack message".to_string(),
+        },
         LinkKind::Port => rest.trim_end_matches('/').to_string(),
         LinkKind::Web => {
             let host = host.trim_start_matches("www.");
@@ -321,6 +331,12 @@ mod tests {
         let l = "https://linear.app/acme/issue/TNX-142/quick-links";
         assert_eq!(classify(l), LinkKind::Linear);
         assert_eq!(derived_label(l, LinkKind::Linear), "TNX-142 quick links");
+        let m = "https://acme.slack.com/archives/C024BE91L/p1700000000123456";
+        assert_eq!(classify(m), LinkKind::Slack);
+        assert_eq!(derived_label(m, LinkKind::Slack), "Slack message in acme");
+        assert_eq!(classify("https://app.slack.com/client/T1/C2"), LinkKind::Slack);
+        assert_eq!(derived_label("https://app.slack.com/client/T1/C2", LinkKind::Slack), "Slack message");
+        assert_eq!(classify("https://slack.com/pricing"), LinkKind::Web);
         assert_eq!(classify("http://localhost:7070/x"), LinkKind::Port);
         assert_eq!(classify("https://github.com/aluedeke/tenx"), LinkKind::Web);
         assert_eq!(derived_label("https://www.docs.rs/ratatui/", LinkKind::Web), "docs.rs/ratatui");

@@ -26,6 +26,7 @@ pub mod column;
 pub mod schedule;
 pub mod secrets;
 pub mod session_event;
+pub mod sidebar;
 pub mod skills;
 pub mod slug;
 pub mod status;

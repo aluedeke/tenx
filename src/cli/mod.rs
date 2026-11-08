@@ -5,6 +5,7 @@ pub mod hooks;
 pub mod adhoc;
 pub mod drive;
 pub mod init;
+pub mod linear;
 pub mod notify;
 pub mod prwatch;
 pub mod repo;
@@ -106,6 +107,11 @@ pub enum Commands {
     Pr {
         #[command(subcommand)]
         command: PrCommands,
+    },
+    /// The Linear API key that shows each issue's status in the sidebar
+    Linear {
+        #[command(subcommand)]
+        command: LinearCommands,
     },
     /// Manage Claude Code hooks for the active workspace
     Hooks {
@@ -385,6 +391,16 @@ pub enum SecretsCommands {
     },
     /// Show sealed/unlocked/pending state across all tasks (metadata only —
     /// never secret values)
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum LinearCommands {
+    /// Save a Linear personal API key (read without echo, or from stdin)
+    Login,
+    /// Remove the saved key
+    Logout,
+    /// Show whether a key is saved and whom it signs in as
     Status,
 }
 

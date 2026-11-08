@@ -88,6 +88,7 @@ pub(super) fn kind_rgb(kind: LinkKind) -> &'static palette::Rgb {
         LinkKind::Pr => &palette::SUCCESS,
         LinkKind::Artifact | LinkKind::Design => &palette::ACCENT,
         LinkKind::Linear => &palette::CURRENT,
+        LinkKind::Slack => &palette::WARN,
         LinkKind::Port => &palette::INFO,
         LinkKind::Web => &palette::MUTED,
     }
