@@ -39,7 +39,14 @@ jobs:
       # The version pinned in rust-toolchain.toml, with its components.
       - name: Install Rust
         run: rustup toolchain install
+      # sherpa-onnx-sys (tenx-tts) downloads its static libraries into
+      # target/sherpa-onnx-prebuilt/, which rust-cache doesn't keep on its
+      # own — but it keeps the build script's result, so a restored cache
+      # skipped the download and the link failed. Keep the folder with it.
       - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-sherpa
+          cache-directories: target/sherpa-onnx-prebuilt
       # The e2e test drives a throwaway tmux server (tests/e2e_tmux.rs).
       - name: Install tmux
         run: |
