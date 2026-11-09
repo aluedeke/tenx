@@ -1581,6 +1581,44 @@ test("dragging the sidebar's edge sets its width, remembered; a double-click res
   await expect.poll(width).toBe(300);
 });
 
+test("dragging the task list's edge sets its width in columns, remembered; a double-click resets it", async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a mouse');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  const wrap = page.locator('.column-wrap');
+  const handle = page.getByTestId('column-resize');
+  const width = async () => Math.round((await wrap.boundingBox())!.width);
+  await expect(page.getByTestId('column')).toBeVisible();
+  const before = await width();
+  const h = (await handle.boundingBox())!;
+  const x = h.x + h.width / 2;
+  const y = h.y + 300;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 50, y);
+  await page.mouse.move(x + 100, y);
+  const ghost = page.getByTestId('column-ghost');
+  await expect(ghost).toContainText(/\d+ columns/);
+  expect(await width()).toBe(before);
+  await page.mouse.up();
+  await expect(ghost).toHaveCount(0);
+  await expect.poll(width).toBeGreaterThan(before + 80);
+  const wide = await width();
+  await page.reload();
+  await expect.poll(width).toBe(wide);
+  // Half the page at most.
+  const h2 = (await handle.boundingBox())!;
+  await page.mouse.move(h2.x + h2.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(1300, y);
+  await expect(ghost).toHaveClass(/stop/);
+  await page.mouse.up();
+  expect(await width()).toBeLessThanOrEqual(720 + 20);
+  // A double-click: the server's width again.
+  await handle.dblclick();
+  await expect.poll(width).toBe(before);
+});
+
 test.describe('on an iPad', () => {
   // The device without its browser choice, which a group can't change.
   const { defaultBrowserType: _, ...ipad } = devices['iPad Pro 11'];
@@ -1610,7 +1648,7 @@ test.describe('on an iPad', () => {
     const sidebar = page.getByTestId('sidebar');
     const before = (await sidebar.boundingBox())!.width;
     const handle = page.getByTestId('sidebar-resize');
-    await expect(handle.locator('.sb-grip')).toBeVisible();
+    await expect(handle.locator('.edge-grip')).toBeVisible();
     const b = (await handle.boundingBox())!;
     const at = (x: number) => ({ pointerType: 'touch', pointerId: 7, isPrimary: true, button: 0, bubbles: true, clientX: x, clientY: b.y + b.height / 2 });
     const x = b.x + b.width / 2;

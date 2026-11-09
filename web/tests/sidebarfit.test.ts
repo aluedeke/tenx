@@ -2,7 +2,19 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DRAWER_MARGIN, MIN_TASK_COLS, SIDEBAR_MIN, SIDEBAR_PX, dragTo, parseWidth, sidebarFits } from '../src/lib/sidebarfit.ts';
+import {
+  COLUMN_MIN_COLS,
+  DRAWER_MARGIN,
+  MIN_TASK_COLS,
+  SIDEBAR_MIN,
+  SIDEBAR_PX,
+  columnDrag,
+  columnPx,
+  dragTo,
+  parseColumnCols,
+  parseWidth,
+  sidebarFits,
+} from '../src/lib/sidebarfit.ts';
 
 test('the sidebar fits only while the task keeps its columns', () => {
   const cell = 8;
@@ -42,4 +54,21 @@ test('a remembered width is a number no narrower than the narrowest', () => {
   assert.equal(parseWidth(''), null);
   assert.equal(parseWidth('wide'), null);
   assert.equal(parseWidth('100'), null);
+});
+
+test('the task list is dragged in whole columns, up to half the page', () => {
+  const cell = 8;
+  // 340 px is 40 columns and its padding.
+  assert.deepEqual(columnDrag(340, 1440, cell), { width: columnPx(40, cell), stop: false, cols: 40 });
+  assert.equal(columnPx(40, cell), 340);
+  // Half of 180 columns.
+  assert.deepEqual(columnDrag(1200, 1440, cell), { width: columnPx(90, cell), stop: true, cols: 90 });
+  assert.deepEqual(columnDrag(50, 1440, cell), { width: columnPx(COLUMN_MIN_COLS, cell), stop: false, cols: COLUMN_MIN_COLS });
+});
+
+test('a remembered task list width is whole columns, no narrower than the narrowest', () => {
+  assert.equal(parseColumnCols('40'), 40);
+  assert.equal(parseColumnCols(null), null);
+  assert.equal(parseColumnCols('40.5'), null);
+  assert.equal(parseColumnCols('12'), null);
 });

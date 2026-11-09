@@ -8,16 +8,14 @@
 // there is no room, a sheet over it from the right, the task list's mirror.
 // A tap on an entry opens its link.
 //
-// Its left edge is a handle (desktop and iPad): dragging it sets the width.
-// A panel shows a line where the edge will land and resizes once, on
-// release, so the terminal beside it is refitted once; a drawer, over the
-// terminal, follows the drag. A double-click or double-tap goes back to
-// the default.
+// Its left edge is a handle (desktop and iPad, `ResizeEdge`): dragging it
+// sets the width.
 
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, useState } from 'react';
 import type { LinkView, SidebarEntry, SidebarView } from '@/protocol';
 import { linkHref } from '@/lib/links';
 import { DRAWER_MARGIN, SIDEBAR_PX, type Drag } from '@/lib/sidebarfit';
+import { ResizeEdge } from './ResizeEdge';
 
 const KIND_COLOR: Partial<Record<LinkView['kind'], string>> = {
   PR: 'var(--success)',
@@ -47,59 +45,12 @@ interface Props {
   onWidth(px: number | null): void;
 }
 
-/** Two taps on the handle this close together are a double-tap. */
-const DOUBLE_TAP_MS = 350;
-
 export function Sidebar({ view, overlay, onClose, width, resizable, touch, dragTo, onWidth }: Props) {
   const aside = useRef<HTMLElement>(null);
-  const start = useRef<{ x: number; width: number; moved: boolean } | null>(null);
-  const lastTap = useRef(0);
-  const [drag, setDrag] = useState<Drag | null>(null);
-
-  const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || !aside.current) return;
-    e.preventDefault();
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // Not an active pointer (a synthetic event): moves still reach the handle.
-    }
-    start.current = { x: e.clientX, width: aside.current.getBoundingClientRect().width, moved: false };
-  };
-  const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const s = start.current;
-    if (!s) return;
-    if (Math.abs(e.clientX - s.x) < 3 && !s.moved) return;
-    s.moved = true;
-    setDrag(dragTo(s.width + s.x - e.clientX));
-  };
-  const onUp = () => {
-    const s = start.current;
-    start.current = null;
-    if (!s) return;
-    if (s.moved) {
-      lastTap.current = 0;
-      if (drag) onWidth(drag.width);
-      setDrag(null);
-      return;
-    }
-    // Two taps without a move: back to the default.
-    const now = Date.now();
-    if (now - lastTap.current < DOUBLE_TAP_MS) {
-      lastTap.current = 0;
-      onWidth(null);
-    } else {
-      lastTap.current = now;
-    }
-  };
-  const onCancel = () => {
-    start.current = null;
-    setDrag(null);
-  };
+  const [live, setLive] = useState<Drag | null>(null);
 
   // A drawer follows the drag; a panel keeps its width until the release.
-  const shown = drag && overlay ? drag.width : width;
-  const current = aside.current?.getBoundingClientRect().width ?? 0;
+  const shown = live ? live.width : width;
   const style = shown === null ? undefined : { width: overlay ? `min(${shown}px, calc(100vw - ${DRAWER_MARGIN}px))` : `${shown}px` };
   const entry = (e: SidebarEntry, i: number) => {
     const color = e.icon_tone ? `var(--tone-${e.icon_tone})` : (e.kind && KIND_COLOR[e.kind]) || 'var(--muted)';
@@ -156,36 +107,28 @@ export function Sidebar({ view, overlay, onClose, width, resizable, touch, dragT
   return (
     <aside ref={aside} className={overlay ? 'sidebar drawer' : 'sidebar'} style={style} data-testid="sidebar">
       {resizable && (
-        <div
-          className={['sb-resize', touch && 'touch', drag && 'hot'].filter(Boolean).join(' ')}
-          data-testid="sidebar-resize"
+        <ResizeEdge
+          edge="left"
+          panel={aside}
+          drawer={overlay}
+          touch={touch}
           title={`drag to resize · double-click: back to ${SIDEBAR_PX} px`}
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          onPointerCancel={onCancel}
-        >
-          {touch && (
-            <span className="sb-grip">
-              <i />
-              <i />
-            </span>
+          testid="sidebar"
+          dragTo={dragTo}
+          label={(d) => (
+            <>
+              <b>{d.width} px</b>
+              {d.stop ? (
+                <span className="tone-warn">the task needs {d.cols} columns</span>
+              ) : (
+                <span>the task keeps {d.cols} columns</span>
+              )}
+            </>
           )}
-        </div>
+          onLive={setLive}
+          onDone={(d) => onWidth(d && d.width)}
+        />
       )}
-      {drag && !overlay && (
-        <div className={drag.stop ? 'sb-ghost stop' : 'sb-ghost'} style={{ left: current - drag.width - 1 }} data-testid="sidebar-ghost">
-          <div className="sb-ghost-tip">
-            <b>{drag.width} px</b>
-            {drag.stop ? (
-              <span className="tone-warn">the task needs {drag.cols} columns</span>
-            ) : (
-              <span>the task keeps {drag.cols} columns</span>
-            )}
-          </div>
-        </div>
-      )}
-      {drag && overlay && <div className="sb-ghost-tip drawer">{drag.width} px</div>}
       {overlay && (
         <div className="sb-head">
           <span className="sb-title">{view?.title ?? 'no task open'}</span>

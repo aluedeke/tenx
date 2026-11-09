@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Column } from './Column';
+import { ResizeEdge } from './ResizeEdge';
 import { Header, MoreMenu, type MicState, type SpeakerState } from './Header';
 import { LinksMenu } from './LinksMenu';
 import { ATTACH_INPUT, KeyBar } from './KeyBar';
@@ -32,7 +33,18 @@ import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import { copyText, linkHref, linkKey, openExternal } from '@/lib/links';
-import { SIDEBAR_PX, dragTo, parseWidth, sidebarFits } from '@/lib/sidebarfit';
+import {
+  DRAWER_MARGIN,
+  SIDEBAR_PX,
+  columnDrag,
+  columnMaxCols,
+  columnPx as columnWidthPx,
+  dragTo,
+  parseColumnCols,
+  parseWidth,
+  sidebarFits,
+  type Drag,
+} from '@/lib/sidebarfit';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, Item, KeyMessage, LinkView, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
@@ -48,6 +60,8 @@ const LAST_TASK_KEY = 'tenx-last-task';
 const SIDEBAR_KEY = 'tenx-sidebar';
 /** The sidebar's dragged width in px; none: the default. */
 const SIDEBAR_WIDTH_KEY = 'tenx-sidebar-width';
+/** The task list's dragged width in columns; none: the server's. */
+const COLUMN_COLS_KEY = 'tenx-column-cols';
 /** Narrower than this, the task list is a sheet over the terminal; the
  * sidebar's own rule is lib/sidebarfit. */
 const COLUMN_ROOM = '(min-width: 1000px)';
@@ -75,7 +89,11 @@ export function App() {
   const [status, setStatus] = useState<Status>('connecting');
   const [failures, setFailures] = useState(0);
   const [host, setHost] = useState('');
-  const [columnCols, setColumnCols] = useState(36);
+  // The server's width for the task list (`layout`), and the one dragged in
+  // this browser, which wins while it fits in half the page.
+  const [serverCols, setColumnCols] = useState(36);
+  const [ownCols, setOwnCols] = useState<number | null>(null);
+  const [columnLive, setColumnLive] = useState<Drag | null>(null);
   const [narrow, setNarrow] = useState(false);
   const [visible, setVisible] = useState(true);
   // The sidebar: wanted beside the terminal on a wide page (remembered), or
@@ -89,6 +107,7 @@ export function App() {
   const [touch, setTouch] = useState(false);
   const [ctrlSticky, setCtrlSticky] = useState(false);
   const [cell, setCell] = useState(7.8);
+  const columnCols = ownCols === null ? serverCols : Math.min(ownCols, columnMaxCols(pageWidth, cell));
   /** The on-screen keyboard is up: the key bar sits on it, not above the
    * home indicator's inset. */
   const [kbOpen, setKbOpen] = useState(false);
@@ -473,6 +492,7 @@ export function App() {
     try {
       if (localStorage.getItem(SIDEBAR_KEY) === '0') setSidebarWide(false);
       setSidebarPx(parseWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY)));
+      setOwnCols(parseColumnCols(localStorage.getItem(COLUMN_COLS_KEY)));
     } catch {
       // Storage blocked: shown.
     }
@@ -500,6 +520,15 @@ export function App() {
       // Storage blocked: the default again next time.
     }
   }, []);
+  const setColumnWidth = useCallback((cols: number | null) => {
+    setOwnCols(cols);
+    try {
+      if (cols === null) localStorage.removeItem(COLUMN_COLS_KEY);
+      else localStorage.setItem(COLUMN_COLS_KEY, String(cols));
+    } catch {
+      // Storage blocked: the server's width again next time.
+    }
+  }, []);
   // `s` in the column (the server's `sidebar` request) and the header's
   // button: show or hide it, as a panel or as a sheet.
   const toggleSidebar = () => {
@@ -510,7 +539,7 @@ export function App() {
   sidebarWideRef.current = sidebarWide;
   // The sidebar is a panel while the task keeps its columns beside it and
   // the task list (when that is beside the terminal too), else a sheet.
-  const columnPx = overlay || !visible ? 0 : Math.ceil(columnCols * cell + 20);
+  const columnPx = overlay || !visible ? 0 : columnWidthPx(columnCols, cell);
   const sidebarOverlay = overlay || !sidebarFits(pageWidth, cell, columnPx, sidebarPx ?? SIDEBAR_PX);
   const sidebarOverlayRef = useRef(sidebarOverlay);
   sidebarOverlayRef.current = sidebarOverlay;
@@ -1288,7 +1317,14 @@ export function App() {
     ? (shown?.items.find((i) => i.kind === 'task' && i.id === predicted.opening) as { title: string } | undefined)?.title
     : undefined;
 
-  const columnStyle = overlay ? undefined : { width: `${Math.ceil(columnCols * cell + 20)}px` };
+  // A drawer keeps its own width until one is dragged, and then leaves the
+  // page's edge in view.
+  const columnStyle = overlay
+    ? columnLive || ownCols !== null
+      ? { width: `min(${columnLive?.width ?? columnWidthPx(columnCols, cell)}px, calc(100vw - ${DRAWER_MARGIN}px))` }
+      : undefined
+    : { width: `${columnWidthPx(columnCols, cell)}px` };
+  const columnWrap = useRef<HTMLDivElement>(null);
 
   return (
     <div className={`app${narrow ? ' narrow' : ''}${touch ? ' touch' : ''}${kbOpen ? ' kb-open' : ''}`}>
@@ -1335,7 +1371,26 @@ export function App() {
           />
         )}
         {visible && (
-          <div className={overlay ? 'column-wrap drawer' : 'column-wrap'} style={columnStyle}>
+          <div ref={columnWrap} className={overlay ? 'column-wrap drawer' : 'column-wrap'} style={columnStyle}>
+            {!narrow && (
+              <ResizeEdge
+                edge="right"
+                panel={columnWrap}
+                drawer={overlay}
+                touch={touch}
+                title="drag to resize · double-click: automatic"
+                testid="column"
+                dragTo={(want) => columnDrag(want, pageWidth, cell)}
+                label={(d) => (
+                  <>
+                    <b>{d.cols} columns</b>
+                    {d.stop && <span className="tone-warn">the task keeps half the page</span>}
+                  </>
+                )}
+                onLive={setColumnLive}
+                onDone={(d) => setColumnWidth(d && d.cols)}
+              />
+            )}
             <Column
               view={predicted?.view ?? null}
               loading={predicted?.loading ?? false}
