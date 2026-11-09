@@ -2062,26 +2062,35 @@ a:hover {
   line-height: var(--line);
 }
 
-/* The sidebar's left edge is a handle (Sidebar.tsx): 8 px over its 1 px
-   border; hovered or dragged, the line turns accent. On touch, a grip a
-   finger can hold sits in its middle. */
-.sidebar {
+/* The edge of a panel beside the terminal is a handle (ResizeEdge.tsx):
+   the sidebar's left, the task list's right. 8 px over the 1 px border;
+   hovered or dragged, the line turns accent. On touch, a grip a finger can
+   hold sits in its middle. */
+.sidebar,
+.column-wrap {
   position: relative;
 }
 
-.sb-resize {
+.edge-resize {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -4px;
   width: 8px;
   z-index: 2;
   cursor: col-resize;
   touch-action: none;
 }
 
-.sb-resize:hover::after,
-.sb-resize.hot::after {
+.edge-resize.at-left {
+  left: -4px;
+}
+
+.edge-resize.at-right {
+  right: -4px;
+}
+
+.edge-resize:hover::after,
+.edge-resize.hot::after {
   content: '';
   position: absolute;
   top: 0;
@@ -2091,17 +2100,24 @@ a:hover {
   background: var(--accent);
 }
 
-.sb-resize.touch {
-  left: -11px;
+.edge-resize.touch {
   width: 22px;
 }
 
-.sb-resize.touch:hover::after,
-.sb-resize.touch.hot::after {
+.edge-resize.touch.at-left {
+  left: -11px;
+}
+
+.edge-resize.touch.at-right {
+  right: -11px;
+}
+
+.edge-resize.touch:hover::after,
+.edge-resize.touch.hot::after {
   display: none;
 }
 
-.sb-grip {
+.edge-grip {
   position: absolute;
   top: 50%;
   left: 4px;
@@ -2118,25 +2134,25 @@ a:hover {
   border: 1px solid var(--border);
 }
 
-.sb-grip i {
+.edge-grip i {
   width: 2px;
   height: 16px;
   border-radius: 1px;
   background: var(--muted);
 }
 
-.sb-resize.hot .sb-grip {
+.edge-resize.hot .edge-grip {
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.sb-resize.hot .sb-grip i {
+.edge-resize.hot .edge-grip i {
   background: var(--ground);
 }
 
-/* While a panel is dragged: a line where its edge will land, the band it
-   will take, and the width with the columns the task keeps. */
-.sb-ghost {
+/* While a panel is dragged: a line where its edge will land, with a label
+   on the terminal's side of it. */
+.edge-ghost {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -2146,14 +2162,13 @@ a:hover {
   pointer-events: none;
 }
 
-.sb-ghost.stop {
+.edge-ghost.stop {
   background: var(--warn);
 }
 
-.sb-ghost-tip {
+.edge-tip {
   position: absolute;
   top: 14px;
-  right: 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -2168,19 +2183,33 @@ a:hover {
   pointer-events: none;
 }
 
-.sb-ghost.stop .sb-ghost-tip {
+.edge-ghost.at-left .edge-tip {
+  right: 10px;
+}
+
+.edge-ghost.at-right .edge-tip {
+  left: 10px;
+}
+
+.edge-ghost.stop .edge-tip {
   border-color: var(--warn);
 }
 
-.sb-ghost-tip b {
+.edge-tip b {
   color: var(--bright);
 }
 
-.sb-ghost-tip.drawer {
+.edge-tip.drawer {
   top: calc(50% + 30px);
-  right: auto;
-  left: 14px;
   z-index: 3;
+}
+
+.edge-tip.drawer.at-left {
+  left: 14px;
+}
+
+.edge-tip.drawer.at-right {
+  right: 14px;
 }
 
 .sidebar.drawer,

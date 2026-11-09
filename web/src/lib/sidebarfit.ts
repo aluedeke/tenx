@@ -5,7 +5,10 @@
 //
 // Its width is the user's (dragging its left edge, remembered per browser):
 // `dragTo` keeps a drag between SIDEBAR_MIN and what still leaves the task
-// its columns, or, over the terminal, DRAWER_MARGIN of the page.
+// its columns, or, over the terminal, DRAWER_MARGIN of the page. The task
+// list's right edge is dragged the same way (`columnDrag`), in whole
+// columns, within the server's rule for a configured width
+// (tenx_core::column::width): at least MIN_COLS, at most half the page.
 
 /** The sidebar panel's width until one is dragged (globals.css `.sidebar`). */
 export const SIDEBAR_PX = 300;
@@ -24,9 +27,10 @@ export function sidebarFits(pageWidth: number, cell: number, columnPx: number, s
   return (pageWidth - columnPx - sidebarPx) / cell >= MIN_TASK_COLS;
 }
 
-/** Where a drag of the sidebar's edge lands: `width`, and `stop` when the
- * drag went past the widest it may be. `cols` is what the task keeps beside
- * a panel (null for a drawer, which the terminal doesn't make room for). */
+/** Where a drag of an edge lands: `width`, and `stop` when the drag went
+ * past the widest it may be. `cols`: for the sidebar, what the task keeps
+ * beside a panel (null for a drawer, which the terminal doesn't make room
+ * for); for the task list, its own columns. */
 export interface Drag {
   width: number;
   stop: boolean;
@@ -46,4 +50,34 @@ export function dragTo(want: number, drawer: boolean, pageWidth: number, cell: n
 export function parseWidth(stored: string | null): number | null {
   const n = Number(stored);
   return stored && Number.isFinite(n) && n >= SIDEBAR_MIN ? Math.round(n) : null;
+}
+
+/** tenx_core::column::MIN_COLS: the narrowest task list. */
+export const COLUMN_MIN_COLS = 30;
+/** The task list's padding beside its `cols` cells. */
+export const COLUMN_PAD = 20;
+
+/** The task list's width in px for `cols` cells `cell` wide. */
+export function columnPx(cols: number, cell: number): number {
+  return Math.ceil(cols * cell + COLUMN_PAD);
+}
+
+/** The widest task list on a page `pageWidth` wide: half of it. */
+export function columnMaxCols(pageWidth: number, cell: number): number {
+  return Math.max(COLUMN_MIN_COLS, Math.floor(pageWidth / cell / 2));
+}
+
+/** The task list dragged to `want` px: whole columns (`cols`), `stop` past
+ * the widest. */
+export function columnDrag(want: number, pageWidth: number, cell: number): Drag {
+  const asked = Math.round((want - COLUMN_PAD) / cell);
+  const max = columnMaxCols(pageWidth, cell);
+  const cols = Math.min(Math.max(asked, COLUMN_MIN_COLS), max);
+  return { width: columnPx(cols, cell), stop: asked > max, cols };
+}
+
+/** A remembered task list width in columns, or null for automatic. */
+export function parseColumnCols(stored: string | null): number | null {
+  const n = Number(stored);
+  return stored && Number.isInteger(n) && n >= COLUMN_MIN_COLS ? n : null;
 }
