@@ -32,7 +32,7 @@ import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import { copyText, linkHref, linkKey, openExternal } from '@/lib/links';
-import { sidebarFits } from '@/lib/sidebarfit';
+import { SIDEBAR_PX, dragTo, parseWidth, sidebarFits } from '@/lib/sidebarfit';
 import type { Action, ClientMessage, Click, ColumnView, FormOp, Item, KeyMessage, LinkView, ServerMessage } from '@/protocol';
 
 type Focus = 'column' | 'terminal';
@@ -46,6 +46,8 @@ const FONT_KEY = 'tenx-terminal-font';
 const LAST_TASK_KEY = 'tenx-last-task';
 /** Whether the sidebar is wanted beside the terminal on a wide page. */
 const SIDEBAR_KEY = 'tenx-sidebar';
+/** The sidebar's dragged width in px; none: the default. */
+const SIDEBAR_WIDTH_KEY = 'tenx-sidebar-width';
 /** Narrower than this, the task list is a sheet over the terminal; the
  * sidebar's own rule is lib/sidebarfit. */
 const COLUMN_ROOM = '(min-width: 1000px)';
@@ -80,6 +82,7 @@ export function App() {
   // opened over it as a sheet where there is no room.
   const [sidebarWide, setSidebarWide] = useState(true);
   const [sidebarSheet, setSidebarSheet] = useState(false);
+  const [sidebarPx, setSidebarPx] = useState<number | null>(null);
   const [roomy, setRoomy] = useState(true);
   const [pageWidth, setPageWidth] = useState(1280);
   const [focus, setFocus] = useState<Focus>('column');
@@ -469,6 +472,7 @@ export function App() {
   useEffect(() => {
     try {
       if (localStorage.getItem(SIDEBAR_KEY) === '0') setSidebarWide(false);
+      setSidebarPx(parseWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY)));
     } catch {
       // Storage blocked: shown.
     }
@@ -485,6 +489,17 @@ export function App() {
       window.removeEventListener('resize', onRoom);
     };
   }, []);
+  // A drag of its edge: the width, remembered in this browser; null is the
+  // default again.
+  const setWidth = useCallback((px: number | null) => {
+    setSidebarPx(px);
+    try {
+      if (px === null) localStorage.removeItem(SIDEBAR_WIDTH_KEY);
+      else localStorage.setItem(SIDEBAR_WIDTH_KEY, String(px));
+    } catch {
+      // Storage blocked: the default again next time.
+    }
+  }, []);
   // `s` in the column (the server's `sidebar` request) and the header's
   // button: show or hide it, as a panel or as a sheet.
   const toggleSidebar = () => {
@@ -496,7 +511,7 @@ export function App() {
   // The sidebar is a panel while the task keeps its columns beside it and
   // the task list (when that is beside the terminal too), else a sheet.
   const columnPx = overlay || !visible ? 0 : Math.ceil(columnCols * cell + 20);
-  const sidebarOverlay = overlay || !sidebarFits(pageWidth, cell, columnPx);
+  const sidebarOverlay = overlay || !sidebarFits(pageWidth, cell, columnPx, sidebarPx ?? SIDEBAR_PX);
   const sidebarOverlayRef = useRef(sidebarOverlay);
   sidebarOverlayRef.current = sidebarOverlay;
   const toggleSidebarRef = useRef(toggleSidebar);
@@ -1429,6 +1444,11 @@ export function App() {
             view={shown?.sidebar ?? null}
             overlay={sidebarOverlay}
             onClose={() => (sidebarOverlay ? setSidebarSheet(false) : setWide(false))}
+            width={sidebarPx}
+            resizable={!narrow}
+            touch={touch}
+            dragTo={(want) => dragTo(want, sidebarOverlay, pageWidth, cell, columnPx)}
+            onWidth={setWidth}
           />
         )}
       </div>

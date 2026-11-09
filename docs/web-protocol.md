@@ -203,7 +203,10 @@ The browser, not the server, owns focus and visibility, like `src/tui/client.rs`
   sidebar: a panel right of the terminal while the task keeps 80 columns
   beside it — the terminal client's rule, `web/src/lib/sidebarfit.ts` —,
   remembered per browser; else a drawer over it from the right. Below
-  1000 px the task list is a drawer from the left too). The server doesn't move the column's
+  1000 px the task list is a drawer from the left too). The sidebar's
+  width is the page's own: dragging its left edge sets it (not on a
+  phone), kept in `localStorage` (`tenx-sidebar-width`) and never sent to
+  the server; the 80-column rule uses it. The server doesn't move the column's
   focus itself: the page reports every change with a `focus` message.
 
 The terminal attaches on the first `resize`, so send one as soon as xterm.js
