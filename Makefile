@@ -43,9 +43,11 @@ try-stop:
 # `brew upgrade tenx`). `make install` swaps in a test build of this checkout
 # behind the same path, page included, and restarts `tenx web` and the
 # watcher; `make uninstall` puts the release back; `make installed` says which
-# one runs (scripts/test-version.sh). The generated tmux config and the web
-# service both name `$(brew --prefix)/bin/tenx`, so neither needs installing
-# again. Without Homebrew, `make install` is `cargo install` to ~/.cargo/bin.
+# one runs (scripts/test-version.sh). The generated tmux config names
+# `$(brew --prefix)/bin/tenx`, and so does the web service, or the release's
+# signed tenx.app, which hands that path on to what it starts; the restart
+# re-points the service between the two. Without Homebrew, `make install` is
+# `cargo install` to ~/.cargo/bin.
 install:
 	@if command -v brew >/dev/null && brew list --versions tenx >/dev/null 2>&1; then \
 		scripts/test-version.sh on; \
