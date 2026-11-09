@@ -1539,6 +1539,48 @@ test("a task's row carries no link chips", async ({ page, isMobile }) => {
   await expect(row.locator('a')).toHaveCount(0);
 });
 
+test("dragging the sidebar's edge sets its width, remembered; a double-click resets it", async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a mouse');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  const sidebar = page.getByTestId('sidebar');
+  const handle = page.getByTestId('sidebar-resize');
+  const width = async () => (await sidebar.boundingBox())!.width;
+  await expect(sidebar).toBeVisible();
+  expect(await width()).toBe(300);
+  const h = (await handle.boundingBox())!;
+  const x = h.x + h.width / 2;
+  const y = h.y + 200;
+  // While dragging: a line and the width, the panel itself unchanged.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 70, y);
+  await page.mouse.move(x - 140, y);
+  const ghost = page.getByTestId('sidebar-ghost');
+  await expect(ghost).toContainText('440 px');
+  await expect(ghost).toContainText('the task keeps');
+  expect(await width()).toBe(300);
+  await page.mouse.up();
+  await expect(ghost).toHaveCount(0);
+  await expect.poll(width).toBe(440);
+  // Remembered.
+  await page.reload();
+  await expect.poll(width).toBe(440);
+  // Too wide: the drag stops where the task keeps 80 columns, and it stays a panel.
+  const h2 = (await handle.boundingBox())!;
+  await page.mouse.move(h2.x + h2.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(200, y);
+  await expect(ghost).toHaveClass(/stop/);
+  await expect(ghost).toContainText('the task needs 80 columns');
+  await page.mouse.up();
+  await expect(page.getByTestId('sidebar-close')).toHaveCount(0);
+  expect(await width()).toBeGreaterThan(440);
+  // A double-click: the default again.
+  await handle.dblclick();
+  await expect.poll(width).toBe(300);
+});
+
 test.describe('on an iPad', () => {
   // The device without its browser choice, which a group can't change.
   const { defaultBrowserType: _, ...ipad } = devices['iPad Pro 11'];
@@ -1559,6 +1601,26 @@ test.describe('on an iPad', () => {
     const sidebar = (await page.getByTestId('sidebar').boundingBox())!;
     expect(sidebar.x + sidebar.width).toBeGreaterThanOrEqual(width - 1);
     expect(sidebar.width).toBeLessThanOrEqual(360);
+  });
+
+  test("the drawer's grip drags it wider", async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'one run is enough');
+    await page.goto('/');
+    await page.getByTestId('sidebar-toggle').tap();
+    const sidebar = page.getByTestId('sidebar');
+    const before = (await sidebar.boundingBox())!.width;
+    const handle = page.getByTestId('sidebar-resize');
+    await expect(handle.locator('.sb-grip')).toBeVisible();
+    const b = (await handle.boundingBox())!;
+    const at = (x: number) => ({ pointerType: 'touch', pointerId: 7, isPrimary: true, button: 0, bubbles: true, clientX: x, clientY: b.y + b.height / 2 });
+    const x = b.x + b.width / 2;
+    await handle.dispatchEvent('pointerdown', at(x));
+    await handle.dispatchEvent('pointermove', at(x - 60));
+    await handle.dispatchEvent('pointermove', at(x - 120));
+    // A drawer follows the finger.
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(before + 120);
+    await handle.dispatchEvent('pointerup', at(x - 120));
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(before + 120);
   });
 
   test("a row's long-press opens a card beside the finger, not a sheet across the screen", async ({ page }, info) => {
