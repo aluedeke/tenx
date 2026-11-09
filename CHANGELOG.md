@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.30.0] - 2026-11-09
+
+### Added
+
+- **web:** Drag the sidebar's edge to set its width
+
+[0.30.0]: https://github.com/aluedeke/tenx/compare/v0.29.0...v0.30.0
+
 ## [0.29.0] - 2026-11-09
 
 ### Added
