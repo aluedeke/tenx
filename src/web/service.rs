@@ -9,7 +9,7 @@
 //! written into the unit, so agents, `git` and `gh` resolve as they do for
 //! you.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
@@ -62,12 +62,63 @@ fn write(path: &PathBuf, contents: &str) -> Result<()> {
     std::fs::rename(&tmp, path).with_context(|| format!("write {}", path.display()))
 }
 
+/// The program the service runs: the path of this `tenx` as you reach it —
+/// `~/.cargo/bin/tenx`, `/opt/homebrew/bin/tenx` — not with symlinks
+/// resolved, since Homebrew's link target is a versioned Cellar directory that
+/// an upgrade deletes; or, on macOS, the release's signed `tenx.app` through
+/// Homebrew's `opt` link, so the privacy permissions macOS asks for once
+/// outlive upgrades (`tenx_core::service::service_program`). Either way
+/// replacing the binary and `service restart` is an upgrade.
+fn program() -> Result<PathBuf> {
+    let bin = crate::tmux::self_bin()?;
+    if !cfg!(target_os = "macos") {
+        return Ok(bin);
+    }
+    let real = bin.canonicalize().unwrap_or_else(|_| bin.clone());
+    let opt = service::homebrew_opt(&bin);
+    let keg = opt.as_ref().and_then(|o| o.canonicalize().ok());
+    let app = opt.as_ref().is_some_and(|o| o.join(service::APP_PROGRAM).is_file());
+    Ok(service::service_program(&bin, &real, keg.as_deref(), app))
+}
+
+/// [`program`], for a `tenx` that is Homebrew's `bin/tenx` (its `opt/tenx`
+/// exists) only.
+fn homebrew_program() -> Option<PathBuf> {
+    let bin = crate::tmux::self_bin().ok()?;
+    service::homebrew_opt(&bin).filter(|o| o.exists())?;
+    program().ok()
+}
+
+/// (Re)load the LaunchAgent at `path`. Replacing an installed one: unload it
+/// first (fails harmlessly when it isn't loaded). `bootout` returns before
+/// the job is gone, and a `bootstrap` racing it fails with "Input/output
+/// error" — so wait for it to disappear, and retry the load a few times.
+fn reload_plist(path: &Path) -> Result<()> {
+    let domain = format!("gui/{}", uid());
+    let target = format!("{domain}/{LABEL}");
+    if run(Command::new("launchctl").args(["bootout", &target]))?.status.success() {
+        for _ in 0..50 {
+            if !run(Command::new("launchctl").args(["print", &target]))?.status.success() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    let mut attempt = 0;
+    loop {
+        match check(Command::new("launchctl").args(["bootstrap", &domain]).arg(path)) {
+            Ok(()) => return Ok(()),
+            Err(_) if attempt < 5 => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 pub fn install(listen: &str, port: u16, dev_origins: &[String]) -> Result<()> {
-    // The path as you reach it — `~/.cargo/bin/tenx`, `/opt/homebrew/bin/tenx`
-    // — not with symlinks resolved: Homebrew's link target is a versioned
-    // Cellar directory that an upgrade deletes. So replacing the binary there
-    // and `service restart` is an upgrade.
-    let program = crate::tmux::self_bin()?;
+    let program = program()?;
     let mut args = vec!["web".to_string(), "--listen".into(), listen.to_string(), "--port".into(), port.to_string()];
     for o in dev_origins {
         args.push("--dev-origin".into());
@@ -94,31 +145,7 @@ pub fn install(listen: &str, port: u16, dev_origins: &[String]) -> Result<()> {
     if cfg!(target_os = "macos") {
         let path = plist_path()?;
         write(&path, &service::launchd_plist(&unit))?;
-        let domain = format!("gui/{}", uid());
-        let target = format!("{domain}/{LABEL}");
-        // Replacing an installed one: unload it first (fails harmlessly when
-        // it isn't loaded). `bootout` returns before the job is gone, and a
-        // `bootstrap` racing it fails with "Input/output error" — so wait for
-        // it to disappear, and retry the load a few times.
-        if run(Command::new("launchctl").args(["bootout", &target]))?.status.success() {
-            for _ in 0..50 {
-                if !run(Command::new("launchctl").args(["print", &target]))?.status.success() {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-        }
-        let mut attempt = 0;
-        loop {
-            match check(Command::new("launchctl").args(["bootstrap", &domain]).arg(&path)) {
-                Ok(()) => break,
-                Err(_) if attempt < 5 => {
-                    attempt += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                }
-                Err(e) => return Err(e),
-            }
-        }
+        reload_plist(&path)?;
         println!("installed {}", path.display());
     } else {
         let path = systemd_path()?;
@@ -138,12 +165,29 @@ pub fn install(listen: &str, port: u16, dev_origins: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Restart it — onto a replaced binary after an upgrade. Nothing to do (and
+/// Restart it — onto a replaced binary after an upgrade, on macOS onto the
+/// program Homebrew's tenx wants when that changed. Nothing to do (and
 /// no error) when it isn't installed, so `make install` can always call it.
 pub fn restart() -> Result<()> {
     if cfg!(target_os = "macos") {
         if !plist_path()?.exists() {
             println!("tenx web service not installed — nothing to restart");
+            return Ok(());
+        }
+        // Homebrew's tenx wants another program than the one it runs now —
+        // the app arrived with an upgrade, `make install` put a test version
+        // in front of it, `make uninstall` took it away: point the plist at
+        // it and reload. Never for any other tenx (`cargo run` in a task's
+        // checkout): its path goes away with the checkout. And when this
+        // tenx can't be located, a plain restart is still the better answer.
+        let path = plist_path()?;
+        let text = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let want = homebrew_program().map(|p| p.to_string_lossy().into_owned());
+        if let Some((have, want)) = want.and_then(|want| Some((service::launchd_program(&text).filter(|have| *have != want)?, want))) {
+            let Some(text) = service::with_launchd_program(&text, &want) else { bail!("{}: no ProgramArguments", path.display()) };
+            write(&path, &text)?;
+            reload_plist(&path)?;
+            println!("restarted tenx web, now running {want} (was {have})");
             return Ok(());
         }
         let domain = format!("gui/{}", uid());

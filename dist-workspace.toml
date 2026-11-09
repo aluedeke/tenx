@@ -20,6 +20,11 @@ tap = "aluedeke/homebrew-tap"
 # with a deploy key decrypted from secrets/ci.enc.env with sops, so the repo
 # stays the only place it lives and the single GitHub secret is the CI age key.
 publish-jobs = ["./publish-homebrew"]
+# Our own build beside dist's: the signed tenx.app for `tenx web service` on
+# Apple silicon (.github/workflows/build-macos-app.yml). dist's release step
+# uploads its artifacts-tenx-app with the rest; publish-homebrew adds it to
+# the formula.
+local-artifacts-jobs = ["./build-macos-app"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl"]
 # Path that installers should place binaries in
@@ -67,3 +72,4 @@ tmux = { stage = ["run"] }
 # may not ask for more than its caller's job grants.
 [dist.github-custom-job-permissions]
 publish-homebrew = { contents = "read" }
+build-macos-app = { contents = "read" }

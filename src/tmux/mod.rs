@@ -244,15 +244,19 @@ fn parse_version(text: &str) -> Option<(u32, u32)> {
 /// absolute but with symlinks kept) is the stable `bin/tenx` link for any
 /// package-managed install. macOS `current_exe()` already behaves that way;
 /// this makes both platforms agree. Falls back to `current_exe()` when
-/// `argv[0]` is unusable (empty, or not found on `PATH`).
+/// `argv[0]` is unusable (empty, or not found on `PATH`). The Homebrew app
+/// `tenx web service` runs gives `$(brew --prefix)/bin/tenx` instead
+/// (`tenx_core::service::app_bin`), so a server it starts runs the same tenx
+/// a terminal's would, and `make install` switches it too.
 pub fn self_bin() -> Result<PathBuf> {
     let argv0 = env::args_os().next().map(PathBuf::from);
     let cwd = env::current_dir().ok();
     let resolved = argv0.and_then(|a| resolve_argv0(&a, cwd.as_deref(), crate::cli::notify::which, crate::cli::notify::is_executable));
-    match resolved {
-        Some(p) => Ok(p),
-        None => env::current_exe().context("locate the tenx binary"),
-    }
+    let bin = match resolved {
+        Some(p) => p,
+        None => env::current_exe().context("locate the tenx binary")?,
+    };
+    Ok(tenx_core::service::app_bin(&bin).filter(|b| b.exists()).unwrap_or(bin))
 }
 
 /// The decision behind [`self_bin`], with the filesystem abstracted so it can

@@ -6,6 +6,9 @@
 # is the only place the key lives. The single GitHub secret is SOPS_AGE_KEY,
 # the private key of the CI recipient listed in .sops.yaml.
 #
+# On Apple silicon the formula also installs the signed tenx.app the release
+# carries (scripts/formula-add-app.sh), for `tenx web service`.
+#
 # Run it by hand (`gh workflow run publish-homebrew.yml -f tag=vX.Y.Z`) to
 # republish an existing release's formula, e.g. after a failed publish: it
 # then takes the plan and formula from that GitHub Release.
@@ -58,7 +61,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: |
-          gh release download "$TAG" --dir artifacts --pattern 'dist-manifest.json' --pattern '*.rb'
+          gh release download "$TAG" --dir artifacts --pattern 'dist-manifest.json' --pattern '*.rb' --pattern 'tenx-app-*.tar.xz'
 
       - name: Install sops
         run: |
@@ -90,6 +93,11 @@ jobs:
             name=${filename%.rb}
             version=$(echo "$release" | jq --raw-output .app_version)
             cp "../artifacts/${filename}" "Formula/${filename}"
+            # The signed tenx.app (build-macos-app.yml), when the release has one.
+            app="../artifacts/tenx-app-aarch64-apple-darwin.tar.xz"
+            if [[ "$name" == tenx && -f "$app" ]]; then
+              ../scripts/formula-add-app.sh "Formula/${filename}" "$(echo "$PLAN" | jq -r .announcement_tag)" "$app"
+            fi
             git add "Formula/${filename}"
             git commit -m "${name} ${version}"
           done

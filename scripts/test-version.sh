@@ -8,7 +8,9 @@
 #
 # Everything that runs tenx calls one path: `$(brew --prefix)/bin/tenx` — the
 # `tenx web` service, the generated tmux config, the watcher, the agents'
-# hooks. `on` puts the test build behind that path (`brew unlink tenx`, then
+# hooks. (The release's service runs its signed tenx.app, which hands that
+# path on; `service restart` points the service at the test build and back.)
+# `on` puts the test build behind that path (`brew unlink tenx`, then
 # links to a copy in ~/.local/share/tenx/test-version), `off` puts the release
 # back (`brew link`); both then restart `tenx web` and reload the tmux config,
 # which restarts the watcher. The copy, never `target/`, so a rebuild or a
