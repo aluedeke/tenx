@@ -612,14 +612,17 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
     }
 
     let pr_ttl = ttl((crate::live::PR_TTL_ACTIVE, crate::live::PR_TTL_PARKED));
-    if !lookups.linear.busy && crate::cli::linear::token().is_some() {
-        let keys: Vec<Vec<String>> = lives
+    if !lookups.linear.busy && crate::cli::linear::any_key() {
+        // Each issue with its organization, which decides the key it is
+        // looked up with.
+        let keys: Vec<Vec<(Option<String>, String)>> = lives
             .iter()
             .map(|l| {
-                let mut keys: Vec<String> = Vec::new();
-                for k in l.all_links().iter().filter(|l| l.kind == tenx_core::links::LinkKind::Linear).filter_map(|l| tenx_core::sidebar::linear_key(&l.url)) {
-                    if !keys.contains(&k) {
-                        keys.push(k);
+                let mut keys: Vec<(Option<String>, String)> = Vec::new();
+                for l in l.all_links().iter().filter(|l| l.kind == tenx_core::links::LinkKind::Linear) {
+                    let Some(k) = tenx_core::sidebar::linear_key(&l.url) else { continue };
+                    if !keys.iter().any(|(_, have)| *have == k) {
+                        keys.push((tenx_core::sidebar::linear_org(&l.url), k));
                     }
                 }
                 keys
@@ -627,7 +630,7 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
             .collect();
         let tasks: Vec<_> = targets.iter().zip(&lives).zip(&keys).map(|((t, l), k)| tenx_core::live::Due { checked: l.linear_checked, active: t.active, cost: usize::from(!k.is_empty()) }).collect();
         let batch = tenx_core::live::due(&tasks, now, pr_ttl, crate::live::PR_LOOKUPS_PER_TICK).into_iter().map(|i| (targets[i].path.clone(), keys[i].clone())).collect();
-        lookups.linear.start(batch, |keys: Vec<String>| crate::cli::linear::issues(&keys));
+        lookups.linear.start(batch, |keys: Vec<(Option<String>, String)>| crate::cli::linear::issues(&keys));
     }
 
     if lookups.prs.busy || !crate::live::gh_available() {

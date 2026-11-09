@@ -396,11 +396,15 @@ pub enum SecretsCommands {
 
 #[derive(Subcommand)]
 pub enum LinearCommands {
-    /// Save a Linear personal API key (read without echo, or from stdin)
+    /// Save a Linear personal API key for its organization (read without
+    /// echo, or from stdin); once per Linear organization
     Login,
-    /// Remove the saved key
-    Logout,
-    /// Show whether a key is saved and whom it signs in as
+    /// Remove one organization's key, or every key
+    Logout {
+        /// The organization, as in its links: linear.app/<org>/…
+        org: Option<String>,
+    },
+    /// Show each saved key and whom it signs in as
     Status,
 }
 

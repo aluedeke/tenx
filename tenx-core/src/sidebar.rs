@@ -6,8 +6,9 @@
 //! right of the task and `tenx web` sends to its page.
 //!
 //! The facts are gathered by the watcher (`tenx watch`), never by a front
-//! end: the Linear lookup ([`linear_request`], [`parse_linear`]) is a network
-//! call, the git one ([`parse_status`], [`parse_counts`]) a few processes per
+//! end: the Linear lookup ([`linear_request`], [`parse_linear`]; one saved
+//! key per Linear organization, [`linear_org`], [`linear_groups`],
+//! [`parse_viewer`]) is a network call, the git one ([`parse_status`], [`parse_counts`]) a few processes per
 //! repo. A front end only reads the cache, so drawing never waits.
 
 use crate::links::{Link, LinkKind};
@@ -139,6 +140,68 @@ pub fn linear_key(url: &str) -> Option<String> {
     let (team, number) = key.rsplit_once('-')?;
     let ok = !team.is_empty() && team.chars().all(|c| c.is_ascii_alphanumeric()) && number.parse::<u64>().is_ok();
     ok.then(|| key.to_ascii_uppercase())
+}
+
+/// A Linear link's organization: `linear.app/<org>/issue/…` → `org`.
+pub fn linear_org(url: &str) -> Option<String> {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let mut seg = rest.split(['/', '?', '#']);
+    if seg.next()? != "linear.app" {
+        return None;
+    }
+    let org = seg.next()?;
+    let ok = !org.is_empty() && org.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    (ok && seg.next() == Some("issue")).then(|| org.to_ascii_lowercase())
+}
+
+/// Which saved key looks up which issues. `issues` are (organization,
+/// issue key) pairs from a task's links; `keyed` the organizations with a key
+/// of their own; `fallback` whether a key for no organization in particular
+/// is saved (the one key before there was one per organization). Each group
+/// is the organization whose key to use (`None`: the fallback key) and its
+/// issue keys, each once, in the order first seen; an issue no saved key can
+/// see is left out.
+pub fn linear_groups(issues: &[(Option<String>, String)], keyed: &[String], fallback: bool) -> Vec<(Option<String>, Vec<String>)> {
+    let mut groups: Vec<(Option<String>, Vec<String>)> = Vec::new();
+    for (org, key) in issues {
+        let with = match org {
+            Some(o) if keyed.contains(o) => Some(o.clone()),
+            _ if fallback => None,
+            _ => continue,
+        };
+        match groups.iter_mut().find(|(g, _)| *g == with) {
+            Some((_, keys)) if keys.contains(key) => {}
+            Some((_, keys)) => keys.push(key.clone()),
+            None => groups.push((with, vec![key.clone()])),
+        }
+    }
+    groups
+}
+
+/// Whom a Linear key signs in as: what [`VIEWER_QUERY`] answers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Viewer {
+    pub name: String,
+    /// The organization's key in its links (`linear.app/<org>/…`).
+    pub org: String,
+    pub org_name: String,
+}
+
+/// The GraphQL request body asking whom a key signs in as, and for which
+/// organization.
+pub const VIEWER_QUERY: &str = r#"{"query":"{ viewer { name organization { urlKey name } } }"}"#;
+
+/// The answer to [`VIEWER_QUERY`]; `Err` with Linear's message.
+pub fn parse_viewer(json: &serde_json::Value) -> Result<Viewer, String> {
+    let v = &json["data"]["viewer"];
+    match (v["name"].as_str(), v["organization"]["urlKey"].as_str()) {
+        (Some(name), Some(org)) => Ok(Viewer {
+            name: name.to_string(),
+            org: org.to_ascii_lowercase(),
+            org_name: v["organization"]["name"].as_str().unwrap_or(org).to_string(),
+        }),
+        _ => Err(json["errors"][0]["message"].as_str().unwrap_or("no answer from Linear").to_string()),
+    }
 }
 
 /// The GraphQL request body that looks up `keys` in one call: an aliased
@@ -449,22 +512,44 @@ pub fn build(live: &Live) -> Sidebar {
         .collect();
     push("Pull requests", String::new(), None, prs);
 
-    let linear = of(&[LinkKind::Linear])
-        .into_iter()
-        .map(|l| {
-            let found = linear_key(&l.url).and_then(|k| live.linear.iter().find(|i| i.key == k));
-            match found {
-                Some(i) => {
-                    let mut e = link_entry(l, vec![Part { text: i.state.to_uppercase(), tone: linear_tone(&i.state_type), pill: true }]);
-                    if !i.title.is_empty() {
-                        e.label = format!("{} {}", i.key, i.title);
-                    }
-                    e
+    // One entry per issue, however often and under whatever name it is
+    // linked: the looked-up title, else the best name a link gave it — one
+    // with words after the key, from the text or the link's own slug.
+    let mut linear: Vec<Entry> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    let linear_links = of(&[LinkKind::Linear]);
+    for l in &linear_links {
+        let Some(key) = linear_key(&l.url) else {
+            linear.push(link_entry(l, Vec::new()));
+            continue;
+        };
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key.clone());
+        let named = |label: &str| label.len() > key.len() && label.to_ascii_uppercase().starts_with(&key);
+        let same_key = || linear_links.iter().filter(|o| linear_key(&o.url).as_deref() == Some(key.as_str()));
+        let best = same_key()
+            .map(|o| o.label.clone())
+            .find(|label| named(label))
+            .or_else(|| same_key().map(|o| crate::links::derived_label(&o.url, LinkKind::Linear)).find(|label| named(label)));
+        let mut e = match live.linear.iter().find(|i| i.key == key) {
+            Some(i) => {
+                let mut e = link_entry(l, vec![Part { text: i.state.to_uppercase(), tone: linear_tone(&i.state_type), pill: true }]);
+                if !i.title.is_empty() {
+                    e.label = format!("{} {}", i.key, i.title);
                 }
-                None => link_entry(l, Vec::new()),
+                e
             }
-        })
-        .collect();
+            None => link_entry(l, Vec::new()),
+        };
+        if !named(&e.label)
+            && let Some(best) = best
+        {
+            e.label = best;
+        }
+        linear.push(e);
+    }
     push("Linear", String::new(), None, linear);
 
     let claude = of(&[LinkKind::Design, LinkKind::Artifact])
@@ -564,6 +649,36 @@ mod tests {
     }
 
     #[test]
+    fn each_linear_organization_uses_its_own_key() {
+        assert_eq!(linear_org("https://linear.app/CheckLyHQ/issue/ENG-1/x"), Some("checklyhq".into()));
+        assert_eq!(linear_org("linear.app/acme/issue/TNX-2"), Some("acme".into()));
+        assert_eq!(linear_org("https://linear.app/acme/project/p-1"), None);
+        assert_eq!(linear_org("https://example.com/acme/issue/TNX-2"), None);
+        let issues = vec![
+            (Some("acme".to_string()), "TNX-1".to_string()),
+            (Some("checklyhq".to_string()), "ENG-1".to_string()),
+            (Some("acme".to_string()), "TNX-1".to_string()),
+            (Some("other".to_string()), "OT-1".to_string()),
+            (None, "X-1".to_string()),
+        ];
+        let keyed = vec!["acme".to_string(), "checklyhq".to_string()];
+        assert_eq!(
+            linear_groups(&issues, &keyed, false),
+            vec![(Some("acme".into()), vec!["TNX-1".into()]), (Some("checklyhq".into()), vec!["ENG-1".into()])],
+            "an organization without a key is left out",
+        );
+        assert_eq!(
+            linear_groups(&issues, &keyed, true).last(),
+            Some(&(None, vec!["OT-1".into(), "X-1".into()])),
+            "the fallback key tries the rest",
+        );
+        let me = serde_json::json!({"data": {"viewer": {"name": "Ann", "organization": {"urlKey": "Acme", "name": "Acme Inc"}}}});
+        assert_eq!(parse_viewer(&me), Ok(Viewer { name: "Ann".into(), org: "acme".into(), org_name: "Acme Inc".into() }));
+        let denied = serde_json::json!({"errors": [{"message": "Authentication required"}]});
+        assert_eq!(parse_viewer(&denied), Err("Authentication required".into()));
+    }
+
+    #[test]
     fn pr_states() {
         let pr = |state: &str, draft: bool, (p, f, w): (u32, u32, u32), review: &str| PrInfo {
             state: state.into(),
@@ -635,6 +750,14 @@ mod tests {
         let json = serde_json::to_value(&prs[0]).unwrap();
         assert_eq!(json["kind"], "PR", "the kind the page's other links use");
         assert_eq!(s.sections[2].entries[0].label, "TNX-9 Sidebar");
+        // Not looked up: the best name any of its links gives, once.
+        let mut unknown = live.clone();
+        unknown.linear.clear();
+        unknown.task_links.push(link("https://linear.app/acme/issue/TNX-9", "TNX-9"));
+        unknown.task_links.push(link("https://linear.app/acme/issue/TNX-10", "TNX-10"));
+        unknown.task_links.push(link("https://linear.app/acme/issue/TNX-10/drag-the-edge", "TNX-10"));
+        let lin = &build(&unknown).sections[2].entries;
+        assert_eq!(lin.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), vec!["TNX-9 x", "TNX-10 drag the edge"]);
         assert_eq!(s.sections[2].entries[0].parts, vec![Part { text: "IN REVIEW".into(), tone: Tone::Warn, pill: true }]);
         assert_eq!(s.sections[5].entries[0].parts[0].text, "1 changed");
         assert_eq!(s.sections[6].entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), vec!["localhost:3000", "docs"]);

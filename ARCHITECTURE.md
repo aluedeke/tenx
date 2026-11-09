@@ -74,7 +74,7 @@ Blocked and Signaled are the "needs you" states. The watcher notifies on the edg
 - A log pane for each background agent, once per working directory and pid, running `tenx internal agent-log`, which follows the agent's transcript and exits with it.
 - About once a minute, the scheduler (`cli::schedule::Ticker`, see [Scheduled tasks](#scheduled-tasks)).
 
-The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on a helper thread with a time-to-live that lengthens for parked tasks, Linear issues' status the same way (with a key from `tenx linear login`), each repo's git state (the longest waiting first, a few repos per tick) and `TASK.md`'s todos. The sidebar (`tenx_core::sidebar`) is drawn from that cache alone, so it never waits on the network. It exits when the tmux server is gone.
+The watcher also refreshes `.tenx-live.json`: ports every tick, PRs staggered on a helper thread with a time-to-live that lengthens for parked tasks, Linear issues' status the same way (with each Linear organization's key from `tenx linear login`), each repo's git state (the longest waiting first, a few repos per tick) and `TASK.md`'s todos. The sidebar (`tenx_core::sidebar`) is drawn from that cache alone, so it never waits on the network. It exits when the tmux server is gone.
 
 ## The client and the column
 

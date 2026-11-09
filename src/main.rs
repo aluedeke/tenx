@@ -66,7 +66,7 @@ fn run() -> Result<()> {
 
         Some(Commands::Linear { command }) => match command {
             LinearCommands::Login => cli::linear::login()?,
-            LinearCommands::Logout => cli::linear::logout()?,
+            LinearCommands::Logout { org } => cli::linear::logout(org.as_deref())?,
             LinearCommands::Status => cli::linear::status()?,
         },
         Some(Commands::Pr { command }) => match command {
