@@ -5,6 +5,18 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.29.0] - 2026-11-09
+
+### Added
+
+- **web:** Paste and settings through the tenx iOS app
+- **ios:** Native iPhone and iPad app around tenx web
+- **ios:** Purple dot in the app icon, like the wordmark's x
+- Purple dot in the tenx mark, like the wordmark's x
+- **ios:** Sync the clipboard with the Mac, no key bar on a keyboard
+
+[0.29.0]: https://github.com/aluedeke/tenx/compare/v0.28.0...v0.29.0
+
 ## [0.28.0] - 2026-11-08
 
 ### Added
