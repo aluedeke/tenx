@@ -2,10 +2,13 @@ pub mod sessions;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::sync::{mpsc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime};
+use tenx_core::registry;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -367,23 +370,71 @@ pub fn registered_workspaces() -> Vec<Workspace> {
         if file.extension().is_none_or(|e| e != "toml") {
             continue;
         }
-        let ws = fs::read_to_string(&file)
+        let entry = fs::read_to_string(&file)
             .ok()
-            .and_then(|t| toml::from_str::<RegistryEntry>(&t).ok())
-            .and_then(|e| load(Path::new(&e.path)).ok());
+            .and_then(|t| toml::from_str::<RegistryEntry>(&t).ok());
+        let (ws, outcome) = match entry {
+            None => (None, registry::Load::BadEntry),
+            Some(e) => load_within(Path::new(&e.path), LOAD_LIMIT),
+        };
         match ws {
             // Two entries for one directory (one written by hand, or by
             // another spelling of its path) list it once.
             Some(ws) if !seen.insert(ws.dir.canonicalize().unwrap_or_else(|_| ws.dir.clone())) => {}
             Some(ws) => workspaces.push(ws),
-            // Unparseable entry or dead workspace path — prune the file.
-            None => {
+            None if registry::prune(outcome) => {
                 let _ = fs::remove_file(&file);
             }
+            None => {}
         }
     }
     workspaces.sort_by(|a, b| a.config.name.cmp(&b.config.name));
     workspaces
+}
+
+/// How long `registered_workspaces` waits for one workspace's `config.toml`.
+/// A local read takes well under a millisecond; this is for one that never
+/// returns, so a single workspace can't hold up every list of tasks.
+const LOAD_LIMIT: Duration = Duration::from_secs(1);
+
+/// Workspace directories whose `load` is still running on a thread
+/// `load_within` gave up waiting for.
+static LOADING: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+
+/// `load(dir)`, given up after `limit`. macOS holds a background process's
+/// `open` of a file in iCloud Drive until its privacy permission is answered
+/// — for `tenx web` as a LaunchAgent, a dialog nobody may be looking at — so
+/// the read runs on a thread of its own and is left to finish when it's
+/// slow. While it hasn't, the directory is skipped at once, so a stuck read
+/// costs one thread, not one per call.
+fn load_within(dir: &Path, limit: Duration) -> (Option<Workspace>, registry::Load) {
+    let dir = dir.to_path_buf();
+    if !LOADING.lock().unwrap_or_else(|e| e.into_inner()).insert(dir.clone()) {
+        return (None, registry::Load::Slow);
+    }
+    let (tx, rx) = mpsc::channel();
+    let spawned = thread::Builder::new().name("workspace-load".into()).spawn({
+        let dir = dir.clone();
+        move || {
+            let result = load(&dir);
+            LOADING.lock().unwrap_or_else(|e| e.into_inner()).remove(&dir);
+            let _ = tx.send(result);
+        }
+    });
+    if spawned.is_err() {
+        LOADING.lock().unwrap_or_else(|e| e.into_inner()).remove(&dir);
+        return (load(&dir).ok(), registry::Load::Unreadable);
+    }
+    match rx.recv_timeout(limit) {
+        Ok(Ok(ws)) => (Some(ws), registry::Load::Loaded),
+        Ok(Err(e)) if is_not_found(&e) => (None, registry::Load::Missing),
+        Ok(Err(_)) => (None, registry::Load::Unreadable),
+        Err(_) => (None, registry::Load::Slow),
+    }
+}
+
+fn is_not_found(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<WorkspaceError>().is_some_and(|w| matches!(w, WorkspaceError::NotFound))
 }
 
 /// The registry's entry names, sorted — a cheap "did the registered set
@@ -844,6 +895,36 @@ pub fn cloned_repos(bare_dir: &Path, repos: &[RepoConfig]) -> HashSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_config_that_never_opens_is_skipped_not_waited_for() {
+        // A FIFO with no writer blocks `open` the way an iCloud Drive file
+        // does for a LaunchAgent without the privacy permission.
+        let dir = std::env::temp_dir().join(format!("tenx-slow-load-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let fifo = dir.join("config.toml");
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+
+        let started = std::time::Instant::now();
+        let (ws, outcome) = load_within(&dir, Duration::from_millis(100));
+        assert!(ws.is_none());
+        assert_eq!(outcome, registry::Load::Slow);
+        // The read still hangs: the next call doesn't wait, or start another.
+        let (_, outcome) = load_within(&dir, Duration::from_secs(10));
+        assert_eq!(outcome, registry::Load::Slow);
+        assert!(started.elapsed() < Duration::from_secs(5));
+
+        // Let the stuck read end (empty file → parse error), then clean up.
+        drop(fs::OpenOptions::new().write(true).open(&fifo).unwrap());
+        while LOADING.lock().unwrap().contains(&dir) {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let _ = fs::remove_dir_all(&dir);
+
+        let (_, outcome) = load_within(&dir, Duration::from_secs(1));
+        assert_eq!(outcome, registry::Load::Missing);
+    }
 
     #[test]
     fn migration_stamps_version_and_drops_unrunnable_layouts() {
