@@ -141,6 +141,21 @@ pub fn linear_key(url: &str) -> Option<String> {
     ok.then(|| key.to_ascii_uppercase())
 }
 
+/// A Linear issue's name from its link alone: `…/issue/ENG-417/errors-sort-
+/// by-column` → `ENG-417 Errors sort by column`. Linear puts the title, as
+/// it was when the link was copied and cut short, into the link's last part;
+/// `None` when the link has none.
+pub fn linear_url_title(url: &str) -> Option<String> {
+    let key = linear_key(url)?;
+    let mut seg = url.split(['/', '?', '#']).skip_while(|s| *s != "issue").skip(2);
+    let words: Vec<&str> = seg.next()?.split('-').filter(|w| !w.is_empty()).collect();
+    let mut title = words.join(" ");
+    if let Some(first) = title.get(..1) {
+        title = first.to_ascii_uppercase() + &title[1..];
+    }
+    (!title.is_empty()).then(|| format!("{key} {title}"))
+}
+
 /// The GraphQL request body that looks up `keys` in one call: an aliased
 /// `issue(id:)` per key (Linear takes an identifier there).
 pub fn linear_request(keys: &[String]) -> String {
@@ -449,22 +464,39 @@ pub fn build(live: &Live) -> Sidebar {
         .collect();
     push("Pull requests", String::new(), None, prs);
 
-    let linear = of(&[LinkKind::Linear])
-        .into_iter()
-        .map(|l| {
-            let found = linear_key(&l.url).and_then(|k| live.linear.iter().find(|i| i.key == k));
-            match found {
-                Some(i) => {
-                    let mut e = link_entry(l, vec![Part { text: i.state.to_uppercase(), tone: linear_tone(&i.state_type), pill: true }]);
-                    if !i.title.is_empty() {
-                        e.label = format!("{} {}", i.key, i.title);
-                    }
-                    e
-                }
-                None => link_entry(l, Vec::new()),
+    // One entry per issue, however often it is linked: the looked-up title,
+    // else the title in one of its links (`linear_url_title`), else the
+    // first link's name.
+    let linear_links = of(&[LinkKind::Linear]);
+    let mut linear: Vec<Entry> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    for l in &linear_links {
+        let Some(key) = linear_key(&l.url) else {
+            linear.push(link_entry(l, Vec::new()));
+            continue;
+        };
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.push(key.clone());
+        let e = match live.linear.iter().find(|i| i.key == key) {
+            Some(i) if !i.title.is_empty() => {
+                let mut e = link_entry(l, vec![Part { text: i.state.to_uppercase(), tone: linear_tone(&i.state_type), pill: true }]);
+                e.label = format!("{} {}", i.key, i.title);
+                e
             }
-        })
-        .collect();
+            found => {
+                let parts = found.map(|i| vec![Part { text: i.state.to_uppercase(), tone: linear_tone(&i.state_type), pill: true }]).unwrap_or_default();
+                let mut e = link_entry(l, parts);
+                let same = linear_links.iter().filter(|o| linear_key(&o.url).as_deref() == Some(key.as_str()));
+                if let Some(title) = same.filter_map(|o| linear_url_title(&o.url)).next() {
+                    e.label = title;
+                }
+                e
+            }
+        };
+        linear.push(e);
+    }
     push("Linear", String::new(), None, linear);
 
     let claude = of(&[LinkKind::Design, LinkKind::Artifact])
@@ -545,6 +577,15 @@ mod tests {
         assert_eq!(repo_state(&master).0, "master +2");
         let broken = RepoGit { changed: 2, conflicts: 1, ..clean };
         assert_eq!(repo_state(&broken), ("1 conflicts · 1 changed".into(), Tone::Bad));
+    }
+
+    #[test]
+    fn a_linear_link_carries_its_title() {
+        assert_eq!(linear_url_title("https://linear.app/acme/issue/ENG-417/errors-sort-by-column"), Some("ENG-417 Errors sort by column".into()));
+        assert_eq!(linear_url_title("https://linear.app/acme/issue/eng-2/x?foo=1"), Some("ENG-2 X".into()));
+        assert_eq!(linear_url_title("https://linear.app/acme/issue/ENG-505"), None);
+        assert_eq!(linear_url_title("https://linear.app/acme/issue/ENG-505/"), None);
+        assert_eq!(linear_url_title("https://linear.app/acme/project/p-1"), None);
     }
 
     #[test]
@@ -635,6 +676,14 @@ mod tests {
         let json = serde_json::to_value(&prs[0]).unwrap();
         assert_eq!(json["kind"], "PR", "the kind the page's other links use");
         assert_eq!(s.sections[2].entries[0].label, "TNX-9 Sidebar");
+        // Not looked up: the title in one of its links, and each issue once.
+        let mut unknown = live.clone();
+        unknown.linear.clear();
+        unknown.task_links.push(link("https://linear.app/acme/issue/TNX-10", "TNX-10"));
+        unknown.task_links.push(link("https://linear.app/acme/issue/TNX-10/drag-the-edge", "TNX-10"));
+        unknown.task_links.push(link("https://linear.app/acme/issue/TNX-11", "TNX-11"));
+        let lin = &build(&unknown).sections[2].entries;
+        assert_eq!(lin.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), vec!["TNX-9 X", "TNX-10 Drag the edge", "TNX-11"]);
         assert_eq!(s.sections[2].entries[0].parts, vec![Part { text: "IN REVIEW".into(), tone: Tone::Warn, pill: true }]);
         assert_eq!(s.sections[5].entries[0].parts[0].text, "1 changed");
         assert_eq!(s.sections[6].entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), vec!["localhost:3000", "docs"]);
