@@ -20,6 +20,7 @@ pub mod orchestrate;
 pub mod progress;
 pub mod prstate;
 pub mod readaloud;
+pub mod registry;
 pub mod restart;
 pub mod prwatch;
 pub mod agent_panel;
