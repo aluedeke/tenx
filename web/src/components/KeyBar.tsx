@@ -24,6 +24,8 @@ interface Props {
   onToMac(): void;
   /** The Mac's clipboard onto this device's. */
   onFromMac(): void;
+  /** A finger went down on `←⌘`: time to ask what the Mac holds. */
+  onFromMacDown?(): void;
   /** Put the keyboard focus back where it was (the terminal, or the
    * column's text input) — called inside the tap, the only place iOS lets a
    * focus keep its on-screen keyboard up. */
@@ -47,7 +49,7 @@ const KEYS: { key: string; label: string }[] = [
   { key: 'Enter', label: '⏎' },
 ];
 
-export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste, onToMac, onFromMac, onRefocus, onDiag, mic, micSeconds, onMic }: Props) {
+export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste, onToMac, onFromMac, onFromMacDown, onRefocus, onDiag, mic, micSeconds, onMic }: Props) {
   const bar = useRef<HTMLDivElement>(null);
   /** The microphone was started by a touch; the click after it, if any, mustn't. */
   const micByTouch = useRef(false);
@@ -106,7 +108,7 @@ export function KeyBar({ column, ctrlSticky, onCtrl, onKey, attachInput, onPaste
       <ClipboardKey label="copy to the Mac" testId="to-mac" onDiag={onDiag} onRefocus={onRefocus} onTap={onToMac}>
         →⌘
       </ClipboardKey>
-      <ClipboardKey label="copy from the Mac" testId="from-mac" onDiag={onDiag} onRefocus={onRefocus} onTap={onFromMac}>
+      <ClipboardKey label="copy from the Mac" testId="from-mac" onDiag={onDiag} onRefocus={onRefocus} onTap={onFromMac} onDown={onFromMacDown}>
         ←⌘
       </ClipboardKey>
       <ClipboardKey label="paste" testId="paste" off={column} onDiag={onDiag} onRefocus={onRefocus} onTap={onPaste}>
@@ -196,6 +198,7 @@ function ClipboardKey({
   testId,
   off = false,
   onTap,
+  onDown,
   onRefocus,
   onDiag,
   children,
@@ -205,6 +208,8 @@ function ClipboardKey({
   /** Shown, but does nothing. */
   off?: boolean;
   onTap(): void;
+  /** The press began; the tap follows when it lifts. */
+  onDown?(): void;
   onRefocus(): void;
   onDiag?(message: string): void;
   children: React.ReactNode;
@@ -224,6 +229,7 @@ function ClipboardKey({
         if (off) return;
         flash(e.currentTarget);
         onDiag?.(`${testId}: pointerdown (${e.pointerType})`);
+        onDown?.();
       }}
       onPointerUp={(e) => {
         if (e.pointerType === 'mouse' || off) return;

@@ -6,6 +6,7 @@
 //
 //   node tests/mock-server.mjs [port]      (default 7071)
 
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -189,6 +190,9 @@ const SCREEN = [
 ].join('\r\n');
 
 let macClipboard = 'from the mac ✓';
+/** An image on the Mac's clipboard instead: `{type, bytes}`. */
+let macImage = null;
+const imageId = (bytes) => createHash('sha256').update(bytes).digest('hex').slice(0, 32);
 let secretsAnswer = null;
 
 /** `seconds` of 8 kHz 16-bit mono silence, as a WAV file. */
@@ -250,12 +254,26 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/clipboard/set') {
     const chunks = [];
     for await (const c of req) chunks.push(c);
+    const type = req.headers['content-type'] ?? '';
+    if (type.startsWith('image/')) {
+      macImage = { type, bytes: Buffer.concat(chunks) };
+      macClipboard = '';
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, id: imageId(macImage.bytes) }));
+      return;
+    }
+    macImage = null;
     macClipboard = Buffer.concat(chunks).toString('utf8');
     res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
     return;
   }
   if (req.method === 'POST' && url.pathname === '/clipboard/get') {
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ text: macClipboard }));
+    const image = macImage && { id: imageId(macImage.bytes), type: macImage.type, bytes: macImage.bytes.length };
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(image ? { text: '', image } : { text: macClipboard }));
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/clipboard/image') {
+    if (macImage && imageId(macImage.bytes) === url.searchParams.get('id')) res.writeHead(200, { 'content-type': macImage.type }).end(macImage.bytes);
+    else res.writeHead(404).end();
     return;
   }
   // A task's pending secrets (`src/web/secrets.rs`): one value request on
@@ -375,6 +393,10 @@ wss.on('connection', (ws, req) => {
     const m = JSON.parse(data.toString());
     if (typeof m.seq === 'number') st.ack = Math.max(st.ack, m.seq);
     switch (m.type) {
+      case 'log':
+        // The page's diagnostics, for a run by hand (MOCK_LOG=1).
+        if (process.env.MOCK_LOG) console.log(`log: ${m.message}`);
+        break;
       case 'viewport':
         json({ type: 'layout', column_cols: Math.max(30, Math.min(48, Math.round(m.cols * 0.28))), narrow: m.cols < 100 });
         return;

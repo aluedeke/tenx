@@ -167,7 +167,12 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
         case "clipboardPeek":
             return (Pasteboard.peek(since: body?["since"] as? Int), nil)
         case "clipboardWrite":
-            guard let text = body?["text"] as? String, let ifCount = body?["ifCount"] as? Int else { return (nil, "no text") }
+            guard let ifCount = body?["ifCount"] as? Int else { return (nil, "no count") }
+            if let image = body?["image"] as? [String: String] {
+                guard let data = Data(base64Encoded: image["data"] ?? ""), let mime = image["type"] else { return (nil, "no image") }
+                return (Pasteboard.write(image: data, mime: mime, ifCount: ifCount) ?? NSNull(), nil)
+            }
+            guard let text = body?["text"] as? String else { return (nil, "no text") }
             return (Pasteboard.write(text, ifCount: ifCount) ?? NSNull(), nil)
         case "hardwareKeyboard":
             return (HardwareKeyboard.attached, nil)
