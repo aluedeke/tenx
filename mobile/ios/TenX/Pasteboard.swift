@@ -71,7 +71,7 @@ enum Pasteboard {
             return reply
         }
         // Read once: every image on it is decoded on the way.
-        let items = board.hasImages ? items(board) : []
+        let items = holdsImage(board) ? items(board) : []
         let image = image(in: items)
         if let image { reply["image"] = image }
         if let text = board.string {
@@ -81,9 +81,15 @@ enum Pasteboard {
             // On "Paste from Other Apps: Ask" iOS hands back nothing. An
             // image we did get is not that: its address beside it (Safari's
             // Copy) is a URL with no string.
-            if image == nil, board.hasStrings || board.hasURLs || (board.hasImages && items.isEmpty) { reply["blocked"] = true }
+            if image == nil, board.hasStrings || board.hasURLs || (holdsImage(board) && items.isEmpty) { reply["blocked"] = true }
         }
         return reply
+    }
+
+    /// `hasImages`, and the formats it doesn't count: a WebP copied in
+    /// Safari is an image to us, not to UIPasteboard.
+    private static func holdsImage(_ board: UIPasteboard) -> Bool {
+        board.hasImages || (board.types(forItemSet: nil) ?? []).joined().contains { UTType($0)?.conforms(to: .image) == true }
     }
 
     /// The first image among `items`: its MIME type and base64.
