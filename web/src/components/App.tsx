@@ -23,7 +23,7 @@ import { bell } from '@/lib/bell';
 import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { ClipSync } from '@/lib/clipsync';
-import { EmptyClipboard, copyFromMac, fetchFromMac, sendToMac } from '@/lib/macclip';
+import { EmptyClipboard, OtherKind, copyFromMac, copyImageFromMac, fetchMacImage, peekMac, sendImageToMac, sendToMac, toPng, type MacKind } from '@/lib/macclip';
 import { HARDWARE_KEYBOARD_EVENT, nativeApp, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
@@ -861,16 +861,18 @@ export function App() {
   }, []);
 
   // A copy on the device lands on the Mac and back, about once a second
-  // while the page is on screen (lib/clipsync). Types and outcomes go to the
-  // server's log, never the text.
+  // while the page is on screen (lib/clipsync). Outcomes go to the server's
+  // log, never the text or the image.
   useEffect(() => {
     if (!nativeApp()) return;
     const diag = (message: string) => send({ type: 'log', message: `clipboard sync: ${message}` });
     const sync = new ClipSync({
       peek: nativePeek,
       write: nativeWrite,
-      getMac: () => fetchFromMac().catch((e) => (e instanceof EmptyClipboard ? '' : Promise.reject(e))),
+      getMac: peekMac,
+      getMacImage: fetchMacImage,
       setMac: sendToMac,
+      setMacImage: sendImageToMac,
     });
     let busy = false;
     let toldBlocked = false;
@@ -974,29 +976,63 @@ export function App() {
   }, [notice, pasteImages, send]);
 
   /** The key bar's `→⌘`: this device's clipboard onto the Mac's, so ⌘V
-   * there pastes it. Text only. Called inside the tap: the read needs it. */
+   * there pastes it — text, or an image when the copy has no text of its
+   * own (lib/clipboard `choose`). Called inside the tap: the read needs it. */
   const clipboardToMac = useCallback(async () => {
     const diag = (message: string) => send({ type: 'log', message: `clipboard: to mac: ${message}` });
     const started = performance.now();
-    diag(`tapped; ${describe(pageState())}`);
-    if (!navigator.clipboard?.readText) {
+    const native = nativeApp();
+    diag(`tapped; native=${native} ${describe(pageState())}`);
+    if (!native && !navigator.clipboard?.readText) {
       notice('reading the clipboard needs HTTPS — open tenx web through `tailscale serve`');
       return;
     }
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text) return notice('nothing to send: the clipboard has no text');
+    const sendText = async (text: string) => {
+      if (!text) return notice('nothing to send: the clipboard has no text or image');
       await sendToMac(text);
       diag(`sent ${text.length} chars`);
       notice('copied to the Mac');
+    };
+    try {
+      // The full read where there is one (an image needs it); a browser
+      // without it, or one that refuses it, still hands over text.
+      let items = null;
+      if (native || navigator.clipboard.read) {
+        items = await (native ? nativeClipboard() : navigator.clipboard.read()).catch((e) => {
+          if (native) throw e;
+          diag(`read failed: ${failed(e, started)}`);
+          return null;
+        });
+      }
+      if (!items) return await sendText(await navigator.clipboard.readText());
+      const clip = await choose(items, htmlText);
+      if (clip?.kind !== 'images') return await sendText(clip?.text ?? '');
+      // What the Mac's clipboard takes as it is; anything else as PNG.
+      const file = clip.files[0];
+      const image = /^image\/(png|jpeg|gif|webp)$/.test(file.type) ? file : await toPng(file);
+      await sendImageToMac({ type: image.type, bytes: new Uint8Array(await image.arrayBuffer()) });
+      diag(`sent an image: ${image.type}, ${image.size} bytes`);
+      notice('image copied to the Mac');
     } catch (e) {
       diag(`failed: ${failed(e, started)}`);
       notice(`couldn't copy to the Mac: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [notice, send]);
 
-  /** The key bar's `←⌘`: the Mac's clipboard onto this device's. Called
-   * inside the tap: the write needs it (lib/macclip). */
+  /** What the Mac's clipboard held when last asked. A browser must be told
+   * inside the tap whether text or an image is on its way, before the Mac
+   * has answered — so `←⌘` goes by this, and is corrected by the answer. */
+  const macKind = useRef<MacKind>('text');
+  /** A finger on `←⌘`: ask now, so the tap that follows likely knows. */
+  const askMacKind = useCallback(() => {
+    peekMac().then(
+      (mac) => (macKind.current = mac.image ? 'image' : 'text'),
+      () => {},
+    );
+  }, []);
+
+  /** The key bar's `←⌘`: the Mac's clipboard onto this device's, text or an
+   * image. Called inside the tap: the write needs it (lib/macclip). */
   const clipboardFromMac = useCallback(async () => {
     const diag = (message: string) => send({ type: 'log', message: `clipboard: from mac: ${message}` });
     const started = performance.now();
@@ -1005,12 +1041,32 @@ export function App() {
       notice('writing the clipboard needs HTTPS — open tenx web through `tailscale serve`');
       return;
     }
+    const copy = async (kind: MacKind) => {
+      if (kind === 'image') {
+        diag(`copied an image: ${await copyImageFromMac()} bytes`);
+        notice('image copied from the Mac');
+      } else {
+        diag(`copied ${await copyFromMac()} chars`);
+        notice('copied from the Mac');
+      }
+    };
     try {
-      const chars = await copyFromMac();
-      diag(`copied ${chars} chars`);
-      notice('copied from the Mac');
+      try {
+        await copy(macKind.current);
+      } catch (e) {
+        if (!(e instanceof OtherKind)) throw e;
+        // The other kind after all: once more, which a browser allows while
+        // the tap still counts (Safari doesn't: there it takes a second tap).
+        macKind.current = e.kind;
+        diag(`the Mac holds ${e.kind}; again`);
+        await copy(e.kind).catch((again) => {
+          if (again instanceof DOMException && again.name === 'NotAllowedError') throw new OtherKind(e.kind);
+          throw again;
+        });
+      }
     } catch (e) {
       if (e instanceof EmptyClipboard) return notice(e.message);
+      if (e instanceof OtherKind) return notice(`${e.message}: tap again`);
       diag(`failed: ${failed(e, started)}`);
       notice(`couldn't copy from the Mac: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1572,6 +1628,7 @@ export function App() {
           onPaste={pasteClipboard}
           onToMac={clipboardToMac}
           onFromMac={clipboardFromMac}
+          onFromMacDown={askMacKind}
           onDiag={(message) => send({ type: 'log', message })}
           mic={mic}
           micSeconds={micSeconds}

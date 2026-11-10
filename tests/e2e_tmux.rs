@@ -983,6 +983,27 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
     let got: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
     assert_eq!(got["text"], "kopiert · ✓");
 
+    // An image instead: named by its content, its bytes handed over by that
+    // name only while it is still there; text set afterwards replaces it.
+    let gif = b"GIF89a-not-really";
+    assert!(http_post(port, "/clipboard/set", &page_origin, Some(&token), "image/svg+xml", b"<svg/>").0.starts_with("HTTP/1.1 415"));
+    let (head, body) = http_post(port, "/clipboard/set", &page_origin, Some(&token), "image/gif", gif);
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    let set: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+    let id = set["id"].as_str().unwrap().to_string();
+    let (_, body) = http_post(port, "/clipboard/get", &page_origin, Some(&token), "text/plain", b"");
+    let got: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+    assert_eq!(got, serde_json::json!({ "text": "", "image": { "id": id, "type": "image/gif", "bytes": gif.len() } }));
+    let image = format!("/clipboard/image?id={id}");
+    assert!(http_post(port, &image, &page_origin, None, "text/plain", b"").0.starts_with("HTTP/1.1 401"));
+    assert!(http_post(port, &image, "http://evil.example", Some(&token), "text/plain", b"").0.starts_with("HTTP/1.1 403"));
+    let (head, body) = http_post(port, &image, &page_origin, Some(&token), "text/plain", b"");
+    assert!(head.starts_with("HTTP/1.1 200") && head.to_lowercase().contains("content-type: image/gif"), "{head}");
+    assert_eq!(body.as_bytes(), gif);
+    assert!(http_post(port, "/clipboard/image?id=0000", &page_origin, Some(&token), "text/plain", b"").0.starts_with("HTTP/1.1 404"));
+    assert!(http_post(port, "/clipboard/set", &page_origin, Some(&token), "text/plain", b"text again").0.starts_with("HTTP/1.1 200"));
+    assert!(http_post(port, &image, &page_origin, Some(&token), "text/plain", b"").0.starts_with("HTTP/1.1 404"));
+
     let rt = tokio::runtime::Runtime::new().unwrap();
     let request = |origin: &str, cookie: Option<&str>, session: Option<&str>| {
         let url = match session {

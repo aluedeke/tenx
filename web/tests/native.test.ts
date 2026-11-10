@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clipItems } from '../src/lib/native.ts';
+import { clipItems, fromBase64, toBase64 } from '../src/lib/native.ts';
 import { choose } from '../src/lib/clipboard.ts';
 
 test('text from the app pastes as text', async () => {
@@ -22,4 +22,9 @@ test('an image from the app comes back as its bytes', async () => {
 test('a type the item lacks is an error', async () => {
   const [item] = clipItems([{ types: [], data: {} }]);
   await assert.rejects(item.getType('text/plain'));
+});
+
+test("an image's bytes survive the trip to the app and back, however many", () => {
+  const bytes = Uint8Array.from({ length: 100_000 }, (_, i) => (i * 31) % 256);
+  assert.deepEqual(fromBase64(toBase64(bytes)), bytes);
 });

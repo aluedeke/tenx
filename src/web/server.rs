@@ -17,6 +17,7 @@ use axum::Router;
 use serde::Deserialize;
 use tenx_core::web;
 
+use super::clipboard::Clip;
 use super::tab::{Input, Output, Tabs};
 
 pub(super) struct App {
@@ -37,7 +38,8 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
         .route("/speech", get(speech))
         .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
         .route("/clipboard/get", post(clipboard_get))
-        .route("/clipboard/set", post(clipboard_set).layer(DefaultBodyLimit::max(web::CLIPBOARD_MAX_BYTES)))
+        .route("/clipboard/image", post(clipboard_image))
+        .route("/clipboard/set", post(clipboard_set).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
         .route("/secrets", post(secrets_sitting))
         .route("/secrets/answer", post(secrets_answer).layer(DefaultBodyLimit::max(web::SECRETS_MAX_BYTES)))
         .route("/speak", post(speak))
@@ -138,6 +140,8 @@ struct WsQuery {
     language: Option<String>,
     /// `/speak`, `/secrets`: the task (a column row's id).
     task: Option<String>,
+    /// `/clipboard/image`: the image, as `/clipboard/get` named it.
+    id: Option<String>,
     /// `/ws`: `1` when the page applies `patch` messages; else it gets every
     /// view whole.
     patch: Option<String>,
@@ -184,33 +188,69 @@ async fn paste(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: H
     }
 }
 
-/// `POST /clipboard/get`: the text on this machine's clipboard
-/// (`clipboard.rs`), as `{"text": …}`. A POST, guarded like `/paste`, so a
-/// same-origin request still carries its `Origin` — a clipboard holds
-/// passwords. `502` when there is no clipboard program.
+/// `POST /clipboard/get`: what is on this machine's clipboard
+/// (`clipboard.rs`): `{"text": …}`, or `{"text": "", "image": {id, type,
+/// bytes}}` for an image, whose bytes `/clipboard/image` hands over. A POST,
+/// guarded like `/paste`, so a same-origin request still carries its
+/// `Origin` — a clipboard holds passwords. `502` when there is no clipboard
+/// program.
 async fn clipboard_get(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap) -> Response {
     if let Err(refused) = authorize(&app, &q, &headers) {
         return *refused;
     }
     match tokio::task::spawn_blocking(super::clipboard::get).await {
-        Ok(Ok(text)) => json(serde_json::json!({ "text": text })),
+        Ok(Ok(Clip::Text(text))) => json(serde_json::json!({ "text": text })),
+        Ok(Ok(Clip::Image(image))) => {
+            json(serde_json::json!({ "text": "", "image": { "id": image.id, "type": image.mime, "bytes": image.bytes.len() } }))
+        }
         Ok(Err(e)) => (StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
-/// `POST /clipboard/set`: the body (UTF-8 text) onto this machine's
-/// clipboard. `400` for a body that isn't UTF-8, `502` when there is no
-/// clipboard program.
+/// `POST /clipboard/image?id=`: the image `/clipboard/get` named `id`.
+/// `404` when the clipboard holds something else by now.
+async fn clipboard_image(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let id = q.id.unwrap_or_default();
+    match tokio::task::spawn_blocking(move || super::clipboard::image(&id)).await {
+        Ok(Ok(Some(image))) => ([(header::CONTENT_TYPE, image.mime.clone())], image.bytes).into_response(),
+        Ok(Ok(None)) => (StatusCode::NOT_FOUND, "the clipboard holds something else now").into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /clipboard/set`: the body onto this machine's clipboard — an image
+/// by its `Content-Type` (answered with the `id` `/clipboard/get` names it
+/// by), else UTF-8 text. `400` for text that isn't UTF-8, `413` for too
+/// much of it, `415` for an image format the clipboard doesn't take, `502`
+/// when there is no clipboard program.
 async fn clipboard_set(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
     if let Err(refused) = authorize(&app, &q, &headers) {
         return *refused;
     }
-    let Ok(text) = String::from_utf8(body.to_vec()) else {
-        return (StatusCode::BAD_REQUEST, "not UTF-8 text").into_response();
+    let content_type = header_str(&headers, header::CONTENT_TYPE).unwrap_or("").to_string();
+    let image = content_type.trim_start().to_ascii_lowercase().starts_with("image/");
+    if image && web::clip_image_uti(&content_type).is_none() {
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, format!("not an image the clipboard takes: {content_type:?}")).into_response();
+    }
+    let set = if image {
+        tokio::task::spawn_blocking(move || super::clipboard::set_image(&content_type, &body).map(Some)).await
+    } else {
+        if body.len() > web::CLIPBOARD_MAX_BYTES {
+            return (StatusCode::PAYLOAD_TOO_LARGE, "too much text").into_response();
+        }
+        let Ok(text) = String::from_utf8(body.to_vec()) else {
+            return (StatusCode::BAD_REQUEST, "not UTF-8 text").into_response();
+        };
+        tokio::task::spawn_blocking(move || super::clipboard::set(&text).map(|()| None)).await
     };
-    match tokio::task::spawn_blocking(move || super::clipboard::set(&text)).await {
-        Ok(Ok(())) => json(serde_json::json!({ "ok": true })),
+    match set {
+        Ok(Ok(Some(id))) => json(serde_json::json!({ "ok": true, "id": id })),
+        Ok(Ok(None)) => json(serde_json::json!({ "ok": true })),
         Ok(Err(e)) => (StatusCode::BAD_GATEWAY, format!("{e:#}")).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }

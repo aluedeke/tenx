@@ -102,6 +102,73 @@ pub fn paste_ext(content_type: &str) -> Option<&'static str> {
     }
 }
 
+/// The pasteboard type an image for `/clipboard/set` is written under, by
+/// its `Content-Type` — the formats `/paste` takes; anything else is refused.
+pub fn clip_image_uti(content_type: &str) -> Option<&'static str> {
+    match paste_ext(content_type)? {
+        "png" => Some("public.png"),
+        "jpg" => Some("public.jpeg"),
+        "gif" => Some("com.compuserve.gif"),
+        _ => Some("org.webmproject.webp"),
+    }
+}
+
+/// Whether a Linux clipboard offering these types holds text. Asked before
+/// reading it: with an image alone, `wl-paste` and `xclip` hand over the
+/// image's bytes as if they were the text.
+pub fn clip_offers_text(offered: &str) -> bool {
+    offered.lines().map(str::trim).any(|t| t.starts_with("text/plain") || matches!(t, "UTF8_STRING" | "STRING" | "TEXT"))
+}
+
+/// An image's `Content-Type` as the one name the clipboard programs know
+/// it by (`image/jpg` is `image/jpeg`); `None` for a format `/paste` refuses.
+pub fn clip_image_mime(content_type: &str) -> Option<&'static str> {
+    match paste_ext(content_type)? {
+        "png" => Some("image/png"),
+        "jpg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        _ => Some("image/webp"),
+    }
+}
+
+/// The image format to read from a Linux clipboard, given the types it
+/// offers (`wl-paste --list-types`, xclip's `TARGETS`: one per line) — the
+/// first of the formats the sync carries.
+pub fn clip_image_type(offered: &str) -> Option<&'static str> {
+    ["image/png", "image/jpeg", "image/gif", "image/webp"].into_iter().find(|mime| offered.lines().any(|line| line.trim() == *mime))
+}
+
+/// How the clipboard sync names an image: the start of its SHA-256, as hex.
+/// The page computes the same over the bytes it holds (`lib/clipsync.ts`),
+/// so an image that came back from the other side is known and not sent
+/// again.
+pub fn clip_image_id(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    hex(&sha2::Sha256::digest(bytes)[..16])
+}
+
+/// One word that is a web address or an image's file name: the text a copy
+/// puts next to an image (Finder's file name, a browser's address). The
+/// page's `namesImage` (`lib/clipboard.ts`) is the same rule.
+pub fn names_image(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() || t.contains(char::is_whitespace) {
+        return false;
+    }
+    let scheme = t.split_once("://").is_some_and(|(s, _)| {
+        s.starts_with(|c: char| c.is_ascii_alphabetic()) && s.chars().all(|c| c.is_ascii_alphanumeric() || "_+.-".contains(c))
+    });
+    let lower = t.to_ascii_lowercase();
+    scheme || [".png", ".jpg", ".jpeg", ".gif", ".heic", ".heif", ".webp", ".tif", ".tiff", ".bmp"].iter().any(|ext| lower.ends_with(ext))
+}
+
+/// A clipboard with an image and `text` syncs the image: text wins when
+/// there is any (cells copied in a spreadsheet come with a picture of
+/// them), unless it only names the image.
+pub fn clip_prefers_image(text: &str) -> bool {
+    text.trim().is_empty() || names_image(text)
+}
+
 /// Whether a signed-in request for `path` renews the cookie: loading the page
 /// itself (`/`, an `.html` page) does, so a page or an installed app that is
 /// used keeps its year-long sign-in for good — only `--rotate-token` ends it.
@@ -422,6 +489,33 @@ mod tests {
         assert_eq!(paste_ext("image/svg+xml"), None, "a script can hide in an SVG");
         assert_eq!(paste_ext("text/plain"), None);
         assert_eq!(paste_ext(""), None);
+    }
+
+    #[test]
+    fn a_clipboard_image_is_named_by_its_content_and_wins_over_its_own_name() {
+        assert_eq!(clip_image_uti("image/png"), Some("public.png"));
+        assert_eq!(clip_image_uti("image/jpeg"), Some("public.jpeg"));
+        assert_eq!(clip_image_uti("image/gif"), Some("com.compuserve.gif"));
+        assert_eq!(clip_image_uti("image/webp"), Some("org.webmproject.webp"));
+        assert_eq!(clip_image_uti("image/svg+xml"), None);
+        assert_eq!(clip_image_mime("image/JPG; q=1"), Some("image/jpeg"));
+        assert!(clip_offers_text("TARGETS\nUTF8_STRING\n"));
+        assert!(clip_offers_text("text/plain;charset=utf-8\nimage/png\n"));
+        assert!(!clip_offers_text("TARGETS\nimage/png\n"));
+        assert!(!clip_offers_text("text/html\n"));
+        assert_eq!(clip_image_mime("image/tiff"), None);
+        assert_eq!(clip_image_type("TARGETS\nimage/jpeg\nimage/png\n"), Some("image/png"));
+        assert_eq!(clip_image_type("text/html\n image/webp \n"), Some("image/webp"));
+        assert_eq!(clip_image_type("text/plain\nimage/svg+xml\nimage/pngx\n"), None);
+        // SHA-256("abc"), its first 16 bytes.
+        assert_eq!(clip_image_id(b"abc"), "ba7816bf8f01cfea414140de5dae2223");
+        assert!(clip_prefers_image(""));
+        assert!(clip_prefers_image(" \n"));
+        assert!(clip_prefers_image("Screenshot.PNG"), "Finder's file name");
+        assert!(clip_prefers_image("https://example.com/cat"), "a browser's address of the image");
+        assert!(!clip_prefers_image("Q1\t12\nQ2\t14"), "spreadsheet cells come with a picture of them");
+        assert!(!clip_prefers_image("see shot.png"));
+        assert!(!names_image("://x"));
     }
 
     #[test]

@@ -42,7 +42,7 @@ struct SettingsView: View {
                     Section {
                         Toggle("Sync clipboard with the Mac", isOn: $clipboardSync)
                     } footer: {
-                        Text("Text you copy here lands on the Mac's clipboard, and the other way round, while the app is open. Passwords from a password manager stay here. Needs Settings → Apps → tenx → Paste from Other Apps → Allow.")
+                        Text("Text and images you copy here land on the Mac's clipboard, and the other way round, while the app is open. Passwords from a password manager stay here. Needs Settings → Apps → tenx → Paste from Other Apps → Allow.")
                     }
                 }
                 if let current {

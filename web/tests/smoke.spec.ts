@@ -1026,6 +1026,22 @@ test('the clipboard keys copy text to the Mac and back', async ({ page, context,
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await bar.getByTestId('from-mac').tap();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('from the phone');
+  // An image goes the same two ways: the phone's onto the Mac's…
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 2;
+    const png = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), 'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+  });
+  await bar.getByTestId('to-mac').tap();
+  await expect(page.getByText('image copied to the Mac')).toBeVisible();
+  // …and back, though the page took the Mac's clipboard for text when the
+  // tap began.
+  await page.evaluate(() => navigator.clipboard.writeText('not an image'));
+  await bar.getByTestId('from-mac').tap();
+  await expect(page.getByText('image copied from the Mac')).toBeVisible();
+  const types = () => page.evaluate(async () => (await navigator.clipboard.read()).flatMap((item) => item.types));
+  await expect.poll(types).toEqual(['image/png']);
 });
 
 test('a dead key (US International) types its composed character once', async ({ page, isMobile }) => {

@@ -55,23 +55,46 @@ enum Pasteboard {
         "com.agilebits.onepassword",
     ]
 
-    /// The change count, and the text only when the count moved since
-    /// `since`: the count reads nothing, so the pasteboard itself is read
-    /// once per copy, not once per tick.
+    /// The largest image the sync carries (the server's PASTE_MAX_BYTES).
+    private static let maxImageBytes = 25 * 1024 * 1024
+
+    /// The change count, and the text and the image only when the count
+    /// moved since `since`: the count reads nothing, so the pasteboard
+    /// itself is read once per copy, not once per tick. Which of the two
+    /// goes over is the page's choice (web/src/lib/clipsync.ts).
     static func peek(since: Int?, _ board: UIPasteboard = .general) -> [String: Any] {
         let count = board.changeCount
         var reply: [String: Any] = ["enabled": syncEnabled, "count": count]
         guard syncEnabled, let since, since != count else { return reply }
         if !concealedTypes.isDisjoint(with: board.types) {
             reply["text"] = NSNull()
-        } else if let text = board.string {
+            return reply
+        }
+        // Read once: every image on it is decoded on the way.
+        let items = board.hasImages ? items(board) : []
+        let image = image(in: items)
+        if let image { reply["image"] = image }
+        if let text = board.string {
             reply["text"] = text
         } else {
             reply["text"] = NSNull()
-            // On "Paste from Other Apps: Ask" iOS hands back nothing.
-            if board.hasStrings || board.hasURLs { reply["blocked"] = true }
+            // On "Paste from Other Apps: Ask" iOS hands back nothing. An
+            // image we did get is not that: its address beside it (Safari's
+            // Copy) is a URL with no string.
+            if image == nil, board.hasStrings || board.hasURLs || (board.hasImages && items.isEmpty) { reply["blocked"] = true }
         }
         return reply
+    }
+
+    /// The first image among `items`: its MIME type and base64.
+    private static func image(in items: [[String: Any]]) -> [String: String]? {
+        for item in items {
+            guard let data = item["data"] as? [String: String],
+                  let type = (item["types"] as? [String])?.first(where: { $0.hasPrefix("image/") }),
+                  let base64 = data[type], base64.count / 4 * 3 <= maxImageBytes else { continue }
+            return ["type": type, "data": base64]
+        }
+        return nil
     }
 
     /// Put the Mac's text on the pasteboard unless something was copied since
@@ -80,6 +103,14 @@ enum Pasteboard {
     static func write(_ text: String, ifCount: Int, _ board: UIPasteboard = .general) -> Int? {
         guard board.changeCount == ifCount else { return nil }
         board.setItems([[UTType.utf8PlainText.identifier: text]], options: [.localOnly: true])
+        return board.changeCount
+    }
+
+    /// The same for the Mac's image, of MIME type `mime`.
+    static func write(image: Data, mime: String, ifCount: Int, _ board: UIPasteboard = .general) -> Int? {
+        guard board.changeCount == ifCount else { return nil }
+        let type = UTType(mimeType: mime) ?? .png
+        board.setItems([[type.identifier: image]], options: [.localOnly: true])
         return board.changeCount
     }
 }
