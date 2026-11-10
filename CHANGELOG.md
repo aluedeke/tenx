@@ -5,6 +5,19 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.32.0] - 2026-11-10
+
+### Added
+
+- **web:** Carry images between a device's clipboard and the Mac's
+
+### Fixed
+
+- **web:** List the other tasks when one workspace's folder won't open
+- **ios:** Sync a WebP image copied in Safari, not its address
+
+[0.32.0]: https://github.com/aluedeke/tenx/compare/v0.31.0...v0.32.0
+
 ## [0.31.0] - 2026-11-09
 
 ### Added
