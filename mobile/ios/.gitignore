@@ -1,0 +1,5 @@
+# fastlane's output: the .ipa and its logs.
+/build
+/fastlane/report.xml
+/vendor
+/.bundle

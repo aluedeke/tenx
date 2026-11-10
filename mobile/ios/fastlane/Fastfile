@@ -1,0 +1,104 @@
+# Builds the app, signs it for the App Store and uploads it to TestFlight.
+#
+#   bundle exec fastlane build              the signed .ipa in build/, no upload
+#   bundle exec fastlane beta               build, then upload (internal testers)
+#   bundle exec fastlane sync_certificates  the certificate and profile from match
+#
+# .github/workflows/testflight-ios.yml runs `beta` after every release; how to
+# run it on your Mac is in README.md, "TestFlight".
+#
+# The version is tenx's own (Cargo.toml), since the app is that release's
+# page in a web view; the build number is the UTC time (yyyymmddHHMM), so
+# every upload is new. Both are passed to xcodebuild, never written into the
+# project.
+default_platform(:ios)
+skip_docs
+
+APP_ID = "it.luedeke.mobile.tenx"
+TEAM_ID = "RUJR5DY35F"
+PROFILE = "match AppStore #{APP_ID}"
+IPA = "tenx.ipa"
+
+platform :ios do
+  # The SHA-1 of the certificate in match's profile. Signing names the
+  # certificate by it, never by its name: a keychain can hold several "Apple
+  # Distribution: …" certificates, and this team's name has a "Ü", which
+  # Xcode's export turns into another spelling than the certificate's own
+  # (App Store Connect then rejects the upload as "Invalid Signature").
+  def profile_certificate_sha1
+    require "digest"
+    path = ENV["sigh_#{APP_ID}_appstore_profile-path"]
+    UI.user_error!("No match profile for #{APP_ID}") unless path
+    profile = Plist.parse_xml(`security cms -D -i "#{path}" 2>/dev/null`)
+    Digest::SHA1.hexdigest(profile["DeveloperCertificates"].first.read).upcase
+  end
+
+  # tenx's version without a pre-release suffix, which an app version can't
+  # have: 0.34.0-rc.1 is uploaded as 0.34.0.
+  def tenx_version
+    cargo = File.read(File.expand_path("../../../Cargo.toml", FastlaneCore::FastlaneFolder.path))
+    version = cargo[/^\[package\].*?^version\s*=\s*"(\d+\.\d+\.\d+)/m, 1]
+    UI.user_error!("No package version in Cargo.toml") unless version
+    version
+  end
+
+  desc "Load the App Store Connect API key"
+  lane :load_asc_api_key do
+    key_id = ENV["APP_STORE_CONNECT_API_KEY_ID"]
+    key = { key_id: key_id, issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"], in_house: false }
+    if ENV["APP_STORE_CONNECT_API_KEY_BASE64"]
+      key.merge!(key_content: ENV["APP_STORE_CONNECT_API_KEY_BASE64"], is_key_content_base64: true)
+    else
+      # On a Mac: the key file where altool and Xcode look for it too.
+      key[:key_filepath] = File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
+    end
+    app_store_connect_api_key(**key)
+  end
+
+  desc "The App Store certificate and profile from match (CI only reads them)"
+  lane :sync_certificates do
+    load_asc_api_key
+    match(type: "appstore", readonly: is_ci, app_identifier: [APP_ID])
+  end
+
+  desc "Build the app, signed for the App Store: build/tenx.ipa"
+  lane :build do
+    setup_ci if is_ci
+    sync_certificates
+
+    certificate = profile_certificate_sha1
+    build_number = Time.now.utc.strftime("%Y%m%d%H%M")
+    build_app(
+      project: "TenX.xcodeproj",
+      scheme: "TenX",
+      configuration: "Release",
+      export_method: "app-store",
+      export_options: {
+        signingStyle: "manual",
+        signingCertificate: certificate,
+        provisioningProfiles: { APP_ID => PROFILE }
+      },
+      xcargs: [
+        "DEVELOPMENT_TEAM=#{TEAM_ID}",
+        "CODE_SIGN_STYLE=Manual",
+        "CODE_SIGN_IDENTITY=#{certificate}",
+        "PROVISIONING_PROFILE_SPECIFIER='#{PROFILE}'",
+        "MARKETING_VERSION=#{tenx_version}",
+        "CURRENT_PROJECT_VERSION=#{build_number}"
+      ].join(" "),
+      output_directory: "./build",
+      output_name: IPA
+    )
+    UI.success("tenx #{tenx_version} (#{build_number})")
+  end
+
+  desc "Build and upload to TestFlight (internal testers only)"
+  lane :beta do
+    build
+    upload_to_testflight(
+      ipa: "./build/#{IPA}",
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+  end
+end
