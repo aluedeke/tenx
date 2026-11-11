@@ -289,6 +289,9 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x1cbbe2822029d049, // tenx: scheduled tasks
     0xd84c248b3680afc8, // tenx: scheduled tasks, portable
     0x73b757e345484f1d, // agentsmd: scheduled tasks
+    0xe28fc1d6cce59c42, // tenx: task new --prompt
+    0x47b1fb33392a034d, // tenx: task new --prompt, portable
+    0xb1d7db244890f702, // agentsmd: task new --prompt
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
@@ -365,7 +368,9 @@ after `gh pr create`; record decisions and gotchas under `## Notes`.
 ## Commands
 
     tenx task list             list all tasks and open windows
-    tenx task new "<title>"    create a task (worktrees + TASK.md)
+    tenx task new "<title>" --no-focus --prompt "<what to do>"
+                               create a task (worktrees + TASK.md); without
+                               --prompt its agent starts with no instructions
     tenx task open <name>      switch to a task's window
     tenx secrets need <n> --why "…"   ask for a credential (safe to run; waits for a human)
     tenx secrets status        show sealed/unlocked/pending state

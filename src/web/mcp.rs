@@ -224,7 +224,7 @@ fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Re
             let plain = tenx_core::dialog::strip_ansi(&crate::tmux::capture_pane(&pane)?);
             Ok(tenx_core::dialog::preview_tail(&plain, lines).join("\n").into())
         }
-        Call::CreateTask { workspace, title, prompt, description, repos } => {
+        Call::CreateTask { workspace, title, prompt, repos } => {
             let ws = match workspace {
                 Some(name) => registered(&name)?,
                 None => crate::cli::adhoc::ensure()?,
@@ -233,7 +233,7 @@ fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Re
                 Some(t) => t,
                 None => unique_title(&ws, crate::cli::task::title_for_prompt(&ws, &prompt)),
             };
-            let md = crate::cli::task::TaskMd { description: description.as_deref().unwrap_or(""), links: &[], prompt: &prompt, run: None };
+            let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
             let slug = crate::cli::task::new_with(
                 &ws,
                 &title,

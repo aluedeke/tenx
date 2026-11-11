@@ -147,7 +147,6 @@ pub enum Call {
         workspace: Option<String>,
         title: Option<String>,
         prompt: String,
-        description: Option<String>,
         repos: Option<Vec<String>>,
     },
     SendMessage { workspace: Option<String>, task: String, text: String, force: bool },
@@ -221,7 +220,6 @@ pub fn parse_call(params: &Value) -> Result<Call, String> {
                 workspace: optional(args, "workspace")?,
                 title: optional(args, "title")?,
                 prompt,
-                description: optional(args, "description")?,
                 repos,
             }
         }
@@ -366,9 +364,8 @@ pub fn tools() -> Value {
              that does not take the user's screen. Returns the workspace and slug.",
             json!({
                 "workspace": { "type": "string", "description": "Workspace name. Leave out for the adhoc workspace (no repos)." },
-                "prompt": { "type": "string", "description": "The agent's first message." },
+                "prompt": { "type": "string", "description": "The agent's first message, also kept as the task's description in TASK.md." },
                 "title": { "type": "string", "description": "Task title. Default: one made from the prompt." },
-                "description": { "type": "string", "description": "Goes under ## Description in TASK.md." },
                 "repos": { "type": "array", "items": { "type": "string" }, "description": "Repos to check out. Default: all of the workspace's; [] for none." },
             }),
             &["prompt"],
@@ -535,7 +532,7 @@ mod tests {
         );
         assert_eq!(
             call(json!({"name": "tenx_create_task", "arguments": {"prompt": " hi ", "repos": []}})),
-            Ok(Call::CreateTask { workspace: None, title: None, prompt: "hi".into(), description: None, repos: Some(vec![]) })
+            Ok(Call::CreateTask { workspace: None, title: None, prompt: "hi".into(), repos: Some(vec![]) })
         );
         assert!(call(json!({"name": "tenx_create_task", "arguments": {"prompt": "hi", "repos": [1]}})).is_err());
         assert_eq!(

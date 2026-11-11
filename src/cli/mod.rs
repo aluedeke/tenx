@@ -659,9 +659,6 @@ pub enum TaskCommands {
         /// Comma-separated repo names to include (default: all workspace repos)
         #[arg(long, value_delimiter = ',')]
         repos: Option<Vec<String>>,
-        /// Fill TASK.md's `## Description` (e.g. a ticket's body)
-        #[arg(long)]
-        description: Option<String>,
         /// Fill a `## Links` row, as "Label: value" — e.g. `--link "Linear:
         /// https://linear.app/…"`. Repeatable. Default rows (Linear Project,
         /// Linear Milestone, Linear, PR) are filled in place; other labels
@@ -683,9 +680,10 @@ pub enum TaskCommands {
         /// for orchestrating other workspaces' tasks)
         #[arg(long, alias = "detached", conflicts_with_all = ["repos", "ws_dir"])]
         adhoc: bool,
-        /// The agent's first message; it starts working on it when the
-        /// window opens
-        #[arg(long)]
+        /// What the task's agent should do: its first message, which it
+        /// starts working on when the window opens, and TASK.md's
+        /// `## Description`. `--description` is the same option.
+        #[arg(long, alias = "description")]
         prompt: Option<String>,
         /// Coding agent for this task (`claude`, `codex`, `pi`); default is the
         /// workspace's `agent`. Writes the task's `.tenx-agent`.

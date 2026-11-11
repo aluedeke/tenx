@@ -222,7 +222,6 @@ fn run() -> Result<()> {
             TaskCommands::New {
                 name,
                 repos,
-                description,
                 links,
                 no_open,
                 no_focus,
@@ -239,10 +238,9 @@ fn run() -> Result<()> {
                     .map(|l| tenx_core::taskmd::parse_link(l).ok_or_else(|| anyhow::anyhow!("--link wants \"Label: value\", got {l:?}")))
                     .collect::<Result<Vec<_>>>()?;
                 let md = cli::task::TaskMd {
-                    description: description.as_deref().unwrap_or(""),
                     links: &links,
                     prompt: prompt.as_deref().unwrap_or(""),
-                    run: None,
+                    ..Default::default()
                 };
                 let agent = cli::task::AgentSetup {
                     kind: agent.as_deref().map(agent::AgentKind::from_token),

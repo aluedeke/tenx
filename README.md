@@ -176,7 +176,7 @@ tenx                     the column beside the session, creating the session if 
 tenx init [NAME]         create a workspace here (or in NAME/)
 tenx repo add <URL>      add a repo to the workspace (bare clone)
 tenx repo list|fetch
-tenx task new <TITLE>    create a task [--repos a,b | --no-repos | --adhoc] [--prompt ..] [--description ..]
+tenx task new <TITLE>    create a task [--repos a,b | --no-repos | --adhoc] [--prompt ..]
                          [--link "Label: value"] [--no-open | --no-focus]
                          [--agent ..] [--agent-args ".."] [--confirm-dev-channels]
 tenx ask <QUESTION>      a session of its own for a question, outside any workspace
@@ -363,7 +363,7 @@ tenx supports Claude Code, Codex CLI, and pi, and treats them uniformly.
 - **Skills.** `tenx init` offers to install `/tenx` and `/standup` into `.claude/skills/` (for Claude Code) and a portable copy into `.agents/skills/` (for Codex and pi), plus an `AGENTS.md`. `/tenx` teaches a session about the workspace layout, creating tasks from tickets, and requesting secrets; `/standup` formats `tenx standup`. Launching `tenx` keeps them current in every registered workspace. A file you've edited is left alone, `tenx doctor` lists it, and `tenx doctor --reset-skills` takes the current version and keeps yours as `.orig`.
 - **Status.** Each task window shows its state in the tmux status bar, with the agent named when it isn't the default; the right corner counts tasks needing you in other windows.
 - **Background agents.** A non-interactive session (`codex exec`, `claude -p`, `pi -p`) running under a task gets a small log pane that follows its transcript and closes when it exits.
-- **Tickets.** `tenx task new --description ".." --link "Linear: <url>"` pre-fills `TASK.md`.
+- **Tickets.** `tenx task new --prompt ".." --link "Linear: <url>"` starts the agent on the ticket and pre-fills `TASK.md`.
 - **Resume.** Reopening a swept or closed task resumes the agent's conversation for that directory (`claude --continue`, `codex resume --last`, `pi -c`).
 
 ## Secrets
