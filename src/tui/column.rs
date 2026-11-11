@@ -191,7 +191,7 @@ struct NewWorkspaceForm {
     name: String,
     /// One repo is enough for the first task; `a` adds more later.
     repo_url: String,
-    /// Install /tenx and /standup (Claude, Codex, pi) and AGENTS.md.
+    /// Install /tenx and /standup (Claude, Codex, pi).
     skills: bool,
     focus: usize,
 }
@@ -4193,7 +4193,7 @@ fn render_newws(f: &mut ratatui::Frame, column: &Column, area: Rect) {
         Line::from(""),
         field_line(form.focus == 2, "git URL", &format!("{}{}{url_hint}", form.repo_url, cursor(form.focus == 2))),
         Line::from(""),
-        field_line(form.focus == NewWorkspaceForm::SKILLS, "skills", &format!("{check} /tenx, /standup and AGENTS.md")),
+        field_line(form.focus == NewWorkspaceForm::SKILLS, "skills", &format!("{check} /tenx and /standup")),
     ];
 
     let body = Paragraph::new(lines)

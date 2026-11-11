@@ -424,7 +424,7 @@ function SkillsSwitch({ checked, send }: { checked: boolean; send: Send }) {
         <span className={on ? 'wf-sw on' : 'wf-sw'} aria-hidden="true" />
         <span className="bright">Install the tenx skills</span>
       </label>
-      <div className="wf-hint">/tenx and /standup for Claude, Codex and pi, plus AGENTS.md</div>
+      <div className="wf-hint">/tenx and /standup for Claude, Codex and pi</div>
     </section>
   );
 }

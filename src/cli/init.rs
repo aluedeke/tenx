@@ -41,11 +41,12 @@ pub fn run(name: Option<&str>) -> Result<()> {
     let layout = prompt_layout()?;
 
     // Offer the /tenx and /standup skills. Claude Code reads
-    // `.claude/skills`; Codex and pi read `.agents/skills` and `AGENTS.md`, so
-    // a portable copy of each is installed and an AGENTS.md generated. Asked
+    // `.claude/skills`; Codex and pi read `.agents/skills`, so a portable
+    // copy of each is installed there. `AGENTS.md` is the user's own file:
+    // tenx never writes it (a task links to it, see `cli::task`). Asked
     // before anything is written, so creation is the one step `init_in`
     // (shared with the column's new-workspace form).
-    let skills = prompt_yes_no("Install /tenx and /standup skills (Claude, Codex, pi) and AGENTS.md?")?;
+    let skills = prompt_yes_no("Install /tenx and /standup skills (Claude, Codex, pi)?")?;
 
     if !repos.is_empty() {
         eprintln!();
@@ -53,7 +54,7 @@ pub fn run(name: Option<&str>) -> Result<()> {
     }
     let ws = init_in(&ws_dir, &ws_name, repos, layout, skills, crate::progress::for_cli().as_ref())?;
     if skills {
-        eprintln!("  ✓ skills installed (.claude/skills + .agents/skills) and AGENTS.md written");
+        eprintln!("  ✓ skills installed (.claude/skills + .agents/skills)");
     }
 
     // Offer to wire up session-state reporting for the agents on PATH, so tasks
@@ -150,7 +151,8 @@ pub(crate) fn install_skills(ws_dir: &Path) -> Result<()> {
 /// Every file `install_skills` writes, with what this binary writes there:
 /// the `/tenx`, `/standup` and `/pr-watch` skills for Claude (`.claude/skills`) and in
 /// the portable shape Codex and pi read (`.agents/skills`, see
-/// [`portable_skill`]), and `AGENTS.md`. The one list installing,
+/// [`portable_skill`]). Never `AGENTS.md`: that one is the user's. The one
+/// list installing,
 /// refreshing and `doctor` all work from.
 ///
 /// The adhoc workspace also gets `/orchestrate`, which only makes sense
@@ -161,7 +163,6 @@ fn skill_files(ws_dir: &Path) -> Vec<(PathBuf, String)> {
         (ws_dir.join(".claude/skills/standup/SKILL.md"), STANDUP_SKILL_MD.to_string()),
         (ws_dir.join(".agents/skills/tenx/SKILL.md"), portable_skill("tenx", TENX_SKILL_MD)),
         (ws_dir.join(".agents/skills/standup/SKILL.md"), portable_skill("standup", STANDUP_SKILL_MD)),
-        (ws_dir.join("AGENTS.md"), AGENTS_MD.to_string()),
         (ws_dir.join(".claude/skills/pr-watch/SKILL.md"), PR_WATCH_SKILL_MD.to_string()),
         (ws_dir.join(".agents/skills/pr-watch/SKILL.md"), portable_skill("pr-watch", PR_WATCH_SKILL_MD)),
     ];
@@ -246,11 +247,10 @@ pub fn reset_skills(ws_dir: &Path) -> Result<Vec<PathBuf>> {
 /// `tenx_core::skills::content_hash` of every rendering of a file in
 /// [`skill_files`] that any tenx release has written, current ones included
 /// — what lets [`refresh_skills`] tell tenx's own untouched words from a
-/// user's edit. Append the new hash whenever a skill, `portable_skill` or
-/// `AGENTS_MD` changes; `every_current_rendering_is_listed_as_shipped` fails
+/// user's edit. Append the new hash whenever a skill or `portable_skill`
+/// changes; `every_current_rendering_is_listed_as_shipped` fails
 /// with the value to add. Never remove one.
 const SHIPPED_SKILLS: &[u64] = &[
-    0xda48c7c75191a270, // agentsmd 24fee45
     0x21c9ce83220c1e00, // standup 24fee45
     0x17bbde9e628b2a0e, // standup 24fee45 portable
     0x91bec1c8a7cfa9ba, // tenx 24fee45
@@ -271,7 +271,6 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x1f8afba826ad6f99, // tenx 6cf43da portable
     0xb6dd288de89a9683, // tenx: `need --why`
     0x980d762777468b70, // tenx: `need --why` portable
-    0x646c555ee28e1303, // agentsmd: `need`
     0x006b7517d1241562, // tenx: `ask`, `--no-repos`
     0xeeb3eac70a44d93b, // tenx: `ask`, `--no-repos` portable
     0x3135b92d7ac011bd, // orchestrate (detached workspace)
@@ -288,10 +287,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0xb672274985e96c97, // tenx: task open --no-focus portable
     0x1cbbe2822029d049, // tenx: scheduled tasks
     0xd84c248b3680afc8, // tenx: scheduled tasks, portable
-    0x73b757e345484f1d, // agentsmd: scheduled tasks
     0xe28fc1d6cce59c42, // tenx: task new --prompt
     0x47b1fb33392a034d, // tenx: task new --prompt, portable
-    0xb1d7db244890f702, // agentsmd: task new --prompt
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
@@ -344,44 +341,6 @@ fn split_frontmatter(src: &str) -> (String, &str) {
         .unwrap_or_default();
     (description, body)
 }
-
-const AGENTS_MD: &str = r#"# Working in this tenx workspace
-
-This directory is a **tenx** workspace: one or more bare git repos, and a
-`tasks/` directory where each subdirectory is a task with its own git worktrees,
-a `TASK.md`, and a coding-agent window.
-
-## Boundaries
-
-Your working area is the current task directory (`tasks/<name>/`). Only modify
-files inside it — the code in its `<repo>/` worktrees and its `TASK.md` —
-without explicit user approval. Do **not** touch `config.toml`, `.bare/`, the
-shared agent config directories, or any other task's directory. If a task needs
-something outside these boundaries (adding a repo, deleting a task, changing
-shared config), stop and ask the user.
-
-## Keep TASK.md current
-
-Check off `## Todo` items as you finish them; add the PR URL under `## Links`
-after `gh pr create`; record decisions and gotchas under `## Notes`.
-
-## Commands
-
-    tenx task list             list all tasks and open windows
-    tenx task new "<title>" --no-focus --prompt "<what to do>"
-                               create a task (worktrees + TASK.md); without
-                               --prompt its agent starts with no instructions
-    tenx task open <name>      switch to a task's window
-    tenx secrets need <n> --why "…"   ask for a credential (safe to run; waits for a human)
-    tenx secrets status        show sealed/unlocked/pending state
-    tenx schedule list         scheduled tasks (`schedules/`) and their runs
-
-Inside a scheduled run with nothing for a person to look at, run `tenx
-schedule quiet` before you finish.
-
-The `/tenx` skill (in `.agents/skills/tenx`) has the full detail on tasks,
-tickets, secrets and schedules.
-"#;
 
 const STANDUP_SKILL_MD: &str = r#"---
 description: Generate a daily standup report from yesterday's Claude Code activity and workspace task files. Use when the user asks for a standup, daily summary, or what was done yesterday.
@@ -507,13 +466,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&ws);
         let files = skill_files(&ws);
         let (stale, _) = &files[0];
-        let (edited, _) = &files[4];
+        let (edited, _) = &files[1];
         std::fs::create_dir_all(stale.parent().unwrap()).unwrap();
         // A rendering tenx shipped before: its hash is in the list.
         let old = "an old skill\n";
         assert!(!SHIPPED_SKILLS.contains(&content_hash(old.as_bytes())));
         std::fs::write(stale, old).unwrap();
-        std::fs::write(edited, "my own AGENTS.md\n").unwrap();
+        std::fs::create_dir_all(edited.parent().unwrap()).unwrap();
+        std::fs::write(edited, "my own standup\n").unwrap();
 
         // Not shipped → both edited, nothing touched. The `/tenx` skill is
         // there (`files[0]`), so its directory's missing skills are added;
@@ -524,14 +484,14 @@ mod tests {
         assert!(edited_found.iter().all(|(_, _, updated)| !updated));
         let pr_watch = ws.join(".claude/skills/pr-watch/SKILL.md");
         assert_eq!(std::fs::read_to_string(&pr_watch).unwrap(), PR_WATCH_SKILL_MD);
-        assert!(files[1].0.exists(), "standup sits next to /tenx, so it is added too");
         assert!(!ws.join(".agents/skills/pr-watch/SKILL.md").exists());
 
         // Reset takes tenx's version and keeps the edited copy.
         let replaced = reset_skills(&ws).unwrap();
         assert_eq!(replaced.len(), 2);
-        assert_eq!(std::fs::read_to_string(edited).unwrap(), files[4].1);
-        assert_eq!(std::fs::read_to_string(ws.join("AGENTS.md.orig")).unwrap(), "my own AGENTS.md\n");
+        assert_eq!(std::fs::read_to_string(edited).unwrap(), files[1].1);
+        assert_eq!(std::fs::read_to_string(ws.join(".claude/skills/standup/SKILL.md.orig")).unwrap(), "my own standup\n");
+        assert!(!ws.join("AGENTS.md").exists(), "AGENTS.md is the user's, never written");
         assert!(refresh_skills(&ws).iter().all(|(_, s, _)| *s == SkillState::Current));
         std::fs::remove_dir_all(&ws).unwrap();
     }
