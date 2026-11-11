@@ -1,0 +1,5 @@
+git_url("git@github.com:aluedeke/app-store-connect.git")
+git_branch("main")
+storage_mode("git")
+type("appstore")
+app_identifier(["it.luedeke.mobile.tenx"])

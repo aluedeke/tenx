@@ -25,6 +25,10 @@ publish-jobs = ["./publish-homebrew"]
 # uploads its artifacts-tenx-app with the rest; publish-homebrew adds it to
 # the formula.
 local-artifacts-jobs = ["./build-macos-app"]
+# After the release is out: the iOS app of this version to TestFlight
+# (.github/workflows/testflight-ios.yml, fastlane in mobile/ios). Last, so a
+# failed upload never holds back the release itself; run it again by hand.
+post-announce-jobs = ["./testflight-ios"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl"]
 # Path that installers should place binaries in
@@ -73,3 +77,4 @@ tmux = { stage = ["run"] }
 [dist.github-custom-job-permissions]
 publish-homebrew = { contents = "read" }
 build-macos-app = { contents = "read" }
+testflight-ios = { contents = "read" }

@@ -54,18 +54,37 @@ then `http://127.0.0.1:7071/?token=x`.
 
 ## TestFlight
 
-    APP_STORE_CONNECT_API_KEY_ID=… APP_STORE_CONNECT_ISSUER_ID=… ./testflight.sh
+Every tenx release uploads its own version of the app, for internal testers:
+`.github/workflows/testflight-ios.yml` runs after the release is out
+(`post-announce-jobs` in `dist-workspace.toml`). To upload again, or between
+releases: `gh workflow run testflight-ios.yml`.
+
+It runs fastlane (`fastlane/Fastfile`), and so can you:
+
+    bundle install
+    bundle exec fastlane build   # the signed build/tenx.ipa, no upload
+    bundle exec fastlane beta    # build, then upload
 
 App "tenx terminal" in App Store Connect, bundle id `it.luedeke.mobile.tenx`,
-team `RUJR5DY35F`. The script signs by hand (why: its header comment) and
-needs, once per machine, in `~/.appstoreconnect/`:
+team `RUJR5DY35F`. The version is tenx's (`Cargo.toml`), the build number the
+UTC time (yyyymmddHHMM); neither is written into the project.
 
-- `private_keys/AuthKey_<id>.p8`: an App Store Connect API key (role Admin
-  to create certificates and profiles; App Manager is enough to upload);
-- `tenx-signing/tenx-signing.keychain-db` holding an "Apple Distribution"
-  identity, with the keychain's password in `tenx-signing/kc.pass`;
-- the "tenx App Store" provisioning profile (type IOS_APP_STORE, that
-  certificate) in `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`.
+The distribution certificate and the "match AppStore it.luedeke.mobile.tenx"
+profile come from [match](https://docs.fastlane.tools/actions/match/), out of
+`aluedeke/app-store-connect`. fastlane needs in the environment:
 
-The certificate and the profile can be made with the API key
-(`POST /v1/certificates` with a CSR from a local key, `POST /v1/profiles`).
+- `APP_STORE_CONNECT_API_KEY_ID` and `APP_STORE_CONNECT_ISSUER_ID`, with the
+  key in `~/.appstoreconnect/private_keys/AuthKey_<id>.p8` (or, base64, in
+  `APP_STORE_CONNECT_API_KEY_BASE64`);
+- `MATCH_PASSWORD`, the match repository's passphrase, and read access to
+  that repository over SSH.
+
+CI takes them from `secrets/ci.enc.env`, where
+`scripts/ios-testflight-secrets.sh` puts the key, the passphrase and a
+read-only deploy key; an agent asks for them with `tenx secrets need`.
+
+Xcode's export signs with the certificate named by its SHA-1, not by its
+name: the team's name has a "Ü", and named, Xcode writes it into the app's
+designated requirement decomposed (U + combining diaeresis) while the
+certificate holds it composed, so App Store Connect rejects the upload as
+"Invalid Signature".
