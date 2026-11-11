@@ -1,11 +1,10 @@
 //! Keeping the skill files `tenx init` installed current.
 //!
 //! `tenx init` writes the `/tenx` and `/standup` skills (a Claude copy and a
-//! portable one each) and `AGENTS.md` into a workspace once, and nothing else
+//! portable one each) into a workspace once, and nothing else
 //! ever touched them — so a workspace kept telling its agents whatever the
 //! tenx it was created with said, long after the commands changed. The fix
-//! is to refresh them, but they are the user's files too: an `AGENTS.md` in
-//! particular is made to be edited. So a file is only replaced when it is
+//! is to refresh them, but they are the user's files too. So a file is only replaced when it is
 //! provably tenx's own words: byte-for-byte some version tenx has shipped,
 //! recognised by its [`content_hash`] in the binary's list of every shipped
 //! rendering. Anything else was edited and is left alone.

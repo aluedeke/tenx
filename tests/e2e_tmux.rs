@@ -478,7 +478,7 @@ fn client_column_beside_the_embedded_session() {
     assert!(ws3.join("config.toml").exists(), "config written");
     assert!(ws3.join(".bare").join("origin.git").exists(), "repo cloned");
     assert!(ws3.join(".claude/skills/tenx/SKILL.md").exists(), "skills installed");
-    assert!(ws3.join("AGENTS.md").exists(), "AGENTS.md written");
+    assert!(!ws3.join("AGENTS.md").exists(), "AGENTS.md is the user's, never written");
     let registered = fs::read_dir(h.root.join("home/.config/tenx/workspaces.d"))
         .unwrap()
         .flatten()
