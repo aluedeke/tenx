@@ -40,17 +40,19 @@ If a task requires something outside these boundaries — adding a repo, changin
 
 ## Creating a new task
 
-`tenx task new "<title>"` creates the task directory, git worktrees, and a TASK.md. It can pre-fill the file so you don't have to edit it afterward:
+`tenx task new "<title>"` creates the task directory, git worktrees, and a TASK.md, and opens a window with a new agent in it. It can pre-fill the file so you don't have to edit it afterward:
 
-    tenx task new "<title>" \
-      --description "<what the task is about>" \
+    tenx task new "<title>" --no-focus \
+      --prompt "<what the new agent should do>" \
       --link "Linear: <ticket url>" \
       --link "Linear Project: <project>" \
       --link "Linear Milestone: <milestone>"
 
+**Always pass `--prompt`.** It is the new agent's first message, and the only thing that starts it working; tenx also writes it into TASK.md's `## Description`. Without it the agent sits idle with an empty conversation. The new agent does not see your conversation, so make the prompt self-contained — the goal, the constraints, what "done" means, and where the details are (the ticket, the files). Pass `--no-focus` too, so the user's screen doesn't jump to the new task.
+
 Every `--link` is `"Label: value"`; the default rows (Linear Project, Linear Milestone, Linear, PR) are filled in place, any other label (`Jira:`, `GitHub:`) is added as a new row.
 
-**From a ticket.** If the user names a ticket (`ENG-123`, a Linear/Jira/GitHub issue URL), fetch it first, then create the task from what you fetched — title from the ticket title, `--description` from its body (trimmed to the essentials), `--link` with its URL:
+**From a ticket.** If the user names a ticket (`ENG-123`, a Linear/Jira/GitHub issue URL), fetch it first, then create the task from what you fetched — title from the ticket title, `--prompt` from its body (trimmed to the essentials, plus what to do about it), `--link` with its URL:
 
 - **Linear** — use a Linear MCP tool if one is connected (`get_issue` / search by identifier). Without one, ask the user for the URL and title; there is no `linear` CLI to shell out to.
 - **GitHub issues** — `gh issue view <number-or-url> --json title,body,url`.
@@ -118,8 +120,8 @@ Runs stay off the task list (unless one waits on a person); the column's **Runs*
 
 ## Common commands
 
-    tenx task new "<title>" [--description …] [--link "Label: value"]…
-                               create task with worktrees + TASK.md
+    tenx task new "<title>" --no-focus --prompt "<what to do>" [--link "Label: value"]…
+                               create task with worktrees + TASK.md; the agent starts on the prompt
     tenx task new "<title>" --no-repos
                                a task without worktrees: its agent can read the whole workspace
     tenx ask "<question>"      a session of its own for a question, outside any workspace

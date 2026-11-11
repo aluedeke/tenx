@@ -5,14 +5,17 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// What to pre-fill in a new task's `TASK.md` beyond its title — a ticket
-/// import passes the ticket's body and URL(s); the column passes nothing.
+/// import passes the ticket's URL(s); the column passes only the prompt.
 #[derive(Default)]
 pub struct TaskMd<'a> {
+    /// `## Description`. Empty = the prompt, so what the task was started
+    /// for stays written down; only a scheduled run says something else.
     pub description: &'a str,
     /// `(label, value)` rows for `## Links`; see `tenx_core::taskmd::merge_links`.
     pub links: &'a [(String, String)],
-    /// Not part of `TASK.md`: the agent's first message (`--prompt`, `tenx
-    /// ask`). Empty = none. Kept in [`PROMPT_FILE`] until the window opens.
+    /// The agent's first message (`--prompt`, `tenx ask`), and the
+    /// description when that is empty. Empty = none. Kept in
+    /// [`PROMPT_FILE`] until the window opens.
     pub prompt: &'a str,
     /// Not part of `TASK.md` either: a scheduled run's record
     /// (`tenx_core::schedule::RUN_FILE`), written before the worktrees so the
@@ -978,7 +981,8 @@ fn write_task_md(task_dir: &Path, name: &str, md: &TaskMd) -> Result<()> {
         return Ok(());
     }
     let links = tenx_core::taskmd::merge_links(md.links);
-    let content = tenx_core::taskmd::render_task_md(name, md.description, &links);
+    let description = if md.description.trim().is_empty() { md.prompt } else { md.description };
+    let content = tenx_core::taskmd::render_task_md(name, description, &links);
     std::fs::write(&path, content)?;
     Ok(())
 }
