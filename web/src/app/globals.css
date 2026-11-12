@@ -1448,6 +1448,10 @@ a:hover {
 .wf-in.ok {
   border-color: #3c5a3d;
 }
+.wf-in:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .wf-ok {
   color: var(--success);
 }

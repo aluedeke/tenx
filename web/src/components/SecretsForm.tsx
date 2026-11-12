@@ -102,6 +102,9 @@ export function SecretsForm({ task, touch, onClose }: Props) {
   const grants = requests.filter((r) => granted.has(r.name));
   const denials = requests.filter((r) => !granted.has(r.name));
   const unlocking = grants.some((r) => r.ask === 'release' || values[r.name]);
+  // The passphrase field is always there when the identity has one, and
+  // waits until every granted value is filled in.
+  const missing = grants.filter((r) => r.ask === 'value' && !values[r.name]);
   const primary = !grants.length ? 'Deny' : !denials.length ? 'Grant' : `Grant ${grants.length} · deny ${denials.length}`;
 
   const submit = async () => {
@@ -257,11 +260,13 @@ export function SecretsForm({ task, touch, onClose }: Props) {
             />
           </section>
         )}
-        {unlocking && sitting?.passphrase && !sitting.problem && (
+        {grants.length > 0 && sitting?.passphrase && !sitting.problem && (
           <section className="wf-sec">
             <div className="wf-cap">
               <span>PASSPHRASE</span>
-              <span className="wf-aside">unlocks your age identity once</span>
+              <span className="wf-aside">
+                {missing.length ? `fill in ${missing.map((r) => r.name).join(', ')} first` : 'unlocks your age identity once'}
+              </span>
             </div>
             {/* A username field the password manager can file the
                 passphrase under; never sent. */}
@@ -273,6 +278,7 @@ export function SecretsForm({ task, touch, onClose }: Props) {
               name="password"
               aria-label="passphrase"
               autoComplete="current-password"
+              disabled={missing.length > 0}
               value={passphrase}
               onChange={(e) => setPassphrase(e.currentTarget.value)}
             />

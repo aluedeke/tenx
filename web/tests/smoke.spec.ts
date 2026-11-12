@@ -728,13 +728,17 @@ test('the secrets form grants, denies and asks again after a wrong passphrase', 
   await expect(form.getByText('6 characters')).toBeVisible();
   await tap(page.getByTestId('secret-request').nth(1).getByText('deny'));
   await form.getByLabel('note for the agent').fill('not now');
-  await form.getByLabel('passphrase').fill('wrong');
+  // The passphrase field is there, and waits for every granted value.
+  await expect(form.getByLabel('passphrase')).toBeDisabled();
+  await expect(form.getByText('fill in SENTRY_TOKEN first')).toBeVisible();
   // A value asked for from the clipboard takes the Mac's (the mock's
   // clipboard as every test starts with it).
   const sentry = page.getByTestId('secret-request').nth(2);
   await expect(sentry.getByText('Copy the value, then paste it here.')).toBeVisible();
   await tap(sentry.getByRole('button', { name: 'paste SENTRY_TOKEN' }));
   await expect(sentry.getByText('✓ from the Mac · 14 characters')).toBeVisible();
+  await expect(form.getByLabel('passphrase')).toBeEnabled();
+  await form.getByLabel('passphrase').fill('wrong');
   await tap(form.getByRole('button', { name: /Grant 2 · deny 1/ }));
   await expect(form.getByTestId('form-error')).toContainText('wrong passphrase');
   // Everything typed stays; only the passphrase is asked again.
