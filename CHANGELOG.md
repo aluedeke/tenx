@@ -5,6 +5,18 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.35.0] - 2026-11-12
+
+### Added
+
+- **secrets:** Take new secret values from the clipboard (#50)
+
+### Fixed
+
+- **init:** Leave AGENTS.md to the user (#49)
+
+[0.35.0]: https://github.com/aluedeke/tenx/compare/v0.34.0...v0.35.0
+
 ## [0.34.0] - 2026-11-11
 
 ### Added
