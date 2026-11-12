@@ -27,6 +27,12 @@ web app can't do:
 - **No iPadOS shortcut bar** over a hardware keyboard (`ShortcutBar.swift`;
   it reaches into WebKit's private content view, so a future iOS may bring
   the bar back — it can't crash).
+- **The window buttons free.** In a window on iPadOS 26 and later, the
+  close/minimize/full-screen dots sit in the top-left corner; the app
+  measures them and the page's header starts to their right
+  (`--window-controls`), so a tap on them reaches them, not the page.
+- **Reload Page (⌘R)** in the Window menu of the iPad's menu bar: a new web
+  view, so a newer `tenx web` page shows without quitting the app.
 - **The sign-in kept.** The address and token live in the Keychain; every
   launch signs in with `?token=`, so a lost cookie never matters.
 

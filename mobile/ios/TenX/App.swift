@@ -4,7 +4,36 @@ import SwiftUI
 struct TenXApp: App {
     var body: some Scene {
         WindowGroup { RootView() }
+            .commands { ReloadCommand() }
     }
+}
+
+/// Window → Reload Page (⌘R) in the iPad's menu bar: a new web view on the
+/// page, so a newer `tenx web` page shows without quitting the app.
+struct ReloadCommand: Commands {
+    @FocusedValue(\.reloadPage) private var reload
+
+    var body: some Commands {
+        CommandGroup(after: .windowArrangement) {
+            Button("Reload Page") { reload?.run() }
+                .keyboardShortcut("r")
+                .disabled(reload == nil)
+        }
+    }
+}
+
+extension FocusedValues {
+    /// The focused window's page, reloaded (`RootView.reload`).
+    @Entry var reloadPage: PageReload?
+}
+
+/// `RootView.reload`, compared by the page it reloads: a closure alone
+/// can't be, and would update the menu on every change of the view.
+struct PageReload: Equatable {
+    let generation: Int
+    let run: () -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.generation == b.generation }
 }
 
 extension UIColor {
@@ -27,6 +56,7 @@ struct RootView: View {
             if let server {
                 WebPage(server: server, onProblem: { problem = $0; settings = true }, onSettings: { problem = nil; settings = true })
                     .id(generation)
+                    .focusedSceneValue(\.reloadPage, PageReload(generation: generation, run: reload))
                     .ignoresSafeArea()
                     .sheet(isPresented: $settings) {
                         SettingsView(current: server, problem: problem, onSave: save, onReload: reload, onSignOut: signOut)
