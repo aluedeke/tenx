@@ -66,6 +66,6 @@ Independent layers wired together by `main.rs`'s CLI dispatch; each layer only k
 ## Conventions
 
 - Decision logic goes in `tenx-core` with a test; the binary does I/O.
-- Derive state from live sources (disk, the session registry, `tmux list-windows`) rather than recording it; the only tenx-owned per-task files are `.tenx-window-id` (a cache — never act destructively on it, look the window up by slug), `.tenx-pinned`, `.tenx-prompt` (a first message waiting for the window), `.tenx-run` (a scheduled run's record), `.tenx-live.json` (a cache of external facts, written only by the watcher), the two secrets-pending queues, and their two side files (`.secrets-why`, `.secrets-denied`).
+- Derive state from live sources (disk, the session registry, `tmux list-windows`) rather than recording it; the only tenx-owned per-task files are `.tenx-window-id` (a cache — never act destructively on it, look the window up by slug), `.tenx-pinned`, `.tenx-prompt` (a first message waiting for the window), `.tenx-run` (a scheduled run's record), `.tenx-live.json` (a cache of external facts, written only by the watcher), the two secrets-pending queues, and their three side files (`.secrets-why`, `.secrets-denied`, `.secrets-clipboard`).
 - Shell out to the real `git`/`tmux`/`age`/`sops`; never link a library for them.
 - Keep `make test` green: clippy runs with `-D warnings`.

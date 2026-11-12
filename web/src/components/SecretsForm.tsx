@@ -6,10 +6,14 @@
 // terminal can't. The same questions — grant or deny each request, a note
 // for the denied, a value for each new one, the passphrase once — sent in
 // one go (`POST /secrets/answer`, `src/web/secrets.rs`). A wrong passphrase
-// changes nothing, so the form stays as typed and can be sent again.
+// changes nothing, so the form stays as typed and can be sent again. Each
+// value field can take the Mac's clipboard (`lib/macclip` `fetchFromMac`),
+// shown as its length and tail — what a value the agent asked for with
+// `need --clipboard` is meant to be filled with, one copy per field.
 
 import { useEffect, useRef, useState } from 'react';
 import { apiUrl } from '@/lib/api';
+import { fetchFromMac } from '@/lib/macclip';
 
 interface Request {
   name: string;
@@ -17,6 +21,8 @@ interface Request {
   ask: 'release' | 'value';
   why: string;
   sealed_in: string;
+  /** Asked for from the clipboard (`need --clipboard`). */
+  clipboard: boolean;
 }
 
 interface Sitting {
@@ -50,6 +56,14 @@ async function post<T>(path: string, task: string, body?: unknown): Promise<T> {
   });
   if (!res.ok) throw new Error((await res.text()) || `failed: ${res.status}`);
   return (await res.json()) as T;
+}
+
+/** A value as the terminal shows one it can't print (`describe_value` in
+ *  tenx-core): its length, and the last four characters of a long one. */
+export function describeValue(value: string): string {
+  const chars = [...value];
+  const n = chars.length;
+  return n >= 16 ? `${n} characters, ending …${chars.slice(n - 4).join('')}` : `${n} characters`;
 }
 
 /** What the column's footer says after an answer. */
@@ -116,6 +130,16 @@ export function SecretsForm({ task, touch, onClose }: Props) {
     }
   };
 
+  const fromMac = async (name: string) => {
+    setError(null);
+    try {
+      const text = (await fetchFromMac()).replace(/\r?\n$/, '');
+      setValues((vs) => ({ ...vs, [name]: text }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const grant = (name: string, on: boolean) =>
     setGranted((g) => {
       const next = new Set(g);
@@ -156,7 +180,9 @@ export function SecretsForm({ task, touch, onClose }: Props) {
             <section className="wf-sec" key={r.name} data-testid="secret-request">
               <div className="wf-cap">
                 <span className="bright">{r.name}</span>
-                <span className="wf-aside">{r.ask === 'release' ? `release · ${r.sealed_in}` : 'new value'}</span>
+                <span className="wf-aside">
+                  {r.ask === 'release' ? `release · ${r.sealed_in}` : r.clipboard ? 'new value · copy it' : 'new value'}
+                </span>
               </div>
               {r.why && <div className="wf-hint">why: {r.why}</div>}
               <div className="wf-chips" role="radiogroup" aria-label={`answer for ${r.name}`}>
@@ -175,7 +201,7 @@ export function SecretsForm({ task, touch, onClose }: Props) {
                     className="wf-in"
                     type="password"
                     aria-label={`value for ${r.name}`}
-                    placeholder="paste or type the value"
+                    placeholder={r.clipboard ? 'copy it, then take the Mac’s clipboard' : 'paste or type the value'}
                     autoComplete="off"
                     autoCapitalize="off"
                     autoCorrect="off"
@@ -188,7 +214,10 @@ export function SecretsForm({ task, touch, onClose }: Props) {
                     }}
                   />
                   <div className="wf-hint">
-                    {values[r.name] ? `${[...values[r.name]].length} characters` : 'empty: it stays pending'}
+                    {values[r.name] ? describeValue(values[r.name]) : 'empty: it stays pending'} ·{' '}
+                    <button type="button" className="wf-link" onClick={() => void fromMac(r.name)}>
+                      take the Mac&apos;s clipboard
+                    </button>
                   </div>
                 </>
               )}

@@ -296,6 +296,13 @@ pub enum SecretsCommands {
         /// Why you need them — shown to the human who answers
         #[arg(long)]
         why: Option<String>,
+        /// Ask for new values the human copies: whoever answers is told to
+        /// copy each one and takes it from the clipboard (Ctrl-V, or the
+        /// web form's button) instead of typing. Asks for a new value even
+        /// for a name sealed in the task's bundle; refused for one in a
+        /// repo's own sops file.
+        #[arg(long)]
+        clipboard: bool,
         /// Enqueue and return immediately instead of waiting (no-terminal path only)
         #[arg(long)]
         no_wait: bool,
@@ -313,10 +320,15 @@ pub enum SecretsCommands {
     /// passphrase, and seals it — releasing it too if someone had asked for
     /// it. From an agent's shell tool it can only ask a human to supply a
     /// value (use `need` unless you mean to replace one that exists). The
-    /// value is never a CLI argument or read from stdin.
+    /// value is never a CLI argument or read from stdin. At the value
+    /// prompt, Ctrl-V takes the clipboard's text.
     Set {
         /// Secret name (becomes its key in the decrypted .secrets.env)
         name: String,
+        /// Take the value from the clipboard instead of a prompt; from an
+        /// agent, ask for it as `need --clipboard` does
+        #[arg(long)]
+        clipboard: bool,
         /// Enqueue and return immediately instead of waiting (no-terminal path only)
         #[arg(long)]
         no_wait: bool,

@@ -43,6 +43,7 @@ A task's window is additionally tagged, on the tmux side, with the `@tenx_task_d
 | `.tenx-live.json` | Cache of ports and PR facts, written only by the watcher. |
 | `.secrets-pending`, `.secrets-pending-set` | Queues of secret requests waiting for a human. |
 | `.secrets-why`, `.secrets-denied` | The agent's reason for each pending request; the human's note on each denial. |
+| `.secrets-clipboard` | The pending value requests whose value comes from the clipboard (`need --clipboard`), names only. |
 
 User-level state lives under `~/.config/tenx/`: a global `config.toml`, the generated `tmux.conf`, the watcher's pid file, and `workspaces.d/`, a registry with one file per workspace so the column can find them all. Registration is one atomic file write.
 

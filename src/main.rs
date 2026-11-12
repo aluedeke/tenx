@@ -1,5 +1,6 @@
 mod agent;
 mod cli;
+mod clipboard;
 mod git;
 mod live;
 mod palette;
@@ -202,11 +203,11 @@ fn run() -> Result<()> {
         Some(Commands::Secrets { command }) => match command {
             SecretsCommands::Init => cli::secrets::init()?,
             SecretsCommands::Encrypt { task, file } => cli::secrets::encrypt(&task, &file)?,
-            SecretsCommands::Need { names, why, no_wait, timeout } => {
-                cli::secrets::need(&names, why.as_deref(), secrets_wait(no_wait, timeout.as_deref())?)?
+            SecretsCommands::Need { names, why, clipboard, no_wait, timeout } => {
+                cli::secrets::need(&names, why.as_deref(), clipboard, secrets_wait(no_wait, timeout.as_deref())?)?
             }
-            SecretsCommands::Set { name, no_wait, timeout } => {
-                cli::secrets::set(&name, secrets_wait(no_wait, timeout.as_deref())?)?
+            SecretsCommands::Set { name, clipboard, no_wait, timeout } => {
+                cli::secrets::set(&name, clipboard, secrets_wait(no_wait, timeout.as_deref())?)?
             }
             SecretsCommands::Decrypt { name, no_wait, timeout } => {
                 cli::secrets::decrypt(name.as_deref(), secrets_wait(no_wait, timeout.as_deref())?)?
