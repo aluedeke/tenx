@@ -1000,7 +1000,11 @@ a:hover {
   align-items: center;
   gap: 10px;
   min-height: 36px;
-  padding: env(safe-area-inset-top) 8px 0 6px;
+  /* --window-controls: in the iPad app, the width of a windowed app's
+     close/minimize/full-screen buttons in the top-left corner
+     (mobile/ios WebViewController), kept free so a tap there reaches them.
+     Every left padding of the header adds it. */
+  padding: env(safe-area-inset-top) 8px 0 calc(6px + var(--window-controls, 0px));
   background: var(--col-bg);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -1218,7 +1222,7 @@ a:hover {
 }
 .touch .header {
   gap: 6px;
-  padding-left: 2px;
+  padding-left: calc(2px + var(--window-controls, 0px));
   padding-right: 4px;
 }
 
@@ -1866,7 +1870,7 @@ a:hover {
 .app:not(.touch):not(.narrow) .header {
   min-height: 48px;
   gap: 14px;
-  padding-left: 12px;
+  padding-left: calc(12px + var(--window-controls, 0px));
   padding-right: 14px;
   font-size: calc(var(--ui-size, 12px) + 2px);
 }
