@@ -14,6 +14,9 @@ final class WebViewController: UIViewController {
     var onSettings: () -> Void = {}
 
     private var webView: WKWebView!
+    /// The width last handed to the page as `--window-controls`; nil when
+    /// the page (a new document) has none yet.
+    private var windowControls: Int?
 
     init(server: Server) {
         self.server = server
@@ -63,6 +66,25 @@ final class WebViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         webView.load(URLRequest(url: server.signInURL))
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        pushWindowControls()
+    }
+
+    /// iPadOS 26 puts a windowed app's close/minimize/full-screen buttons in
+    /// the top-left corner, over the page's header. The page moves its
+    /// header right by this much (web/src/app/globals.css `.header`), so the
+    /// corner holds no button of its own and a tap there reaches the
+    /// window's: 0 when the app is full screen or on an iPhone.
+    private func pushWindowControls() {
+        guard #available(iOS 26, *) else { return }
+        let around = view.edgeInsets(for: .safeArea(cornerAdaptation: .horizontal)).left - view.safeAreaInsets.left
+        let width = max(0, Int(around.rounded(.up)))
+        guard width != windowControls else { return }
+        windowControls = width
+        webView.evaluateJavaScript("document.documentElement.style.setProperty('--window-controls', '\(width)px')")
     }
 
     override var keyCommands: [UIKeyCommand]? {
@@ -116,6 +138,8 @@ extension WebViewController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         ShortcutBar.hide(in: webView)
+        windowControls = nil
+        pushWindowControls()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
