@@ -5,6 +5,18 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.36.0] - 2026-11-12
+
+### Added
+
+- **ios:** Reload the page from the iPad's Window menu (⌘R)
+
+### Fixed
+
+- **ios:** Keep the iPad window buttons free of the page's header
+
+[0.36.0]: https://github.com/aluedeke/tenx/compare/v0.35.0...v0.36.0
+
 ## [0.35.0] - 2026-11-12
 
 ### Added
