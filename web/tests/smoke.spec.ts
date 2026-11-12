@@ -732,8 +732,9 @@ test('the secrets form grants, denies and asks again after a wrong passphrase', 
   // A value asked for from the clipboard takes the Mac's (the mock's
   // clipboard as every test starts with it).
   const sentry = page.getByTestId('secret-request').nth(2);
-  await tap(sentry.getByRole('button', { name: "take the Mac's clipboard" }));
-  await expect(sentry.getByText('14 characters')).toBeVisible();
+  await expect(sentry.getByText('Copy the value, then paste it here.')).toBeVisible();
+  await tap(sentry.getByRole('button', { name: 'paste SENTRY_TOKEN' }));
+  await expect(sentry.getByText('✓ from the Mac · 14 characters')).toBeVisible();
   await tap(form.getByRole('button', { name: /Grant 2 · deny 1/ }));
   await expect(form.getByTestId('form-error')).toContainText('wrong passphrase');
   // Everything typed stays; only the passphrase is asked again.

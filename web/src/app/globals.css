@@ -615,12 +615,14 @@ a:hover {
   cursor: pointer;
 }
 
+/* Fixed and above the drawers: a phone shows the column (and a form's
+   outcome) as a drawer over the terminal. */
 .toast {
-  position: absolute;
+  position: fixed;
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
-  z-index: 9;
+  z-index: 13;
   padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--border-active);
@@ -1367,6 +1369,7 @@ a:hover {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 12px;
   color: var(--muted);
   font-size: 10.5px;
   letter-spacing: 0.08em;
@@ -1430,14 +1433,52 @@ a:hover {
   color: var(--muted);
   font-size: 11px;
 }
-.wf-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
+.wf-ask {
+  color: var(--text);
+  font-size: 11.5px;
+}
+.wf-pasterow {
+  display: flex;
+  gap: 6px;
+}
+.wf-pasterow .wf-in {
+  flex: 1;
+  min-width: 0;
+}
+.wf-in.ok {
+  border-color: #3c5a3d;
+}
+.wf-ok {
+  color: var(--success);
+}
+.wf-paste {
+  flex: none;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid #6b5aa8;
+  border-radius: 7px;
+  background: #221d36;
+  color: var(--bright);
   font: inherit;
-  text-decoration: underline;
+  font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
+}
+.wf-paste:hover {
+  border-color: var(--accent);
+}
+.wf-paste.quiet {
+  border-color: var(--border);
+  background: none;
+  color: var(--muted);
+  font-weight: 400;
+}
+.wf-paste:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .wf-err {
   color: var(--danger);
@@ -1804,6 +1845,7 @@ a:hover {
   padding: 0 14px;
 }
 .touch .wf-in,
+.touch .wf-paste,
 .touch .wf-bar .wf-btn,
 .touch .wf-ren {
   height: 44px;

@@ -7,13 +7,15 @@
 // for the denied, a value for each new one, the passphrase once — sent in
 // one go (`POST /secrets/answer`, `src/web/secrets.rs`). A wrong passphrase
 // changes nothing, so the form stays as typed and can be sent again. Each
-// value field can take the Mac's clipboard (`lib/macclip` `fetchFromMac`),
-// shown as its length and tail — what a value the agent asked for with
-// `need --clipboard` is meant to be filled with, one copy per field.
+// value field has a Paste button (`lib/secretclip`: this device's clipboard,
+// else the Mac's), and what it took is shown as its length and tail — a
+// value the agent asked for with `need --clipboard` says to copy it first.
+// Design: the "tenx secrets clipboard" file of the tenx web Claude Design
+// project.
 
 import { useEffect, useRef, useState } from 'react';
 import { apiUrl } from '@/lib/api';
-import { fetchFromMac } from '@/lib/macclip';
+import { describeValue, readSecretClip, type ClipSource } from '@/lib/secretclip';
 
 interface Request {
   name: string;
@@ -58,14 +60,6 @@ async function post<T>(path: string, task: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** A value as the terminal shows one it can't print (`describe_value` in
- *  tenx-core): its length, and the last four characters of a long one. */
-export function describeValue(value: string): string {
-  const chars = [...value];
-  const n = chars.length;
-  return n >= 16 ? `${n} characters, ending …${chars.slice(n - 4).join('')}` : `${n} characters`;
-}
-
 /** What the column's footer says after an answer. */
 export function outcomeText(a: Answered): string {
   const parts = [
@@ -80,6 +74,10 @@ export function SecretsForm({ task, touch, onClose }: Props) {
   const [sitting, setSitting] = useState<Sitting | null>(null);
   const [granted, setGranted] = useState<Set<string>>(new Set());
   const [values, setValues] = useState<Record<string, string>>({});
+  // What Paste put in a field (shown while the field still holds it), and
+  // why it put nothing.
+  const [pasted, setPasted] = useState<Record<string, { text: string; source: ClipSource }>>({});
+  const [clipError, setClipError] = useState<Record<string, string>>({});
   const [note, setNote] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -130,13 +128,14 @@ export function SecretsForm({ task, touch, onClose }: Props) {
     }
   };
 
-  const fromMac = async (name: string) => {
-    setError(null);
+  const paste = async (name: string) => {
     try {
-      const text = (await fetchFromMac()).replace(/\r?\n$/, '');
-      setValues((vs) => ({ ...vs, [name]: text }));
+      const clip = await readSecretClip();
+      setValues((vs) => ({ ...vs, [name]: clip.text }));
+      setPasted((p) => ({ ...p, [name]: clip }));
+      setClipError((c) => ({ ...c, [name]: '' }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setClipError((c) => ({ ...c, [name]: e instanceof Error ? e.message : String(e) }));
     }
   };
 
@@ -181,7 +180,7 @@ export function SecretsForm({ task, touch, onClose }: Props) {
               <div className="wf-cap">
                 <span className="bright">{r.name}</span>
                 <span className="wf-aside">
-                  {r.ask === 'release' ? `release · ${r.sealed_in}` : r.clipboard ? 'new value · copy it' : 'new value'}
+                  {r.ask === 'release' ? `release · ${r.sealed_in}` : 'new value'}
                 </span>
               </div>
               {r.why && <div className="wf-hint">why: {r.why}</div>}
@@ -197,28 +196,47 @@ export function SecretsForm({ task, touch, onClose }: Props) {
               </div>
               {on && r.ask === 'value' && (
                 <>
-                  <input
-                    className="wf-in"
-                    type="password"
-                    aria-label={`value for ${r.name}`}
-                    placeholder={r.clipboard ? 'copy it, then take the Mac’s clipboard' : 'paste or type the value'}
-                    autoComplete="off"
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    autoFocus={!touch && i === 0}
-                    value={values[r.name] ?? ''}
-                    onChange={(e) => {
-                      const v = e.currentTarget.value;
-                      setValues((vs) => ({ ...vs, [r.name]: v }));
-                    }}
-                  />
-                  <div className="wf-hint">
-                    {values[r.name] ? describeValue(values[r.name]) : 'empty: it stays pending'} ·{' '}
-                    <button type="button" className="wf-link" onClick={() => void fromMac(r.name)}>
-                      take the Mac&apos;s clipboard
+                  {r.clipboard && !values[r.name] && <div className="wf-ask">Copy the value, then paste it here.</div>}
+                  <div className="wf-pasterow">
+                    <input
+                      className={clipError[r.name] ? 'wf-in err' : pasted[r.name]?.text === values[r.name] && values[r.name] ? 'wf-in ok' : 'wf-in'}
+                      type="password"
+                      aria-label={`value for ${r.name}`}
+                      placeholder="value"
+                      autoComplete="off"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoFocus={!touch && i === 0}
+                      value={values[r.name] ?? ''}
+                      onChange={(e) => {
+                        const v = e.currentTarget.value;
+                        setValues((vs) => ({ ...vs, [r.name]: v }));
+                        setClipError((c) => ({ ...c, [r.name]: '' }));
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={values[r.name] ? 'wf-paste quiet' : 'wf-paste'}
+                      aria-label={`paste ${r.name}`}
+                      onClick={() => void paste(r.name)}
+                    >
+                      ⎘ Paste
                     </button>
                   </div>
+                  {clipError[r.name] ? (
+                    <div className="wf-err" role="alert">
+                      {clipError[r.name]}
+                    </div>
+                  ) : values[r.name] ? (
+                    <div className={pasted[r.name]?.text === values[r.name] ? 'wf-hint wf-ok' : 'wf-hint'}>
+                      {pasted[r.name]?.text === values[r.name]
+                        ? `✓ from ${pasted[r.name].source === 'device' ? 'this device' : 'the Mac'} · ${describeValue(values[r.name])}`
+                        : describeValue(values[r.name])}
+                    </div>
+                  ) : (
+                    !r.clipboard && <div className="wf-hint">empty: it stays pending</div>
+                  )}
                 </>
               )}
             </section>
