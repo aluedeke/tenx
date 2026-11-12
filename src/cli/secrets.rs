@@ -56,6 +56,15 @@
 //! a fulfilment writes its output before the name leaves — the queue removal
 //! is always the commit point.
 //!
+//! **From the clipboard.** `need NAME --clipboard` asks for a new value the
+//! human copies: the name goes on the value queue, marked in
+//! `workspace::SECRETS_CLIPBOARD_FILE` (the name only, like every queue),
+//! and the sheet says so. Every masked value prompt takes the clipboard on
+//! Ctrl-V and shows its length and tail before Enter takes it; `tenx web`'s
+//! form has a button per value field for the same. One prompt per value,
+//! so several values are copied one after another, each when its prompt
+//! comes. It is the clipboard of the machine tenx runs on (`crate::clipboard`).
+//!
 //! **Waiting.** The point of an agent asking is usually that it can't
 //! continue without the answer, so `need` blocks after enqueueing
 //! (`wait_for_human`): poll once a second until each name has left both
@@ -174,22 +183,44 @@ pub fn encrypt(task_slug: &str, file: &str) -> Result<()> {
 /// Ask for `names` for the current task (resolved from cwd): route each to
 /// the queue that can satisfy it and, from an agent, wait up to `wait` for a
 /// human to answer (`None`: enqueue and return). See module docs, *Asking*.
-pub fn need(names: &[String], why: Option<&str>, wait: Option<Duration>) -> Result<()> {
+///
+/// With `from_clipboard` every name asks for a new value the human copies
+/// to the clipboard and approves (module docs, *Answering*), sealed or not.
+pub fn need(names: &[String], why: Option<&str>, from_clipboard: bool, wait: Option<Duration>) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = current_task(&ws, &cwd)?;
-    need_in(&ws, &task, names, why, wait)
+    need_in(&ws, &task, names, why, from_clipboard, wait)
 }
 
 /// Same as [`need`], for an explicit workspace/task rather than cwd.
-pub fn need_in(ws: &Workspace, task: &Task, names: &[String], why: Option<&str>, wait: Option<Duration>) -> Result<()> {
+pub fn need_in(
+    ws: &Workspace,
+    task: &Task,
+    names: &[String],
+    why: Option<&str>,
+    from_clipboard: bool,
+    wait: Option<Duration>,
+) -> Result<()> {
     for name in names {
         check_name(name)?;
     }
     let requested_at = request_instant();
+    // A refusal (`enqueue_from_clipboard`) comes before anything is queued.
+    if from_clipboard {
+        let adopted = find_sops_covered_files(task);
+        if let Some(name) = names.iter().find(|n| adopted.iter().any(|f| file_matches_request(f, n))) {
+            return enqueue_from_clipboard(task, name, why);
+        }
+    }
     let mut asked: Vec<String> = Vec::new();
     for name in names {
         if asked.contains(name) {
+            continue;
+        }
+        if from_clipboard {
+            enqueue_from_clipboard(task, name, why)?;
+            asked.push(name.clone());
             continue;
         }
         if let Some(at) = released_at(task, name) {
@@ -219,15 +250,57 @@ pub fn need_in(ws: &Workspace, task: &Task, names: &[String], why: Option<&str>,
 /// chatty agent re-running the same request can't spam notifications.
 fn enqueue(task: &Task, queue: Queue, name: &str, why: Option<&str>) -> Result<()> {
     set_note(task, workspace::SECRETS_DENIED_FILE, name, None)?;
+    if queued_on(task, name).is_none() {
+        set_note(task, workspace::SECRETS_CLIPBOARD_FILE, name, None)?;
+    }
     if let Some(why) = why.map(str::trim).filter(|w| !w.is_empty()) {
         set_note(task, workspace::SECRETS_WHY_FILE, name, Some(why))?;
     }
     if let Some(on) = queued_on(task, name) {
-        eprintln!("'{name}' is already requested for task '{}' — {}", task.name, on.what());
+        let what = if workspace::secrets_clipboard(&task.path).iter().any(|n| n == name) { CLIPBOARD_WAIT } else { on.what() };
+        eprintln!("'{name}' is already requested for task '{}' — {what}", task.name);
         return Ok(());
     }
     queue.push(task, name)?;
     eprintln!("requested '{name}' for task '{}' — {}", task.name, queue.what());
+    Ok(())
+}
+
+/// What a request from the clipboard waits for, in the agent's words.
+const CLIPBOARD_WAIT: &str = "waiting for someone to copy the value and paste it in";
+
+/// Ask for a new value of `name` from the clipboard: on the value queue
+/// (moved there from the release queue — a new value is what's asked for),
+/// marked in `SECRETS_CLIPBOARD_FILE`. Idempotent like [`enqueue`]. Refused
+/// for a name a repo's own sops file holds: tenx seals new values only into
+/// the task's bundle, so the repo's file would still be released with the
+/// old one.
+fn enqueue_from_clipboard(task: &Task, name: &str, why: Option<&str>) -> Result<()> {
+    if let Some(file) = find_sops_covered_files(task).into_iter().find(|f| file_matches_request(f, name)) {
+        bail!(
+            "'{name}' is in {}, a repo's own sops file — tenx can't put a new value there; \
+             ask without --clipboard to have it released",
+            file.display()
+        );
+    }
+    set_note(task, workspace::SECRETS_DENIED_FILE, name, None)?;
+    if let Some(why) = why.map(str::trim).filter(|w| !w.is_empty()) {
+        set_note(task, workspace::SECRETS_WHY_FILE, name, Some(why))?;
+    }
+    let was = queued_on(task, name);
+    // On the value queue before it is marked (a removal drops the marks of
+    // names not on it) and before it leaves the release queue (so it is
+    // never on neither, and its reason is kept).
+    Queue::Value.push(task, name)?;
+    set_note(task, workspace::SECRETS_CLIPBOARD_FILE, name, Some(""))?;
+    if was == Some(Queue::Release) {
+        Queue::Release.remove(task, &HashSet::from([name.to_string()]))?;
+    }
+    let what = CLIPBOARD_WAIT;
+    match was {
+        Some(Queue::Value) => eprintln!("'{name}' is already requested for task '{}' — {what}", task.name),
+        _ => eprintln!("requested '{name}' for task '{}' — {what}", task.name),
+    }
     Ok(())
 }
 
@@ -242,26 +315,40 @@ fn enqueue(task: &Task, queue: Queue, name: &str, why: Option<&str>) -> Result<(
 /// CLI argument or read from stdin (visible to `ps`, and stdin would invite
 /// piping one in) — always typed into `/dev/tty`, the channel the passphrase
 /// itself uses.
-pub fn set(name: &str, wait: Option<Duration>) -> Result<()> {
+///
+/// With `from_clipboard` the value is the clipboard's text instead of a
+/// prompt. From an agent that is a request like `need --clipboard`: a human
+/// still approves what the clipboard holds before anything is sealed.
+pub fn set(name: &str, from_clipboard: bool, wait: Option<Duration>) -> Result<()> {
     let cwd = env::current_dir()?;
     let ws = workspace::find(&cwd)?;
     let task = current_task(&ws, &cwd)?;
-    set_in(&ws, &task, name, wait)
+    set_in(&ws, &task, name, from_clipboard, wait)
 }
 
 /// Same as [`set`], for an explicit workspace/task rather than cwd.
-pub fn set_in(ws: &Workspace, task: &Task, name: &str, wait: Option<Duration>) -> Result<()> {
+pub fn set_in(ws: &Workspace, task: &Task, name: &str, from_clipboard: bool, wait: Option<Duration>) -> Result<()> {
     check_name(name)?;
     if !tty_available() {
         let requested_at = request_instant();
-        enqueue(task, Queue::Value, name, None)?;
+        if from_clipboard {
+            enqueue_from_clipboard(task, name, None)?;
+        } else {
+            enqueue(task, Queue::Value, name, None)?;
+        }
         return match wait {
             Some(timeout) => wait_for_human(task, &[name.to_string()], requested_at, timeout),
             None => Ok(()),
         };
     }
 
-    let value = read_masked_line(&format!("value for '{name}'"))?;
+    let value = if from_clipboard {
+        let value = clipboard_value()?;
+        eprintln!("  {}", paint(&palette::MUTED, &format!("from the clipboard: {}", rules::describe_value(&value))));
+        value
+    } else {
+        read_masked_line(&format!("value for '{name}'"))?
+    };
     if value.is_empty() {
         bail!("no value given — aborted, nothing was set");
     }
@@ -295,7 +382,7 @@ pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>, wait: Option<
                  say what you need, e.g.: tenx secrets need STRIPE_KEY --why \"...\""
             );
         };
-        return need_in(ws, task, &[name.to_string()], None, wait);
+        return need_in(ws, task, &[name.to_string()], None, false, wait);
     }
     if let Some(n) = name {
         check_name(n)?;
@@ -364,12 +451,15 @@ pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
     }
 
     let why = workspace::secrets_why(&task.path);
+    let marked = workspace::secrets_clipboard(&task.path);
+    let from_clipboard = |name: &str| marked.iter().any(|m| m == name);
     let width = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
     eprintln!("{}\n", paint(&palette::BRIGHT, &format!("secrets requested for '{}'", task.display_name)));
     for (name, queue) in &rows {
         let label = paint(&palette::ACCENT, &format!("{name:<width$}"));
         match queue {
             Queue::Release => eprintln!("  {label}  release    {}", paint(&palette::MUTED, &sealed_in(task, name))),
+            Queue::Value if from_clipboard(name) => eprintln!("  {label}  new value, from the clipboard"),
             Queue::Value => eprintln!("  {label}  new value"),
         }
         if let Some((_, w)) = why.iter().find(|(n, w)| n == name && !w.is_empty()) {
@@ -403,7 +493,14 @@ pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
 
     let mut values = Vec::new();
     for (name, _) in granted.iter().filter(|(_, q)| *q == Queue::Value) {
-        let value = read_masked_line(&format!("value for '{name}' (empty to skip)"))?;
+        // One prompt per value, from the clipboard too: copy it, Ctrl-V,
+        // check what it shows, Enter — so each value is copied in its turn.
+        let label = if from_clipboard(name) {
+            format!("value for '{name}' — copy it (empty to skip)")
+        } else {
+            format!("value for '{name}' (empty to skip)")
+        };
+        let value = read_masked_line(&label)?;
         if value.is_empty() {
             eprintln!("  skipped '{name}' — still pending");
         } else {
@@ -427,6 +524,9 @@ pub struct Request {
     pub why: String,
     /// For a release: where it is sealed.
     pub sealed_in: String,
+    /// A value asked for from the clipboard (`need --clipboard`): the form
+    /// offers the machine's clipboard for it.
+    pub clipboard: bool,
 }
 
 /// A task's pending requests, for `tenx web`'s secrets form — what
@@ -454,11 +554,13 @@ pub struct Answered {
 pub fn sitting_in(ws: &Workspace, task: &Task) -> Result<Sitting> {
     reroute(task)?;
     let why = workspace::secrets_why(&task.path);
+    let marked = workspace::secrets_clipboard(&task.path);
     let requests = pending_asks(task)
         .into_iter()
         .map(|(name, ask)| Request {
             why: why.iter().find(|(n, _)| *n == name).map(|(_, w)| w.clone()).unwrap_or_default(),
             sealed_in: if ask == rules::Ask::Release { sealed_in(task, &name) } else { String::new() },
+            clipboard: ask == rules::Ask::Value && marked.contains(&name),
             name,
             ask,
         })
@@ -1602,6 +1704,12 @@ impl Queue {
             let keep: Vec<(String, String)> = why.into_iter().filter(|(n, _)| queued_on(task, n).is_some()).collect();
             write_notes(task, workspace::SECRETS_WHY_FILE, &keep)?;
         }
+        let marked = notes(task, workspace::SECRETS_CLIPBOARD_FILE);
+        if marked.iter().any(|(n, _)| queued_on(task, n) != Some(Queue::Value)) {
+            let keep: Vec<(String, String)> =
+                marked.into_iter().filter(|(n, _)| queued_on(task, n) == Some(Queue::Value)).collect();
+            write_notes(task, workspace::SECRETS_CLIPBOARD_FILE, &keep)?;
+        }
         Ok(())
     }
 
@@ -1686,24 +1794,32 @@ fn prompt(label: &str) -> Result<String> {
 /// was read goes through `tenx_core::secrets::clean_typed_value` — a paste
 /// arrives wrapped in bracketed-paste markers whenever the terminal has that
 /// mode on — and the human is shown its length and tail
-/// (`describe_value`), since they can't see what they entered. Falls back
+/// (`describe_value`), since they can't see what they entered. Ctrl-V
+/// puts the clipboard's text in place of what was typed and shows its
+/// length and tail; Enter takes it (`crate::clipboard::text`). It works
+/// where the terminal's own paste doesn't reach. It is the clipboard
+/// of the machine tenx runs on, not the one of a terminal SSHed in from.
+/// `IEXTEN` is off so the terminal driver doesn't take Ctrl-V as its
+/// literal-next key. Falls back
 /// to a plain line read if `/dev/tty` isn't a real terminal after all.
 pub(crate) fn read_masked_line(label: &str) -> Result<String> {
     use std::os::fd::AsRawFd;
 
     let tty = std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty").context("open /dev/tty")?;
-    write!(&tty, "{label}: ")?;
-    (&tty).flush()?;
-
     let fd = tty.as_raw_fd();
     let mut term: libc::termios = unsafe { std::mem::zeroed() };
     if unsafe { libc::tcgetattr(fd, &mut term) } != 0 {
+        write!(&tty, "{label}: ")?;
+        (&tty).flush()?;
         let mut line = String::new();
         io::BufReader::new(&tty).read_line(&mut line).context("read from /dev/tty")?;
         return rules::clean_typed_value(&line).map_err(anyhow::Error::msg);
     }
+    let label = format!("{label} {}", paint(&palette::MUTED, "· Ctrl-V: clipboard"));
+    write!(&tty, "{label}: ")?;
+    (&tty).flush()?;
     let original = term;
-    term.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
+    term.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG | libc::IEXTEN);
     term.c_cc[libc::VMIN] = 1;
     term.c_cc[libc::VTIME] = 0;
     unsafe { libc::tcsetattr(fd, libc::TCSANOW, &term) };
@@ -1722,6 +1838,23 @@ pub(crate) fn read_masked_line(label: &str) -> Result<String> {
             0x03 => break Ok(false), // Ctrl-C
             0x04 if buf.is_empty() => break Ok(true), // Ctrl-D
             0x15 => buf.clear(),     // Ctrl-U
+            0x16 => {
+                // Ctrl-V: the clipboard replaces what was typed, and is shown
+                // as its length and tail; Enter takes it, Ctrl-U clears it.
+                let shown = match clipboard_value() {
+                    Ok(value) => {
+                        let shown = format!("clipboard: {} — Enter takes it", rules::describe_value(&value));
+                        buf = value.into_bytes();
+                        shown
+                    }
+                    Err(e) => {
+                        buf.clear();
+                        format!("{e:#}")
+                    }
+                };
+                let _ = write!(&tty, "\r\n  {}\r\n{label}: ", paint(&palette::MUTED, &shown));
+                let _ = (&tty).flush();
+            }
             0x7f | 0x08 => {
                 // Backspace: drop one whole UTF-8 character.
                 while let Some(b) = buf.pop() {
@@ -1745,6 +1878,13 @@ pub(crate) fn read_masked_line(label: &str) -> Result<String> {
         let _ = writeln!(&tty, "  {}", paint(&palette::MUTED, &format!("got {}", rules::describe_value(&value))));
     }
     Ok(value)
+}
+
+/// The clipboard's text as a secret value: refused when there is none, so
+/// an empty clipboard is never sealed as an empty value.
+fn clipboard_value() -> Result<String> {
+    let text = crate::clipboard::text().context("couldn't read the clipboard")?;
+    rules::clipboard_value(&text).map_err(anyhow::Error::msg)
 }
 
 /// `text` in a palette colour, so the answering sheet reads like the column

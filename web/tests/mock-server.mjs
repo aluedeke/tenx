@@ -276,16 +276,17 @@ const server = createServer(async (req, res) => {
     else res.writeHead(404).end();
     return;
   }
-  // A task's pending secrets (`src/web/secrets.rs`): one value request on
-  // the locked task. An answer is kept for the test to read
+  // A task's pending secrets (`src/web/secrets.rs`): a value request, a
+  // release and a value asked for from the clipboard on the locked task. An answer is kept for the test to read
   // (`/mock/secrets-answer`); the passphrase "wrong" is refused.
   if (req.method === 'POST' && url.pathname === '/secrets') {
     res.writeHead(200, { 'content-type': 'application/json' }).end(
       JSON.stringify({
         title: 'Cloud tasks',
         requests: [
-          { name: 'OPENAI_API_KEY', ask: 'value', why: 'to call the API', sealed_in: '' },
-          { name: 'STRIPE_KEY', ask: 'release', why: '', sealed_in: '.secrets.enc.env' },
+          { name: 'OPENAI_API_KEY', ask: 'value', why: 'to call the API', sealed_in: '', clipboard: false },
+          { name: 'STRIPE_KEY', ask: 'release', why: '', sealed_in: '.secrets.enc.env', clipboard: false },
+          { name: 'SENTRY_TOKEN', ask: 'value', why: '', sealed_in: '', clipboard: true },
         ],
         passphrase: true,
         problem: null,

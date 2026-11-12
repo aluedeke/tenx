@@ -22,7 +22,7 @@ pub mod service;
 mod speak;
 mod tts;
 mod tab;
-mod token;
+pub(crate) mod token;
 mod transcribe;
 mod dictate;
 mod whisper;

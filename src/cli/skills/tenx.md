@@ -88,6 +88,10 @@ How to wait: if your harness can run a command in the background and tell you wh
 
 `--no-wait` enqueues and returns at once, for a secret that's nice to have.
 
+When the user is about to hand you a new value — "I'll copy the key for you" — ask with `--clipboard`: the request tells them to copy it, and they take it from the clipboard when they answer instead of typing it. It always asks for a new value, even for a name already sealed in the task's bundle (not for one in a repo's own sops file). The value never passes through you either way:
+
+    tenx secrets need SENTRY_TOKEN --clipboard --why "upload source maps"
+
 Where granted secrets land — read them from the file, never print them:
 - **Keys** (`STRIPE_KEY`) go to `tasks/<name>/.secrets.env`, a plain `KEY=VALUE` file holding exactly the names you've been granted.
 - **Repos with their own sops setup** (a `.sops.yaml` in a worktree): name a key inside one of its `*.enc.*` files, or a fragment of the file's name (`staging`). The whole file is released as its plaintext sibling in the worktree (`secrets.staging.enc.env` → `secrets.staging.env`, a symlink to a copy outside git). If there's more than one such file, name the one you need.

@@ -702,7 +702,7 @@ test('a secrets notification opens the secrets form', async ({ page }) => {
   expect(new URL(page.url()).search).toBe('');
   // The page's own form, in the column's place — not the terminal's popup.
   await expect(page.getByTestId('secrets-form')).toBeVisible();
-  await expect(page.getByTestId('secret-request')).toHaveCount(2);
+  await expect(page.getByTestId('secret-request')).toHaveCount(3);
 });
 
 test('unlock from the row menu opens the secrets form', async ({ page, isMobile }) => {
@@ -729,21 +729,29 @@ test('the secrets form grants, denies and asks again after a wrong passphrase', 
   await tap(page.getByTestId('secret-request').nth(1).getByText('deny'));
   await form.getByLabel('note for the agent').fill('not now');
   await form.getByLabel('passphrase').fill('wrong');
-  await tap(form.getByRole('button', { name: /Grant 1 · deny 1/ }));
+  // A value asked for from the clipboard takes the Mac's (the mock's
+  // clipboard as every test starts with it).
+  const sentry = page.getByTestId('secret-request').nth(2);
+  await tap(sentry.getByRole('button', { name: "take the Mac's clipboard" }));
+  await expect(sentry.getByText('14 characters')).toBeVisible();
+  await tap(form.getByRole('button', { name: /Grant 2 · deny 1/ }));
   await expect(form.getByTestId('form-error')).toContainText('wrong passphrase');
   // Everything typed stays; only the passphrase is asked again.
   await expect(form.getByLabel('value for OPENAI_API_KEY')).toHaveValue('sk-123');
   await expect(form.getByLabel('passphrase')).toHaveValue('');
   await form.getByLabel('passphrase').fill('right');
-  await tap(form.getByRole('button', { name: /Grant 1 · deny 1/ }));
+  await tap(form.getByRole('button', { name: /Grant 2 · deny 1/ }));
   await expect(form).toHaveCount(0);
-  await expect(page.getByRole('status')).toContainText('released OPENAI_API_KEY · denied STRIPE_KEY');
+  await expect(page.getByRole('status')).toContainText('released OPENAI_API_KEY, SENTRY_TOKEN · denied STRIPE_KEY');
   const answer = await page.evaluate(async () => (await fetch('/mock/secrets-answer')).json());
   expect(answer).toEqual({
     task: 'tenx/cloud-tasks',
-    shown: ['OPENAI_API_KEY', 'STRIPE_KEY'],
-    granted: ['OPENAI_API_KEY'],
-    values: [['OPENAI_API_KEY', 'sk-123']],
+    shown: ['OPENAI_API_KEY', 'STRIPE_KEY', 'SENTRY_TOKEN'],
+    granted: ['OPENAI_API_KEY', 'SENTRY_TOKEN'],
+    values: [
+      ['OPENAI_API_KEY', 'sk-123'],
+      ['SENTRY_TOKEN', 'from the mac ✓'],
+    ],
     note: 'not now',
     passphrase: 'right',
   });

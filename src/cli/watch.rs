@@ -415,7 +415,16 @@ pub(crate) fn resolve_all() -> Snapshot {
                         task: task.display_name.clone(),
                         workspace: ws.config.name.clone(),
                         id: format!("{}/{}", ws.config.name, task.name),
-                        reason: Some(format!("{} (needs value)", secrets_reason(&pending_set_names, &why))),
+                        reason: Some(format!(
+                            "{} ({})",
+                            secrets_reason(&pending_set_names, &why),
+                            // Said in the notification, so the value can be copied before opening it.
+                            if workspace::secrets_clipboard(&task.path).iter().any(|n| pending_set_names.contains(n)) {
+                                "needs value — copy it"
+                            } else {
+                                "needs value"
+                            }
+                        )),
                         slug: task.name.clone(),
                         status: "secrets",
                         secrets: true,

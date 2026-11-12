@@ -827,6 +827,20 @@ pub fn secrets_why(task_dir: &Path) -> Vec<(String, String)> {
     tenx_core::secrets::parse_notes(&fs::read_to_string(task_dir.join(SECRETS_WHY_FILE)).unwrap_or_default())
 }
 
+/// Filename of the requests whose value should come from the clipboard
+/// (`need --clipboard`), one `NAME` per line: whoever answers is shown what
+/// the clipboard holds and approves it instead of typing a value. Only the
+/// name, never the value — the clipboard is read when the human answers.
+pub const SECRETS_CLIPBOARD_FILE: &str = ".secrets-clipboard";
+
+/// The names asked for from the clipboard.
+pub fn secrets_clipboard(task_dir: &Path) -> Vec<String> {
+    tenx_core::secrets::parse_notes(&fs::read_to_string(task_dir.join(SECRETS_CLIPBOARD_FILE)).unwrap_or_default())
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect()
+}
+
 /// Filename of the human's denials, `NAME<TAB>note` per line — the one
 /// outcome of a request the disk can't otherwise tell apart from a
 /// withdrawal (see `tenx_core::secrets`). Cleared per name when that name is

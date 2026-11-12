@@ -312,10 +312,29 @@ pub fn plan_answers(
     Ok(plan)
 }
 
+/// The clipboard's text as a secret value: cleaned like a typed one, and
+/// refused when empty, so an empty clipboard is never sealed as a value.
+pub fn clipboard_value(text: &str) -> Result<String, String> {
+    let value = clean_typed_value(text).map_err(|e| format!("not usable as a value: {e}"))?;
+    if value.is_empty() {
+        return Err("the clipboard holds no text".to_string());
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn an_empty_or_garbled_clipboard_is_no_value() {
+        assert_eq!(clipboard_value("sk_live_abc\n"), Ok("sk_live_abc".to_string()));
+        assert!(clipboard_value("").is_err());
+        assert!(clipboard_value("\n").is_err());
+        assert!(clipboard_value("a\x1b[Ab").is_err());
+    }
+
 
     fn t(secs: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_secs(secs)

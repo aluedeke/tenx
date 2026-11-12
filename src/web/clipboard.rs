@@ -13,6 +13,8 @@
 //! change count, so an image there is read on every request.
 //! `TENX_WEB_CLIPBOARD` names a file to use instead (an image in
 //! `<file>.image`, its type in `<file>.image-type`), for the end-to-end test.
+//! Running the text programs is `crate::clipboard`, which `tenx secrets`
+//! reads a value from too.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -22,6 +24,8 @@ use std::sync::Mutex;
 use anyhow::{bail, Context, Result};
 use axum::body::Bytes;
 use tenx_core::web;
+
+use crate::clipboard::{file, get_text, programs, read_with, write_with};
 
 /// What a clipboard holds for the other device.
 #[derive(Clone, Debug, PartialEq)]
@@ -46,77 +50,6 @@ impl Image {
     }
 }
 
-/// A clipboard program and its arguments.
-type Program<'a> = (&'static str, &'a [&'a str]);
-
-/// The programs that read or write text, in the order they are tried.
-fn programs(write: bool) -> &'static [Program<'static>] {
-    if cfg!(target_os = "macos") {
-        if write { &[("pbcopy", &[])] } else { &[("pbpaste", &[])] }
-    } else if write {
-        &[("wl-copy", &[]), ("xclip", &["-selection", "clipboard", "-in"])]
-    } else {
-        &[("wl-paste", &["--no-newline"]), ("xclip", &["-selection", "clipboard", "-out"])]
-    }
-}
-
-/// `programs` that can work here: not wl-clipboard in an X11 session —
-/// installed beside xclip there, it would fail before xclip got its turn.
-fn usable<'a, 'p>(programs: &'a [Program<'p>]) -> impl Iterator<Item = Program<'p>> + 'a {
-    let set = |name: &str| std::env::var_os(name).is_some_and(|v| !v.is_empty());
-    // With neither named (a service's environment), wl-clipboard still
-    // finds the default Wayland socket: it keeps its turn.
-    let x11_only = set("DISPLAY") && !set("WAYLAND_DISPLAY");
-    programs.iter().copied().filter(move |p| !(x11_only && p.0.starts_with("wl-")))
-}
-
-fn command((program, args): Program) -> Command {
-    let mut cmd = Command::new(program);
-    cmd.args(args);
-    if cfg!(target_os = "macos") {
-        cmd.env("LC_ALL", "en_US.UTF-8");
-    }
-    cmd
-}
-
-/// What the first of `programs` that is installed prints.
-fn read_with(programs: &[Program]) -> Result<Vec<u8>> {
-    let mut last = None;
-    for program in usable(programs) {
-        match command(program).stdin(Stdio::null()).stderr(Stdio::null()).output() {
-            Ok(out) if out.status.success() => return Ok(out.stdout),
-            // wl-paste fails on an empty clipboard; that is no reason to try xclip.
-            Ok(out) => last = Some(anyhow::anyhow!("{} exited with {}", program.0, out.status)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e).with_context(|| format!("run {}", program.0)),
-        }
-    }
-    Err(last.unwrap_or_else(|| anyhow::anyhow!("no clipboard program found ({})", names(programs))))
-}
-
-/// Hand `bytes` to the first of `programs` that is installed.
-fn write_with(programs: &[Program], bytes: &[u8]) -> Result<()> {
-    for program in usable(programs) {
-        let mut child = match command(program).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e).with_context(|| format!("run {}", program.0)),
-        };
-        // Dropped after the write, so the program sees the end of its input.
-        child.stdin.take().context("clipboard program's stdin")?.write_all(bytes)?;
-        let status = child.wait()?;
-        if !status.success() {
-            bail!("{} exited with {status}", program.0);
-        }
-        return Ok(());
-    }
-    bail!("no clipboard program found ({})", names(programs))
-}
-
-fn names(programs: &[Program]) -> String {
-    programs.iter().map(|p| p.0).collect::<Vec<_>>().join(", ")
-}
-
 /// A Linux clipboard: the types it offers decide what is read, since asked
 /// for text, both programs hand over an image's bytes when there is none.
 fn linux_get() -> Result<Clip> {
@@ -132,11 +65,6 @@ fn linux_get() -> Result<Clip> {
         }
     }
     Ok(Clip::Text(text))
-}
-
-/// The test's stand-in for the clipboard, when set.
-fn file() -> Option<PathBuf> {
-    std::env::var_os("TENX_WEB_CLIPBOARD").filter(|v| !v.is_empty()).map(Into::into)
 }
 
 /// Where the stand-in keeps an image, and its type.
@@ -181,10 +109,6 @@ pub(super) fn image(id: &str) -> Result<Option<Image>> {
         Clip::Image(image) if image.id == id => Some(image),
         _ => None,
     })
-}
-
-fn get_text() -> Result<String> {
-    read_with(programs(false)).map(|out| String::from_utf8_lossy(&out).into_owned())
 }
 
 /// Put `text` on this machine's clipboard.
