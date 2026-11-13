@@ -69,6 +69,9 @@ pub(crate) struct Row {
     /// else claude). Shown as a tag when it isn't the default; read when the
     /// rows are built (an agent change is rare and needs a reopen anyway).
     pub(crate) agent: crate::agent::AgentKind,
+    /// The Claude Code agent its session runs as (`.tenx-claude-agent`),
+    /// read with `agent`.
+    pub(crate) claude_agent: Option<String>,
     /// The section this row is grouped under (`tenx_core::column::section`):
     /// normally `status.group()`, but a pending secrets request (either kind)
     /// forces `TaskGroup::SecretsPending`. Separate from `group: TaskStatus`
@@ -96,6 +99,16 @@ pub(crate) struct Row {
 }
 
 impl Row {
+    /// The row's agent tag, when it has one: a harness other than Claude by
+    /// name (`codex`), a Claude session run as a Claude Code agent as
+    /// `→ <agent>`; nothing for plain Claude.
+    pub(crate) fn agent_label(&self) -> Option<String> {
+        match (self.agent, &self.claude_agent) {
+            (crate::agent::AgentKind::Claude, Some(name)) => Some(format!("→ {name}")),
+            (crate::agent::AgentKind::Claude, None) => None,
+            (kind, _) => Some(kind.as_str().to_string()),
+        }
+    }
     /// Where the row sorts (`tenx_core::column::compare`).
     pub(crate) fn sort_key(&self) -> tenx_core::column::SortKey {
         tenx_core::column::SortKey { section: self.section, status: self.group, activity: self.activity }
@@ -237,6 +250,7 @@ pub(crate) fn rows(workspaces: &[Workspace], sessions: &[Session], windows: &Win
                 live: crate::live::read(&task.path),
                 repos: task.repos.clone(),
                 agent: crate::agent::agent_for(ws, &task.path),
+                claude_agent: crate::agent::task_claude_agent(&task.path),
                 secrets_pending,
                 secrets_pending_set,
                 secrets_why,

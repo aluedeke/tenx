@@ -50,6 +50,11 @@ pub fn listing() -> serde_json::Value {
                     "cloned": cloned.contains(&r.name),
                 }))
                 .collect::<Vec<_>>(),
+            // What a new task can run as (`task new --claude-agent`).
+            "claude_agents": crate::agent::claude_agents(&ws)
+                .iter()
+                .map(|d| serde_json::json!({ "name": d.name, "description": d.description }))
+                .collect::<Vec<_>>(),
         }));
         for task in ws.tasks().unwrap_or_default() {
             let state = crate::workspace::resolve_task_state(&task.path, &sessions, &signals);

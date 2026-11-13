@@ -224,7 +224,7 @@ fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Re
             let plain = tenx_core::dialog::strip_ansi(&crate::tmux::capture_pane(&pane)?);
             Ok(tenx_core::dialog::preview_tail(&plain, lines).join("\n").into())
         }
-        Call::CreateTask { workspace, title, prompt, repos } => {
+        Call::CreateTask { workspace, title, prompt, repos, claude_agent } => {
             let ws = match workspace {
                 Some(name) => registered(&name)?,
                 None => crate::cli::adhoc::ensure()?,
@@ -240,7 +240,7 @@ fn run_tool(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Re
                 repos.as_deref(),
                 crate::cli::task::OpenMode::Background,
                 &md,
-                Default::default(),
+                crate::cli::task::AgentSetup { claude_agent: claude_agent.as_deref(), ..Default::default() },
                 &crate::progress::Silent,
             )?;
             let dir = ws.tasks_dir().join(&slug);

@@ -155,7 +155,8 @@ pub(crate) struct TaskItem {
     /// The pending secrets requests, each with the agent's reason — what
     /// `locked` is about, for a front end to show before you answer.
     pub(crate) wants: Vec<Wanted>,
-    /// Its agent, when it isn't the default (Claude).
+    /// Its agent, when it isn't the default (Claude): `codex`, `pi`, or
+    /// `→ <name>` for a Claude session run as a Claude Code agent.
     pub(crate) agent: Option<String>,
     /// How long it has rested (blocked, signaled and done rows only).
     pub(crate) age: Option<String>,
@@ -617,7 +618,7 @@ impl Column {
                         why: row.secrets_why.iter().find(|(n, _)| n == name).map(|(_, w)| w.clone()).unwrap_or_default(),
                     })
                     .collect(),
-                agent: (row.agent != crate::agent::AgentKind::Claude).then(|| row.agent.as_str().to_string()),
+                agent: row.agent_label(),
                 age: row.changed.filter(|_| rested).map(workspace::format_age),
                 run: run_chip(row).map(|(label, rgb)| Chip { label, fg: rgb.hex(), bg: None }),
                 links: row.live.all_links().iter().map(LinkView::from).collect(),

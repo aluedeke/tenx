@@ -2292,6 +2292,7 @@ impl Column {
                 secrets_pending: vec![],
                 secrets_pending_set: vec![],
                 secrets_why: vec![],
+                claude_agent: None,
                 section: TaskStatus::Working.group(),
                 subagents: vec![],
             run: None,
@@ -2480,6 +2481,7 @@ impl Column {
             secrets_pending: vec![],
             secrets_pending_set: vec![],
             secrets_why: vec![],
+                claude_agent: None,
             section: TaskStatus::Working.group(),
             subagents: vec![],
             run: None,
@@ -3966,9 +3968,10 @@ fn column_items(column: &Column, list_width: usize) -> ListParts {
         }
         pieces.push(vec![Span::styled(row.ws_name.clone(), Style::default().fg(palette::workspace_color(&row.ws_name).color()))]);
         // Name the agent when it isn't the default — a Codex or pi task reads as
-        // such; Claude rows stay unadorned.
-        if row.agent != crate::agent::AgentKind::Claude {
-            pieces.push(vec![Span::styled(format!(" {}", row.agent.as_str()), Style::default().fg(palette::INFO.color()))]);
+        // such, a Claude Code agent as `→ sales`; plain Claude rows stay
+        // unadorned.
+        if let Some(label) = row.agent_label() {
+            pieces.push(vec![Span::styled(format!(" {label}"), Style::default().fg(palette::INFO.color()))]);
         }
         if row.pinned {
             pieces.push(vec![Span::styled(PIN_GLYPH, Style::default().fg(palette::INFO.color()))]);

@@ -1465,6 +1465,13 @@ fn a_task_talks_to_a_claude_agent() {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     assert!(args.starts_with("--name talk --agent sales --add-dir="), "{args}");
+    // The listing an MCP client reads offers the same agents.
+    fs::create_dir_all(home.join(".config/tenx/workspaces.d")).unwrap();
+    fs::write(home.join(".config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+    let out = h.tenx().args(["task", "list", "--json"]).output().unwrap();
+    let listing: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ws = listing["workspaces"].as_array().unwrap().iter().find(|w| w["name"] == "e2e").expect("e2e listed").clone();
+    assert_eq!(ws["claude_agents"][1]["name"], "sales", "{ws}");
 
     let out = h.tenx().args(["task", "agent", "talk", "--ws-dir", &h.ws()]).output().unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("claude agent: sales"), "{}", String::from_utf8_lossy(&out.stdout));

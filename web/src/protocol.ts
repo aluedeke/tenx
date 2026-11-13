@@ -117,6 +117,8 @@ export interface TaskItem {
   locked: boolean;
   /** The pending secrets requests, each with the agent's reason. */
   wants: Wanted[];
+  /** Its agent when it isn't plain Claude: `codex`, `pi`, or `→ <name>` for
+   * a Claude session run as a Claude Code agent. */
   agent: string | null;
   age: string | null;
   /** A scheduled run's chip: ⏰ and how it ended. */
