@@ -122,6 +122,18 @@ A schedule runs a prompt in the workspace on a timetable. Each run is a fresh ta
 
 Runs stay off the task list (unless one waits on a person); the column's **Runs** tab lists them per schedule. Old runs are deleted automatically only when they have nothing to lose (no uncommitted change, no unpushed commit, no open PR); `--keep` / `--keep-failed` set how many stay.
 
+## Background work and services
+
+tenx shows a task as working while its agent waits for something, and as done when the agent's turn is over. Start background work so that tenx can tell which is which:
+
+- **Work you wait for** (tests, a build, a script that processes data, `gh run watch --exit-status`): run it in the background as usual. The task stays working until it ends.
+- **A stream of events** (CI checks one by one, new lines in a log): a monitor, where your agent has one. The task stays working.
+- **A process that must stay up** (a dev server, `tilt up`, `npm run dev`, a watch build): wrap it as `tenx service [--name NAME] -- <command>` and run that in the background. Your turn then ends normally, the sidebar lists the service with its ports, and closing the task's window or deleting the task stops it.
+
+    tenx service --name web -- npm run dev     # in the background
+    tenx service list                          # what runs, and in which task
+    tenx service stop [NAME]                   # this task's service (--all: every one)
+
 ## Common commands
 
     tenx task new "<title>" --no-focus --prompt "<what to do>" [--link "Label: value"]…

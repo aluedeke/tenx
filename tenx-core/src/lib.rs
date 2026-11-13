@@ -36,6 +36,7 @@ pub mod subagent;
 pub mod sweep;
 pub mod tabs;
 pub mod taskmatch;
+pub mod taskservice;
 pub mod taskmd;
 pub mod time;
 pub mod transcript;

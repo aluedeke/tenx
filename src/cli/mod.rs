@@ -12,6 +12,7 @@ pub mod repo;
 pub mod restart;
 pub mod schedule;
 pub mod secrets;
+pub mod service;
 pub mod session_event;
 pub mod standup;
 pub mod watch;
@@ -107,6 +108,25 @@ pub enum Commands {
     Pr {
         #[command(subcommand)]
         command: PrCommands,
+    },
+    /// Run a long-lived process for this task: a dev server, `tilt up`, a
+    /// watch build
+    ///
+    /// `tenx service -- <command>` runs the command until it exits or is
+    /// stopped. Start it with the agent's background shell: the turn still
+    /// ends (a service is not work the agent waits for), the task's sidebar
+    /// lists it with its ports, and closing the task's window or deleting the
+    /// task stops it. Exits with the command's status.
+    #[command(args_conflicts_with_subcommands = true)]
+    Service {
+        #[command(subcommand)]
+        command: Option<ServiceCommands>,
+        /// The name the sidebar shows (default: the program's name)
+        #[arg(long)]
+        name: Option<String>,
+        /// The command: one shell command line, or a program and its arguments
+        #[arg(last = true)]
+        run: Vec<String>,
     },
     /// The Linear API key that shows each issue's status in the sidebar
     Linear {
@@ -447,6 +467,24 @@ pub enum PrCommands {
         /// One JSON array, for scripts
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ServiceCommands {
+    /// List the services running now, and the task each runs in
+    List {
+        /// One JSON array, for scripts
+        #[arg(long)]
+        json: bool,
+    },
+    /// Stop a service of the current task (by name or pid; the only one when
+    /// none is named)
+    Stop {
+        which: Option<String>,
+        /// Every service of the current task — outside a task, every service
+        #[arg(long)]
+        all: bool,
     },
 }
 

@@ -13,7 +13,7 @@ mod workspace;
 
 use anyhow::Result;
 use clap::Parser;
-use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, LinearCommands, PrCommands, RepoCommands, SecretsCommands, TaskCommands, TmuxCommands};
+use cli::{AgentCommands, Cli, Commands, HooksCommands, InternalCommands, LinearCommands, PrCommands, RepoCommands, SecretsCommands, ServiceCommands, TaskCommands, TmuxCommands};
 use std::env;
 
 fn main() {
@@ -69,6 +69,11 @@ fn run() -> Result<()> {
             LinearCommands::Login => cli::linear::login()?,
             LinearCommands::Logout => cli::linear::logout()?,
             LinearCommands::Status => cli::linear::status()?,
+        },
+        Some(Commands::Service { command, name, run }) => match command {
+            None => cli::service::run(name.as_deref(), &run)?,
+            Some(ServiceCommands::List { json }) => cli::service::list(json)?,
+            Some(ServiceCommands::Stop { which, all }) => cli::service::stop_cmd(which.as_deref(), all)?,
         },
         Some(Commands::Pr { command }) => match command {
             PrCommands::Wait { pr, since, interval, timeout } => {

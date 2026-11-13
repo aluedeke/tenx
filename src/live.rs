@@ -175,20 +175,35 @@ pub fn now_secs() -> u64 {
 /// `lsof` + one `ps` + one `tmux list-panes` — a few tens of milliseconds
 /// for the whole session, regardless of task count.
 pub fn ports_by_window() -> HashMap<String, Vec<u16>> {
+    port_scan().by_window
+}
+
+/// One port scan: the ports per task window, and what they came from — every
+/// listener (pid, port) and the process tree — for the ports of processes
+/// outside a window's own tree (`cli::service::shown_in`).
+#[derive(Default)]
+pub struct PortScan {
+    pub by_window: HashMap<String, Vec<u16>>,
+    pub listeners: Vec<(u32, u16)>,
+    pub tree: Vec<(u32, u32)>,
+}
+
+pub fn port_scan() -> PortScan {
     let panes = crate::tmux::list_pane_pids().unwrap_or_default();
     if panes.is_empty() {
-        return HashMap::new();
+        return PortScan::default();
     }
     let listeners = tenx_core::live::parse_lsof(&run_capture("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"]));
     if listeners.is_empty() {
-        return panes.into_iter().map(|(w, _)| (w, vec![])).collect();
+        return PortScan { by_window: panes.into_iter().map(|(w, _)| (w, vec![])).collect(), ..Default::default() };
     }
     let tree = tenx_core::live::parse_ps(&run_capture("ps", &["-axo", "pid=,ppid="]));
     let mut roots: HashMap<String, Vec<u32>> = HashMap::new();
     for (window, pid) in panes {
         roots.entry(window).or_default().push(pid);
     }
-    roots.into_iter().map(|(w, pids)| (w, tenx_core::live::ports_for(&pids, &listeners, &tree))).collect()
+    let by_window = roots.into_iter().map(|(w, pids)| (w, tenx_core::live::ports_for(&pids, &listeners, &tree))).collect();
+    PortScan { by_window, listeners, tree }
 }
 
 /// A task's PRs in one `gh api graphql` request per GitHub host

@@ -901,6 +901,10 @@ pub fn sweep(after: Option<Duration>, idle_after: Option<Duration>, dry_run: boo
             Ok(()) => {
                 let _ = std::fs::remove_file(c.task_dir.join(crate::tmux::WINDOW_ID_FILE));
                 println!("closed {}/{} — {}", c.ws_name, c.title, c.reason);
+                match crate::cli::service::stop_in(&c.task_dir) {
+                    0 => {}
+                    n => println!("  stopped {n} service(s)"),
+                }
                 match crate::cli::secrets::forget_released(&c.task_dir) {
                     Ok(true) => println!("  removed its released secrets"),
                     Ok(false) => {}
@@ -923,6 +927,7 @@ pub fn sweep_quiet(after: Duration, idle_after: Duration) -> usize {
         if crate::tmux::kill_window(&c.window_id).is_ok() {
             let _ = std::fs::remove_file(c.task_dir.join(crate::tmux::WINDOW_ID_FILE));
             let _ = crate::cli::secrets::forget_released(&c.task_dir);
+            crate::cli::service::stop_in(&c.task_dir);
             n += 1;
         }
     }
@@ -954,6 +959,8 @@ pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Resul
         }
     }
 
+    // Its services run in the directories about to go.
+    crate::cli::service::stop_in(&task.path);
     for repo_name in &task.repos {
         let bare_path = crate::git::bare_repo_path(&bare_dir, repo_name);
         let worktree_path = task.path.join(repo_name);
