@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.37.2] - 2026-11-13
+
+### Fixed
+
+- **status:** Show a task as done after you stop its turn with Esc (#57)
+
+[0.37.2]: https://github.com/aluedeke/tenx/compare/v0.37.1...v0.37.2
+
 ## [0.37.1] - 2026-11-13
 
 ### Fixed
