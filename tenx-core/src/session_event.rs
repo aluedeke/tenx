@@ -128,14 +128,8 @@ pub fn claude_action(
 /// after it had reported back, and nothing would ever end that pause
 /// (`crate::status::settle_background`); else [`Background::Other`] (a
 /// workflow, a WebSocket monitor), which only the next hook can end.
-///
-/// `set_aside` are the ids of background tasks you moved on from
-/// ([`set_aside_after_prompt`]): they don't count either.
-pub fn claude_stop_background(payload: &serde_json::Value, set_aside: &[String]) -> Option<Background> {
-    let mut running = counted_background(payload)
-        .into_iter()
-        .filter(|t| !t.get("id").and_then(|v| v.as_str()).is_some_and(|id| set_aside.iter().any(|s| s == id)))
-        .peekable();
+pub fn claude_stop_background(payload: &serde_json::Value) -> Option<Background> {
+    let mut running = counted_background(payload).into_iter().peekable();
     running.peek()?;
     let process = |t: &serde_json::Value| {
         let field = |k: &str| t.get(k).and_then(|v| v.as_str());
@@ -157,37 +151,6 @@ fn counted_background(payload: &serde_json::Value) -> Vec<&serde_json::Value> {
                 && !field("command").is_some_and(|c| c.contains("tenx pr wait") || crate::taskservice::is_service_command(c))
         })
         .collect()
-}
-
-/// The ids of the background tasks a `Stop` left running that a pause
-/// counts — saved with the record, for [`set_aside_after_prompt`].
-pub fn claude_background_ids(payload: &serde_json::Value) -> Vec<String> {
-    counted_background(payload).iter().filter_map(|t| t.get("id").and_then(|v| v.as_str()).map(str::to_string)).collect()
-}
-
-/// Whether a `UserPromptSubmit`'s prompt is one you typed, not Claude Code
-/// handing the session a background task's news (`<task-notification>…`,
-/// measured on Claude Code 2.1).
-pub fn is_user_prompt(prompt: &str) -> bool {
-    !prompt.trim_start().starts_with("<task-notification>")
-}
-
-/// "You moved on": a prompt you send while background work runs means you
-/// aren't waiting for that work — a dev server started without `tenx
-/// service` is the case this is for, a build you sent a message past the
-/// other. What ran at the last `Stop` (`last_ids`) is set aside, with what
-/// was already; it no longer keeps the session working, and when it ends and
-/// wakes the session, that turn is working as any other.
-pub fn set_aside_after_prompt(set_aside: &[String], last_ids: &[String]) -> Vec<String> {
-    let mut out = set_aside.to_vec();
-    out.extend(last_ids.iter().filter(|id| !set_aside.contains(id)).cloned());
-    out
-}
-
-/// What stays set aside at a `Stop`: only what still runs (`running`, its
-/// [`claude_background_ids`]).
-pub fn set_aside_at_stop(set_aside: &[String], running: &[String]) -> Vec<String> {
-    set_aside.iter().filter(|id| running.contains(id)).cloned().collect()
 }
 
 /// Map a Codex CLI hook event to a session action.
@@ -386,78 +349,49 @@ mod tests {
         assert_eq!(claude_action("Stop", None, None, None, true), SessionAction::Ignore);
     }
 
-    fn claude_stop_background_(payload: &serde_json::Value) -> Option<Background> {
-        claude_stop_background(payload, &[])
-    }
-
-    #[test]
-    fn a_script_you_moved_on_from_no_longer_keeps_the_session_working() {
-        let tilt = json!({ "background_tasks": [{ "id": "b1", "type": "shell", "status": "running", "command": "tilt up" }] });
-        // The turn that started it: a pause, and the id is remembered.
-        assert_eq!(claude_stop_background(&tilt, &[]), Some(Background::Processes));
-        let last = claude_background_ids(&tilt);
-        assert_eq!(last, vec!["b1".to_string()]);
-        // You send a message: b1 is set aside. A notification doesn't do that.
-        assert!(is_user_prompt("check the logs"));
-        assert!(!is_user_prompt("<task-notification>\n<task-id>b1</task-id>"));
-        let aside = set_aside_after_prompt(&[], &last);
-        // The next turn's Stop still lists tilt, and ends the turn.
-        assert_eq!(claude_stop_background(&tilt, &aside), None);
-        // Work started in that turn counts again.
-        let both = json!({ "background_tasks": [
-            { "id": "b1", "type": "shell", "status": "running", "command": "tilt up" },
-            { "id": "b2", "type": "shell", "status": "running", "command": "make test" }
-        ]});
-        assert_eq!(claude_stop_background(&both, &aside), Some(Background::Processes));
-        assert_eq!(set_aside_after_prompt(&aside, &claude_background_ids(&both)), vec!["b1".to_string(), "b2".to_string()]);
-        // Once tilt has ended it is forgotten.
-        assert!(set_aside_at_stop(&aside, &[]).is_empty());
-        assert_eq!(set_aside_at_stop(&aside, &["b1".to_string()]), aside);
-    }
-
     #[test]
     fn stop_with_a_background_script_running_is_a_pause() {
         // As Claude Code 2.1.308 sends it after `run_in_background: true`.
         let shell = json!({ "hook_event_name": "Stop", "background_tasks": [
             { "id": "b3g07y0mw", "type": "shell", "status": "running", "description": "Run the script", "command": "bash run.sh" }
         ], "session_crons": [] });
-        assert_eq!(claude_stop_background_(&shell), Some(Background::Processes));
+        assert_eq!(claude_stop_background(&shell), Some(Background::Processes));
         let monitor = json!({ "background_tasks": [{ "id": "m1", "type": "monitor", "status": "running", "description": "CI", "command": "tail -F ci.log" }] });
-        assert_eq!(claude_stop_background_(&monitor), Some(Background::Processes));
+        assert_eq!(claude_stop_background(&monitor), Some(Background::Processes));
         // The script has reported back: the final Stop lists nothing.
-        assert_eq!(claude_stop_background_(&json!({ "background_tasks": [], "session_crons": [] })), None);
-        assert_eq!(claude_stop_background_(&json!({})), None);
+        assert_eq!(claude_stop_background(&json!({ "background_tasks": [], "session_crons": [] })), None);
+        assert_eq!(claude_stop_background(&json!({})), None);
         let finished = json!({ "background_tasks": [{ "id": "b1", "type": "shell", "status": "completed", "command": "make" }] });
-        assert_eq!(claude_stop_background_(&finished), None);
+        assert_eq!(claude_stop_background(&finished), None);
     }
 
     #[test]
     fn background_work_without_a_process_is_trusted_to_the_next_hook() {
         let workflow = json!({ "background_tasks": [{ "id": "w1", "type": "workflow", "status": "running" }] });
-        assert_eq!(claude_stop_background_(&workflow), Some(Background::Other));
+        assert_eq!(claude_stop_background(&workflow), Some(Background::Other));
         let socket = json!({ "background_tasks": [{ "id": "m2", "type": "monitor", "status": "running", "description": "deploys" }] });
-        assert_eq!(claude_stop_background_(&socket), Some(Background::Other));
+        assert_eq!(claude_stop_background(&socket), Some(Background::Other));
         let mixed = json!({ "background_tasks": [
             { "id": "b1", "type": "shell", "status": "running", "command": "make" },
             { "id": "w1", "type": "workflow", "status": "running" }
         ]});
-        assert_eq!(claude_stop_background_(&mixed), Some(Background::Other));
+        assert_eq!(claude_stop_background(&mixed), Some(Background::Other));
     }
 
     #[test]
     fn background_subagents_and_pr_waits_dont_pause_a_stop() {
         let subagent = json!({ "background_tasks": [{ "id": "a1", "type": "subagent", "status": "running" }] });
-        assert_eq!(claude_stop_background_(&subagent), None);
+        assert_eq!(claude_stop_background(&subagent), None);
         let pr_wait = json!({ "background_tasks": [
             { "id": "b2", "type": "shell", "status": "running", "command": "tenx pr wait https://github.com/o/r/pull/7 --since 2026-11-04T10:00:00Z" }
         ]});
-        assert_eq!(claude_stop_background_(&pr_wait), None);
+        assert_eq!(claude_stop_background(&pr_wait), None);
         // Any other running script still does, next to a PR wait.
         let both = json!({ "background_tasks": [
             { "id": "b2", "type": "shell", "status": "running", "command": "tenx pr wait 7" },
             { "id": "b3", "type": "shell", "status": "running", "command": "cargo test" }
         ]});
-        assert_eq!(claude_stop_background_(&both), Some(Background::Processes));
+        assert_eq!(claude_stop_background(&both), Some(Background::Processes));
     }
 
     #[test]
@@ -465,12 +399,12 @@ mod tests {
         let service = json!({ "background_tasks": [
             { "id": "b4", "type": "shell", "status": "running", "command": "tenx service -- tilt up backend > tilt.log 2>&1" }
         ]});
-        assert_eq!(claude_stop_background_(&service), None);
+        assert_eq!(claude_stop_background(&service), None);
         let with_checks = json!({ "background_tasks": [
             { "id": "b4", "type": "shell", "status": "running", "command": "tenx service -- tilt up" },
             { "id": "m1", "type": "monitor", "status": "running", "command": "gh pr checks 12 --watch" }
         ]});
-        assert_eq!(claude_stop_background_(&with_checks), Some(Background::Processes));
+        assert_eq!(claude_stop_background(&with_checks), Some(Background::Processes));
     }
 
     #[test]

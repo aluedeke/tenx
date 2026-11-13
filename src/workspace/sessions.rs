@@ -91,14 +91,6 @@ pub struct Record {
     /// will wake the session (`tenx_core::status::Background`'s token).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
-    /// The background tasks the last `Stop` left running that a pause counts
-    /// (`tenx_core::session_event::claude_background_ids`).
-    #[serde(rename = "backgroundIds", default, skip_serializing_if = "Vec::is_empty")]
-    pub background_ids: Vec<String>,
-    /// Those you moved on from by sending a prompt: they no longer keep the
-    /// session working (`tenx_core::session_event::set_aside_after_prompt`).
-    #[serde(rename = "backgroundSetAside", default, skip_serializing_if = "Vec::is_empty")]
-    pub background_set_aside: Vec<String>,
 }
 
 /// Directory holding tenx's session records.
