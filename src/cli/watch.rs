@@ -122,6 +122,7 @@ pub fn run() -> Result<()> {
 
         for dir in tenx_core::secrets::closed_windows(&open_tasks, snapshot.open_tasks.as_ref()) {
             let _ = crate::cli::secrets::forget_released(&dir);
+            crate::cli::service::stop_in(&dir);
         }
         if let Some(now) = &snapshot.open_tasks {
             open_tasks.clone_from(now);
@@ -154,6 +155,7 @@ pub fn run() -> Result<()> {
                 // The server is gone, so every window it had is closed.
                 for dir in &open_tasks {
                     let _ = crate::cli::secrets::forget_released(dir);
+                    crate::cli::service::stop_in(dir);
                 }
                 let _ = std::fs::remove_file(pid_path()?);
                 return Ok(());
@@ -574,11 +576,14 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
 
     // A task with no window (closed, swept, server gone) has no ports — clear
     // them, don't keep showing the last observed set.
-    // Same for the PRs a `tenx pr wait` in the task is waiting on.
+    // Same for the PRs a `tenx pr wait` in the task is waiting on, and its
+    // services (`cli::service`).
     // Links: TASK.md's every tick (a small file), the transcript from where
     // the last tick stopped (`live::scan_links`).
-    let ports = crate::live::ports_by_window();
+    let scan = crate::live::port_scan();
+    let ports = &scan.by_window;
     let waits = crate::cli::prwatch::waits();
+    let services = crate::cli::service::services();
     // Transcript lookups are budgeted per tick, so the task that goes first
     // turns round: one whose transcript can't be found yet (a session that
     // hasn't written it) must not keep the others from ever being read.
@@ -592,6 +597,7 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
         let before = live.clone();
         live.ports = ports.get(&t.slug).cloned().unwrap_or_default();
         live.watching = crate::cli::prwatch::watched_in(&waits, &t.path);
+        live.services = crate::cli::service::shown_in(&services, &t.path, &scan.listeners, &scan.tree);
         (live.task_links, live.todos) = crate::live::task_md(&t.path);
         crate::live::scan_links(&t.path, &t.agent, t.session.as_deref(), &mut live, &mut backfills);
         if t.repos.is_empty() {
@@ -599,7 +605,7 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
         }
         if live != before {
             let links_moved = live.links != before.links || live.task_links != before.task_links;
-            let shown_moved = live.ports != before.ports || live.watching != before.watching || links_moved;
+            let shown_moved = live.ports != before.ports || live.watching != before.watching || live.services != before.services || links_moved;
             // How far the transcript was read is bookkeeping: saved, but no
             // reason to republish the status line.
             let written = crate::live::write(&t.path, &live).is_ok();

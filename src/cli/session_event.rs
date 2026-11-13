@@ -10,8 +10,11 @@
 //! its turn left behind, and `SessionStart`/`SessionEnd` forget them.
 //!
 //! Invariants: it prints **nothing** to stdout (Claude's `PermissionRequest`
-//! reads a hook's stdout as a decision, and Codex the same), and it exits 0 no
-//! matter what — a hook that errors or hangs must never disturb the agent.
+//! reads a hook's stdout as a decision, and Codex the same) — except on
+//! Claude's `SessionStart` inside the tenx session, where the output is
+//! context for the agent: which background tool to use for what
+//! (`tenx_core::taskservice::CLAUDE_CONTEXT`) —, and it exits 0 no matter
+//! what — a hook that errors or hangs must never disturb the agent.
 
 use crate::agent::AgentKind;
 use crate::workspace::sessions;
@@ -34,6 +37,9 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
     let payload: Value = serde_json::from_str(input.trim()).ok()?;
 
     let event = payload.get("hook_event_name").and_then(|v| v.as_str())?;
+    if agent == AgentKind::Claude && event == "SessionStart" && crate::tmux::inside_tenx_session() {
+        println!("{}", tenx_core::taskservice::claude_session_start_output());
+    }
     let tool_name = payload.get("tool_name").and_then(|v| v.as_str());
     let notification_type = payload.get("notification_type").and_then(|v| v.as_str());
     let message = payload.get("message").and_then(|v| v.as_str());
@@ -50,9 +56,16 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
         return Some(());
     }
 
-    // The turn ended but background work will wake the session: still working.
-    let background =
-        if agent == AgentKind::Claude && event == "Stop" { tenx_core::session_event::claude_stop_background(&payload) } else { None };
+    // The turn ended but background work will wake the session: still working
+    // — unless you moved on from it (`set_aside_after_prompt`).
+    let claude_stop = agent == AgentKind::Claude && event == "Stop";
+    let stop_pid = if claude_stop { Some(pid_override.unwrap_or_else(|| resolve_agent_pid(agent))) } else { None };
+    let running = if claude_stop { tenx_core::session_event::claude_background_ids(&payload) } else { Vec::new() };
+    let set_aside = stop_pid
+        .and_then(sessions::read_record)
+        .map(|r| tenx_core::session_event::set_aside_at_stop(&r.background_set_aside, &running))
+        .unwrap_or_default();
+    let background = if claude_stop { tenx_core::session_event::claude_stop_background(&payload, &set_aside) } else { None };
     let action = match agent {
         AgentKind::Claude if background.is_some() => {
             SessionAction::Set { status: tenx_core::status::SessionStatus::Busy, waiting_for: None }
@@ -67,7 +80,7 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
 
     // pi knows its own pid and passes it; a hook (Claude, Codex) doesn't, so it
     // climbs from its parent to the agent process.
-    let pid = pid_override.unwrap_or_else(|| resolve_agent_pid(agent));
+    let pid = stop_pid.unwrap_or_else(|| pid_override.unwrap_or_else(|| resolve_agent_pid(agent)));
 
     match action {
         SessionAction::Delete => {
@@ -89,6 +102,16 @@ fn try_run(agent_token: &str, pid_override: Option<u32>) -> Option<()> {
             record.status = Some(status.token().to_string());
             record.waiting_for = waiting_for;
             record.background = background.map(|b| b.token().to_string());
+            if claude_stop {
+                record.background_ids = running;
+                record.background_set_aside = set_aside;
+            } else if agent == AgentKind::Claude
+                && event == "UserPromptSubmit"
+                && payload.get("prompt").and_then(|v| v.as_str()).is_some_and(tenx_core::session_event::is_user_prompt)
+            {
+                record.background_set_aside =
+                    tenx_core::session_event::set_aside_after_prompt(&record.background_set_aside, &record.background_ids);
+            }
             record.status_updated_at = Some(sessions::now_millis());
             record.kind = Some(kind_for(pid)).filter(|k| !k.is_empty()).unwrap_or_else(|| "interactive".to_string());
             if let Some(cwd) = payload.get("cwd").and_then(|v| v.as_str()) {

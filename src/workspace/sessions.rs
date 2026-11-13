@@ -91,6 +91,14 @@ pub struct Record {
     /// will wake the session (`tenx_core::status::Background`'s token).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    /// The background tasks the last `Stop` left running that a pause counts
+    /// (`tenx_core::session_event::claude_background_ids`).
+    #[serde(rename = "backgroundIds", default, skip_serializing_if = "Vec::is_empty")]
+    pub background_ids: Vec<String>,
+    /// Those you moved on from by sending a prompt: they no longer keep the
+    /// session working (`tenx_core::session_event::set_aside_after_prompt`).
+    #[serde(rename = "backgroundSetAside", default, skip_serializing_if = "Vec::is_empty")]
+    pub background_set_aside: Vec<String>,
 }
 
 /// Directory holding tenx's session records.
@@ -435,7 +443,7 @@ fn pane_scope() -> PaneScope {
 }
 
 /// Whether agent `pid` runs a command of its own: a child process shaped like
-/// Claude Code's shell (`tenx_core::status::is_agent_shell`). A failed `ps`
+/// Claude Code's shell that isn't a `tenx service` (`tenx_core::status::is_awaited_shell`). A failed `ps`
 /// says yes, so a pause is never ended on a guess.
 fn runs_agent_shell(pid: u32, tree: &[(u32, u32)]) -> bool {
     let children: Vec<String> = tree.iter().filter(|(_, ppid)| *ppid == pid).map(|(p, _)| p.to_string()).collect();
@@ -446,7 +454,7 @@ fn runs_agent_shell(pid: u32, tree: &[(u32, u32)]) -> bool {
         return true;
     };
     // `ps` exits 1 when a listed pid has gone since the tree was read.
-    String::from_utf8_lossy(&out.stdout).lines().any(tenx_core::status::is_agent_shell)
+    String::from_utf8_lossy(&out.stdout).lines().any(tenx_core::status::is_awaited_shell)
 }
 
 const SCOPE_TTL: Duration = Duration::from_secs(2);
