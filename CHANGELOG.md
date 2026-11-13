@@ -5,6 +5,19 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.37.0] - 2026-11-13
+
+### Added
+
+- **service:** Run dev servers with `tenx service`, ending the turn (#53)
+- **task:** Start a task's Claude session as a Claude Code agent (#54)
+
+### Fixed
+
+- **status:** Keep a task working while its monitor waits as you chat (#55)
+
+[0.37.0]: https://github.com/aluedeke/tenx/compare/v0.36.1...v0.37.0
+
 ## [0.36.1] - 2026-11-12
 
 ### Fixed
