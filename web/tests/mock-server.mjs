@@ -115,6 +115,7 @@ function view(st) {
       workspace_options: WORKSPACES.map((w) => ({ name: w.name, color: w.color })),
       agent_options: AGENTS, agent_index: f.agent,
       name: f.name, prompt: f.prompt, quick: !!f.quick, repos: f.repos, agent: AGENTS[f.agent], agent_inherits: f.agent === 0, focus: f.quick ? 'prompt' : 'name', focus_repo: null,
+      claude_agent_options: CLAUDE_AGENTS, claude_agent_index: f.claudeAgent ?? 0, claude_agent_applies: f.agent !== 2 && f.agent !== 3,
       agent_default: 'claude', slug: f.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
     };
     footer = { kind: 'hint', tag: null, text: f.quick ? '⏎ start   esc cancel' : '⏎ create   esc cancel   ⇥ next   space toggle repo   ←→ workspace / agent', hint: null, warn: null };
@@ -168,6 +169,11 @@ const WORKSPACES = [
   { name: 'adhoc', color: '#aab064', repos: [] },
 ];
 const AGENTS = ['default', 'claude', 'codex', 'pi'];
+// Claude Code agents a session can run as (`claude --agent`).
+const CLAUDE_AGENTS = [
+  { name: 'reviewer', description: 'Reviews the diff for bugs.', scope: 'workspace' },
+  { name: 'sales', description: 'Drafts LinkedIn messages.', scope: 'user' },
+];
 const repoChecks = (ws) => WORKSPACES[ws].repos.map((name) => ({ name, checked: true }));
 
 const E = '\x1b[';
@@ -478,6 +484,7 @@ wss.on('connection', (ws, req) => {
         f.repos = repoChecks(m.index);
       }
       if (m.op === 'pick' && m.field === 'agent' && AGENTS[m.index]) f.agent = m.index;
+      if (m.op === 'pick' && m.field === 'claude_agent' && m.index <= CLAUDE_AGENTS.length) f.claudeAgent = m.index;
       if (m.op === 'submit') {
         if (!f.name.trim() && !f.prompt.trim()) st.status = f.quick ? 'type a prompt' : 'type a name or a prompt';
         else {

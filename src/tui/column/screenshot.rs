@@ -93,6 +93,7 @@ fn row(f: Fx) -> Row {
         secrets_pending: f.secrets.iter().map(|s| s.to_string()).collect(),
         secrets_pending_set: vec![],
         secrets_why: vec![],
+                claude_agent: None,
         section,
         subagents: vec![],
         pinned: f.pinned,

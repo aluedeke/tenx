@@ -117,6 +117,8 @@ export interface TaskItem {
   locked: boolean;
   /** The pending secrets requests, each with the agent's reason. */
   wants: Wanted[];
+  /** Its agent when it isn't plain Claude: `codex`, `pi`, or `→ <name>` for
+   * a Claude session run as a Claude Code agent. */
   agent: string | null;
   age: string | null;
   /** A scheduled run's chip: ⏰ and how it ended. */
@@ -208,11 +210,19 @@ export type ModeView =
       agent_inherits: boolean;
       /** What `default` resolves to for the chosen workspace. */
       agent_default: string;
+      /** The Claude Code agents the session can run as (`claude --agent`):
+       * the workspace's `.claude/agents/` and `~/.claude/agents/`. `pick`
+       * `claude_agent` takes 0 for none, else 1 + an index into this. */
+      claude_agent_options: { name: string; description: string; scope: 'workspace' | 'user' }[];
+      /** 0 = none, else 1 + the index into `claude_agent_options`. */
+      claude_agent_index: number;
+      /** Whether the chosen agent is Claude; the Claude agent is unused otherwise. */
+      claude_agent_applies: boolean;
       /** The task's directory and branch name, from `name` (server-side
        * slugify); empty until the name makes one, and while Claude is to
        * name it. */
       slug: string;
-      focus: 'workspace' | 'name' | 'prompt' | 'repo' | 'agent';
+      focus: 'workspace' | 'name' | 'prompt' | 'repo' | 'agent' | 'claude_agent';
       focus_repo: number | null;
     }
   | { kind: 'add_repo'; workspace: string; url: string; name: string; focus: 'url' | 'name' }
@@ -331,7 +341,7 @@ export type FormOp =
   /** A checkbox, set (not toggled): `repo` by index, or `skills`. */
   | { op: 'check'; field: string; index?: number; on: boolean }
   /** A picker on the create form: `workspace` or `agent`, by index. */
-  | { op: 'pick'; field: 'workspace' | 'agent'; index: number }
+  | { op: 'pick'; field: 'workspace' | 'agent' | 'claude_agent'; index: number }
   | { op: 'submit' }
   | { op: 'cancel' };
 

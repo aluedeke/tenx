@@ -154,7 +154,9 @@ without `seq` work as before.
 // `repo_url`, `title`); `check` sets (never toggles) a checkbox
 // (`repo` by index, `skills`); `pick` chooses by index into the create form's
 // `workspace_options` / `agent_options` (a new workspace reloads its repos, as
-// ←/→ does). `submit` / `cancel` are the form's own ⏎ / esc, so they run the
+// ←/→ does), or `claude_agent` — 0 for none, else 1 + an index into
+// `claude_agent_options`, the Claude Code agent the session runs as
+// (`claude --agent`; used only when the agent is Claude). `submit` / `cancel` are the form's own ⏎ / esc, so they run the
 // terminal's paths (jobs, errors, where it lands).
 { "type": "form", "op": "set", "field": "name", "value": "Rate limit login" }
 { "type": "form", "op": "check", "field": "repo", "index": 1, "on": false }
@@ -240,7 +242,9 @@ the bottom): text inputs, chips that are radios / checkboxes underneath
 (workspace, repos, agent — a native select past six workspaces), Tab order,
 Enter submits, Escape cancels — sending `form` messages. The create form shows
 the server's `slug` for the name and what `default` resolves to
-(`agent_default`), and a `prompt` box (Shift+Enter for a new line); with a
+(`agent_default`), a "talk to" list of the Claude Code agents the session can
+run as (`claude_agent_options`; disabled while `claude_agent_applies` is
+false), and a `prompt` box (Shift+Enter for a new line); with a
 prompt and no name, Claude titles the task and `slug` is empty. With `quick`
 set it shows only the prompt. A refused submit shows the view's `status` under the field
 it is about (else above the bar). A submit that starts a job keeps the form on

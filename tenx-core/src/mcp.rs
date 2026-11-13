@@ -148,6 +148,8 @@ pub enum Call {
         title: Option<String>,
         prompt: String,
         repos: Option<Vec<String>>,
+        /// The Claude Code agent the session runs as (`claude --agent`).
+        claude_agent: Option<String>,
     },
     SendMessage { workspace: Option<String>, task: String, text: String, force: bool },
     Wait { workspace: Option<String>, task: String, timeout_secs: u64 },
@@ -216,11 +218,18 @@ pub fn parse_call(params: &Value) -> Result<Call, String> {
                 ),
                 Some(_) => return Err("repos must be a list of repo names".into()),
             };
+            let claude_agent = optional(args, "claude_agent")?;
+            if let Some(a) = &claude_agent
+                && !crate::claude_agent::valid_name(a)
+            {
+                return Err(format!("not a Claude agent name: {a:?}"));
+            }
             Call::CreateTask {
                 workspace: optional(args, "workspace")?,
                 title: optional(args, "title")?,
                 prompt,
                 repos,
+                claude_agent,
             }
         }
         "tenx_send_message" => {
@@ -310,7 +319,7 @@ pub fn tools() -> Value {
         tool(
             "tenx_list_workspaces",
             "List workspaces",
-            "Every registered tenx workspace with its repos.",
+            "Every registered tenx workspace with its repos and the Claude Code agents a new task can run as.",
             json!({}),
             &[],
             read_only.clone(),
@@ -367,6 +376,7 @@ pub fn tools() -> Value {
                 "prompt": { "type": "string", "description": "The agent's first message, also kept as the task's description in TASK.md." },
                 "title": { "type": "string", "description": "Task title. Default: one made from the prompt." },
                 "repos": { "type": "array", "items": { "type": "string" }, "description": "Repos to check out. Default: all of the workspace's; [] for none." },
+                "claude_agent": { "type": "string", "description": "Run the session as this Claude Code agent (`claude --agent`), so the user talks to it directly. tenx_list_workspaces lists each workspace's `claude_agents`. Default: plain Claude." },
             }),
             &["prompt"],
             json!({ "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }),
@@ -532,8 +542,13 @@ mod tests {
         );
         assert_eq!(
             call(json!({"name": "tenx_create_task", "arguments": {"prompt": " hi ", "repos": []}})),
-            Ok(Call::CreateTask { workspace: None, title: None, prompt: "hi".into(), repos: Some(vec![]) })
+            Ok(Call::CreateTask { workspace: None, title: None, prompt: "hi".into(), repos: Some(vec![]), claude_agent: None })
         );
+        assert_eq!(
+            call(json!({"name": "tenx_create_task", "arguments": {"prompt": "hi", "claude_agent": "sales"}})),
+            Ok(Call::CreateTask { workspace: None, title: None, prompt: "hi".into(), repos: None, claude_agent: Some("sales".into()) })
+        );
+        assert!(call(json!({"name": "tenx_create_task", "arguments": {"prompt": "hi", "claude_agent": "--model x"}})).is_err());
         assert!(call(json!({"name": "tenx_create_task", "arguments": {"prompt": "hi", "repos": [1]}})).is_err());
         assert_eq!(
             call(json!({"name": "tenx_answer_permission", "arguments": {"workspace": "w", "task": "t"}})),

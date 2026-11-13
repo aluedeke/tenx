@@ -560,6 +560,16 @@ pub enum AgentCommands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// List the Claude Code agents a task can run as (`--claude-agent`):
+    /// the workspace's `.claude/agents/` and `~/.claude/agents/`
+    List {
+        /// Print JSON: `[{name, description, scope}]`
+        #[arg(long)]
+        json: bool,
+        /// The workspace (directory or registered name) instead of cwd's
+        #[arg(long)]
+        ws_dir: Option<String>,
+    },
 }
 
 #[derive(clap::Args)]
@@ -744,6 +754,12 @@ pub enum TaskCommands {
         /// E.g. --agent-args "--dangerously-load-development-channels server:mattermost"
         #[arg(long, allow_hyphen_values = true, value_name = "ARGS")]
         agent_args: Option<String>,
+        /// Run the Claude session as this Claude Code agent
+        /// (`claude --agent <name>`): you talk to it directly. A file in
+        /// `~/.claude/agents/` or the workspace's `.claude/agents/`;
+        /// `tenx agent list` shows them. Writes `.tenx-claude-agent`.
+        #[arg(long, value_name = "NAME")]
+        claude_agent: Option<String>,
         /// Let tenx confirm Claude Code's "Loading development channels"
         /// warning at every start of this task's agent.
         #[arg(long)]
@@ -892,6 +908,12 @@ pub enum TaskCommands {
         /// Remove the task's extra arguments.
         #[arg(long)]
         clear_args: bool,
+        /// Run the Claude session as this Claude Code agent (`--agent`).
+        #[arg(long, value_name = "NAME", conflicts_with = "clear_claude_agent")]
+        claude_agent: Option<String>,
+        /// Run the Claude session as plain Claude again.
+        #[arg(long)]
+        clear_claude_agent: bool,
         /// Let tenx confirm Claude Code's "Loading development channels"
         /// warning at every start of this task's agent.
         #[arg(long, conflicts_with = "no_confirm_dev_channels")]

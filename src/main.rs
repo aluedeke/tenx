@@ -111,6 +111,7 @@ fn run() -> Result<()> {
                 let timeout = cli::task::parse_duration(&timeout)?;
                 cli::restart::run(&tasks, now, timeout, dry_run)?;
             }
+            AgentCommands::List { json, ws_dir } => cli::task::claude_agents(ws_dir.as_deref(), json)?,
         },
 
         Some(Commands::Tmux { command }) => match command {
@@ -236,6 +237,7 @@ fn run() -> Result<()> {
                 prompt,
                 agent,
                 agent_args,
+                claude_agent,
                 confirm_dev_channels,
                 ws_dir,
             } => {
@@ -251,6 +253,7 @@ fn run() -> Result<()> {
                 let agent = cli::task::AgentSetup {
                     kind: agent.as_deref().map(agent::AgentKind::from_token),
                     args: agent_args.as_deref(),
+                    claude_agent: claude_agent.as_deref(),
                     confirm_dev_channels,
                 };
                 let open = cli::task::OpenMode::for_cli(no_open, no_focus);
@@ -314,14 +317,25 @@ fn run() -> Result<()> {
                 Some(dir) => cli::task::rm_by_dir(&dir, &name)?,
                 None => cli::task::rm(&name, force)?,
             },
-            TaskCommands::Agent { name, kind, args, clear_args, confirm_dev_channels, no_confirm_dev_channels, ws_dir } => {
+            TaskCommands::Agent {
+                name,
+                kind,
+                args,
+                clear_args,
+                claude_agent,
+                clear_claude_agent,
+                confirm_dev_channels,
+                no_confirm_dev_channels,
+                ws_dir,
+            } => {
                 let args = if clear_args { Some("") } else { args.as_deref() };
+                let claude_agent = if clear_claude_agent { Some("") } else { claude_agent.as_deref() };
                 let confirm = match (confirm_dev_channels, no_confirm_dev_channels) {
                     (true, _) => Some(true),
                     (_, true) => Some(false),
                     _ => None,
                 };
-                cli::task::agent(ws_dir.as_deref(), &name, kind.as_deref(), args, confirm)?;
+                cli::task::agent(ws_dir.as_deref(), &name, kind.as_deref(), args, claude_agent, confirm)?;
             }
             TaskCommands::Pin { name, ws_dir } => {
                 cli::task::pin(ws_dir.as_deref(), &name)?;
