@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.37.1] - 2026-11-13
+
+### Fixed
+
+- **task:** Read quoted Claude agent descriptions as YAML does (#56)
+
+[0.37.1]: https://github.com/aluedeke/tenx/compare/v0.37.0...v0.37.1
+
 ## [0.37.0] - 2026-11-13
 
 ### Added
