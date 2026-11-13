@@ -273,9 +273,76 @@ fn ms_to_iso(ms: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
 }
 
+/// Whether the end of a Claude Code transcript (`tail`, whole lines; a cut
+/// first line is skipped) shows a turn you stopped with Esc after `since_ms`
+/// (the record's `statusUpdatedAt`). Claude Code fires no hook on an
+/// interrupt (measured on 2.1), so the record stays `busy`; what it does write
+/// is a user line `[Request interrupted by user]` (or `… for tool use`), after
+/// which only bookkeeping lines follow until you send the next prompt. That
+/// prompt's hook is newer than the marker, so a marker older than the last
+/// event is an interrupt already answered — with [`INTERRUPT_GRACE_MS`] of
+/// slack, for a hook the interrupted tool still fires a moment after the
+/// marker. A real next prompt can't hide in that slack: its own line follows
+/// the marker in the transcript at once.
+pub fn claude_interrupted_since(tail: &str, since_ms: u64) -> bool {
+    let since = since_ms as i64 - INTERRUPT_GRACE_MS;
+    for line in tail.lines().rev() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+        let kind = v["type"].as_str();
+        if !matches!(kind, Some("user") | Some("assistant")) || v["isMeta"].as_bool() == Some(true) {
+            continue;
+        }
+        if kind == Some("assistant") {
+            return false;
+        }
+        let marker = |t: &str| t.starts_with("[Request interrupted by user");
+        let content = &v["message"]["content"];
+        let interrupted = match content {
+            Value::String(s) => marker(s),
+            Value::Array(parts) => parts.iter().any(|p| p["type"] == "text" && p["text"].as_str().is_some_and(marker)),
+            _ => false,
+        };
+        if !interrupted {
+            return false;
+        }
+        let at = v["timestamp"].as_str().and_then(|t| t.parse::<jiff::Timestamp>().ok());
+        return at.is_some_and(|t| t.as_millisecond() >= since);
+    }
+    false
+}
+
+/// See [`claude_interrupted_since`].
+pub const INTERRUPT_GRACE_MS: i64 = 2_000;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_turn_stopped_with_esc_is_read_from_the_transcript() {
+        // 2026-11-13T15:00:00Z in ms.
+        let t0: u64 = 1_794_582_000_000;
+        let assistant = r#"{"type":"assistant","timestamp":"2026-11-13T14:59:58Z","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"sleep 60"}}]}}"#;
+        let marker = r#"{"type":"user","timestamp":"2026-11-13T15:00:05.120Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#;
+        let bookkeeping = r#"{"type":"file-history-snapshot","messageId":"x"}
+{"type":"last-prompt","lastPrompt":"run it"}
+{"type":"user","isMeta":true,"timestamp":"2026-11-13T15:00:06Z","message":{"content":"<local-command-caveat>"}}"#;
+        let tail = format!("{{\"cut line\n{assistant}\n{marker}\n{bookkeeping}\n");
+        // The hook's last event (PreToolUse) was before the Esc.
+        assert!(claude_interrupted_since(&tail, t0));
+        // A hook the interrupted tool fires a moment later doesn't hide it.
+        assert!(claude_interrupted_since(&tail, t0 + 5_120 + 300));
+        // A prompt sent after it: its hook is newer than the marker.
+        assert!(!claude_interrupted_since(&tail, t0 + 10_000));
+        // The plain form, as a string or a text part.
+        let plain = r#"{"type":"user","timestamp":"2026-11-13T15:00:05Z","message":{"content":"[Request interrupted by user]"}}"#;
+        assert!(claude_interrupted_since(plain, t0));
+        // A turn that goes on: the last conversation line is the agent's, or a tool result.
+        assert!(!claude_interrupted_since(&format!("{marker}\n{assistant}"), t0));
+        let result = r#"{"type":"user","timestamp":"2026-11-13T15:00:09Z","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]}}"#;
+        assert!(!claude_interrupted_since(&format!("{marker}\n{result}"), t0));
+        assert!(!claude_interrupted_since("", t0));
+    }
 
     #[test]
     fn claude_project_dirname_dashes_every_non_alphanumeric() {
