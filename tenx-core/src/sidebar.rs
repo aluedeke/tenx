@@ -409,9 +409,27 @@ fn plain_entry(icon: &'static str, icon_tone: Tone, label: String, parts: Vec<Pa
     Entry { icon, icon_tone: Some(icon_tone), label, checks: Vec::new(), parts, url: None, kind: None }
 }
 
+/// A running `tenx service`: its name, its ports (a click opens the first),
+/// its command.
+fn service_entry(s: &crate::taskservice::Service) -> Entry {
+    let mut parts = Vec::new();
+    if s.ports.is_empty() {
+        parts.push(part("running", Tone::Good));
+    } else {
+        parts.push(part(s.ports.iter().map(|p| format!(":{p}")).collect::<Vec<_>>().join(" "), Tone::Good));
+    }
+    parts.push(part(s.command.clone(), Tone::Muted));
+    let mut e = plain_entry("▶", Tone::Good, s.name.clone(), parts);
+    if let Some(p) = s.ports.first() {
+        e.url = Some(format!("http://localhost:{p}"));
+        e.kind = Some(LinkKind::Port);
+    }
+    e
+}
+
 /// The sidebar for a task whose cached facts are `live`: its todos, then its
-/// links by kind — PRs, Linear, made with Claude, Slack —, its repos, and
-/// other links last.
+/// links by kind — PRs, Linear, made with Claude, Slack —, its services, its
+/// repos, and other links last.
 pub fn build(live: &Live) -> Sidebar {
     let links = live.all_links();
     let of = |kinds: &[LinkKind]| links.iter().filter(|l| kinds.contains(&l.kind)).collect::<Vec<_>>();
@@ -508,6 +526,11 @@ pub fn build(live: &Live) -> Sidebar {
     let slack = of(&[LinkKind::Slack]).into_iter().map(|l| link_entry(l, Vec::new())).collect();
     push("Slack", String::new(), None, slack);
 
+    // A service's ports are its entry's; `Other` doesn't list them again.
+    let service_ports: Vec<String> = live.services.iter().flat_map(|s| &s.ports).map(|p| format!("http://localhost:{p}")).collect();
+    let services = live.services.iter().map(service_entry).collect();
+    push("Services", live.services.len().to_string(), None, services);
+
     let repos = live
         .git
         .iter()
@@ -520,6 +543,7 @@ pub fn build(live: &Live) -> Sidebar {
 
     let other = of(&[LinkKind::Port, LinkKind::Web])
         .into_iter()
+        .filter(|l| !service_ports.contains(&l.url))
         .map(|l| match l.kind {
             LinkKind::Port => link_entry(l, vec![part("running here", Tone::Good)]),
             _ => link_entry(l, Vec::new()),
@@ -533,6 +557,26 @@ pub fn build(live: &Live) -> Sidebar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn services_are_listed_with_their_ports_and_not_again_under_other() {
+        let tilt = crate::taskservice::Service { name: "tilt".into(), command: "tilt up".into(), started: 0, ports: vec![10354, 20426] };
+        let watch = crate::taskservice::Service { name: "npm".into(), command: "npm run watch".into(), started: 0, ports: vec![] };
+        let live = Live { services: vec![tilt, watch], ports: vec![10354, 20426, 5173], ..Default::default() };
+        let bar = build(&live);
+        let texts = |parts: &[Part]| parts.iter().map(|p| p.text.as_str()).collect::<Vec<_>>().join(" | ");
+        let services = bar.sections.iter().find(|s| s.title == "Services").expect("a Services section");
+        assert_eq!(services.count, "2");
+        assert_eq!(services.entries[0].label, "tilt");
+        assert_eq!(services.entries[0].url.as_deref(), Some("http://localhost:10354"));
+        assert_eq!(texts(&services.entries[0].parts), ":10354 :20426 | tilt up");
+        assert_eq!(texts(&services.entries[1].parts), "running | npm run watch");
+        assert_eq!(services.entries[1].url, None);
+        let other = bar.sections.iter().find(|s| s.title == "Other").expect("the other port");
+        let urls: Vec<_> = other.entries.iter().filter_map(|e| e.url.as_deref()).collect();
+        assert_eq!(urls, vec!["http://localhost:5173"]);
+        assert!(build(&Live::default()).sections.iter().all(|s| s.title != "Services"));
+    }
 
     #[test]
     fn the_sidebar_fits_only_beside_a_wide_enough_task() {

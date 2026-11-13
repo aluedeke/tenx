@@ -81,9 +81,16 @@ pub fn is_agent_shell(command: &str) -> bool {
     command.contains("/.claude/shell-snapshots/")
 }
 
+/// Whether a child process of the agent is a command its turn waits for: an
+/// [agent shell](is_agent_shell) that isn't a `tenx service`
+/// (`crate::taskservice`), which runs until someone stops it.
+pub fn is_awaited_shell(command: &str) -> bool {
+    is_agent_shell(command) && !crate::taskservice::is_service_command(command)
+}
+
 /// End the pauses nothing will end: a session left `busy` by a `Stop` that
 /// waited on commands ([`Background::Processes`]) whose agent no longer runs
-/// any (`has_shell`, by pid — [`is_agent_shell`] over its child processes)
+/// any (`has_shell`, by pid — [`is_awaited_shell`] over its child processes)
 /// is quiet. A command that ends wakes the session, which then reports a new
 /// turn; when none runs and no turn came, the `Stop` listed something that
 /// had already finished.
@@ -1010,6 +1017,9 @@ mod tests {
         ));
         assert!(!is_agent_shell("node /Users/me/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp"));
         assert!(!is_agent_shell("caffeinate -i -t 300"));
+        let snapshot = "/bin/zsh -c source /Users/me/.claude/shell-snapshots/snapshot-zsh-1.sh && eval";
+        assert!(is_awaited_shell(&format!("{snapshot} 'make test'")));
+        assert!(!is_awaited_shell(&format!("{snapshot} 'tenx service -- tilt up'")));
         for b in [Background::Processes, Background::Other] {
             assert_eq!(Background::from_token(b.token()), b);
         }

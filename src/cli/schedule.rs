@@ -690,6 +690,7 @@ fn close_window(slug: &str, dir: &Path) {
     {
         let _ = std::fs::remove_file(dir.join(crate::tmux::WINDOW_ID_FILE));
         let _ = crate::cli::secrets::forget_released(dir);
+        crate::cli::service::stop_in(dir);
     }
 }
 

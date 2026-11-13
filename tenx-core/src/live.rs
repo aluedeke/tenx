@@ -30,6 +30,10 @@ pub struct Live {
     /// now (`prwatch::watched_in`), refreshed every watcher tick.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub watching: Vec<u64>,
+    /// The `tenx service`s started in this task (`crate::taskservice`),
+    /// refreshed every watcher tick.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<crate::taskservice::Service>,
     /// Links the agent named in its replies, newest first
     /// (`crate::links::merge`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
