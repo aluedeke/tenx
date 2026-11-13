@@ -200,11 +200,22 @@ pub fn sessions() -> Vec<Session> {
         if !pid_alive(pid) {
             continue;
         }
+        let mut status = raw.status.as_deref().map(SessionStatus::from_token).unwrap_or(SessionStatus::Idle);
+        // A turn stopped with Esc fires no hook: the transcript says so
+        // (`tenx_core::transcript::claude_interrupted_since`).
+        if status == SessionStatus::Busy
+            && raw.background.is_none()
+            && raw.agent.as_deref().unwrap_or(DEFAULT_AGENT) == "claude"
+            && let (Some(path), Some(since)) = (raw.transcript_path.as_deref(), raw.status_updated_at)
+            && tenx_core::transcript::claude_interrupted_since(&transcript_tail(Path::new(path)), since)
+        {
+            status = SessionStatus::Idle;
+        }
         out.push(Session {
             pid,
             session_id: raw.session_id,
             cwd: PathBuf::from(cwd),
-            status: raw.status.as_deref().map(SessionStatus::from_token).unwrap_or(SessionStatus::Idle),
+            status,
             waiting_for: raw.waiting_for,
             status_updated_at: raw.status_updated_at.map(|ms| UNIX_EPOCH + Duration::from_millis(ms)),
             kind: if raw.kind.is_empty() { "interactive".to_string() } else { raw.kind },
@@ -433,6 +444,23 @@ fn pane_scope() -> PaneScope {
     *cache = Some((Instant::now(), scope.clone()));
     scope
 }
+
+/// The last [`TRANSCRIPT_TAIL`] bytes of a transcript, whole lines only; empty
+/// when it can't be read.
+fn transcript_tail(path: &Path) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = fs::File::open(path) else { return String::new() };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    if f.seek(SeekFrom::Start(len.saturating_sub(TRANSCRIPT_TAIL))).is_err() {
+        return String::new();
+    }
+    let mut bytes = Vec::new();
+    let _ = f.read_to_end(&mut bytes);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// Enough for the lines after an interrupt: a few small bookkeeping entries.
+const TRANSCRIPT_TAIL: u64 = 64 * 1024;
 
 /// Whether agent `pid` runs a command of its own: a child process shaped like
 /// Claude Code's shell that isn't a `tenx service` (`tenx_core::status::is_awaited_shell`). A failed `ps`
