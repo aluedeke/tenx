@@ -740,7 +740,7 @@ fn start(ws: &Workspace, s: &Schedule, slot: Timestamp, tz: &TimeZone) -> Result
             let run_json = serde_json::to_string_pretty(&record(&slug))?;
             let description = format!("Scheduled run of `{}` ({}).", s.name, s.title);
             let md = crate::cli::task::TaskMd { description: &description, links: &[], prompt: &prompt, run: Some(&run_json) };
-            let agent = crate::cli::task::AgentSetup { kind, args, confirm_dev_channels: false };
+            let agent = crate::cli::task::AgentSetup { kind, args, ..Default::default() };
             let made = crate::cli::task::new_with(ws, &title, s.repos.as_deref(), crate::cli::task::OpenMode::Closed, &md, agent, &crate::progress::Silent);
             let task_dir = ws.tasks_dir().join(&slug);
             if let Err(e) = made {

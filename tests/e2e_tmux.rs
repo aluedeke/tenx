@@ -1424,6 +1424,60 @@ fn agent_restart_resumes_the_session_in_place() {
     assert!(!sessions.join(format!("{pid}.json")).exists(), "old record removed");
 }
 
+/// `--claude-agent` starts the task's Claude session as that Claude Code
+/// agent (`claude --agent <name>`), and `tenx agent list` finds the agents a
+/// picker offers: the workspace's and the user's.
+#[test]
+fn a_task_talks_to_a_claude_agent() {
+    let Some(h) = Harness::named("-claudeagent") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let home = h.root.join("home");
+    fs::create_dir_all(home.join(".claude/agents/team")).unwrap();
+    fs::write(home.join(".claude/agents/team/sales.md"), "---\nname: sales\ndescription: Drafts messages.\n---\nYou draft.\n").unwrap();
+    fs::write(home.join(".claude/agents/notes.md"), "no frontmatter, not an agent\n").unwrap();
+    let ws_agents = h.root.join("ws/.claude/agents");
+    fs::create_dir_all(&ws_agents).unwrap();
+    fs::write(ws_agents.join("reviewer.md"), "---\ndescription: Reviews code.\n---\n").unwrap();
+
+    let out = h.tenx().args(["agent", "list", "--json", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "agent list: {}", String::from_utf8_lossy(&out.stderr));
+    let list: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        list,
+        serde_json::json!([
+            { "name": "reviewer", "description": "Reviews code.", "scope": "workspace" },
+            { "name": "sales", "description": "Drafts messages.", "scope": "user" },
+        ])
+    );
+
+    let args_log = home.join("claude-args");
+    fs::write(h.root.join("bin/claude"), format!("#!/bin/sh\necho \"$@\" >> '{}'\nexec sleep 600\n", args_log.display())).unwrap();
+    let out = h.tenx().args(["task", "new", "Talk", "--claude-agent", "sales", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let mut args = String::new();
+    for _ in 0..50 {
+        args = fs::read_to_string(&args_log).unwrap_or_default();
+        if !args.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(args.starts_with("--name talk --agent sales --add-dir="), "{args}");
+
+    let out = h.tenx().args(["task", "agent", "talk", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("claude agent: sales"), "{}", String::from_utf8_lossy(&out.stdout));
+    let out = h.tenx().args(["task", "agent", "talk", "--clear-claude-agent", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success());
+    assert!(!h.root.join("ws/tasks/talk/.tenx-claude-agent").exists());
+
+    // Not one shell word: refused before the task exists.
+    let out = h.tenx().args(["task", "new", "Bad", "--claude-agent", "a b", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(!out.status.success());
+    assert!(!h.root.join("ws/tasks/bad").exists());
+}
+
 /// `tenx tmux reload` loads the current config into the running server: the
 /// version stamp moves, windows stay, and loading it twice stacks nothing.
 #[test]

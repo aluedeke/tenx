@@ -48,7 +48,8 @@ use crate::workspace::sessions::{Subagent, SubagentStatus};
 use crate::workspace::{self, TaskStatus, Workspace};
 
 /// Create-task form. `focus`: 0 = workspace picker, 1 = name, 2 = prompt,
-/// 3.. = repo checkboxes, last = agent picker. The workspace starts as the
+/// 3.. = repo checkboxes, then the agent picker, last the Claude Code agent
+/// picker (`claude --agent`, used only when the agent is Claude). The workspace starts as the
 /// selected item's (or the first registered one) and ←/→ cycle it; the
 /// repo checklist follows the chosen workspace.
 ///
@@ -66,6 +67,11 @@ struct CreateForm {
     /// What `None` resolves to for the chosen workspace, read when the
     /// workspace is picked — shown beside "default".
     inherited: crate::agent::AgentKind,
+    /// The Claude Code agents the chosen workspace offers
+    /// (`agent::claude_agents`), read when the workspace is picked.
+    claude_agents: Vec<tenx_core::claude_agent::Definition>,
+    /// Which of `claude_agents` the session runs as; `None` is plain Claude.
+    claude_agent: Option<usize>,
     focus: usize,
 }
 
@@ -77,12 +83,35 @@ impl CreateForm {
     const REPOS: usize = 3;
 
     fn field_count(&self) -> usize {
-        // workspace, name, prompt, one per repo, then agent.
-        Self::REPOS + 1 + self.repos.len()
+        // workspace, name, prompt, one per repo, agent, then Claude agent.
+        Self::REPOS + 2 + self.repos.len()
     }
-    /// Focus index of the agent field (the last one).
+    /// Focus index of the agent field.
     fn agent_field(&self) -> usize {
         Self::REPOS + self.repos.len()
+    }
+    /// Focus index of the Claude Code agent field (the last one).
+    fn claude_agent_field(&self) -> usize {
+        self.agent_field() + 1
+    }
+    /// Whether the task will run Claude, so the Claude agent applies.
+    fn runs_claude(&self) -> bool {
+        self.agent.unwrap_or(self.inherited) == crate::agent::AgentKind::Claude
+    }
+    /// The Claude Code agent to start as, when there is one and it applies.
+    fn chosen_claude_agent(&self) -> Option<String> {
+        let def = self.claude_agents.get(self.claude_agent?)?;
+        self.runs_claude().then(|| def.name.clone())
+    }
+    /// Cycle the Claude agent: none → each found agent → none.
+    fn cycle_claude_agent(&mut self, back: bool) {
+        let n = self.claude_agents.len() + 1;
+        let cur = self.claude_agent.map_or(0, |i| i + 1);
+        let next = if back { (cur + n - 1) % n } else { (cur + 1) % n };
+        self.claude_agent = next.checked_sub(1);
+    }
+    fn claude_agent_label(&self) -> &str {
+        self.claude_agent.and_then(|i| self.claude_agents.get(i)).map_or("none", |d| d.name.as_str())
     }
     /// The repo checkbox under the cursor, if it is on one.
     fn repo_field(&self) -> Option<usize> {
@@ -1889,6 +1918,7 @@ impl Column {
         };
         let repos = self.ws_repos(ws_idx);
         let inherited = self.ws_agent(ws_idx);
+        let claude_agents = self.ws_claude_agents(ws_idx);
         self.status_msg = None;
         self.mode = Mode::Create(CreateForm {
             ws_idx,
@@ -1898,6 +1928,8 @@ impl Column {
             repos,
             agent: None,
             inherited,
+            claude_agents,
+            claude_agent: None,
             focus: CreateForm::NAME,
         });
     }
@@ -1919,6 +1951,8 @@ impl Column {
             repos: Vec::new(),
             agent: None,
             inherited,
+            claude_agents: Vec::new(),
+            claude_agent: None,
             focus: CreateForm::PROMPT,
         });
     }
@@ -1926,6 +1960,15 @@ impl Column {
     /// The agent a new task in this workspace inherits.
     fn ws_agent(&self, ws_idx: usize) -> crate::agent::AgentKind {
         self.workspaces.get(ws_idx).map_or(crate::agent::AgentKind::Claude, crate::agent::workspace_agent)
+    }
+
+    /// The Claude Code agents a new task in this workspace can run as. None
+    /// in the demo and the screenshots, which read nothing from disk.
+    fn ws_claude_agents(&self, ws_idx: usize) -> Vec<tenx_core::claude_agent::Definition> {
+        match self.workspaces.get(ws_idx) {
+            Some(ws) if !self.offline => crate::agent::claude_agents(ws),
+            _ => Vec::new(),
+        }
     }
 
     fn ws_repos(&self, ws_idx: usize) -> Vec<(String, bool)> {
@@ -1964,12 +2007,18 @@ impl Column {
                 if form.cycle_workspace(self.workspaces.len(), back) {
                     form.repos = self.ws_repos(form.ws_idx);
                     form.inherited = self.ws_agent(form.ws_idx);
+                    form.claude_agents = self.ws_claude_agents(form.ws_idx);
+                    form.claude_agent = None;
                 }
             }
             KeyCode::Right if form.focus == form.agent_field() => form.cycle_agent(false),
             KeyCode::Left if form.focus == form.agent_field() => form.cycle_agent(true),
+            KeyCode::Right if form.focus == form.claude_agent_field() => form.cycle_claude_agent(false),
+            KeyCode::Left if form.focus == form.claude_agent_field() => form.cycle_claude_agent(true),
             KeyCode::Char(' ') => {
-                if form.focus == form.agent_field() {
+                if form.focus == form.claude_agent_field() {
+                    form.cycle_claude_agent(false);
+                } else if form.focus == form.agent_field() {
                     form.cycle_agent(false);
                 } else if let Some(i) = form.repo_field() {
                     form.repos[i].1 = !form.repos[i].1;
@@ -2270,7 +2319,7 @@ impl Column {
             self.filter.clear();
             self.sort_rows();
             self.apply_filter();
-            let (job_name, agent) = (name.clone(), form.agent);
+            let (job_name, agent, claude_agent) = (name.clone(), form.agent, form.chosen_claude_agent());
             self.start_job(plan, super::job::Then::OpenTask(ws_idx, slug.clone()), move |rep| {
                 // Reloaded on the worker rather than captured: `Workspace` is
                 // read from disk, and this is the convention everywhere else
@@ -2282,7 +2331,8 @@ impl Column {
                 // terminal. The chosen agent is pinned before that; `None`
                 // inherits the workspace/global default.
                 let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
-                crate::cli::task::new_with(&ws, &job_name, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent.into(), rep)
+                let setup = crate::cli::task::AgentSetup { kind: agent, claude_agent: claude_agent.as_deref(), ..Default::default() };
+                crate::cli::task::new_with(&ws, &job_name, Some(&repos), crate::cli::task::OpenMode::Closed, &md, setup, rep)
                     .map_err(|e| e.to_string())?;
                 Ok(format!("created '{job_name}'"))
             });
@@ -2347,7 +2397,7 @@ impl Column {
         self.sort_rows();
         self.apply_filter();
         let placeholder = naming.placeholder.clone();
-        let agent = form.agent;
+        let (agent, claude_agent) = (form.agent, form.chosen_claude_agent());
         let named = naming.clone();
         self.start_job(plan, super::job::Then::OpenNamed(ws_idx, naming), move |rep| {
             let ws = crate::workspace::load(&ws_dir).map_err(|e| e.to_string())?;
@@ -2360,7 +2410,8 @@ impl Column {
             named.set(&slug, &title);
             let md = crate::cli::task::TaskMd { prompt: &prompt, ..Default::default() };
             let shifted = crate::progress::Shifted::new(rep, 1);
-            let made = crate::cli::task::new_with(&ws, &title, Some(&repos), crate::cli::task::OpenMode::Closed, &md, agent.into(), &shifted)
+            let setup = crate::cli::task::AgentSetup { kind: agent, claude_agent: claude_agent.as_deref(), ..Default::default() };
+            let made = crate::cli::task::new_with(&ws, &title, Some(&repos), crate::cli::task::OpenMode::Closed, &md, setup, &shifted)
                 .map_err(|e| e.to_string())?;
             if made != slug {
                 named.set(&made, &title);
@@ -4348,6 +4399,18 @@ fn render_create(f: &mut ratatui::Frame, column: &Column, area: Rect) {
     let focused = form.focus == form.agent_field();
     let value = if form.agent.is_none() { format!("{}  (inherits default)", form.agent_label()) } else { form.agent_label() };
     lines.push(field_line(focused, "agent", &format!("‹ {value} ›")));
+
+    // Claude Code agent picker (the last field): the session runs as it.
+    let focused = form.focus == form.claude_agent_field();
+    let value = match (form.claude_agents.is_empty(), form.runs_claude()) {
+        (true, _) => "none  (no agents in .claude/agents)".to_string(),
+        (false, true) => format!("‹ {} ›", form.claude_agent_label()),
+        (false, false) => format!("‹ {} ›  (only for claude)", form.claude_agent_label()),
+    };
+    lines.push(field_line(focused, "claude agent", &value));
+    if let Some(d) = form.claude_agent.and_then(|i| form.claude_agents.get(i)).filter(|d| !d.description.is_empty()) {
+        lines.push(Line::from(Span::styled(format!("    {}", d.description), Style::default().fg(palette::MUTED.color()))));
+    }
 
     let body = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(palette::BORDER.color())).title(" new task "));

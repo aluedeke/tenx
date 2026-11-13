@@ -273,11 +273,14 @@ pub(crate) enum ModeView {
         agent_inherits: bool,
         /// What `default` resolves to for the chosen workspace (`claude`, …).
         agent_default: &'static str,
+        /// The Claude Code agent picker, its fields at this level.
+        #[serde(flatten)]
+        claude_agent: Box<ClaudeAgentPicker>,
         /// The task's directory and branch name, from `name`
         /// (`tenx_core::slug::slugify`) — empty until the name makes one,
         /// and while Claude is to name it.
         slug: String,
-        /// `workspace`, `name`, `prompt`, `repo` or `agent`.
+        /// `workspace`, `name`, `prompt`, `repo`, `agent` or `claude_agent`.
         focus: &'static str,
         /// The repo under the cursor when `focus` is `repo`.
         focus_repo: Option<usize>,
@@ -345,6 +348,30 @@ pub(crate) struct Wanted {
 pub(crate) struct WorkspaceOption {
     pub(crate) name: String,
     pub(crate) color: String,
+}
+
+/// The create form's Claude Code agent picker (`claude --agent`).
+#[derive(Debug, Serialize)]
+pub(crate) struct ClaudeAgentPicker {
+    /// The agents the session can run as: the workspace's `.claude/agents/`
+    /// and `~/.claude/agents/` (`FormOp::Pick` `claude_agent` takes an index
+    /// into this, plus one: 0 is plain Claude).
+    pub(crate) claude_agent_options: Vec<ClaudeAgentOption>,
+    /// 0 = none, else 1 + the index into `claude_agent_options`.
+    pub(crate) claude_agent_index: usize,
+    /// Whether the chosen agent is Claude — otherwise the Claude agent is
+    /// not used, and the page says so.
+    pub(crate) claude_agent_applies: bool,
+}
+
+/// A Claude Code agent the create form offers.
+#[derive(Debug, Serialize)]
+pub(crate) struct ClaudeAgentOption {
+    pub(crate) name: String,
+    /// The first line of its `description`; empty when none.
+    pub(crate) description: String,
+    /// `workspace` or `user`.
+    pub(crate) scope: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -733,6 +760,15 @@ impl Column {
                 agent: f.agent_label(),
                 agent_inherits: f.agent.is_none(),
                 agent_default: f.inherited.as_str(),
+                claude_agent: Box::new(ClaudeAgentPicker {
+                    claude_agent_options: f
+                        .claude_agents
+                        .iter()
+                        .map(|d| ClaudeAgentOption { name: d.name.clone(), description: d.description.clone(), scope: d.scope.as_str() })
+                        .collect(),
+                    claude_agent_index: f.claude_agent.map_or(0, |i| i + 1),
+                    claude_agent_applies: f.runs_claude(),
+                }),
                 // The slug creation will use: in the adhoc workspace a taken
                 // one counts up (`cli::task::plan_slug`, one `exists` per try),
                 // elsewhere it is the name's slug as is.
@@ -747,6 +783,7 @@ impl Column {
                     CreateForm::NAME => "name",
                     CreateForm::PROMPT => "prompt",
                     n if n == f.agent_field() => "agent",
+                    n if n == f.claude_agent_field() => "claude_agent",
                     _ => "repo",
                 },
                 focus_repo: f.repo_field(),
@@ -926,15 +963,22 @@ impl Column {
                         f.agent = CreateForm::AGENTS[*index];
                         f.focus = f.agent_field();
                     }
+                    (Mode::Create(f), "claude_agent") if *index <= f.claude_agents.len() => {
+                        f.claude_agent = index.checked_sub(1);
+                        f.focus = f.claude_agent_field();
+                    }
                     _ => {}
                 }
                 // A new workspace brings its own repo checklist, as ←/→ does.
                 if let Some(ws) = reload {
                     let repos = self.ws_repos(ws);
                     let inherited = self.ws_agent(ws);
+                    let claude_agents = self.ws_claude_agents(ws);
                     if let Mode::Create(f) = &mut self.mode {
                         f.repos = repos;
                         f.inherited = inherited;
+                        f.claude_agents = claude_agents;
+                        f.claude_agent = None;
                         f.focus = CreateForm::WORKSPACE;
                     }
                 }
@@ -1056,8 +1100,9 @@ pub(crate) enum FormOp {
         index: usize,
         on: bool,
     },
-    /// A picker: `workspace` (index into `workspace_options`) or `agent`
-    /// (index into `agent_options`), on the create form.
+    /// A picker: `workspace` (index into `workspace_options`), `agent`
+    /// (index into `agent_options`) or `claude_agent` (0 = none, else 1 +
+    /// the index into `claude_agent_options`), on the create form.
     Pick { field: String, index: usize },
     Submit,
     Cancel,
@@ -1273,9 +1318,46 @@ mod tests {
             repos: c.ws_repos(0),
             agent: None,
             inherited: crate::agent::AgentKind::Claude,
+            claude_agents: vec![
+                tenx_core::claude_agent::Definition {
+                    name: "reviewer".into(),
+                    description: "Reviews code.".into(),
+                    scope: tenx_core::claude_agent::Scope::Workspace,
+                },
+                tenx_core::claude_agent::Definition {
+                    name: "sales".into(),
+                    description: String::new(),
+                    scope: tenx_core::claude_agent::Scope::User,
+                },
+            ],
+            claude_agent: None,
             focus: CreateForm::NAME,
         });
         c
+    }
+
+    #[test]
+    fn a_web_form_picks_a_claude_agent_that_applies_only_to_claude() {
+        let mut c = with_workspaces();
+        let json = serde_json::to_value(c.view().mode).unwrap();
+        let names: Vec<_> = json["claude_agent_options"].as_array().unwrap().iter().map(|o| o["name"].as_str().unwrap().to_string()).collect();
+        assert_eq!(names, ["reviewer", "sales"]);
+        assert_eq!((json["claude_agent_index"].as_u64(), json["claude_agent_applies"].as_bool()), (Some(0), Some(true)));
+        form(&mut c, r#"{"op":"pick","field":"claude_agent","index":2}"#);
+        let ModeView::Create { claude_agent, focus, .. } = c.view().mode else { panic!("create form") };
+        assert_eq!((claude_agent.claude_agent_index, focus), (2, "claude_agent"));
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert_eq!(f.chosen_claude_agent().as_deref(), Some("sales"));
+        // Out of range is ignored; codex makes it not apply.
+        form(&mut c, r#"{"op":"pick","field":"claude_agent","index":9}"#);
+        form(&mut c, r#"{"op":"pick","field":"agent","index":2}"#);
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert_eq!((f.claude_agent, f.chosen_claude_agent()), (Some(1), None));
+        assert!(!f.runs_claude());
+        // Back to none.
+        form(&mut c, r#"{"op":"pick","field":"claude_agent","index":0}"#);
+        let Mode::Create(f) = &c.mode else { panic!("create form") };
+        assert_eq!(f.claude_agent, None);
     }
 
     fn form(c: &mut Column, json: &str) {

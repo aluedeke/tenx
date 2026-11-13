@@ -6,6 +6,7 @@
 //! like, what a fresh `TASK.md` contains — lives here, as functions over plain
 //! data, so it can be tested with fixtures and reused by any future front end.
 
+pub mod claude_agent;
 pub mod codex;
 pub mod dictation;
 pub mod dialog;

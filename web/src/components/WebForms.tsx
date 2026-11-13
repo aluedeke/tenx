@@ -314,6 +314,7 @@ function Shell({ title, primary, send, error, progress, bar, children }: ShellPr
 function CreateForm({ mode, send, error, touch, progress }: { mode: Extract<FormMode, { kind: 'create' }>; send: Send; error: string | null; touch: boolean; progress?: FormProgress }) {
   const [ws, setWs] = useEcho(mode.workspace_index - 1);
   const [agent, setAgent] = useEcho(mode.agent_index);
+  const [claudeAgent, setClaudeAgent] = useEcho(mode.claude_agent_index);
   const pickWs = (i: number) => {
     setWs(i);
     send({ op: 'pick', field: 'workspace', index: i });
@@ -402,7 +403,59 @@ function CreateForm({ mode, send, error, touch, progress }: { mode: Extract<Form
           ))}
         </div>
       </Section>
+      <ClaudeAgentPicker
+        mode={mode}
+        value={claudeAgent}
+        onPick={(i) => {
+          setClaudeAgent(i);
+          send({ op: 'pick', field: 'claude_agent', index: i });
+        }}
+      />
     </Shell>
+  );
+}
+
+/** Which Claude Code agent the session runs as (`claude --agent`): a native
+ * list, the workspace's agents before yours, the chosen one's description
+ * under it. 0 is plain Claude. */
+function ClaudeAgentPicker({ mode, value, onPick }: { mode: Extract<FormMode, { kind: 'create' }>; value: number; onPick(i: number): void }) {
+  const options = mode.claude_agent_options;
+  const groups = (['workspace', 'user'] as const)
+    .map((scope) => ({ scope, items: options.map((o, i) => ({ ...o, index: i + 1 })).filter((o) => o.scope === scope) }))
+    .filter((g) => g.items.length > 0);
+  const chosen = value > 0 ? options[value - 1] : undefined;
+  const hint = options.length === 0
+    ? 'none found — add one to ~/.claude/agents or the workspace’s .claude/agents'
+    : !mode.claude_agent_applies
+      ? 'used only when the agent is claude'
+      : chosen?.description || 'you talk to the agent directly: its prompt, tools and model';
+  return (
+    <Section caption="TALK TO">
+      {options.length > 0 && (
+        <span className="wf-select">
+          <select
+            className="wf-in"
+            data-field="claude_agent"
+            aria-label="claude agent"
+            value={value}
+            disabled={!mode.claude_agent_applies}
+            onChange={(e) => onPick(Number(e.currentTarget.value))}
+          >
+            <option value={0}>Claude (no agent)</option>
+            {groups.map((g) => (
+              <optgroup key={g.scope} label={g.scope === 'workspace' ? 'this workspace' : 'your agents'}>
+                {g.items.map((o) => (
+                  <option key={o.name} value={o.index}>
+                    {o.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </span>
+      )}
+      <span className="wf-hint" data-testid="claude-agent-hint">{hint}</span>
+    </Section>
   );
 }
 

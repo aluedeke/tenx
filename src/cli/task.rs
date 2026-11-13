@@ -156,12 +156,14 @@ fn claude_title(bin: &str, prompt: &str) -> Option<String> {
 
 /// How a new task's agent starts, beyond the workspace defaults: its own
 /// agent (`.tenx-agent`; `None` inherits the workspace's), extra arguments
-/// (`.tenx-agent-args`) and the development-channels opt-in
+/// (`.tenx-agent-args`), the Claude Code agent its session runs as
+/// (`.tenx-claude-agent`) and the development-channels opt-in
 /// (`.tenx-confirm-dev-channels`). `Default` is "nothing of its own".
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AgentSetup<'a> {
     pub kind: Option<crate::agent::AgentKind>,
     pub args: Option<&'a str>,
+    pub claude_agent: Option<&'a str>,
     pub confirm_dev_channels: bool,
 }
 
@@ -187,6 +189,10 @@ pub fn new_with(
     rep: &dyn crate::progress::Reporter,
 ) -> Result<String> {
     let display_name = name.to_string();
+    // Refused before anything is on disk, so a typo leaves no half task.
+    if let Some(n) = agent.claude_agent.map(str::trim).filter(|n| !n.is_empty()) {
+        anyhow::ensure!(tenx_core::claude_agent::valid_name(n), "not a Claude agent name: {n:?}");
+    }
     let slug = plan_slug(ws, name)?;
     let slug = slug.as_str();
 
@@ -217,6 +223,9 @@ pub fn new_with(
     }
     if agent.args.is_some() {
         crate::agent::set_task_args(&task_dir, agent.args)?;
+    }
+    if agent.claude_agent.is_some() {
+        crate::agent::set_task_claude_agent(&task_dir, agent.claude_agent)?;
     }
     if agent.confirm_dev_channels {
         crate::agent::set_confirm_dev_channels(&task_dir, true)?;
@@ -760,10 +769,18 @@ pub fn unpin(ws_dir: Option<&str>, task: &str) -> Result<()> {
 /// change, prints the effective agent and where it comes from, then the
 /// task's extra arguments and development-channels opt-in when it has them.
 /// `kind` writes the task's `.tenx-agent` override (or clears it for
-/// `default`); `args` writes `.tenx-agent-args` (`""` clears it); `confirm`
+/// `default`); `args` writes `.tenx-agent-args` (`""` clears it);
+/// `claude_agent` writes `.tenx-claude-agent` (`""` clears it); `confirm`
 /// sets or clears `.tenx-confirm-dev-channels`. Takes effect at the agent's
 /// next start.
-pub fn agent(ws_dir: Option<&str>, task: &str, kind: Option<&str>, args: Option<&str>, confirm: Option<bool>) -> Result<()> {
+pub fn agent(
+    ws_dir: Option<&str>,
+    task: &str,
+    kind: Option<&str>,
+    args: Option<&str>,
+    claude_agent: Option<&str>,
+    confirm: Option<bool>,
+) -> Result<()> {
     let (ws, slug) = resolve_task(ws_dir, task)?;
     let task = ws.find_task(&slug)?;
     match kind {
@@ -774,19 +791,53 @@ pub fn agent(ws_dir: Option<&str>, task: &str, kind: Option<&str>, args: Option<
     if args.is_some() {
         crate::agent::set_task_args(&task.path, args)?;
     }
+    if claude_agent.is_some() {
+        crate::agent::set_task_claude_agent(&task.path, claude_agent)?;
+    }
     if let Some(on) = confirm {
         crate::agent::set_confirm_dev_channels(&task.path, on)?;
     }
     let effective = crate::agent::agent_for(&ws, &task.path);
     println!("{} — {} ({})", task.display_name, effective.as_str(), agent_source(&ws, &task.path));
+    if let Some(a) = crate::agent::task_claude_agent(&task.path) {
+        let note = if effective == crate::agent::AgentKind::Claude { "" } else { " (used only when the agent is claude)" };
+        println!("  claude agent: {a}{note}");
+    }
     if let Some(a) = crate::agent::task_args(&task.path).first() {
         println!("  args: {a}");
     }
     if crate::agent::confirms_dev_channels(&task.path) {
         println!("  confirms Claude Code's development-channels warning at each start");
     }
-    if kind.is_some() || args.is_some() || confirm.is_some() {
+    if kind.is_some() || args.is_some() || claude_agent.is_some() || confirm.is_some() {
         println!("applies at the agent's next start — reopen the task, or: tenx agent restart {slug}");
+    }
+    Ok(())
+}
+
+/// `tenx agent list`: the Claude Code agents a task of the workspace can run
+/// as, one per line (name, where it is, description), or as JSON.
+pub fn claude_agents(ws_dir: Option<&str>, json: bool) -> Result<()> {
+    let ws = match ws_dir {
+        Some(dir) => load_ws_arg(dir)?,
+        None => crate::workspace::find(&env::current_dir()?)?,
+    };
+    let found = crate::agent::claude_agents(&ws);
+    if json {
+        let list: Vec<_> = found
+            .iter()
+            .map(|d| serde_json::json!({ "name": d.name, "description": d.description, "scope": d.scope.as_str() }))
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&list)?);
+        return Ok(());
+    }
+    if found.is_empty() {
+        println!("no Claude Code agents in {} or ~/.claude/agents", ws.dir.join(".claude/agents").display());
+        return Ok(());
+    }
+    let width = found.iter().map(|d| d.name.len()).max().unwrap_or(0);
+    for d in &found {
+        println!("{:width$}  {:9}  {}", d.name, d.scope.as_str(), d.description);
     }
     Ok(())
 }

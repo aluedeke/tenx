@@ -284,7 +284,8 @@ pub const CLAUDE_FILES_NOT_LOADED_FROM_ADDED_DIRS: &[&str] =
 /// Build a task's launch command, honouring `[agents.<kind>]` overrides: the
 /// workspace config wins over the global config, and either supplies an
 /// alternate binary and/or extra args around tenx's per-agent session flags.
-/// The task's own `.tenx-agent-args` ([`task_args`]) come after those.
+/// The task's Claude Code agent (`--agent`, [`task_claude_agent`]) and its
+/// own `.tenx-agent-args` ([`task_args`]) come after those.
 ///
 /// `add_dirs` are the directories passed with `--add-dir` (see
 /// [`AgentKind::session_args`]): a task's own worktrees, so Claude loads each
@@ -301,6 +302,7 @@ pub fn launch(
     prompt: Option<&str>,
 ) -> String {
     let (bin, mut args) = configured(ws, kind);
+    args.extend(claude_agent_args(kind, task_dir));
     args.extend(task_args(task_dir));
     let mut cmd = kind.env_prefix(add_dirs).to_string();
     cmd.push_str(&kind.launch_command_with(&bin, slug, task_dir, &args));
@@ -322,6 +324,7 @@ pub fn launch_resume(
     transcript: Option<&str>,
 ) -> String {
     let (bin, mut args) = configured(ws, kind);
+    args.extend(claude_agent_args(kind, task_dir));
     args.extend(task_args(task_dir));
     let mut cmd = kind.env_prefix(add_dirs).to_string();
     cmd.push_str(&kind.resume_command_with(&bin, slug, task_dir, session_id, transcript, &args));
@@ -404,6 +407,72 @@ fn one_line(text: &str) -> String {
 pub fn set_task_args(task_dir: &Path, args: Option<&str>) -> std::io::Result<()> {
     let args = args.map(one_line).filter(|a| !a.is_empty());
     write_or_remove(&task_dir.join(TENX_AGENT_ARGS_FILE), args.map(|a| format!("{a}\n")))
+}
+
+/// The Claude Code agent a task's session runs as (`claude --agent <name>`):
+/// one name, from `task new --claude-agent`, `task agent --claude-agent` or
+/// the create form. Passed at every start, resume included, so a restarted
+/// session is still that agent; other harnesses ignore it. A user decision,
+/// like `.tenx-agent`.
+pub const TENX_CLAUDE_AGENT_FILE: &str = ".tenx-claude-agent";
+
+/// A task's Claude Code agent (see [`TENX_CLAUDE_AGENT_FILE`]), when it has one.
+pub fn task_claude_agent(task_dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(task_dir.join(TENX_CLAUDE_AGENT_FILE)).ok()?;
+    let name = text.trim();
+    tenx_core::claude_agent::valid_name(name).then(|| name.to_string())
+}
+
+/// Write (or clear, with `None` or blank) a task's Claude Code agent. A name
+/// that isn't one shell word is refused rather than written.
+pub fn set_task_claude_agent(task_dir: &Path, name: Option<&str>) -> std::io::Result<()> {
+    let name = name.map(str::trim).filter(|n| !n.is_empty());
+    if let Some(n) = name
+        && !tenx_core::claude_agent::valid_name(n)
+    {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("not an agent name: {n:?}")));
+    }
+    write_or_remove(&task_dir.join(TENX_CLAUDE_AGENT_FILE), name.map(|n| format!("{n}\n")))
+}
+
+/// `--agent <name>` for a Claude task that has an agent; nothing otherwise.
+fn claude_agent_args(kind: AgentKind, task_dir: &Path) -> Vec<String> {
+    match (kind, task_claude_agent(task_dir)) {
+        (AgentKind::Claude, Some(name)) => vec![format!("--agent {}", crate::tmux::shell_quote(&name))],
+        _ => Vec::new(),
+    }
+}
+
+/// The Claude Code agents a task of `ws` can start as: the workspace's
+/// `.claude/agents/` (every task links it as its own `.claude`) and
+/// `~/.claude/agents/`, subdirectories included, one per name, the
+/// workspace's first. Plugin agents and a repo's own aren't listed;
+/// `--claude-agent` takes those by name.
+pub fn claude_agents(ws: &crate::workspace::Workspace) -> Vec<tenx_core::claude_agent::Definition> {
+    use tenx_core::claude_agent::Scope;
+    let mut found = Vec::new();
+    scan_agents(&ws.dir.join(".claude").join("agents"), Scope::Workspace, 0, &mut found);
+    if let Ok(home) = crate::workspace::home_dir() {
+        scan_agents(&home.join(".claude").join("agents"), Scope::User, 0, &mut found);
+    }
+    tenx_core::claude_agent::merge(found)
+}
+
+fn scan_agents(dir: &Path, scope: tenx_core::claude_agent::Scope, depth: usize, out: &mut Vec<tenx_core::claude_agent::Definition>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if depth < 3 {
+                scan_agents(&path, scope, depth + 1, out);
+            }
+        } else if path.extension().is_some_and(|e| e == "md")
+            && let (Some(stem), Ok(text)) = (path.file_stem().and_then(|s| s.to_str()), std::fs::read_to_string(&path))
+            && let Some(def) = tenx_core::claude_agent::parse(stem, &text, scope)
+        {
+            out.push(def);
+        }
+    }
 }
 
 /// Opt-in marker: the watcher confirms Claude Code's "Loading development
@@ -510,6 +579,22 @@ mod tests {
         set_confirm_dev_channels(&dir, false).unwrap();
         set_confirm_dev_channels(&dir, false).unwrap();
         assert!(!confirms_dev_channels(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn claude_agent_is_passed_to_claude_only() {
+        let dir = std::env::temp_dir().join(format!("tenx-claude-agent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(claude_agent_args(AgentKind::Claude, &dir).is_empty());
+        set_task_claude_agent(&dir, Some(" sales\n")).unwrap();
+        assert_eq!(task_claude_agent(&dir).as_deref(), Some("sales"));
+        assert_eq!(claude_agent_args(AgentKind::Claude, &dir), vec!["--agent 'sales'".to_string()]);
+        assert!(claude_agent_args(AgentKind::Codex, &dir).is_empty());
+        assert!(set_task_claude_agent(&dir, Some("a b")).is_err());
+        assert_eq!(task_claude_agent(&dir).as_deref(), Some("sales"));
+        set_task_claude_agent(&dir, Some("")).unwrap();
+        assert!(!dir.join(TENX_CLAUDE_AGENT_FILE).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -503,8 +503,17 @@ test('the new-task form is a real web form', async ({ page, isMobile }) => {
   await expect(page.getByRole('checkbox', { name: /infra/ })).toBeChecked();
   // Agent chips; "default" names what it resolves to.
   await expect(chip('default')).toContainText('claude');
+  // A Claude Code agent to talk to: a list, its description under it.
+  const talkTo = page.getByLabel('claude agent');
+  await expect(talkTo).toHaveValue('0');
+  await talkTo.selectOption({ label: 'sales' });
+  await expect.poll(() => forms().some((m) => m.op === 'pick' && m.field === 'claude_agent' && m.index === 2)).toBe(true);
+  await expect(page.getByTestId('claude-agent-hint')).toHaveText('Drafts LinkedIn messages.');
   await tap(chip('codex'));
   await expect.poll(() => forms().some((m) => m.op === 'pick' && m.field === 'agent' && m.index === 2)).toBe(true);
+  // Codex runs no Claude agent: the list stays, unused.
+  await expect(talkTo).toBeDisabled();
+  await expect(page.getByTestId('claude-agent-hint')).toHaveText('used only when the agent is claude');
 
   // Tab walks the fields natively; Enter submits.
   if (!isMobile) {
