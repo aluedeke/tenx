@@ -1,5 +1,5 @@
 //! A task's links: its PRs, the Artifact pages and Claude Design projects its
-//! agent made, its Linear issue, Slack messages, its ports, and other web pages — what `L`
+//! agent made, its Linear issue, Slack messages, Obsidian notes (`obsidian://`), its ports, and other web pages — what `L`
 //! (the picker) and `f` (hint letters) in the column open, and what the
 //! sidebar groups (`crate::sidebar`).
 //!
@@ -24,6 +24,8 @@ pub enum LinkKind {
     Design,
     Linear,
     Slack,
+    /// An `obsidian://` link: a note (or vault, or search) in the Obsidian app.
+    Obsidian,
     Port,
     /// Also any kind a newer tenx wrote that this one doesn't know, so its
     /// cache still reads.
@@ -39,6 +41,7 @@ impl LinkKind {
             LinkKind::Design => "◆",
             LinkKind::Linear => "▸",
             LinkKind::Slack => "#",
+            LinkKind::Obsidian => "✎",
             LinkKind::Port => "⌁",
             LinkKind::Web => "↗",
         }
@@ -51,6 +54,7 @@ impl LinkKind {
             LinkKind::Design => "design",
             LinkKind::Linear => "linear",
             LinkKind::Slack => "slack",
+            LinkKind::Obsidian => "obsidian",
             LinkKind::Port => "port",
             LinkKind::Web => "web",
         }
@@ -77,6 +81,9 @@ pub const MAX_PER_KIND: usize = 10;
 
 /// `url`'s kind, from its host and path.
 pub fn classify(url: &str) -> LinkKind {
+    if url.starts_with(OBSIDIAN) {
+        return LinkKind::Obsidian;
+    }
     let rest = strip_scheme(url);
     let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
     match host.trim_start_matches("www.") {
@@ -93,8 +100,11 @@ pub fn classify(url: &str) -> LinkKind {
     }
 }
 
+/// The one app scheme a link may have besides the web's: the Obsidian app's.
+const OBSIDIAN: &str = "obsidian://";
+
 fn strip_scheme(url: &str) -> &str {
-    url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).unwrap_or(url)
+    url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).or_else(|| url.strip_prefix(OBSIDIAN)).unwrap_or(url)
 }
 
 /// `owner/repo/pull/12[/files]` → the repo and the number.
@@ -131,12 +141,31 @@ pub fn derived_label(url: &str, kind: LinkKind) -> String {
             w if w != host && w != "app" => format!("Slack message in {w}"),
             _ => "Slack message".to_string(),
         },
+        LinkKind::Obsidian => obsidian_label(rest),
         LinkKind::Port => rest.trim_end_matches('/').to_string(),
         LinkKind::Web => {
             let host = host.trim_start_matches("www.");
             let path = path.split(['?', '#']).next().unwrap_or("").trim_end_matches('/');
             if path.is_empty() { host.to_string() } else { format!("{host}/{path}") }
         }
+    }
+}
+
+/// `open?vault=brain&file=wiki%2FTenX.md` → `TenX`; a vault alone →
+/// `brain vault`; a search → `search: <query>`.
+fn obsidian_label(rest: &str) -> String {
+    let note = query_param(rest, "file").or_else(|| query_param(rest, "path")).filter(|f| !f.is_empty());
+    if let Some(f) = note {
+        let f = f.trim_end_matches('/');
+        let f = f.rsplit('/').next().unwrap_or(f);
+        return f.strip_suffix(".md").unwrap_or(f).to_string();
+    }
+    if let Some(q) = query_param(rest, "query").filter(|q| !q.is_empty()) {
+        return format!("search: {q}");
+    }
+    match query_param(rest, "vault").filter(|v| !v.is_empty()) {
+        Some(v) => format!("{v} vault"),
+        None => "Obsidian note".to_string(),
     }
 }
 
@@ -177,7 +206,7 @@ fn file_title(f: &str) -> String {
     f.strip_suffix(".dc.html").or_else(|| f.strip_suffix(".html")).unwrap_or(f).to_string()
 }
 
-/// Every web link in `text`, in the order they appear, each named by the
+/// Every web or Obsidian link in `text`, in the order they appear, each named by the
 /// Markdown link around it (`[name](url)`), else by a `Name: url` lead-in on
 /// its line, else from the URL itself ([`derived_label`]). A PR or a Linear
 /// issue is always named from its URL: `PR:` or `Linear:` says less than
@@ -212,7 +241,7 @@ pub fn find(text: &str) -> Vec<Link> {
 
 fn next_url(line: &str, from: usize) -> Option<usize> {
     let s = &line[from..];
-    [s.find("https://"), s.find("http://")].into_iter().flatten().min().map(|i| i + from)
+    [s.find("https://"), s.find("http://"), s.find(OBSIDIAN)].into_iter().flatten().min().map(|i| i + from)
 }
 
 /// `… [Name](` before a URL → `Name`.
@@ -275,7 +304,7 @@ pub fn merge(older: &[Link], found: &[Link]) -> Vec<Link> {
 }
 
 /// Everything a task links to, in display order: PRs, Artifacts, designs,
-/// Linear, ports, other pages; within a kind, the PR lookup first, then
+/// Linear, Slack, Obsidian notes, ports, other pages; within a kind, the PR lookup first, then
 /// `TASK.md`, then the transcript newest first. Each URL once.
 pub fn all(prs: &[PrInfo], task: &[Link], found: &[Link], ports: &[u16]) -> Vec<Link> {
     let mut out: Vec<Link> = Vec::new();
@@ -338,6 +367,12 @@ mod tests {
         assert_eq!(classify("https://slack.com/pricing"), LinkKind::Web);
         assert_eq!(classify("http://localhost:7070/x"), LinkKind::Port);
         assert_eq!(classify("https://github.com/aluedeke/tenx"), LinkKind::Web);
+        let o = "obsidian://open?vault=brain&file=wiki%2Fwork%2FTenX%20ideas.md";
+        assert_eq!(classify(o), LinkKind::Obsidian);
+        assert_eq!(derived_label(o, LinkKind::Obsidian), "TenX ideas");
+        assert_eq!(derived_label("obsidian://open?vault=brain", LinkKind::Obsidian), "brain vault");
+        assert_eq!(derived_label("obsidian://search?vault=brain&query=tenx", LinkKind::Obsidian), "search: tenx");
+        assert_eq!(derived_label("obsidian://open?path=%2FUsers%2Fa%2Fbrain%2Fnote.md", LinkKind::Obsidian), "note");
         assert_eq!(derived_label("https://www.docs.rs/ratatui/", LinkKind::Web), "docs.rs/ratatui");
         assert_eq!(percent_decode("a%20b%2"), "a b%2");
     }
@@ -369,6 +404,22 @@ mod tests {
         let md = "# t\n\n## Description\n\nsee https://a.example\n\n## Links\n\n- Linear:\n- PR: https://github.com/o/r/pull/3\n- Spec: https://b.example/spec\n\n## Notes\n\nhttps://c.example\n";
         let found = task_md_links(md);
         assert_eq!(found, vec![link("https://github.com/o/r/pull/3", "r#3", LinkKind::Pr), link("https://b.example/spec", "Spec", LinkKind::Web)]);
+    }
+
+    #[test]
+    fn find_reads_obsidian_links() {
+        let text = "Notes: obsidian://open?vault=brain&file=TenX.md, and [the plan](obsidian://open?vault=brain&file=wiki%2FPlan.md).\n\
+                    - Search: <obsidian://search?vault=brain&query=tenx>";
+        assert_eq!(
+            find(text),
+            vec![
+                link("obsidian://open?vault=brain&file=TenX.md", "Notes", LinkKind::Obsidian),
+                link("obsidian://open?vault=brain&file=wiki%2FPlan.md", "the plan", LinkKind::Obsidian),
+                link("obsidian://search?vault=brain&query=tenx", "Search", LinkKind::Obsidian),
+            ]
+        );
+        let md = "# t\n\n## Links\n\n- Note: obsidian://open?vault=brain&file=TenX.md\n";
+        assert_eq!(task_md_links(md), vec![link("obsidian://open?vault=brain&file=TenX.md", "Note", LinkKind::Obsidian)]);
     }
 
     #[test]

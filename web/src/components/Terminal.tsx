@@ -13,7 +13,7 @@ import { DragFilter } from '@/lib/dragfilter';
 import { TabClicks, tabAt } from '@/lib/tabclick';
 import { tabKey } from '@/lib/keys';
 import { VERSION as EMOJI_WIDTHS, widerEmoji } from '@/lib/emojiwidth';
-import { openExternal } from '@/lib/links';
+import { OBSIDIAN_TEXT_URL, openExternal } from '@/lib/links';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
 import { SELECT_HOLD_MS, SelectGesture } from '@/lib/touchselect';
@@ -175,8 +175,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         scrollback: 0, // tmux keeps the history; copy-mode scrolls it.
         macOptionIsMeta: true,
         // OSC 8 hyperlinks (a program's own links): the system browser, not
-        // a window inside the app (lib/links).
-        linkHandler: { activate: (_ev, uri) => openExternal(uri), allowNonHttpProtocols: false },
+        // a window inside the app (lib/links). Other schemes are let through
+        // to `openExternal`, which follows only Obsidian's.
+        linkHandler: { activate: (_ev, uri) => openExternal(uri), allowNonHttpProtocols: true },
       });
       // Character widths as tmux counts them: an emoji is two cells there,
       // and a glyph given one is clipped to its left half. xterm's default
@@ -199,6 +200,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.loadAddon(fit);
       // URLs spotted in the text: same.
       xterm.loadAddon(new WebLinksAddon((_ev, uri) => openExternal(uri)));
+      xterm.loadAddon(new WebLinksAddon((_ev, uri) => openExternal(uri), { urlRegex: OBSIDIAN_TEXT_URL }));
       // Programs' OSC 52 copies (tmux's selection, an agent's copy): the
       // browser clipboard, whatever target they name (lib/clipboard).
       xterm.loadAddon(new ClipboardAddon(undefined, new TerminalClipboard()));

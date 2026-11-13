@@ -1,6 +1,6 @@
 //! The sidebar: what a task is about, beside its screen — its links grouped
 //! (PRs with their state, Linear issues with their status, what was made
-//! with Claude, Slack messages, other pages and ports), its repos' git state
+//! with Claude, Slack messages, Obsidian notes, other pages and ports), its repos' git state
 //! and its `TASK.md` todos. [`build`] turns a task's cached facts
 //! ([`crate::live::Live`]) into [`Sidebar`], which the terminal client draws
 //! right of the task and `tenx web` sends to its page.
@@ -428,7 +428,7 @@ fn service_entry(s: &crate::taskservice::Service) -> Entry {
 }
 
 /// The sidebar for a task whose cached facts are `live`: its todos, then its
-/// links by kind — PRs, Linear, made with Claude, Slack —, its services, its
+/// links by kind — PRs, Linear, made with Claude, Slack, Obsidian —, its services, its
 /// repos, and other links last.
 pub fn build(live: &Live) -> Sidebar {
     let links = live.all_links();
@@ -526,6 +526,9 @@ pub fn build(live: &Live) -> Sidebar {
     let slack = of(&[LinkKind::Slack]).into_iter().map(|l| link_entry(l, Vec::new())).collect();
     push("Slack", String::new(), None, slack);
 
+    let obsidian = of(&[LinkKind::Obsidian]).into_iter().map(|l| link_entry(l, Vec::new())).collect();
+    push("Obsidian", String::new(), None, obsidian);
+
     // A service's ports are its entry's; `Other` doesn't list them again.
     let service_ports: Vec<String> = live.services.iter().flat_map(|s| &s.ports).map(|p| format!("http://localhost:{p}")).collect();
     let services = live.services.iter().map(service_entry).collect();
@@ -576,6 +579,17 @@ mod tests {
         let urls: Vec<_> = other.entries.iter().filter_map(|e| e.url.as_deref()).collect();
         assert_eq!(urls, vec!["http://localhost:5173"]);
         assert!(build(&Live::default()).sections.iter().all(|s| s.title != "Services"));
+    }
+
+    #[test]
+    fn obsidian_notes_get_a_section_of_their_own() {
+        let note = Link { url: "obsidian://open?vault=brain&file=TenX.md".into(), label: "TenX".into(), kind: LinkKind::Obsidian };
+        let live = Live { task_links: vec![note], ..Default::default() };
+        let bar = build(&live);
+        let section = bar.sections.iter().find(|s| s.title == "Obsidian").expect("an Obsidian section");
+        assert_eq!(section.entries[0].url.as_deref(), Some("obsidian://open?vault=brain&file=TenX.md"));
+        assert_eq!(section.entries[0].label, "TenX");
+        assert!(bar.sections.iter().filter(|s| s.title == "Other").all(|s| s.entries.iter().all(|e| e.kind != Some(LinkKind::Obsidian))));
     }
 
     #[test]

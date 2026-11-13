@@ -23,6 +23,7 @@ const KIND_COLOR: Partial<Record<LinkView['kind'], string>> = {
   design: 'var(--accent)',
   linear: 'var(--current)',
   slack: 'var(--warn)',
+  obsidian: 'var(--accent)',
   port: 'var(--info)',
   web: 'var(--muted)',
 };
@@ -94,7 +95,9 @@ export function Sidebar({ view, overlay, onClose, width, resizable, touch, dragT
         key={i}
         className="sb-entry sb-link"
         href={href}
-        target="_blank"
+        // An app link (Obsidian) leaves the page where it is; a new tab for
+        // it would stay empty.
+        target={e.kind === 'obsidian' ? undefined : '_blank'}
         rel="noopener noreferrer"
         title={e.url}
         onClick={() => overlay && onClose()}
