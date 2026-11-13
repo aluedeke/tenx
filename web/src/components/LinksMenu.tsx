@@ -34,7 +34,7 @@ const SHEET_MAX_WIDTH = 600;
 const GROUPS:  { label: string; kinds: LinkView['kind'][] }[] = [
   { label: 'pull requests', kinds: ['PR'] },
   { label: 'made with claude', kinds: ['artifact', 'design'] },
-  { label: 'other', kinds: ['linear', 'slack', 'port', 'web'] },
+  { label: 'other', kinds: ['linear', 'slack', 'obsidian', 'port', 'web'] },
 ];
 
 export function LinksMenu(props: Props) {

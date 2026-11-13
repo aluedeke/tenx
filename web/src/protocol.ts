@@ -133,7 +133,7 @@ export interface TaskItem {
 export interface LinkView {
   url: string;
   label: string;
-  kind: 'PR' | 'artifact' | 'design' | 'linear' | 'slack' | 'port' | 'web';
+  kind: 'PR' | 'artifact' | 'design' | 'linear' | 'slack' | 'obsidian' | 'port' | 'web';
   icon: string;
   color: string;
 }

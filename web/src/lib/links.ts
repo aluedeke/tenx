@@ -6,19 +6,35 @@
 // use for that is rejected as an invalid address when a web app follows it,
 // so it isn't used.
 //
-// Pure (`isWebUrl`, `linkHref`, `linkKey`), for the unit tests.
+// An `obsidian://` link opens the Obsidian app: the iOS app hands any link
+// that isn't its server's to iOS (`UIApplication.open`), and a desktop
+// browser asks whether to open the app.
+//
+// Pure (`isWebUrl`, `isOpenableUrl`, `linkHref`, `linkKey`), for the unit tests.
 
 import type { ColumnView, LinkView } from '@/protocol';
 
-/** Only web links leave the app; anything else (javascript:, data:, a
- * file path) is not followed at all. */
+/** A web link. */
 export function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
+/** Obsidian's app scheme: the one besides the web's that is followed. */
+export const OBSIDIAN_URL = /^obsidian:\/\//i;
+
+/** An `obsidian://` link in a terminal line: the web-links add-on's own
+ * pattern (`https?://…`) with Obsidian's scheme. */
+export const OBSIDIAN_TEXT_URL = /obsidian:[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/;
+
+/** Only web and Obsidian links leave the app; anything else (javascript:,
+ * data:, a file path, another app's scheme) is not followed at all. */
+export function isOpenableUrl(url: string): boolean {
+  return isWebUrl(url) || OBSIDIAN_URL.test(url);
+}
+
 /** Open `url` outside the app, as far as the platform allows. */
 export function openExternal(url: string): void {
-  if (!isWebUrl(url)) return;
+  if (!isOpenableUrl(url)) return;
   const w = window.open(url, '_blank', 'noopener,noreferrer');
   if (w) w.opener = null;
 }

@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isWebUrl, linkHref, linkKey } from '../src/lib/links.ts';
+import { isOpenableUrl, isWebUrl, linkHref, linkKey, OBSIDIAN_TEXT_URL } from '../src/lib/links.ts';
 import type { ColumnView, LinkView } from '../src/protocol.ts';
 
 test('only web links are followed', () => {
@@ -12,6 +12,17 @@ test('only web links are followed', () => {
   assert.ok(!isWebUrl('file:///etc/passwd'));
   assert.ok(!isWebUrl('/Users/me/.config/tenx'));
   assert.ok(!isWebUrl('x-safari-https://example.com'));
+});
+
+test('Obsidian links are followed, other app schemes are not', () => {
+  assert.ok(isOpenableUrl('https://example.com'));
+  assert.ok(isOpenableUrl('obsidian://open?vault=brain&file=TenX.md'));
+  assert.ok(isOpenableUrl('Obsidian://open?vault=brain'));
+  assert.ok(!isOpenableUrl('javascript:alert(1)'));
+  assert.ok(!isOpenableUrl('obsidian:alert(1)'));
+  assert.ok(!isOpenableUrl('things:///add?title=x'));
+  const line = 'see obsidian://open?vault=brain&file=wiki%2FTenX.md, then';
+  assert.equal(line.match(OBSIDIAN_TEXT_URL)?.[0], 'obsidian://open?vault=brain&file=wiki%2FTenX.md');
 });
 
 const link = (kind: LinkView['kind'], url: string, label = url): LinkView => ({ url, label, kind, icon: '', color: '' });

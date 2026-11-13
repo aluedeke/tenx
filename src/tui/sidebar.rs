@@ -33,6 +33,7 @@ fn icon_rgb(kind: Option<LinkKind>, tone: Option<Tone>) -> &'static palette::Rgb
         Some(LinkKind::Artifact | LinkKind::Design) => &palette::ACCENT,
         Some(LinkKind::Linear) => &palette::CURRENT,
         Some(LinkKind::Slack) => &palette::WARN,
+        Some(LinkKind::Obsidian) => &palette::ACCENT,
         Some(LinkKind::Port) => &palette::INFO,
         Some(LinkKind::Pr) => &palette::SUCCESS,
         Some(LinkKind::Web) | None => &palette::MUTED,
