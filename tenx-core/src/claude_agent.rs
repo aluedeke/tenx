@@ -57,8 +57,11 @@ pub fn parse(stem: &str, text: &str, scope: Scope) -> Option<Definition> {
     Some(Definition { name, description, scope })
 }
 
-/// A top-level key's value: quotes taken off, a block scalar (`|`, `>`)
-/// replaced by its first line, an escaped `\n` cut at.
+/// A top-level key's value, its first line: a block scalar (`|`, `>`)
+/// replaced by its first line, quoting decoded as YAML does — `''` in single
+/// quotes, backslash escapes in double quotes — and cut at the first line
+/// break, real or written out as `\n` (Claude Code's own agent files write
+/// `\\n` in double quotes, which YAML reads as those two characters).
 fn value(front: &[&str], key: &str) -> Option<String> {
     let at = front.iter().position(|l| l.strip_prefix(key).is_some_and(|r| r.starts_with(':')))?;
     let raw = front[at][key.len() + 1..].trim();
@@ -67,9 +70,40 @@ fn value(front: &[&str], key: &str) -> Option<String> {
     } else {
         raw
     };
-    let raw = raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')).or_else(|| raw.strip_prefix('\'').and_then(|r| r.strip_suffix('\''))).unwrap_or(raw);
-    let first = raw.split("\\n").next().unwrap_or("").trim();
+    let text = if let Some(inner) = raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+        unescape_double(inner)
+    } else if let Some(inner) = raw.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')) {
+        inner.replace("''", "'")
+    } else {
+        raw.to_string()
+    };
+    let first = text.split(['\n', '\r']).next().unwrap_or("");
+    let first = first.split("\\n").next().unwrap_or("").trim();
     (!first.is_empty()).then(|| first.to_string())
+}
+
+/// YAML's double-quoted escapes that matter in a description: `\\`, `\"`,
+/// `\n`, `\t`; any other escape is kept as written.
+fn unescape_double(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some(e @ ('\\' | '"' | '/')) => out.push(e),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 /// A name `--agent` can take as one shell word without surprises: letters,
@@ -96,6 +130,17 @@ mod tests {
         let d = parse("file", text, Scope::User).unwrap();
         assert_eq!(d.name, "sales");
         assert_eq!(d.description, "Andreas's sales helper.");
+    }
+
+    #[test]
+    fn yaml_quoting_is_decoded() {
+        // What Claude Code writes: an escaped backslash before the `n`.
+        let text = "---\nname: a\ndescription: \"Use it to \\\"trace\\\" calls.\\\\n\\\\nExamples: …\"\n---\n";
+        assert_eq!(parse("a", text, Scope::User).unwrap().description, "Use it to \"trace\" calls.");
+        let text = "---\nname: b\ndescription: 'Examples: ''test it'' on iPhone'\n---\n";
+        assert_eq!(parse("b", text, Scope::User).unwrap().description, "Examples: 'test it' on iPhone");
+        let text = "---\nname: c\ndescription: \"C:\\\\path\\tok\"\n---\n";
+        assert_eq!(parse("c", text, Scope::User).unwrap().description, "C:\\path\tok");
     }
 
     #[test]
