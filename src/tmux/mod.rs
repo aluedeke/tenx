@@ -1062,12 +1062,6 @@ pub struct TaskWindow<'a> {
     /// way drags every terminal to it. A task created from the column wants
     /// its window (and its agent) running, but not your screen.
     pub detached: bool,
-    /// Just the agent, full-window: no nvim on `TASK.md`, no shell. For a
-    /// task without worktrees (an adhoc session, a question about a
-    /// workspace) there is no code to edit beside it. Only for the split
-    /// layout — tabs cost nothing until they are opened, and a script
-    /// decides everything.
-    pub agent_only: bool,
 }
 
 /// Create a task's window and its panes, returning the window's stable id.
@@ -1122,10 +1116,6 @@ pub fn open_task_window(opts: &TaskWindow) -> Result<String> {
         if !status.success() {
             bail!("layout script {script} exited with {status}");
         }
-        return Ok(id);
-    }
-
-    if opts.agent_only {
         return Ok(id);
     }
 
