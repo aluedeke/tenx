@@ -757,6 +757,8 @@ pub fn task_json(ws: &Workspace, task: &Task, state: &TaskState) -> serde_json::
         "slug": task.name,
         "title": task.display_name,
         "agent": crate::agent::agent_for(ws, &task.path).as_str(),
+        // The Claude Code agent its session runs as (`.tenx-claude-agent`).
+        "claude_agent": crate::agent::task_claude_agent(&task.path),
         "pinned": crate::cli::task::is_pinned(&task.path),
         // The schedule a scheduled run belongs to; null for any other task.
         "schedule": crate::cli::schedule::read_run(&task.path).map(|r| r.schedule),

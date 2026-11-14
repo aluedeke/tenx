@@ -319,7 +319,8 @@ pub fn tools() -> Value {
         tool(
             "tenx_list_workspaces",
             "List workspaces",
-            "Every registered tenx workspace with its repos and the Claude Code agents a new task can run as.",
+            "Every registered tenx workspace with its repos and the Claude Code agents a new task can run as \
+             (scope: workspace = the workspace's own, user = the user's, offered in every workspace).",
             json!({}),
             &[],
             read_only.clone(),
@@ -328,8 +329,8 @@ pub fn tools() -> Value {
             "tenx_list_tasks",
             "List tasks",
             "Every task with its status (blocked = waits on a dialog, signaled = rang a bell, working, done = \
-             finished its turn, idle = no agent running), what it waits for, its PRs and its age, most recently \
-             active first.",
+             finished its turn, idle = no agent running), what it waits for, the Claude Code agent it runs as, its \
+             PRs and its age, most recently active first.",
             json!({
                 "workspace": { "type": "string", "description": "Only this workspace's tasks." },
                 "query": { "type": "string", "description": "Only tasks whose workspace, slug or title has these words." },
