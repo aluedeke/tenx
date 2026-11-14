@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.39.0] - 2026-11-14
+
+### Added
+
+- **mcp:** List each task's Claude Code agent and each agent's scope (#59)
+
+[0.39.0]: https://github.com/aluedeke/tenx/compare/v0.38.0...v0.39.0
+
 ## [0.38.0] - 2026-11-13
 
 ### Added
