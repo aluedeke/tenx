@@ -346,6 +346,7 @@ fn summary(t: &Value) -> Value {
         "waiting_for": t["waiting_for"],
         "age_secs": t["age_secs"],
         "agent": t["agent"],
+        "claude_agent": t["claude_agent"],
         "repos": t["repos"],
         "prs": prs,
         "subagents": t["subagents"].as_array().map_or(0, Vec::len),

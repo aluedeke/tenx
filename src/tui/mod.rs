@@ -53,7 +53,7 @@ pub fn listing() -> serde_json::Value {
             // What a new task can run as (`task new --claude-agent`).
             "claude_agents": crate::agent::claude_agents(&ws)
                 .iter()
-                .map(|d| serde_json::json!({ "name": d.name, "description": d.description }))
+                .map(|d| serde_json::json!({ "name": d.name, "description": d.description, "scope": d.scope.as_str() }))
                 .collect::<Vec<_>>(),
         }));
         for task in ws.tasks().unwrap_or_default() {
