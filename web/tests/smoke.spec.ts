@@ -735,6 +735,8 @@ test('the secrets form grants, denies and asks again after a wrong passphrase', 
   await expect(form).toBeVisible();
   await form.getByLabel('value for OPENAI_API_KEY').fill('sk-123');
   await expect(form.getByText('6 characters')).toBeVisible();
+  // Kept for the workspace, so later tasks can ask for it.
+  await tap(page.getByTestId('secret-request').nth(0).getByText('workspace', { exact: true }));
   await tap(page.getByTestId('secret-request').nth(1).getByText('deny'));
   await form.getByLabel('note for the agent').fill('not now');
   // The passphrase field is there, and waits for every granted value.
@@ -766,6 +768,7 @@ test('the secrets form grants, denies and asks again after a wrong passphrase', 
       ['OPENAI_API_KEY', 'sk-123'],
       ['SENTRY_TOKEN', 'from the mac ✓'],
     ],
+    workspace: ['OPENAI_API_KEY'],
     note: 'not now',
     passphrase: 'right',
   });

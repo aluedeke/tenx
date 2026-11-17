@@ -599,6 +599,7 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
         live.watching = crate::cli::prwatch::watched_in(&waits, &t.path);
         live.services = crate::cli::service::shown_in(&services, &t.path, &scan.listeners, &scan.tree);
         (live.task_links, live.todos) = crate::live::task_md(&t.path);
+        live.secrets = crate::cli::secrets::known_in(&t.path);
         crate::live::scan_links(&t.path, &t.agent, t.session.as_deref(), &mut live, &mut backfills);
         if t.repos.is_empty() {
             live.git.clear();

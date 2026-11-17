@@ -21,6 +21,9 @@ pub(super) struct Answer {
     /// A value for each granted value request, by name.
     #[serde(default)]
     values: Vec<(String, String)>,
+    /// The granted value requests whose value goes to the workspace bundle.
+    #[serde(default)]
+    workspace: Vec<String>,
     #[serde(default)]
     note: String,
     #[serde(default)]
@@ -38,7 +41,7 @@ pub(super) fn answer(task_id: &str, answer: Answer) -> Result<Answered> {
     let (ws, task) = task(task_id)?;
     let note = Some(answer.note.trim()).filter(|n| !n.is_empty());
     let passphrase = Some(answer.passphrase.as_str()).filter(|p| !p.is_empty());
-    secrets::answer_in(&ws, &task, &answer.shown, &answer.granted, &answer.values, note, passphrase)
+    secrets::answer_in(&ws, &task, &answer.shown, &answer.granted, &answer.values, &answer.workspace, note, passphrase)
 }
 
 fn task(task_id: &str) -> Result<(Workspace, Task)> {

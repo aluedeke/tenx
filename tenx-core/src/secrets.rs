@@ -17,8 +17,13 @@
 //! for a passphrase, or missing so that someone must type a value — rests on
 //! one property of `sops`: it encrypts a document's *values* only, so the
 //! key names of a sealed file are readable without the identity
-//! ([`sealed_keys`]).
+//! ([`sealed_keys`]). Where a name is looked for, and in which order — the
+//! task's bundle, the workspace bundle, a repo's own sops files — is
+//! [`route`]/[`sources`]; which bundle a release reads ([`bundle_release`]:
+//! the task's overrides the workspace's) and where a typed value is kept
+//! ([`Scope`], [`seal_scope`]) are the rest of the rules.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -261,8 +266,9 @@ pub enum Ask {
 pub struct Plan {
     /// Refused, with the sitting's note.
     pub deny: Vec<String>,
-    /// Granted value requests and the values typed for them.
-    pub seal: Vec<(String, String)>,
+    /// Granted value requests, the values typed for them, and where the
+    /// human chose to keep each (before [`seal_scope`]).
+    pub seal: Vec<(String, String, Scope)>,
     /// Granted release requests.
     pub release: Vec<String>,
     /// Granted value requests left empty: they stay pending, as an empty
@@ -281,14 +287,16 @@ impl Plan {
 /// `shown` what the form listed when it opened: a name answered elsewhere
 /// since then is left alone, and a request that arrived after the form opened
 /// is neither granted nor denied — nobody saw it, so it stays pending. Of the
-/// shown names, the `granted` ones are granted and the rest denied. A value
-/// is cleaned like one typed at the terminal ([`clean_typed_value`]); a bad
+/// shown names, the `granted` ones are granted and the rest denied. A typed
+/// value is kept for the workspace when its name is in `workspace`, else for
+/// the task. A value is cleaned like one typed at the terminal ([`clean_typed_value`]); a bad
 /// one refuses the whole sitting, before anything is changed.
 pub fn plan_answers(
     pending: &[(String, Ask)],
     shown: &[String],
     granted: &[String],
     values: &[(String, String)],
+    workspace: &[String],
 ) -> Result<Plan, String> {
     let mut plan = Plan::default();
     for (name, ask) in pending.iter().filter(|(n, _)| shown.contains(n)) {
@@ -304,12 +312,168 @@ pub fn plan_answers(
                 if value.is_empty() {
                     plan.skipped.push(name.clone());
                 } else {
-                    plan.seal.push((name.clone(), value));
+                    let scope = if workspace.contains(name) { Scope::Workspace } else { Scope::Task };
+                    plan.seal.push((name.clone(), value, scope));
                 }
             }
         }
     }
     Ok(plan)
+}
+
+// ── Where a value is kept ───────────────────────────────────────────────────
+
+/// A sealed file a task's request can be answered from: the task's own
+/// bundle, the workspace bundle every task of the workspace shares, or a
+/// repo's own sops file (by its path inside the task).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase", tag = "kind", content = "file")]
+pub enum Source {
+    Task,
+    Workspace,
+    Repo(String),
+}
+
+impl Source {
+    /// How a human is shown it: `task bundle`, `workspace bundle`, the file.
+    pub fn label(&self) -> String {
+        match self {
+            Source::Task => "task bundle".to_string(),
+            Source::Workspace => "workspace bundle".to_string(),
+            Source::Repo(file) => file.clone(),
+        }
+    }
+}
+
+/// Every source that holds `name`, in the order a request looks — the
+/// task's bundle, then the workspace bundle, then the repos' files
+/// (`repo_files`: those that match the name). The first one is what a
+/// release uses for a bundle key, so a task's own value overrides the
+/// workspace's.
+pub fn sources(in_task: bool, in_workspace: bool, repo_files: &[String]) -> Vec<Source> {
+    let mut found = Vec::new();
+    if in_task {
+        found.push(Source::Task);
+    }
+    if in_workspace {
+        found.push(Source::Workspace);
+    }
+    found.extend(repo_files.iter().cloned().map(Source::Repo));
+    found
+}
+
+/// What `need NAME` does with one name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Route {
+    /// Already in the task's released files: nothing to do.
+    Released,
+    /// Sealed: a human grants it and the passphrase releases it, from here.
+    Release(Source),
+    /// Held nowhere: a human types a value.
+    Value,
+}
+
+/// Route one requested name: already released → done; else the first of
+/// [`sources`] → the release queue; nowhere → the value queue.
+pub fn route(released: bool, in_task: bool, in_workspace: bool, repo_files: &[String]) -> Route {
+    if released {
+        return Route::Released;
+    }
+    match sources(in_task, in_workspace, repo_files).into_iter().next() {
+        Some(source) => Route::Release(source),
+        None => Route::Value,
+    }
+}
+
+/// Split the names a release wants between the two bundles: a key of the
+/// task's bundle comes from there, one only the workspace bundle has from
+/// the workspace's. Names neither holds are left out (an adopted file, or
+/// nothing).
+pub fn bundle_release(want: &[String], task_keys: &[String], workspace_keys: &[String]) -> (Vec<String>, Vec<String>) {
+    let from_task: Vec<String> = want.iter().filter(|n| task_keys.contains(n)).cloned().collect();
+    let from_workspace = want.iter().filter(|n| !task_keys.contains(n) && workspace_keys.contains(n)).cloned().collect();
+    (from_task, from_workspace)
+}
+
+/// Where a value a human types is kept.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    /// The task's own bundle: gone with the task.
+    #[default]
+    Task,
+    /// The workspace bundle: every later task of the workspace can ask for
+    /// it, and each one still needs a human to grant it.
+    Workspace,
+}
+
+impl Scope {
+    /// `task` / `workspace`, as `--scope` and the forms spell it.
+    pub fn parse(s: &str) -> Option<Scope> {
+        match s.trim().to_lowercase().as_str() {
+            "task" | "t" => Some(Scope::Task),
+            "workspace" | "ws" | "w" => Some(Scope::Workspace),
+            _ => None,
+        }
+    }
+
+    pub fn source(self) -> Source {
+        match self {
+            Scope::Task => Source::Task,
+            Scope::Workspace => Source::Workspace,
+        }
+    }
+}
+
+/// Where a typed value for a name is actually sealed: where the human chose,
+/// except that a name the task's bundle already holds stays there — the task
+/// value overrides the workspace one, so a new workspace value would never
+/// reach this task and the old task value would be released instead.
+pub fn seal_scope(chosen: Scope, in_task_bundle: bool) -> Scope {
+    if in_task_bundle { Scope::Task } else { chosen }
+}
+
+/// One name a task can get, for `status` and the sidebar: where it is
+/// sealed (in request order) and whether the task has it released now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Known {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<Source>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub released: bool,
+}
+
+/// Every name a task can get, by name: the task's bundle keys, the
+/// workspace bundle's, each repo file's (`repo`: the file and its keys; a
+/// file with no readable keys is listed under its own name), and what is
+/// released (a released name no source holds any more is still listed).
+pub fn known(task_keys: &[String], workspace_keys: &[String], repo: &[(String, Vec<String>)], released: &[String]) -> Vec<Known> {
+    let mut names: Vec<String> = Vec::new();
+    let mut add = |n: &String| {
+        if !names.contains(n) {
+            names.push(n.clone());
+        }
+    };
+    task_keys.iter().chain(workspace_keys).chain(released).for_each(&mut add);
+    for (file, keys) in repo {
+        if keys.is_empty() {
+            add(file);
+        }
+        keys.iter().for_each(&mut add);
+    }
+    names.sort();
+    names
+        .into_iter()
+        .map(|name| {
+            let files: Vec<String> = repo.iter().filter(|(f, k)| k.contains(&name) || (k.is_empty() && *f == name)).map(|(f, _)| f.clone()).collect();
+            Known {
+                sources: sources(task_keys.contains(&name), workspace_keys.contains(&name), &files),
+                released: released.contains(&name),
+                name,
+            }
+        })
+        .collect()
 }
 
 /// The clipboard's text as a secret value: cleaned like a typed one, and
@@ -479,10 +643,10 @@ mod tests {
     fn a_form_grants_the_ticked_and_denies_the_rest_it_showed() {
         let pending = vec![("A".to_string(), Ask::Release), ("B".to_string(), Ask::Value), ("C".to_string(), Ask::Release)];
         let values = vec![("B".to_string(), "s3cret".to_string())];
-        let plan = plan_answers(&pending, &names(&["A", "B", "C"]), &names(&["A", "B"]), &values).unwrap();
+        let plan = plan_answers(&pending, &names(&["A", "B", "C"]), &names(&["A", "B"]), &values, &[]).unwrap();
         assert_eq!(
             plan,
-            Plan { deny: names(&["C"]), seal: values.clone(), release: names(&["A"]), skipped: vec![] }
+            Plan { deny: names(&["C"]), seal: vec![("B".into(), "s3cret".into(), Scope::Task)], release: names(&["A"]), skipped: vec![] }
         );
         assert!(plan.needs_identity());
     }
@@ -491,7 +655,7 @@ mod tests {
     fn a_form_leaves_alone_what_it_never_showed_or_what_was_answered_since() {
         // D arrived after the form opened; A was answered in another tab.
         let pending = vec![("B".to_string(), Ask::Release), ("D".to_string(), Ask::Value)];
-        let plan = plan_answers(&pending, &names(&["A", "B"]), &names(&["A"]), &[]).unwrap();
+        let plan = plan_answers(&pending, &names(&["A", "B"]), &names(&["A"]), &[], &[]).unwrap();
         assert_eq!(plan, Plan { deny: names(&["B"]), ..Plan::default() });
         assert!(!plan.needs_identity());
     }
@@ -499,12 +663,60 @@ mod tests {
     #[test]
     fn an_empty_value_skips_and_a_control_character_refuses_the_sitting() {
         let pending = vec![("B".to_string(), Ask::Value)];
-        let plan = plan_answers(&pending, &names(&["B"]), &names(&["B"]), &[]).unwrap();
+        let plan = plan_answers(&pending, &names(&["B"]), &names(&["B"]), &[], &[]).unwrap();
         assert_eq!(plan, Plan { skipped: names(&["B"]), ..Plan::default() });
         let bad = vec![("B".to_string(), "x\x1b[A".to_string())];
-        assert!(plan_answers(&pending, &names(&["B"]), &names(&["B"]), &bad).unwrap_err().starts_with("B: "));
+        assert!(plan_answers(&pending, &names(&["B"]), &names(&["B"]), &bad, &[]).unwrap_err().starts_with("B: "));
         let pasted = vec![("B".to_string(), "token\n".to_string())];
-        let plan = plan_answers(&pending, &names(&["B"]), &names(&["B"]), &pasted).unwrap();
-        assert_eq!(plan.seal, vec![("B".to_string(), "token".to_string())]);
+        let plan = plan_answers(&pending, &names(&["B"]), &names(&["B"]), &pasted, &names(&["B"])).unwrap();
+        assert_eq!(plan.seal, vec![("B".to_string(), "token".to_string(), Scope::Workspace)]);
+    }
+
+    #[test]
+    fn a_request_looks_in_the_task_then_the_workspace_then_the_repos() {
+        let repo = names(&["app/secrets.staging.enc.env"]);
+        assert_eq!(route(true, true, true, &repo), Route::Released);
+        assert_eq!(route(false, true, true, &repo), Route::Release(Source::Task));
+        assert_eq!(route(false, false, true, &repo), Route::Release(Source::Workspace));
+        assert_eq!(route(false, false, false, &repo), Route::Release(Source::Repo("app/secrets.staging.enc.env".into())));
+        assert_eq!(route(false, false, false, &[]), Route::Value);
+        assert_eq!(sources(true, true, &repo).iter().map(Source::label).collect::<Vec<_>>(), ["task bundle", "workspace bundle", "app/secrets.staging.enc.env"]);
+    }
+
+    #[test]
+    fn a_task_value_overrides_the_workspace_one_on_release() {
+        let want = names(&["A", "B", "C", "staging"]);
+        let (task, ws) = bundle_release(&want, &names(&["A"]), &names(&["A", "B"]));
+        assert_eq!(task, names(&["A"]));
+        assert_eq!(ws, names(&["B"]));
+        let (task, ws) = bundle_release(&want, &[], &[]);
+        assert!(task.is_empty() && ws.is_empty());
+    }
+
+    #[test]
+    fn a_typed_value_goes_where_the_human_chose_unless_the_task_bundle_holds_it() {
+        assert_eq!(seal_scope(Scope::Task, false), Scope::Task);
+        assert_eq!(seal_scope(Scope::Workspace, false), Scope::Workspace);
+        // The task's value would hide a new workspace one from this task.
+        assert_eq!(seal_scope(Scope::Workspace, true), Scope::Task);
+        assert_eq!(Scope::default(), Scope::Task);
+        assert_eq!(Scope::parse("workspace"), Some(Scope::Workspace));
+        assert_eq!(Scope::parse(" W "), Some(Scope::Workspace));
+        assert_eq!(Scope::parse(""), None);
+        assert_eq!(Scope::parse("repo"), None);
+    }
+
+    #[test]
+    fn known_names_say_where_each_is_sealed_and_whether_it_is_released() {
+        let repo = vec![("app/secrets.enc.env".to_string(), names(&["DB_URL"])), ("app/cert.enc.pem".to_string(), vec![])];
+        let k = known(&names(&["A"]), &names(&["A", "W"]), &repo, &names(&["W", "OLD"]));
+        let by = |n: &str| k.iter().find(|x| x.name == n).unwrap().clone();
+        assert_eq!(k.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), ["A", "DB_URL", "OLD", "W", "app/cert.enc.pem"]);
+        assert_eq!(by("A").sources, [Source::Task, Source::Workspace]);
+        assert!(!by("A").released);
+        assert_eq!(by("W"), Known { name: "W".into(), sources: vec![Source::Workspace], released: true });
+        assert_eq!(by("DB_URL").sources, [Source::Repo("app/secrets.enc.env".into())]);
+        assert_eq!(by("app/cert.enc.pem").sources, [Source::Repo("app/cert.enc.pem".into())]);
+        assert!(by("OLD").sources.is_empty() && by("OLD").released);
     }
 }

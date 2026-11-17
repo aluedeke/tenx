@@ -291,11 +291,12 @@ const server = createServer(async (req, res) => {
         title: 'Cloud tasks',
         requests: [
           { name: 'OPENAI_API_KEY', ask: 'value', why: 'to call the API', sealed_in: '', clipboard: false },
-          { name: 'STRIPE_KEY', ask: 'release', why: '', sealed_in: '.secrets.enc.env', clipboard: false },
+          { name: 'STRIPE_KEY', ask: 'release', why: '', sealed_in: 'task bundle', clipboard: false },
           { name: 'SENTRY_TOKEN', ask: 'value', why: '', sealed_in: '', clipboard: true },
         ],
         passphrase: true,
         problem: null,
+        workspace: true,
       }),
     );
     return;

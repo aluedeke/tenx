@@ -59,6 +59,10 @@ pub struct Live {
     /// `TASK.md`'s todo checklist.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub todos: Option<crate::sidebar::Todos>,
+    /// The secret names the task can get: where each is sealed, whether it
+    /// is released (`cli::secrets::known_in`; names only, never a value).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<crate::secrets::Known>,
 }
 
 /// A transcript read up to `offset` bytes: the next read starts there.

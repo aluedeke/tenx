@@ -293,6 +293,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x86360e0461813b8f, // tenx: secrets need --clipboard, portable
     0xf47cb6d9806f8728, // tenx: background work and services
     0x38c9783db32d3a39, // tenx: background work and services portable
+    0xbb83b91fb3e66237, // tenx: workspace secrets
+    0x937e425b27b6fb0e, // tenx: workspace secrets, portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {
