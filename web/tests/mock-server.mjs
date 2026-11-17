@@ -290,9 +290,9 @@ const server = createServer(async (req, res) => {
       JSON.stringify({
         title: 'Cloud tasks',
         requests: [
-          { name: 'OPENAI_API_KEY', ask: 'value', why: 'to call the API', sealed_in: '', clipboard: false },
-          { name: 'STRIPE_KEY', ask: 'release', why: '', sealed_in: 'task bundle', clipboard: false },
-          { name: 'SENTRY_TOKEN', ask: 'value', why: '', sealed_in: '', clipboard: true },
+          { name: 'OPENAI_API_KEY', ask: 'value', why: 'to call the API', sealed_in: '', clipboard: false, in_task: false },
+          { name: 'STRIPE_KEY', ask: 'release', why: '', sealed_in: 'task bundle', clipboard: false, in_task: false },
+          { name: 'SENTRY_TOKEN', ask: 'value', why: '', sealed_in: '', clipboard: true, in_task: false },
         ],
         passphrase: true,
         problem: null,

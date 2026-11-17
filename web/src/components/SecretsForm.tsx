@@ -28,6 +28,8 @@ interface Request {
   sealed_in: string;
   /** Asked for from the clipboard (`need --clipboard`). */
   clipboard: boolean;
+  /** The task's own store holds the name: a new value stays there. */
+  in_task: boolean;
 }
 
 interface Sitting {
@@ -123,7 +125,7 @@ export function SecretsForm({ task, touch, onClose }: Props) {
         shown: requests.map((r) => r.name),
         granted: grants.map((r) => r.name),
         values: grants.filter((r) => r.ask === 'value').map((r) => [r.name, values[r.name] ?? '']),
-        workspace: grants.filter((r) => r.ask === 'value' && shared.has(r.name)).map((r) => r.name),
+        workspace: grants.filter((r) => r.ask === 'value' && !r.in_task && shared.has(r.name)).map((r) => r.name),
         note,
         passphrase: unlocking ? passphrase : '',
       });
@@ -256,7 +258,7 @@ export function SecretsForm({ task, touch, onClose }: Props) {
                   ) : (
                     !r.clipboard && <div className="wf-hint">empty: it stays pending</div>
                   )}
-                  {sitting?.workspace && (
+                  {sitting?.workspace && !r.in_task && (
                     <div className="wf-chips" role="radiogroup" aria-label={`where to keep ${r.name}`}>
                       <label className={!shared.has(r.name) ? 'wf-chip on' : 'wf-chip'}>
                         <input type="radio" className="wf-hidden" name={`keep-${r.name}`} checked={!shared.has(r.name)} onChange={() => share(r.name, false)} />

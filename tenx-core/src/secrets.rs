@@ -433,6 +433,29 @@ pub fn seal_scope(chosen: Scope, in_task_bundle: bool) -> Scope {
     if in_task_bundle { Scope::Task } else { chosen }
 }
 
+/// Whether `git rev-parse --is-inside-work-tree`, run in the workspace
+/// directory, proves the directory is outside git — the one place the
+/// workspace bundle may be written. `run` is `None` when git couldn't be
+/// started, else (exit success, stdout, stderr). Only git's own "not a git
+/// repository" proves it: a run that failed another way (a repo git refuses,
+/// "dubious ownership") or never ran proves nothing, and the bundle is then
+/// refused rather than risked inside a work tree.
+pub fn outside_git(run: Option<(bool, &str, &str)>) -> bool {
+    match run {
+        Some((false, _, stderr)) => stderr.to_lowercase().contains("not a git repository"),
+        _ => false,
+    }
+}
+
+/// Whether a value just sealed into the workspace bundle answers another
+/// task's waiting request for the same name: a plain value request does
+/// (it moves to that task's release queue, so nobody types the value
+/// again); one asked from the clipboard does not — that task asked for a
+/// new value on purpose.
+pub fn answers_waiting(on_value_queue: bool, from_clipboard: bool) -> bool {
+    on_value_queue && !from_clipboard
+}
+
 /// One name a task can get, for `status` and the sidebar: where it is
 /// sealed (in request order) and whether the task has it released now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -718,5 +741,21 @@ mod tests {
         assert_eq!(by("DB_URL").sources, [Source::Repo("app/secrets.enc.env".into())]);
         assert_eq!(by("app/cert.enc.pem").sources, [Source::Repo("app/cert.enc.pem".into())]);
         assert!(by("OLD").sources.is_empty() && by("OLD").released);
+    }
+
+    #[test]
+    fn only_git_saying_no_repository_lets_the_workspace_bundle_be_written() {
+        assert!(outside_git(Some((false, "", "fatal: not a git repository (or any of the parent directories): .git"))));
+        assert!(!outside_git(Some((true, "true\n", ""))));
+        assert!(!outside_git(Some((true, "false\n", ""))), "inside a .git directory is still git's");
+        assert!(!outside_git(Some((false, "", "fatal: detected dubious ownership in repository"))));
+        assert!(!outside_git(None), "git that never ran proves nothing");
+    }
+
+    #[test]
+    fn a_new_workspace_value_answers_plain_waiting_requests_only() {
+        assert!(answers_waiting(true, false));
+        assert!(!answers_waiting(true, true));
+        assert!(!answers_waiting(false, false));
     }
 }

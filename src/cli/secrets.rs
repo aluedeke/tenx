@@ -71,11 +71,16 @@
 //! own value overrides the workspace's (`tenx_core::secrets::bundle_release`),
 //! and a typed value for a name the task's bundle already holds stays in the
 //! task's bundle (`seal_scope`) — in the workspace it would never reach this
-//! task. `decrypt` with no name releases the task's bundle and adopted
+//! task. A value newly kept in the workspace also answers the other tasks
+//! still waiting for that name on their value queue (not one asked from the
+//! clipboard): it moves to their release queue (`answer_waiting`), so nobody
+//! types it twice. Writes to the bundle hold an `flock` beside it
+//! (`lock_bundle`): every task writes the one file, and `sops set` rewrites
+//! it whole. `decrypt` with no name releases the task's bundle and adopted
 //! files, never the whole workspace bundle. The bundle sits in the workspace
 //! directory, beside `tasks/`, so `task rm` and `forget_released` never reach
-//! it; and it is written only when `git` says the workspace is in no work
-//! tree (`workspace_scope_problem`) — a workspace kept inside a repo would
+//! it; and it is written only when `git` says plainly that the workspace is
+//! in no work tree (`workspace_scope_problem`; unsure means no) — a workspace kept inside a repo would
 //! put it one `git add` away from a commit. Repo credentials stay with the
 //! repo's own sops files (*Sops adoption*); there is no per-repo tenx store.
 //!
@@ -251,11 +256,16 @@ pub fn need_in(
             asked.push(name.clone());
             continue;
         }
-        if let Some(at) = released_at(task, name) {
-            eprintln!("✓ '{name}' is already released → {}", at.display());
-            continue;
-        }
-        let queue = if is_sealed(task, name) { Queue::Release } else { Queue::Value };
+        let released = released_at(task, name);
+        let (in_task, in_workspace, files) = lookup(task, name);
+        let queue = match rules::route(released.is_some(), in_task, in_workspace, &files) {
+            rules::Route::Released => {
+                eprintln!("✓ '{name}' is already released → {}", released.unwrap_or_default().display());
+                continue;
+            }
+            rules::Route::Release(_) => Queue::Release,
+            rules::Route::Value => Queue::Value,
+        };
         enqueue(task, queue, name, why)?;
         asked.push(name.clone());
     }
@@ -301,8 +311,8 @@ const CLIPBOARD_WAIT: &str = "waiting for someone to copy the value and paste it
 /// (moved there from the release queue — a new value is what's asked for),
 /// marked in `SECRETS_CLIPBOARD_FILE`. Idempotent like [`enqueue`]. Refused
 /// for a name a repo's own sops file holds: tenx seals new values only into
-/// the task's bundle, so the repo's file would still be released with the
-/// old one.
+/// its own bundles (the task's or the workspace's), never a repo's file, so
+/// the repo's file would still be released with the old one.
 fn enqueue_from_clipboard(task: &Task, name: &str, why: Option<&str>) -> Result<()> {
     if let Some(file) = find_sops_covered_files(task).into_iter().find(|f| file_matches_request(f, name)) {
         bail!(
@@ -425,7 +435,10 @@ pub fn decrypt_in(ws: &Workspace, task: &Task, name: Option<&str>, wait: Option<
     if let Some(n) = name {
         check_name(n)?;
     }
-    if !bundle_path(task).exists() && workspace_keys(task).is_empty() && find_sops_covered_files(task).is_empty() {
+    // With no name, the workspace bundle is never released whole, so it
+    // doesn't count here.
+    let workspace_has = name.is_some() && !workspace_keys(task).is_empty();
+    if !bundle_path(task).exists() && !workspace_has && find_sops_covered_files(task).is_empty() {
         bail!(
             "no sealed secrets for task '{}' — run: tenx secrets set <NAME>, or tenx secrets encrypt {} <file>",
             task.name,
@@ -549,8 +562,16 @@ pub fn fulfill_in(ws: &Workspace, task: &Task) -> Result<()> {
         // A name the task's bundle holds stays there (`seal_scope`), so
         // there is nothing to choose.
         let scope = if workspace_ok && !bundle_keys(task).contains(name) {
-            let a = read_tty_line(&format!("  keep '{name}' for [T]his task, or the [w]orkspace (later tasks can ask for it)"))?;
-            Scope::parse(&a).unwrap_or_default()
+            loop {
+                let a = read_tty_line(&format!("  keep '{name}' for [T]his task, or the [w]orkspace (later tasks can ask for it)"))?;
+                if a.trim().is_empty() {
+                    break Scope::Task;
+                }
+                match Scope::parse(&a) {
+                    Some(scope) => break scope,
+                    None => eprintln!("  didn't understand {:?} — t for this task, w for the workspace", a.trim()),
+                }
+            }
         } else {
             Scope::Task
         };
@@ -576,6 +597,9 @@ pub struct Request {
     /// A value asked for from the clipboard (`need --clipboard`): the form
     /// offers the machine's clipboard for it.
     pub clipboard: bool,
+    /// The task's bundle holds the name: a new value stays there
+    /// (`tenx_core::secrets::seal_scope`), so the form offers no workspace.
+    pub in_task: bool,
 }
 
 /// A task's pending requests, for `tenx web`'s secrets form — what
@@ -612,6 +636,7 @@ pub fn sitting_in(ws: &Workspace, task: &Task) -> Result<Sitting> {
             why: why.iter().find(|(n, _)| *n == name).map(|(_, w)| w.clone()).unwrap_or_default(),
             sealed_in: if ask == rules::Ask::Release { sealed_in(task, &name) } else { String::new() },
             clipboard: ask == rules::Ask::Value && marked.contains(&name),
+            in_task: bundle_keys(task).contains(&name),
             name,
             ask,
         })
@@ -644,7 +669,8 @@ pub fn answer_in(
 ) -> Result<Answered> {
     reroute(task)?;
     let plan = rules::plan_answers(&pending_asks(task), shown, granted, values, workspace).map_err(anyhow::Error::msg)?;
-    if plan.seal.iter().any(|(_, _, s)| *s == Scope::Workspace)
+    let task_keys = bundle_keys(task);
+    if plan.seal.iter().any(|(n, _, s)| rules::seal_scope(*s, task_keys.contains(n)) == Scope::Workspace)
         && let Some(problem) = workspace_scope_problem(task)
     {
         bail!("{problem} — nothing was changed");
@@ -781,9 +807,52 @@ fn seal(id: &Path, task: &Task, values: &[(String, String, Scope)]) -> Result<()
             Scope::Task => bundle_path(task),
             Scope::Workspace => prepare_workspace_bundle(task)?,
         };
-        ensure_bundle_exists(id, &bundle)?;
-        run_sops_set(id, &bundle, name, value)?;
+        {
+            // Every task of the workspace writes the workspace bundle, and a
+            // `sops set` rewrites the whole file: one writer at a time.
+            let _lock = if scope == Scope::Workspace { Some(lock_bundle(&bundle)?) } else { None };
+            ensure_bundle_exists(id, &bundle)?;
+            run_sops_set(id, &bundle, name, value)?;
+        }
         eprintln!("✓ sealed '{name}' into the {} ({})", scope.source().label(), bundle.display());
+        if scope == Scope::Workspace {
+            answer_waiting(task, name)?;
+        }
+    }
+    Ok(())
+}
+
+/// An exclusive `flock(2)` beside `bundle`, held while the returned file is
+/// open — released by the kernel however the holder ends, as `git::lock_repo`.
+fn lock_bundle(bundle: &Path) -> Result<std::fs::File> {
+    use std::os::fd::AsRawFd;
+    let path = bundle.with_extension("lock");
+    let file = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path).with_context(|| format!("open {}", path.display()))?;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        bail!("lock {}: {}", path.display(), io::Error::last_os_error());
+    }
+    Ok(file)
+}
+
+/// A value just sealed into the workspace bundle answers the other tasks'
+/// waiting requests for that name (`tenx_core::secrets::answers_waiting`):
+/// each moves from the value queue to its release queue — pushed before
+/// removed, the commit-point rule — so its human grants a release instead of
+/// typing the value again. Best effort per task: one that can't be read is
+/// left as it was.
+fn answer_waiting(task: &Task, name: &str) -> Result<()> {
+    let Some(tasks_dir) = task.path.parent() else { return Ok(()) };
+    let Ok(entries) = std::fs::read_dir(tasks_dir) else { return Ok(()) };
+    for dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir() && *p != task.path) {
+        let waiting = workspace::secrets_pending_set(&dir).iter().any(|n| n == name);
+        let marked = workspace::secrets_clipboard(&dir).iter().any(|n| n == name);
+        if !rules::answers_waiting(waiting, marked) {
+            continue;
+        }
+        let Ok(other) = workspace::discover_task(&dir) else { continue };
+        Queue::Release.push(&other, name)?;
+        Queue::Value.remove(&other, &HashSet::from([name.to_string()]))?;
+        eprintln!("  task '{}' was waiting for '{name}' too — it now only needs a release there", other.name);
     }
     Ok(())
 }
@@ -1050,10 +1119,17 @@ pub(crate) fn released_at(task: &Task, name: &str) -> Option<PathBuf> {
 /// (`tenx_core::secrets::sources`): the task's bundle, the workspace bundle,
 /// the adopted files it matches.
 fn sources_of(task: &Task, name: &str) -> Vec<rules::Source> {
+    let (in_task, in_workspace, files) = lookup(task, name);
+    rules::sources(in_task, in_workspace, &files)
+}
+
+/// Where `name` is sealed, as the rules take it: in the task's bundle, in
+/// the workspace bundle, and the adopted files it matches.
+fn lookup(task: &Task, name: &str) -> (bool, bool, Vec<String>) {
     let files: Vec<String> =
         find_sops_covered_files(task).iter().filter(|f| file_matches_request(f, name)).map(|f| repo_label(task, f)).collect();
     let has = |keys: Vec<String>| keys.iter().any(|k| k == name);
-    rules::sources(has(bundle_keys(task)), has(workspace_keys(task)), &files)
+    (has(bundle_keys(task)), has(workspace_keys(task)), files)
 }
 
 /// Whether something sealed can satisfy `name`.
@@ -1083,14 +1159,35 @@ fn workspace_keys(task: &Task) -> Vec<String> {
 /// Every name the task in `task_dir` can get — where each is sealed, and
 /// whether it is released now — for the sidebar (the watcher's
 /// `Live::secrets`) and `status`. Names only, read without the identity.
-pub fn known_in(task_dir: &Path) -> Vec<rules::Known> {
-    match workspace::discover_task(task_dir) {
-        Ok(task) => known(&task),
-        Err(_) => Vec::new(),
-    }
+///
+/// `repos` are the task's (the watcher knows them), `workspace_keys` the
+/// workspace bundle's — read once per workspace by the caller
+/// ([`workspace_keys_for`]), not once per task.
+pub fn known_in(task_dir: &Path, repos: &[String], workspace_keys: &[String]) -> Vec<rules::Known> {
+    let task = Task {
+        name: task_dir.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+        display_name: String::new(),
+        path: task_dir.to_path_buf(),
+        repos: repos.to_vec(),
+        branch: String::new(),
+        created_at: SystemTime::UNIX_EPOCH,
+    };
+    known_with(&task, workspace_keys)
+}
+
+/// The workspace bundle's key names for the task in `task_dir`, and the
+/// bundle's path (the key to share the read between a workspace's tasks).
+pub fn workspace_keys_for(task_dir: &Path) -> (PathBuf, Vec<String>) {
+    let bundle = task_dir.parent().and_then(Path::parent).map(|ws| ws.join(WORKSPACE_BUNDLE)).unwrap_or_default();
+    let keys = rules::sealed_keys(&std::fs::read_to_string(&bundle).unwrap_or_default());
+    (bundle, keys)
 }
 
 fn known(task: &Task) -> Vec<rules::Known> {
+    known_with(task, &workspace_keys(task))
+}
+
+fn known_with(task: &Task, workspace_keys: &[String]) -> Vec<rules::Known> {
     let mut released = rules::dotenv_keys(&std::fs::read_to_string(released_path(task)).unwrap_or_default());
     let mut repo = Vec::new();
     for f in find_sops_covered_files(task) {
@@ -1101,7 +1198,7 @@ fn known(task: &Task) -> Vec<rules::Known> {
         }
         repo.push((label, keys));
     }
-    rules::known(&bundle_keys(task), &workspace_keys(task), &repo, &released)
+    rules::known(&bundle_keys(task), workspace_keys, &repo, &released)
 }
 
 /// The task's released dotenv file — exactly the bundle names granted so far.
@@ -1143,25 +1240,21 @@ fn workspace_bundle(task: &Task) -> Option<PathBuf> {
 /// workspace directory is inside a git work tree (a workspace kept in a
 /// repo, or in a home directory that is one), where the bundle could be
 /// committed. Asked of the real `git`, which knows every way a directory
-/// ends up in a work tree.
+/// ends up in a work tree — and refused whenever git doesn't say plainly
+/// that it isn't one (`tenx_core::secrets::outside_git`).
 fn workspace_scope_problem(task: &Task) -> Option<String> {
     let Some(ws_dir) = workspace_bundle(task).as_deref().and_then(Path::parent).and_then(Path::parent).map(Path::to_path_buf) else {
         return Some("the task is not inside a workspace's tasks/ directory".to_string());
     };
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(&ws_dir)
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    (out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "true").then(|| {
-        format!(
-            "the workspace {} is inside a git work tree — tenx keeps the workspace bundle only outside git; keep the value for the task instead",
-            ws_dir.display()
-        )
-    })
+    let out = Command::new("git").arg("-C").arg(&ws_dir).args(["rev-parse", "--is-inside-work-tree"]).stdin(Stdio::null()).output().ok();
+    let run = out.as_ref().map(|o| (o.status.success(), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned()));
+    if rules::outside_git(run.as_ref().map(|(ok, out, err)| (*ok, out.as_str(), err.as_str()))) {
+        return None;
+    }
+    Some(format!(
+        "the workspace {} is inside a git work tree, or git couldn't say it isn't — tenx keeps the workspace bundle only outside git; keep the value for the task instead",
+        ws_dir.display()
+    ))
 }
 
 /// `sops set` needs an existing document to edit — it has no "create if
@@ -1179,7 +1272,10 @@ fn ensure_bundle_exists(plain_identity: &Path, bundle: &Path) -> Result<()> {
         bail!("age-keygen -y failed: {}", String::from_utf8_lossy(&out.stderr).trim());
     }
     let recipients: Vec<String> = String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
-    let tmp = std::env::temp_dir().join(format!("tenx-bootstrap-{}.env", std::process::id()));
+    // Unique per call: `tenx web` answers two tabs' forms at once.
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = std::env::temp_dir().join(format!("tenx-bootstrap-{}-{call}.env", std::process::id()));
     std::fs::write(&tmp, "").with_context(|| format!("write {}", tmp.display()))?;
     let result = sops_encrypt(&recipients.join(","), &tmp, bundle);
     let _ = std::fs::remove_file(&tmp);
@@ -2188,10 +2284,16 @@ mod tests {
         assert_eq!(sealed_in(&task, "A"), "task bundle, workspace bundle");
         assert_eq!(sealed_in(&task, "W"), "workspace bundle");
         assert!(is_sealed(&task, "W") && !is_sealed(&task, "NOPE"));
-        let known = known_in(&dir);
+        let (_, ws_keys) = workspace_keys_for(&dir);
+        let known = known_in(&dir, &[], &ws_keys);
         assert_eq!(known.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), ["A", "W"]);
 
-        assert_eq!(workspace_scope_problem(&task), None);
+        // A temp directory inside some work tree (a home that is a dotfiles
+        // repo) can't show the "outside git" half.
+        let tmp_in_git = Command::new("git").arg("-C").arg(&root).args(["rev-parse", "--is-inside-work-tree"]).output().is_ok_and(|o| o.status.success());
+        if !tmp_in_git {
+            assert_eq!(workspace_scope_problem(&task), None);
+        }
         assert!(Command::new("git").arg("init").arg("-q").arg(&root).status().unwrap().success());
         assert!(workspace_scope_problem(&task).is_some_and(|p| p.contains("git work tree")));
         std::fs::remove_dir_all(&root).unwrap();
