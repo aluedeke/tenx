@@ -296,13 +296,24 @@ fn enqueue(task: &Task, queue: Queue, name: &str, why: Option<&str>) -> Result<(
         set_note(task, workspace::SECRETS_WHY_FILE, name, Some(why))?;
     }
     if let Some(on) = queued_on(task, name) {
-        let what = if workspace::secrets_clipboard(&task.path).iter().any(|n| n == name) { CLIPBOARD_WAIT } else { on.what() };
+        let what = if workspace::secrets_clipboard(&task.path).iter().any(|n| n == name) { CLIPBOARD_WAIT } else { waits_for(task, on, name) };
         eprintln!("'{name}' is already requested for task '{}' — {what}", task.name);
         return Ok(());
     }
     queue.push(task, name)?;
-    eprintln!("requested '{name}' for task '{}' — {}", task.name, queue.what());
+    eprintln!("requested '{name}' for task '{}' — {}", task.name, waits_for(task, queue, name));
     Ok(())
+}
+
+/// What a request for `name` on `queue` waits for, in the agent's words. A
+/// value request for a name something already holds is a new value asked for
+/// (`set` from an agent: a rotation), not a name sealed nowhere.
+fn waits_for(task: &Task, queue: Queue, name: &str) -> &'static str {
+    if queue == Queue::Value && is_sealed(task, name) {
+        "a new value is asked for (one is sealed already); waiting for someone to type it"
+    } else {
+        queue.what()
+    }
 }
 
 /// What a request from the clipboard waits for, in the agent's words.
