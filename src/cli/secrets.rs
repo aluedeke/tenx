@@ -73,10 +73,11 @@
 //! task's bundle (`seal_scope`) — in the workspace it would never reach this
 //! task. A value newly kept in the workspace also answers the other tasks
 //! still waiting for that name on their value queue (not one asked from the
-//! clipboard): it moves to their release queue (`answer_waiting`), so nobody
-//! types it twice. Writes to the bundle hold an `flock` beside it
-//! (`lock_bundle`): every task writes the one file, and `sops set` rewrites
-//! it whole. `decrypt` with no name releases the task's bundle and adopted
+//! clipboard, nor one whose own bundle holds the name): it moves to their
+//! release queue (`answer_waiting`), so nobody types it twice. Every task
+//! writes the one file, so a write takes turns on an `flock` beside it and
+//! edits a copy that is renamed over it (`set_shared`): a reader sees the old
+//! bundle or the new one, never half of one. `decrypt` with no name releases the task's bundle and adopted
 //! files, never the whole workspace bundle. The bundle sits in the workspace
 //! directory, beside `tasks/`, so `task rm` and `forget_released` never reach
 //! it; and it is written only when `git` says plainly that the workspace is
@@ -807,54 +808,72 @@ fn seal(id: &Path, task: &Task, values: &[(String, String, Scope)]) -> Result<()
             Scope::Task => bundle_path(task),
             Scope::Workspace => prepare_workspace_bundle(task)?,
         };
-        {
-            // Every task of the workspace writes the workspace bundle, and a
-            // `sops set` rewrites the whole file: one writer at a time.
-            let _lock = if scope == Scope::Workspace { Some(lock_bundle(&bundle)?) } else { None };
-            ensure_bundle_exists(id, &bundle)?;
-            run_sops_set(id, &bundle, name, value)?;
+        match scope {
+            Scope::Task => {
+                ensure_bundle_exists(id, &bundle)?;
+                run_sops_set(id, &bundle, name, value)?;
+            }
+            Scope::Workspace => set_shared(id, &bundle, name, value)?,
         }
         eprintln!("✓ sealed '{name}' into the {} ({})", scope.source().label(), bundle.display());
         if scope == Scope::Workspace {
-            answer_waiting(task, name)?;
+            answer_waiting(task, name);
         }
     }
     Ok(())
 }
 
-/// An exclusive `flock(2)` beside `bundle`, held while the returned file is
-/// open — released by the kernel however the holder ends, as `git::lock_repo`.
-fn lock_bundle(bundle: &Path) -> Result<std::fs::File> {
-    use std::os::fd::AsRawFd;
-    let path = bundle.with_extension("lock");
-    let file = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path).with_context(|| format!("open {}", path.display()))?;
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-        bail!("lock {}: {}", path.display(), io::Error::last_os_error());
-    }
-    Ok(file)
+/// `sops set` into the workspace bundle, which every task of the workspace
+/// reads and writes. Writers take turns on an `flock` beside it
+/// (`git::lock_file`), and each edits a copy that is then renamed over the
+/// bundle — `sops set` rewrites its file in place, and a reader (a `need`
+/// routing a name, a release, the watcher) must see the old bundle or the new
+/// one, never a half-written one.
+fn set_shared(id: &Path, bundle: &Path, name: &str, value: &str) -> Result<()> {
+    let _lock = crate::git::lock_file(&bundle.with_extension("lock"))?;
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // Same directory (a rename stays on one filesystem), and `.env` last:
+    // sops tells the format by the extension.
+    let copy = bundle.with_file_name(format!(".workspace-{}-{call}.enc.env", std::process::id()));
+    let result = (|| {
+        if bundle.exists() {
+            std::fs::copy(bundle, &copy).with_context(|| format!("copy {}", bundle.display()))?;
+        }
+        ensure_bundle_exists(id, &copy)?;
+        run_sops_set(id, &copy, name, value)?;
+        std::fs::rename(&copy, bundle).with_context(|| format!("replace {}", bundle.display()))
+    })();
+    let _ = std::fs::remove_file(&copy);
+    result
 }
 
 /// A value just sealed into the workspace bundle answers the other tasks'
 /// waiting requests for that name (`tenx_core::secrets::answers_waiting`):
 /// each moves from the value queue to its release queue — pushed before
 /// removed, the commit-point rule — so its human grants a release instead of
-/// typing the value again. Best effort per task: one that can't be read is
-/// left as it was.
-fn answer_waiting(task: &Task, name: &str) -> Result<()> {
-    let Some(tasks_dir) = task.path.parent() else { return Ok(()) };
-    let Ok(entries) = std::fs::read_dir(tasks_dir) else { return Ok(()) };
+/// typing the value again. Best effort per task: one that can't be read or
+/// written is left as it was and said so — the value is sealed either way,
+/// and this sitting's own work must go on.
+fn answer_waiting(task: &Task, name: &str) {
+    let Some(tasks_dir) = task.path.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(tasks_dir) else { return };
     for dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir() && *p != task.path) {
         let waiting = workspace::secrets_pending_set(&dir).iter().any(|n| n == name);
         let marked = workspace::secrets_clipboard(&dir).iter().any(|n| n == name);
-        if !rules::answers_waiting(waiting, marked) {
+        if !waiting {
             continue;
         }
         let Ok(other) = workspace::discover_task(&dir) else { continue };
-        Queue::Release.push(&other, name)?;
-        Queue::Value.remove(&other, &HashSet::from([name.to_string()]))?;
-        eprintln!("  task '{}' was waiting for '{name}' too — it now only needs a release there", other.name);
+        if !rules::answers_waiting(waiting, marked, bundle_keys(&other).contains(&name.to_string())) {
+            continue;
+        }
+        let moved = Queue::Release.push(&other, name).and_then(|()| Queue::Value.remove(&other, &HashSet::from([name.to_string()])));
+        match moved {
+            Ok(()) => eprintln!("  task '{}' was waiting for '{name}' too — it now only needs a release there", other.name),
+            Err(e) => eprintln!("  task '{}' is waiting for '{name}' too, but its request couldn't be moved: {e:#}", other.name),
+        }
     }
-    Ok(())
 }
 
 /// The workspace bundle's path, its directory made (owner-only) — refused
@@ -1162,7 +1181,7 @@ fn workspace_keys(task: &Task) -> Vec<String> {
 ///
 /// `repos` are the task's (the watcher knows them), `workspace_keys` the
 /// workspace bundle's — read once per workspace by the caller
-/// ([`workspace_keys_for`]), not once per task.
+/// ([`workspace_keys_at`] of [`workspace_bundle_for`]), not once per task.
 pub fn known_in(task_dir: &Path, repos: &[String], workspace_keys: &[String]) -> Vec<rules::Known> {
     let task = Task {
         name: task_dir.file_name().unwrap_or_default().to_string_lossy().into_owned(),
@@ -1177,14 +1196,27 @@ pub fn known_in(task_dir: &Path, repos: &[String], workspace_keys: &[String]) ->
 
 /// The workspace bundle's key names for the task in `task_dir`, and the
 /// bundle's path (the key to share the read between a workspace's tasks).
-pub fn workspace_keys_for(task_dir: &Path) -> (PathBuf, Vec<String>) {
-    let bundle = task_dir.parent().and_then(Path::parent).map(|ws| ws.join(WORKSPACE_BUNDLE)).unwrap_or_default();
-    let keys = rules::sealed_keys(&std::fs::read_to_string(&bundle).unwrap_or_default());
-    (bundle, keys)
+pub fn workspace_bundle_for(task_dir: &Path) -> PathBuf {
+    workspace_bundle_of(task_dir).unwrap_or_default()
 }
 
-fn known(task: &Task) -> Vec<rules::Known> {
-    known_with(task, &workspace_keys(task))
+/// The key names of the workspace bundle at `bundle`.
+pub fn workspace_keys_at(bundle: &Path) -> Vec<String> {
+    rules::sealed_keys(&std::fs::read_to_string(bundle).unwrap_or_default())
+}
+
+/// A stamp of the files a seal or a release rewrites for the task in
+/// `task_dir` — its bundle, its `.secrets.env`, its adopted plaintexts'
+/// directory, the workspace bundle — so the watcher reads the names again
+/// only when one moved (`tenx_core::secrets::known_due`). Stats only.
+pub fn known_stamp(task_dir: &Path, workspace_bundle: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let paths = [task_dir.join(".secrets.enc.env"), task_dir.join(".secrets.env"), task_dir.join(ADOPTED_DIR), workspace_bundle.to_path_buf()];
+    for p in &paths {
+        std::fs::metadata(p).and_then(|m| m.modified()).ok().hash(&mut h);
+    }
+    h.finish()
 }
 
 fn known_with(task: &Task, workspace_keys: &[String]) -> Vec<rules::Known> {
@@ -1233,7 +1265,11 @@ pub(crate) const WORKSPACE_BUNDLE: &str = "secrets/workspace.enc.env";
 /// look in it. Never inside a task, so `task rm` and `forget_released` never
 /// reach it.
 fn workspace_bundle(task: &Task) -> Option<PathBuf> {
-    Some(task.path.parent()?.parent()?.join(WORKSPACE_BUNDLE))
+    workspace_bundle_of(&task.path)
+}
+
+fn workspace_bundle_of(task_dir: &Path) -> Option<PathBuf> {
+    Some(task_dir.parent()?.parent()?.join(WORKSPACE_BUNDLE))
 }
 
 /// Why a value can't be kept in the workspace bundle, if it can't: the
@@ -1246,7 +1282,16 @@ fn workspace_scope_problem(task: &Task) -> Option<String> {
     let Some(ws_dir) = workspace_bundle(task).as_deref().and_then(Path::parent).and_then(Path::parent).map(Path::to_path_buf) else {
         return Some("the task is not inside a workspace's tasks/ directory".to_string());
     };
-    let out = Command::new("git").arg("-C").arg(&ws_dir).args(["rev-parse", "--is-inside-work-tree"]).stdin(Stdio::null()).output().ok();
+    // English messages: `outside_git` reads git's "not a git repository".
+    let out = Command::new("git")
+        .env("LC_ALL", "C")
+        .env("LANGUAGE", "C")
+        .arg("-C")
+        .arg(&ws_dir)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .stdin(Stdio::null())
+        .output()
+        .ok();
     let run = out.as_ref().map(|o| (o.status.success(), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned()));
     if rules::outside_git(run.as_ref().map(|(ok, out, err)| (*ok, out.as_str(), err.as_str()))) {
         return None;
@@ -1661,7 +1706,7 @@ pub fn status() -> Result<()> {
     let tasks = ws.tasks()?;
 
     let ws_bundle = ws.dir.join(WORKSPACE_BUNDLE);
-    let ws_keys = rules::sealed_keys(&std::fs::read_to_string(&ws_bundle).unwrap_or_default());
+    let ws_keys = workspace_keys_at(&ws_bundle);
     if ws_keys.is_empty() {
         println!("workspace bundle ({WORKSPACE_BUNDLE}): empty");
     } else {
@@ -1670,14 +1715,15 @@ pub fn status() -> Result<()> {
 
     let mut any = false;
     for task in &tasks {
-        let names: Vec<rules::Known> =
-            known(task).into_iter().filter(|k| k.released || k.sources.iter().any(|s| *s != rules::Source::Workspace)).collect();
         let pending: Vec<(String, &str)> = Queue::Release
             .names(task)
             .into_iter()
             .map(|n| (n, "pending release"))
             .chain(Queue::Value.names(task).into_iter().map(|n| (n, "needs a value")))
             .collect();
+        // A pending name is listed once, as pending.
+        let names: Vec<rules::Known> =
+            known_with(task, &ws_keys).into_iter().filter(|k| k.listed() && !pending.iter().any(|(n, _)| *n == k.name)).collect();
         if names.is_empty() && pending.is_empty() {
             continue;
         }
@@ -2284,7 +2330,7 @@ mod tests {
         assert_eq!(sealed_in(&task, "A"), "task bundle, workspace bundle");
         assert_eq!(sealed_in(&task, "W"), "workspace bundle");
         assert!(is_sealed(&task, "W") && !is_sealed(&task, "NOPE"));
-        let (_, ws_keys) = workspace_keys_for(&dir);
+        let ws_keys = workspace_keys_at(&workspace_bundle_for(&dir));
         let known = known_in(&dir, &[], &ws_keys);
         assert_eq!(known.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), ["A", "W"]);
 

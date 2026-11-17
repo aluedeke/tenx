@@ -450,10 +450,12 @@ pub fn outside_git(run: Option<(bool, &str, &str)>) -> bool {
 /// Whether a value just sealed into the workspace bundle answers another
 /// task's waiting request for the same name: a plain value request does
 /// (it moves to that task's release queue, so nobody types the value
-/// again); one asked from the clipboard does not — that task asked for a
-/// new value on purpose.
-pub fn answers_waiting(on_value_queue: bool, from_clipboard: bool) -> bool {
-    on_value_queue && !from_clipboard
+/// again). One asked from the clipboard does not — that task asked for a
+/// new value on purpose — and neither does one whose own bundle holds the
+/// name: its release would take the task's old value ([`bundle_release`]),
+/// the very one it asked to replace.
+pub fn answers_waiting(on_value_queue: bool, from_clipboard: bool, in_its_bundle: bool) -> bool {
+    on_value_queue && !from_clipboard && !in_its_bundle
 }
 
 /// One name a task can get, for `status` and the sidebar: where it is
@@ -465,6 +467,28 @@ pub struct Known {
     pub sources: Vec<Source>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub released: bool,
+}
+
+impl Known {
+    /// Whether a task lists it (`status`, the sidebar): released here, or
+    /// sealed somewhere of the task's own. A name only the workspace bundle
+    /// holds is the workspace's until this task gets it — otherwise every
+    /// task would list the whole workspace bundle.
+    pub fn listed(&self) -> bool {
+        self.released || self.sources.iter().any(|s| *s != Source::Workspace)
+    }
+}
+
+/// How often the watcher reads a task's secret names anyway, when nothing it
+/// stamps moved: an adopted file can change with a pull.
+pub const KNOWN_TTL_SECS: u64 = 60;
+
+/// Whether the watcher reads a task's secret names again this tick: the
+/// stamp of the files that change with a seal or a release moved, the
+/// names were never read (`checked` 0), or the last read is older than
+/// [`KNOWN_TTL_SECS`].
+pub fn known_due(stamp: u64, saved_stamp: u64, checked: u64, now: u64) -> bool {
+    checked == 0 || stamp != saved_stamp || now.saturating_sub(checked) >= KNOWN_TTL_SECS
 }
 
 /// Every name a task can get, by name: the task's bundle keys, the
@@ -754,8 +778,27 @@ mod tests {
 
     #[test]
     fn a_new_workspace_value_answers_plain_waiting_requests_only() {
-        assert!(answers_waiting(true, false));
-        assert!(!answers_waiting(true, true));
-        assert!(!answers_waiting(false, false));
+        assert!(answers_waiting(true, false, false));
+        assert!(!answers_waiting(true, true, false));
+        assert!(!answers_waiting(false, false, false));
+        // A rotation of the task's own value: a release would hand back the old one.
+        assert!(!answers_waiting(true, false, true));
+    }
+
+    #[test]
+    fn a_task_lists_workspace_names_only_once_it_has_them() {
+        let ws_only = Known { name: "W".into(), sources: vec![Source::Workspace], released: false };
+        assert!(!ws_only.listed());
+        assert!(Known { released: true, ..ws_only.clone() }.listed());
+        assert!(Known { sources: vec![Source::Task, Source::Workspace], ..ws_only.clone() }.listed());
+        assert!(Known { sources: vec![Source::Repo("a.enc.env".into())], ..ws_only }.listed());
+    }
+
+    #[test]
+    fn secret_names_are_read_again_when_their_files_move_or_after_a_while() {
+        assert!(!known_due(7, 7, 100, 130));
+        assert!(known_due(8, 7, 100, 130));
+        assert!(known_due(7, 7, 100, 100 + KNOWN_TTL_SECS));
+        assert!(known_due(7, 7, 0, 5), "never read");
     }
 }

@@ -601,9 +601,15 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
         live.watching = crate::cli::prwatch::watched_in(&waits, &t.path);
         live.services = crate::cli::service::shown_in(&services, &t.path, &scan.listeners, &scan.tree);
         (live.task_links, live.todos) = crate::live::task_md(&t.path);
-        let (bundle, ws_keys) = crate::cli::secrets::workspace_keys_for(&t.path);
-        let ws_keys = workspace_keys.entry(bundle).or_insert(ws_keys);
-        live.secrets = crate::cli::secrets::known_in(&t.path, &t.repos, ws_keys);
+        // Secret names: stats every tick, a read only when a seal or a
+        // release moved something (or now and then, for a pulled sops file).
+        let bundle = crate::cli::secrets::workspace_bundle_for(&t.path);
+        let stamp = crate::cli::secrets::known_stamp(&t.path, &bundle);
+        if tenx_core::secrets::known_due(stamp, live.secrets_stamp, live.secrets_checked, now) {
+            let ws_keys = workspace_keys.entry(bundle).or_insert_with_key(|b| crate::cli::secrets::workspace_keys_at(b));
+            live.secrets = crate::cli::secrets::known_in(&t.path, &t.repos, ws_keys);
+            (live.secrets_stamp, live.secrets_checked) = (stamp, now);
+        }
         crate::live::scan_links(&t.path, &t.agent, t.session.as_deref(), &mut live, &mut backfills);
         if t.repos.is_empty() {
             live.git.clear();

@@ -559,7 +559,7 @@ pub fn build(live: &Live) -> Sidebar {
         .collect();
     push("Repos", String::new(), None, repos);
 
-    push("Secrets", String::new(), None, live.secrets.iter().map(secret_entry).collect());
+    push("Secrets", String::new(), None, live.secrets.iter().filter(|k| k.listed()).map(secret_entry).collect());
 
     let other = of(&[LinkKind::Port, LinkKind::Web])
         .into_iter()
@@ -772,12 +772,15 @@ mod tests {
             secrets: vec![
                 Known { name: "OPENAI_KEY".into(), sources: vec![Source::Workspace], released: true },
                 Known { name: "DB_URL".into(), sources: vec![Source::Task, Source::Repo("app/secrets.enc.env".into())], released: false },
+                // The workspace's, not this task's yet: not listed.
+                Known { name: "OTHER".into(), sources: vec![Source::Workspace], released: false },
             ],
             ..Default::default()
         };
         let s = build(&live);
         assert_eq!(s.sections.iter().map(|s| s.title).collect::<Vec<_>>(), vec!["Secrets"]);
         let e = &s.sections[0].entries;
+        assert_eq!(e.len(), 2);
         assert_eq!((e[0].icon, e[0].label.as_str()), ("◆", "OPENAI_KEY"));
         assert_eq!(e[0].parts.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(), vec!["released", "workspace bundle"]);
         assert_eq!((e[1].icon, e[1].icon_tone), ("◇", Some(Tone::Muted)));
