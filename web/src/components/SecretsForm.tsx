@@ -10,6 +10,9 @@
 // value field has a Paste button (`lib/secretclip`: this device's clipboard,
 // else the Mac's), and what it took is shown as its length and tail — a
 // value the agent asked for with `need --clipboard` says to copy it first.
+// A new value is kept for this task unless its "workspace" chip is picked:
+// then it goes to the workspace bundle, which later tasks can ask for (each
+// still granted one by one).
 // Design: the "tenx secrets clipboard" file of the tenx web Claude Design
 // project.
 
@@ -25,6 +28,8 @@ interface Request {
   sealed_in: string;
   /** Asked for from the clipboard (`need --clipboard`). */
   clipboard: boolean;
+  /** The task's own store holds the name: a new value stays there. */
+  in_task: boolean;
 }
 
 interface Sitting {
@@ -33,6 +38,8 @@ interface Sitting {
   passphrase: boolean;
   /** Why granting can't work from here (no identity yet). */
   problem: string | null;
+  /** A new value may be kept in the workspace bundle, for later tasks. */
+  workspace: boolean;
 }
 
 interface Answered {
@@ -74,6 +81,8 @@ export function SecretsForm({ task, touch, onClose }: Props) {
   const [sitting, setSitting] = useState<Sitting | null>(null);
   const [granted, setGranted] = useState<Set<string>>(new Set());
   const [values, setValues] = useState<Record<string, string>>({});
+  // The value requests whose value is kept for the workspace.
+  const [shared, setShared] = useState<Set<string>>(new Set());
   // What Paste put in a field (shown while the field still holds it), and
   // why it put nothing.
   const [pasted, setPasted] = useState<Record<string, { text: string; source: ClipSource }>>({});
@@ -116,6 +125,7 @@ export function SecretsForm({ task, touch, onClose }: Props) {
         shown: requests.map((r) => r.name),
         granted: grants.map((r) => r.name),
         values: grants.filter((r) => r.ask === 'value').map((r) => [r.name, values[r.name] ?? '']),
+        workspace: grants.filter((r) => r.ask === 'value' && !r.in_task && shared.has(r.name)).map((r) => r.name),
         note,
         passphrase: unlocking ? passphrase : '',
       });
@@ -141,6 +151,14 @@ export function SecretsForm({ task, touch, onClose }: Props) {
       setClipError((c) => ({ ...c, [name]: e instanceof Error ? e.message : String(e) }));
     }
   };
+
+  const share = (name: string, on: boolean) =>
+    setShared((s) => {
+      const next = new Set(s);
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
 
   const grant = (name: string, on: boolean) =>
     setGranted((g) => {
@@ -239,6 +257,18 @@ export function SecretsForm({ task, touch, onClose }: Props) {
                     </div>
                   ) : (
                     !r.clipboard && <div className="wf-hint">empty: it stays pending</div>
+                  )}
+                  {sitting?.workspace && !r.in_task && (
+                    <div className="wf-chips" role="radiogroup" aria-label={`where to keep ${r.name}`}>
+                      <label className={!shared.has(r.name) ? 'wf-chip on' : 'wf-chip'}>
+                        <input type="radio" className="wf-hidden" name={`keep-${r.name}`} checked={!shared.has(r.name)} onChange={() => share(r.name, false)} />
+                        this task
+                      </label>
+                      <label className={shared.has(r.name) ? 'wf-chip on' : 'wf-chip'}>
+                        <input type="radio" className="wf-hidden" name={`keep-${r.name}`} checked={shared.has(r.name)} onChange={() => share(r.name, true)} />
+                        workspace
+                      </label>
+                    </div>
                   )}
                 </>
               )}

@@ -212,8 +212,9 @@ fn run() -> Result<()> {
             SecretsCommands::Need { names, why, clipboard, no_wait, timeout } => {
                 cli::secrets::need(&names, why.as_deref(), clipboard, secrets_wait(no_wait, timeout.as_deref())?)?
             }
-            SecretsCommands::Set { name, clipboard, no_wait, timeout } => {
-                cli::secrets::set(&name, clipboard, secrets_wait(no_wait, timeout.as_deref())?)?
+            SecretsCommands::Set { name, scope, clipboard, no_wait, timeout } => {
+                let scope = tenx_core::secrets::Scope::parse(&scope).unwrap_or_default();
+                cli::secrets::set(&name, scope, clipboard, secrets_wait(no_wait, timeout.as_deref())?)?
             }
             SecretsCommands::Decrypt { name, no_wait, timeout } => {
                 cli::secrets::decrypt(name.as_deref(), secrets_wait(no_wait, timeout.as_deref())?)?

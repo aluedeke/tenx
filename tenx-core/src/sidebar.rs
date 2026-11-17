@@ -1,6 +1,7 @@
 //! The sidebar: what a task is about, beside its screen — its links grouped
 //! (PRs with their state, Linear issues with their status, what was made
-//! with Claude, Slack messages, Obsidian notes, other pages and ports), its repos' git state
+//! with Claude, Slack messages, Obsidian notes, other pages and ports), its repos' git state,
+//! the secret names it can get (task bundle, workspace bundle, repo file)
 //! and its `TASK.md` todos. [`build`] turns a task's cached facts
 //! ([`crate::live::Live`]) into [`Sidebar`], which the terminal client draws
 //! right of the task and `tenx web` sends to its page.
@@ -427,9 +428,23 @@ fn service_entry(s: &crate::taskservice::Service) -> Entry {
     e
 }
 
+/// A secret name the task can get: filled in when it is released, and where
+/// it is sealed — the first source is the one a release uses.
+fn secret_entry(k: &crate::secrets::Known) -> Entry {
+    let mut parts = Vec::new();
+    if k.released {
+        parts.push(part("released", Tone::Good));
+    }
+    let from: Vec<String> = k.sources.iter().map(crate::secrets::Source::label).collect();
+    parts.push(part(if from.is_empty() { "no longer sealed".to_string() } else { from.join(" · ") }, Tone::Muted));
+    let (icon, tone) = if k.released { ("◆", Tone::Good) } else { ("◇", Tone::Muted) };
+    plain_entry(icon, tone, k.name.clone(), parts)
+}
+
 /// The sidebar for a task whose cached facts are `live`: its todos, then its
 /// links by kind — PRs, Linear, made with Claude, Slack, Obsidian —, its services, its
-/// repos, and other links last.
+/// repos, its secret names (where each is sealed, never a value), and other
+/// links last.
 pub fn build(live: &Live) -> Sidebar {
     let links = live.all_links();
     let of = |kinds: &[LinkKind]| links.iter().filter(|l| kinds.contains(&l.kind)).collect::<Vec<_>>();
@@ -543,6 +558,8 @@ pub fn build(live: &Live) -> Sidebar {
         })
         .collect();
     push("Repos", String::new(), None, repos);
+
+    push("Secrets", String::new(), None, live.secrets.iter().filter(|k| k.listed()).map(secret_entry).collect());
 
     let other = of(&[LinkKind::Port, LinkKind::Web])
         .into_iter()
@@ -746,5 +763,27 @@ mod tests {
         assert_eq!(s.sections[5].entries[0].parts[0].text, "1 changed");
         assert_eq!(s.sections[6].entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), vec!["localhost:3000", "docs"]);
         assert!(build(&Live::default()).sections.is_empty());
+    }
+
+    #[test]
+    fn secret_names_say_where_they_are_sealed_and_never_a_value() {
+        use crate::secrets::{Known, Source};
+        let live = Live {
+            secrets: vec![
+                Known { name: "OPENAI_KEY".into(), sources: vec![Source::Workspace], released: true },
+                Known { name: "DB_URL".into(), sources: vec![Source::Task, Source::Repo("app/secrets.enc.env".into())], released: false },
+                // The workspace's, not this task's yet: not listed.
+                Known { name: "OTHER".into(), sources: vec![Source::Workspace], released: false },
+            ],
+            ..Default::default()
+        };
+        let s = build(&live);
+        assert_eq!(s.sections.iter().map(|s| s.title).collect::<Vec<_>>(), vec!["Secrets"]);
+        let e = &s.sections[0].entries;
+        assert_eq!(e.len(), 2);
+        assert_eq!((e[0].icon, e[0].label.as_str()), ("◆", "OPENAI_KEY"));
+        assert_eq!(e[0].parts.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(), vec!["released", "workspace bundle"]);
+        assert_eq!((e[1].icon, e[1].icon_tone), ("◇", Some(Tone::Muted)));
+        assert_eq!(e[1].parts[0].text, "task bundle · app/secrets.enc.env");
     }
 }

@@ -302,9 +302,11 @@ pub enum SecretsCommands {
     ///
     /// The one command an agent needs. Each name is routed by looking at
     /// what's sealed (key names are readable without the passphrase):
-    /// already released → nothing to do; sealed in the task's bundle or an
-    /// adopted sops file → a release request; nowhere → a request for a
-    /// human to type a value. From an agent's shell tool (no terminal) it
+    /// already released → nothing to do; sealed in the task's bundle, the
+    /// workspace bundle or an adopted sops file (looked for in that order)
+    /// → a release request; nowhere → a request for a human to type a
+    /// value. A workspace value is released into this task only once a
+    /// human grants it here. From an agent's shell tool (no terminal) it
     /// then waits for a human to answer; from a real terminal it answers
     /// straight away. Exit codes: 0 granted, 3 still pending (re-run to keep
     /// waiting), 4 denied, 5 withdrawn.
@@ -333,7 +335,7 @@ pub enum SecretsCommands {
         #[arg(long, conflicts_with = "no_wait")]
         timeout: Option<String>,
     },
-    /// Set one secret in the current task's sealed bundle (task resolved from cwd)
+    /// Set one secret in the current task's sealed bundle, or the workspace's (task resolved from cwd)
     ///
     /// Literally `sops set`: edits the existing document in place. From a
     /// real terminal it prompts for the value (masked), then the
@@ -345,6 +347,13 @@ pub enum SecretsCommands {
     Set {
         /// Secret name (becomes its key in the decrypted .secrets.env)
         name: String,
+        /// Where to keep the value: `task` (this task's bundle, gone with
+        /// the task) or `workspace` (the workspace bundle, which every task
+        /// of the workspace can ask for with `need`; each still needs a
+        /// human to grant it). A name the task's bundle already holds stays
+        /// there.
+        #[arg(long, default_value = "task", value_parser = ["task", "workspace"])]
+        scope: String,
         /// Take the value from the clipboard instead of a prompt; from an
         /// agent, ask for it as `need --clipboard` does
         #[arg(long)]
@@ -386,9 +395,10 @@ pub enum SecretsCommands {
     ///
     /// Lists each request with the agent's reason, asks once whether to
     /// grant all, deny all or pick, reads a value for each granted value
-    /// request, then takes the passphrase once to seal the new values and
-    /// release every granted name. What `u` in the column runs. Needs a real
-    /// terminal.
+    /// request and asks where to keep it (this task, or the workspace bundle
+    /// later tasks can ask for), then takes the passphrase once to seal the
+    /// new values and release every granted name. What `u` in the column
+    /// runs. Needs a real terminal.
     Fulfill {
         /// Wait for Enter before exiting, so the outcome can be read — for
         /// the column's unlock popup, which closes when this exits

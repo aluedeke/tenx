@@ -590,6 +590,8 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
     let mut backfills = crate::live::TRANSCRIPT_LOOKUPS_PER_TICK;
     lookups.turn = lookups.turn.wrapping_add(1);
     let first = if targets.is_empty() { 0 } else { lookups.turn % targets.len() };
+    // The workspace bundle's names, read once per workspace this tick.
+    let mut workspace_keys: std::collections::HashMap<PathBuf, Vec<String>> = std::collections::HashMap::new();
     // Each cache is read once per tick; the schedules below work on these.
     let mut lives: Vec<(usize, crate::live::Live)> = Vec::with_capacity(targets.len());
     for (i, t) in targets.iter().enumerate().skip(first).chain(targets.iter().enumerate().take(first)) {
@@ -599,6 +601,15 @@ fn refresh_live(targets: &[LiveTarget], lookups: &mut Lookups) -> bool {
         live.watching = crate::cli::prwatch::watched_in(&waits, &t.path);
         live.services = crate::cli::service::shown_in(&services, &t.path, &scan.listeners, &scan.tree);
         (live.task_links, live.todos) = crate::live::task_md(&t.path);
+        // Secret names: stats every tick, a read only when a seal or a
+        // release moved something (or now and then, for a pulled sops file).
+        let bundle = crate::cli::secrets::workspace_bundle_for(&t.path);
+        let stamp = crate::cli::secrets::known_stamp(&t.path, &bundle);
+        if tenx_core::secrets::known_due(stamp, live.secrets_stamp, live.secrets_checked, now) {
+            let ws_keys = workspace_keys.entry(bundle).or_insert_with_key(|b| crate::cli::secrets::workspace_keys_at(b));
+            live.secrets = crate::cli::secrets::known_in(&t.path, &t.repos, ws_keys);
+            (live.secrets_stamp, live.secrets_checked) = (stamp, now);
+        }
         crate::live::scan_links(&t.path, &t.agent, t.session.as_deref(), &mut live, &mut backfills);
         if t.repos.is_empty() {
             live.git.clear();

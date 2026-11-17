@@ -77,7 +77,7 @@ If a task needs a credential (API key, token, DB password) and it isn't already 
 
     tenx secrets need STRIPE_KEY DATABASE_URL --why "run the webhook integration tests" --timeout 30m
 
-Always say **why** in a few words: the human sees it in the notification and when they answer, and it's what they decide on. `need` works out by itself what each name needs — already released (returns at once), sealed and waiting for a human to release it, or not stored anywhere yet so a human must type a value — so you never have to know which. It's always safe to run: from your Bash tool (no real terminal) it can't touch key material; it only enqueues a request (the tenx column and status bar show it, the user gets a desktop notification) and waits for a human, who unlocks with their own passphrase. **Never** run `tenx secrets init`, `encrypt`, or `fulfill` yourself.
+Always say **why** in a few words: the human sees it in the notification and when they answer, and it's what they decide on. `need` works out by itself what each name needs — already released (returns at once), sealed and waiting for a human to release it, or not stored anywhere yet so a human must type a value — so you never have to know which. It looks in this task's own store first, then the **workspace's** store (values a human kept for every task of the workspace — an API key typed once for an earlier task), then the repos' own sops files. Ask with `need` even when you think the value was given to another task: a workspace value is still released to your task only after a human grants it for this task. It's always safe to run: from your Bash tool (no real terminal) it can't touch key material; it only enqueues a request (the tenx column and status bar show it, the user gets a desktop notification) and waits for a human, who unlocks with their own passphrase. **Never** run `tenx secrets init`, `encrypt`, or `fulfill` yourself.
 
 How to wait: if your harness can run a command in the background and tell you when it exits (Claude Code's Bash tool with `run_in_background`), do that with a long `--timeout` like `30m` and carry on with other work. Otherwise run it in the foreground with the Bash tool's timeout at its maximum (600000 ms) and `--timeout 9m`. The exit code says what happened:
 
@@ -93,7 +93,7 @@ When the user is about to hand you a new value — "I'll copy the key for you" �
     tenx secrets need SENTRY_TOKEN --clipboard --why "upload source maps"
 
 Where granted secrets land — read them from the file, never print them:
-- **Keys** (`STRIPE_KEY`) go to `tasks/<name>/.secrets.env`, a plain `KEY=VALUE` file holding exactly the names you've been granted.
+- **Keys** (`STRIPE_KEY`) go to `tasks/<name>/.secrets.env`, a plain `KEY=VALUE` file holding exactly the names you've been granted — from this task's store or the workspace's.
 - **Repos with their own sops setup** (a `.sops.yaml` in a worktree): name a key inside one of its `*.enc.*` files, or a fragment of the file's name (`staging`). The whole file is released as its plaintext sibling in the worktree (`secrets.staging.enc.env` → `secrets.staging.env`, a symlink to a copy outside git). If there's more than one such file, name the one you need.
 
 Granted secrets are deleted when the task's window closes (closed by hand, or swept after being idle). In a new session, ask again with `need`.
@@ -102,7 +102,7 @@ If you no longer need something you asked for, withdraw it so nobody is chased f
 
     tenx secrets cancel <NAME>      # or --all
 
-`cancel` and `tenx secrets status` only read or edit the request queues, never values, so both are safe from your Bash tool.
+`cancel` and `tenx secrets status` only read or edit the request queues and names, never values, so both are safe from your Bash tool. `status` shows where each name is kept (task, workspace, or a repo file) and whether it is released. Where a new value is kept is the human's choice when they type it; you can't pick it.
 
 ## Scheduled tasks
 

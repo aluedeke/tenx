@@ -133,6 +133,20 @@ pub fn lock_repo(bare_dir: &Path, name: &str) -> Result<RepoLock> {
     Ok(RepoLock { _file: file })
 }
 
+/// The same `flock(2)` on any lock file `path` (made if missing): wait for
+/// it and take it — for a file that several tenx processes write, such as
+/// the secrets' workspace bundle. Held while the returned value lives.
+pub fn lock_file(path: &Path) -> Result<RepoLock> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+        .with_context(|| format!("open lock file {}", path.display()))?;
+    flock(&file, false).with_context(|| format!("lock {}", path.display()))?;
+    Ok(RepoLock { _file: file })
+}
+
 /// Return the short hash + subject of the latest commit on the branch new
 /// tasks start from ([`base_ref`]), e.g. `"a1b2c3d feat: …"`.
 pub fn last_commit(bare_repo_path: &Path) -> Option<String> {
