@@ -53,7 +53,8 @@ pub const CLAUDE_CONTEXT: &str = "\
 This session runs in a tenx task. tenx shows the task as working while you wait for background work, and as done when your turn is over. Pick the tool by what you start:
 - Work whose result you wait for (tests, a build, a script that processes data, `gh run watch --exit-status`): Bash with run_in_background.
 - A stream of events you react to (CI checks one by one, new lines in a log): the Monitor tool.
-- A process that must stay up until someone stops it (a dev server, `tilt up`, `npm run dev`, a watch build): Bash with run_in_background, wrapped as `tenx service [--name NAME] -- <command>`. Your turn then ends normally, the task's sidebar lists the service with its ports, and tenx stops it when the task's window closes. `tenx service list` and `tenx service stop [NAME]` manage them.";
+- A process that must stay up until someone stops it (a dev server, `tilt up`, `npm run dev`, a watch build): Bash with run_in_background, wrapped as `tenx service [--name NAME] -- <command>`. Your turn then ends normally, the task's sidebar lists the service with its ports, and tenx stops it when the task's window closes. `tenx service list` and `tenx service stop [NAME]` manage them.
+When the user asks you to notify them, ping them or tell them when something happens (\"tell me when you're done\", \"ping me when CI is green\"), use `tenx notify`: it reaches their Mac, phone and browsers. For the end of your work, run `tenx notify --when-done` right away: tenx sends your last reply once your turn is over. For a moment in between, run `tenx notify \"<what happened>\"` at that moment.";
 
 /// The `SessionStart` hook output that hands Claude Code [`CLAUDE_CONTEXT`].
 pub fn claude_session_start_output() -> String {

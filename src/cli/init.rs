@@ -295,6 +295,8 @@ const SHIPPED_SKILLS: &[u64] = &[
     0x38c9783db32d3a39, // tenx: background work and services portable
     0xbb83b91fb3e66237, // tenx: workspace secrets
     0x937e425b27b6fb0e, // tenx: workspace secrets, portable
+    0x23bd951cdb81eb87, // tenx: notifying the user
+    0x2efc9abba79207d2, // tenx: notifying the user, portable
 ];
 
 fn prompt_yes_no(question: &str) -> Result<bool> {

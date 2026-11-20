@@ -232,8 +232,9 @@ test('the bell turns notifications on; an iPhone outside the Home Screen is told
   await expect(phone.getByTestId('push')).toHaveAttribute('data-state', 'needs-install');
   await ios.close();
 
-  // Inside the tenx iOS app (a WKWebView with its `tenx` message handler):
-  // nothing to install and no Web Push, so neither the hint nor the switch.
+  // Inside a tenx iOS app too old for notifications (a WKWebView with a
+  // `tenx` message handler that knows no `pushState`): nothing to install
+  // and no Web Push, so neither the hint nor the switch.
   const app = await browser.newContext({
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
     viewport: { width: 390, height: 844 },
@@ -253,6 +254,31 @@ test('the bell turns notifications on; an iPhone outside the Home Screen is told
   await expect(inApp.getByTestId('push')).toHaveCount(0);
   await expect(inApp.getByTestId('push-hint')).toHaveCount(0);
   await app.close();
+
+  // An app with notifications (APNs, mobile/ios Notifications.swift): the
+  // switch, off until iOS grants them.
+  const apns = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  await apns.addInitScript(() => {
+    // @ts-expect-error — a WKWebView has none.
+    delete window.PushManager;
+    const postMessage = async (m: { action?: string }) => {
+      if (m.action === 'pushState') return { permission: 'notDetermined', env: 'production' };
+      throw new Error('unknown action');
+    };
+    Object.assign(window, { webkit: { messageHandlers: { tenx: { postMessage } } } });
+  });
+  const withApns = await apns.newPage();
+  await withApns.goto('/');
+  await withApns.getByTestId('toggle').tap();
+  await withApns.getByTestId('hmore').tap();
+  await expect(withApns.getByTestId('push')).toHaveAttribute('data-state', 'off');
+  await expect(withApns.getByTestId('push-hint')).toHaveCount(0);
+  await apns.close();
 });
 
 test('the manifest and service worker make it installable', async ({ request }) => {

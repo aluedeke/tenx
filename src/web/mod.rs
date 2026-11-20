@@ -15,7 +15,6 @@ mod clipboard;
 mod events;
 mod mcp;
 mod paste;
-mod push;
 mod secrets;
 mod server;
 pub mod service;
@@ -101,7 +100,7 @@ pub fn run(o: Options) -> Result<()> {
         let _ = std::process::Command::new(opener).arg(&url).spawn();
     }
 
-    let push = Arc::new(push::Push::load().context("load the Web Push key")?);
+    let push = Arc::new(crate::push::Push::load().context("load the Web Push key")?);
     let hub = Arc::new(events::Hub::default());
     {
         let (push, hub) = (push.clone(), hub.clone());

@@ -151,7 +151,8 @@ pub enum Call {
         /// The Claude Code agent the session runs as (`claude --agent`).
         claude_agent: Option<String>,
     },
-    SendMessage { workspace: Option<String>, task: String, text: String, force: bool },
+    /// `notify`: tell the user's devices when the turn this starts is over.
+    SendMessage { workspace: Option<String>, task: String, text: String, force: bool, notify: bool },
     Wait { workspace: Option<String>, task: String, timeout_secs: u64 },
     AnswerPermission { workspace: Option<String>, task: String, approve: bool },
     FocusTask { workspace: Option<String>, task: String },
@@ -234,7 +235,13 @@ pub fn parse_call(params: &Value) -> Result<Call, String> {
         }
         "tenx_send_message" => {
             let (workspace, task) = task()?;
-            Call::SendMessage { workspace, task, text: required(args, "text")?, force: flag(args, "force")?.unwrap_or(false) }
+            Call::SendMessage {
+                workspace,
+                task,
+                text: required(args, "text")?,
+                force: flag(args, "force")?.unwrap_or(false),
+                notify: flag(args, "notify")?.unwrap_or(false),
+            }
         }
         "tenx_wait" => {
             let (workspace, task) = task()?;
@@ -392,6 +399,7 @@ pub fn tools() -> Value {
                 "task": task,
                 "text": { "type": "string", "description": "The message." },
                 "force": { "type": "boolean", "description": "Type it even over an open dialog." },
+                "notify": { "type": "boolean", "description": "Send the user a notification (Mac, browsers, iOS app) with the agent's last reply when this turn is over — for \"tell me when it's done\"." },
             }),
             &["task", "text"],
             json!({ "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false }),

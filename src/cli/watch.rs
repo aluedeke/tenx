@@ -119,6 +119,7 @@ pub fn run() -> Result<()> {
         for (note, title) in attention.step(&snapshot) {
             notify(note, title);
         }
+        crate::cli::agentnotify::fire_armed(&snapshot.turns);
 
         for dir in tenx_core::secrets::closed_windows(&open_tasks, snapshot.open_tasks.as_ref()) {
             let _ = crate::cli::secrets::forget_released(&dir);
@@ -240,6 +241,8 @@ pub(crate) struct TurnState {
     pub(crate) workspace: String,
     pub(crate) slug: String,
     pub(crate) title: String,
+    /// The task directory.
+    pub(crate) dir: PathBuf,
     pub(crate) status: TaskStatus,
     pub(crate) changed: Option<std::time::SystemTime>,
 }
@@ -444,6 +447,7 @@ pub(crate) fn resolve_all() -> Snapshot {
                     workspace: ws.config.name.clone(),
                     slug: task.name.clone(),
                     title: task.display_name.clone(),
+                    dir: task.path.clone(),
                     status: state.status,
                     changed: state.changed,
                 });

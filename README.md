@@ -306,6 +306,18 @@ Behind `tailscale serve` (HTTPS), the page installs as an app: on an iPhone or i
 
 Tap the bell (🔕) in the column's top bar to get a notification whenever a task starts needing you — the same prompts `tenx` raises desktop notifications for, and never for a finished turn. Tapping one opens that task. On iPhone and iPad, notifications only work in the Home Screen app (iOS 16.4 or newer), not in a Safari tab, and need HTTPS. The app icon's badge counts the tasks waiting on you. Notifications are Web Push: the browser's push service (Apple, Google, Mozilla) carries them, encrypted end to end with keys only the browser and `tenx web` hold (`~/.config/tenx/web-push-vapid` and `web-push-subs.json`, readable only by you); `tenx web` must be running for them to be sent.
 
+In the tenx iOS app (`mobile/ios`, on TestFlight), which has no Web Push, the same switch in `⋯` asks iOS for permission and signs the device up with Apple's push service (APNs). The Mac sends through APNs with your Apple push key, put in place once: `tenx web apns-key ~/Downloads/AuthKey_<id>.p8` (made in the Apple Developer account under Keys, with Apple Push Notifications service; tenx keeps a copy, readable only by you). An Apple Watch shows what the iPhone gets.
+
+### Notifications an agent sends
+
+Ask an agent to tell you something — "tell me when you're done", "ping me when CI is green" — and it runs `tenx notify`. Every agent in a tenx task is told about the command when its session starts (and `/tenx` documents it). The notification goes to the Mac, every browser that turned notifications on, and the tenx iOS app, and a tap opens the task. When you are at the Mac and its terminal shows that task (input in the last two minutes), only the Mac shows it.
+
+    tenx notify "CI is green, PR #12 is ready"   # now
+    tenx notify --when-done                      # when the agent's turn is over, with its last reply
+    tenx notify --cancel                         # take back a --when-done
+
+`--when-done` writes `.tenx-notify` in the task directory; the watcher sends it when the agent's turn ends. A client of `/mcp` gets the same with `tenx_send_message`'s `notify`: "do this and tell me when it's done".
+
 A key bar sits above a phone's or tablet's on-screen keyboard: `esc`, `ctrl`, `⇥`, arrows, `⏎`, `→⌘`, `←⌘`, paste and 📎. `→⌘` copies what is on the device's clipboard — text, or an image — to the clipboard of the Mac `tenx web` runs on, so `⌘V` there pastes it; `←⌘` copies the Mac's clipboard to the device's (an image arrives as PNG; in Safari, an image after text or text after an image can take a second tap). Both, like paste, need HTTPS (`tailscale serve`): a browser allows the clipboard only there. On an iPad it shows whenever the terminal has the focus, so it works with a hardware keyboard too. 📎 picks images from the photo library or the camera; paste takes text or an image from the device's clipboard. An image is uploaded to `tenx web` and its path typed at the cursor, which Claude Code attaches as an image. `Ctrl+V` in the terminal does the same from another Apple device: Claude Code alone would look for the image on the clipboard of the machine `tenx web` runs on. In the terminal, a finger drag scrolls, a tap moves the cursor there, and press and hold, then drag, selects text as a mouse drag does; lifting the finger copies it to the device's clipboard.
 
 ### Speaking instead of typing

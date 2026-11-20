@@ -36,8 +36,16 @@ web app can't do:
 - **The sign-in kept.** The address and token live in the Keychain; every
   launch signs in with `?token=`, so a lost cookie never matters.
 
-Notifications are not in the app yet (a WKWebView has no Web Push); keep the
-Home Screen web app for them.
+- **Notifications through APNs.** A WKWebView has no Web Push, so the app
+  registers with Apple's push service itself (`Notifications.swift`): the
+  page's ⋯ → notifications asks the app (`pushEnable`), iOS asks once for
+  permission, and the page posts the device token to `tenx web`
+  (`/push/apns/subscribe`). The Mac sends through APNs with the key
+  `tenx web apns-key AuthKey_<id>.p8` put in place. A tap opens the task.
+  An Xcode build signs up for the sandbox, a TestFlight build for
+  production (`PushRegistration.env`); the entitlement is
+  `TenX.entitlements`, and the App ID has Push Notifications on, so the
+  App Store profile includes it.
 
 ## Use
 
@@ -94,3 +102,9 @@ name: the team's name has a "Ü", and named, Xcode writes it into the app's
 designated requirement decomposed (U + combining diaeresis) while the
 certificate holds it composed, so App Store Connect rejects the upload as
 "Invalid Signature".
+
+Adding a capability to the App ID (Push Notifications, 2026-11) invalidates
+its profiles: regenerate the match profile once on a Mac, with write access
+to `aluedeke/app-store-connect` —
+`bundle exec fastlane match appstore --app_identifier it.luedeke.mobile.tenx --force`
+— or CI's read-only match fails on the old one.

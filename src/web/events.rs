@@ -180,7 +180,7 @@ fn push_disabled() -> bool {
 /// attention edges pushed to every phone and published to MCP sessions,
 /// finished turns published — and every `FOCUS_POLL` the terminal's task.
 /// Runs for the server's life.
-pub(super) fn notifier(push: Arc<super::push::Push>, hub: Arc<Hub>) {
+pub(super) fn notifier(push: Arc<crate::push::Push>, hub: Arc<Hub>) {
     const POLL: Duration = Duration::from_secs(2);
     const FOCUS_POLL: Duration = Duration::from_millis(500);
     let per_poll = (POLL.as_millis() / FOCUS_POLL.as_millis()) as u32;
@@ -224,7 +224,7 @@ pub(super) fn notifier(push: Arc<super::push::Push>, hub: Arc<Hub>) {
         hub.sweep();
         if !no_push {
             for (note, _) in notes {
-                push.send_all(&super::push::message(note));
+                push.send_all(&crate::push::message(note));
             }
         }
     }

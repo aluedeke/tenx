@@ -160,12 +160,24 @@ fn pretty(value: &Value) -> String {
 }
 
 fn run(call: Call, tabs: &Tabs, hub: &Hub, session: Option<&str>, focus: Result<FocusTarget, String>) -> Result<Answer> {
-    if let Call::SendMessage { workspace, task, text, force } = call {
+    if let Call::SendMessage { workspace, task, text, force, notify } = call {
         let (ws, task) = find(&workspace, &task)?;
+        // Armed before the message goes, so the turn it starts ends after it.
+        if notify {
+            crate::cli::agentnotify::arm(&task.path, None, None)?;
+        }
         // Back at once: the agent's turn starting is a matter of a few
         // hundred ms the caller needn't wait out — `tenx_wait` does, and a
         // subscribed client hears the turn's end anyway.
-        let sent = crate::cli::drive::send_in(&ws, &task.name, &text, force, false)?;
+        let sent = match crate::cli::drive::send_in(&ws, &task.name, &text, force, false) {
+            Ok(sent) => sent,
+            Err(e) => {
+                if notify {
+                    crate::cli::agentnotify::disarm(&task.path);
+                }
+                return Err(e);
+            }
+        };
         mark_sent(&task.path);
         let how = match sent {
             crate::cli::drive::Sent::Opened => "opened the task's window with the message",

@@ -102,3 +102,40 @@ export async function nativeHardwareKeyboard(): Promise<boolean> {
 export function openNativeSettings(): void {
   void handler()?.postMessage({ action: 'settings' });
 }
+
+/** The app's notifications: iOS's permission for them, and the device token
+ * once the app registered with APNs, with the APNs environment it belongs
+ * to (an Xcode build: sandbox; TestFlight: production). */
+export interface NativePush {
+  permission: 'granted' | 'denied' | 'notDetermined';
+  token?: string;
+  env: 'sandbox' | 'production';
+}
+
+/** What the app knows about its notifications, without asking the user.
+ * Rejects in an app too old to have them. */
+export async function nativePushState(): Promise<NativePush> {
+  const h = handler();
+  if (!h) throw new Error('not in the app');
+  return (await h.postMessage({ action: 'pushState' })) as NativePush;
+}
+
+/** Ask iOS for permission (the prompt shows once) and register with APNs. */
+export async function nativePushEnable(): Promise<NativePush> {
+  const h = handler();
+  if (!h) throw new Error('not in the app');
+  return (await h.postMessage({ action: 'pushEnable' })) as NativePush;
+}
+
+/** The event the app fires on the window when a notification is tapped;
+ * `detail` is the address it carries (`/?task=<id>`, `&unlock=1`). */
+export const OPEN_TASK_EVENT = 'tenx-open-task';
+
+/** The address of a notification tapped before the page ran (one that
+ * launched the app), once; null when there is none. */
+export async function nativeTakeTap(): Promise<string | null> {
+  const h = handler();
+  if (!h) return null;
+  const url = await h.postMessage({ action: 'takeTap' });
+  return typeof url === 'string' ? url : null;
+}

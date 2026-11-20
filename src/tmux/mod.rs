@@ -1032,6 +1032,14 @@ pub fn toggle_zoom(pane: &str) -> Result<()> {
     run(&["resize-pane", "-Z", "-t", pane]).map(|_| ())
 }
 
+/// When each client attached to `session` last had input (Unix seconds);
+/// empty with none attached or the server down.
+pub fn client_activity_in(session: &str) -> Vec<u64> {
+    run(&["list-clients", "-t", session, "-F", "#{client_activity}"])
+        .map(|t| t.lines().filter_map(|l| l.trim().parse().ok()).collect())
+        .unwrap_or_default()
+}
+
 /// A window option (`@name`) of `session`'s current window; empty when
 /// unset, `None` when tmux can't be asked.
 pub fn window_option_in(session: &str, option: &str) -> Option<String> {

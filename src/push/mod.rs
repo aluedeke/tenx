@@ -1,7 +1,9 @@
-//! Web Push for `tenx web`: the phone (or desktop) that installed the page
-//! gets a notification when a task starts needing you, even with the page
-//! closed — on exactly the edges the attention watcher raises a desktop
-//! notification for (`cli::watch::Attention`).
+//! Notifications on your devices, even with the page closed: Web Push to
+//! every browser that turned them on in `tenx web`'s page, and APNs to the
+//! tenx iOS app (`apns`). Sent by `tenx web` on exactly the edges the
+//! attention watcher raises a desktop notification for
+//! (`cli::watch::Attention`), and by `tenx notify` (`cli::notify`) when an
+//! agent tells you something because you asked it to.
 //!
 //! - The VAPID key that identifies this server to push services is made on
 //!   first use: `~/.config/tenx/web-push-vapid` (600, the private key as
@@ -23,6 +25,8 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 use tenx_core::webpush::{self, Delivery};
 
+pub(crate) mod apns;
+
 /// Who the push services should contact about this sender (RFC 8292 `sub`).
 const CONTACT: &str = "https://github.com/aluedeke/tenx";
 
@@ -30,45 +34,46 @@ const CONTACT: &str = "https://github.com/aluedeke/tenx";
 const TTL_SECS: u64 = 4 * 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(super) struct Subscription {
-    pub(super) endpoint: String,
-    pub(super) keys: Keys,
+pub(crate) struct Subscription {
+    pub(crate) endpoint: String,
+    pub(crate) keys: Keys,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(super) struct Keys {
-    pub(super) p256dh: String,
-    pub(super) auth: String,
+pub(crate) struct Keys {
+    pub(crate) p256dh: String,
+    pub(crate) auth: String,
 }
 
 /// What the service worker shows (`web/public/sw.js`).
 #[derive(Debug, Serialize)]
-pub(super) struct Message {
-    pub(super) title: String,
-    pub(super) body: String,
+pub(crate) struct Message {
+    pub(crate) title: String,
+    pub(crate) body: String,
     /// The task's id: a newer notification for the same task replaces the
     /// older one instead of stacking.
-    pub(super) tag: String,
+    pub(crate) tag: String,
     /// Where a tap on it goes: `/?task=<id>`.
-    pub(super) url: String,
+    pub(crate) url: String,
 }
 
 /// The server's push state: its VAPID key and the subscriptions file,
-/// written by one thread at a time.
-pub(super) struct Push {
+/// written by one thread at a time, and the iOS app's devices.
+pub(crate) struct Push {
     private: Vec<u8>,
     public: Vec<u8>,
     subs_path: PathBuf,
     lock: Mutex<()>,
+    pub(crate) apns: apns::Apns,
 }
 
-fn config_dir() -> Result<PathBuf> {
+pub(crate) fn config_dir() -> Result<PathBuf> {
     Ok(crate::workspace::home_dir()?.join(".config").join("tenx"))
 }
 
 /// Write `text` to `path` through a 600 temp file and a rename, so a reader
 /// never sees half of it and nobody else ever can.
-fn write_private(path: &Path, text: &str) -> Result<()> {
+pub(crate) fn write_private(path: &Path, text: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
     }
@@ -86,14 +91,14 @@ fn write_private(path: &Path, text: &str) -> Result<()> {
 }
 
 impl Push {
-    pub(super) fn load() -> Result<Push> {
+    pub(crate) fn load() -> Result<Push> {
         let dir = config_dir()?;
         let key_path = dir.join("web-push-vapid");
         let private = match std::fs::read_to_string(&key_path).ok().and_then(|t| webpush::unb64(t.trim()).ok()) {
             Some(k) if webpush::valid_private_key(&k) => k,
             _ => {
                 let key = loop {
-                    let k = super::token::random_bytes(32)?;
+                    let k = crate::web::token::random_bytes(32)?;
                     if webpush::valid_private_key(&k) {
                         break k;
                     }
@@ -103,11 +108,11 @@ impl Push {
             }
         };
         let public = webpush::public_key(&private).map_err(anyhow::Error::msg)?;
-        Ok(Push { private, public, subs_path: dir.join("web-push-subs.json"), lock: Mutex::new(()) })
+        Ok(Push { private, public, subs_path: dir.join("web-push-subs.json"), lock: Mutex::new(()), apns: apns::Apns::new(dir) })
     }
 
     /// The application server key a browser subscribes with (base64url).
-    pub(super) fn public_key(&self) -> String {
+    pub(crate) fn public_key(&self) -> String {
         webpush::b64(&self.public)
     }
 
@@ -119,7 +124,7 @@ impl Push {
         write_private(&self.subs_path, &serde_json::to_string_pretty(subs)?)
     }
 
-    pub(super) fn subscribe(&self, sub: Subscription) -> Result<()> {
+    pub(crate) fn subscribe(&self, sub: Subscription) -> Result<()> {
         anyhow::ensure!(webpush::valid_endpoint(&sub.endpoint), "not a push service endpoint: {}", sub.endpoint);
         let p256dh = webpush::unb64(&sub.keys.p256dh).map_err(anyhow::Error::msg)?;
         anyhow::ensure!(p256dh.len() == 65, "p256dh is not an uncompressed P-256 key");
@@ -131,16 +136,24 @@ impl Push {
         self.write_subs(&subs)
     }
 
-    pub(super) fn unsubscribe(&self, endpoint: &str) -> Result<()> {
+    pub(crate) fn unsubscribe(&self, endpoint: &str) -> Result<()> {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut subs = self.read_subs();
         subs.retain(|s| s.endpoint != endpoint);
         self.write_subs(&subs)
     }
 
-    /// Send `msg` to every subscription; forget the ones the push service
-    /// says are gone. Blocks on the network — never call it on the runtime.
-    pub(super) fn send_all(&self, msg: &Message) -> (usize, usize) {
+    /// Send `msg` to every browser and every iOS device: how many took it,
+    /// of how many. Blocks on the network — never call it on the runtime.
+    pub(crate) fn send_all(&self, msg: &Message) -> (usize, usize) {
+        let (web_sent, web_total) = self.send_web(msg);
+        let (app_sent, app_total) = self.apns.send_all(msg);
+        (web_sent + app_sent, web_total + app_total)
+    }
+
+    /// Send `msg` to every browser subscription; forget the ones the push
+    /// service says are gone.
+    fn send_web(&self, msg: &Message) -> (usize, usize) {
         let subs = { self.read_subs() };
         let payload = serde_json::to_vec(msg).unwrap_or_default();
         let mut sent = 0;
@@ -166,12 +179,12 @@ impl Push {
         let ua_public = webpush::unb64(&sub.keys.p256dh).map_err(anyhow::Error::msg)?;
         let auth = webpush::unb64(&sub.keys.auth).map_err(anyhow::Error::msg)?;
         let ephemeral = loop {
-            let k = super::token::random_bytes(32)?;
+            let k = crate::web::token::random_bytes(32)?;
             if webpush::valid_private_key(&k) {
                 break k;
             }
         };
-        let salt = super::token::random_bytes(16)?;
+        let salt = crate::web::token::random_bytes(16)?;
         let body = webpush::encrypt(payload, &ua_public, &auth, &ephemeral, &salt).map_err(anyhow::Error::msg)?;
         let aud = webpush::endpoint_origin(&sub.endpoint).context("endpoint has no origin")?;
         let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs();
@@ -197,7 +210,7 @@ impl Push {
 }
 
 /// What a phone shows for an attention edge (`events::notifier` sends it).
-pub(super) fn message(note: &crate::cli::watch::Note) -> Message {
+pub(crate) fn message(note: &crate::cli::watch::Note) -> Message {
     let reason = note.reason.clone().unwrap_or_else(|| "waiting for you".into());
     Message {
         title: note.task.clone(),
