@@ -87,12 +87,14 @@ function inApp(): boolean {
 }
 
 async function appState(): Promise<PushState> {
-  let app: NativePush;
+  let app: NativePush | undefined;
   try {
     app = await nativePushState();
   } catch {
     return 'app';
   }
+  // An app too old for notifications answers nothing, or refuses the action.
+  if (!app || typeof app.permission !== 'string') return 'app';
   if (app.permission === 'denied') return 'denied';
   if (app.permission !== 'granted' || !app.token || appOff()) return 'off';
   // Tell the server again: it may have lost the file, or be another run.
