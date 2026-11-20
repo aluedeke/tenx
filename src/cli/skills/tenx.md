@@ -134,6 +134,16 @@ tenx shows a task as working while its agent waits for something, and as done wh
     tenx service list                          # what runs, and in which task
     tenx service stop [NAME]                   # this task's service (--all: every one)
 
+## Notifying the user
+
+When the user asks you to notify them, ping them or tell them when something happens ("tell me when you're done", "ping me when CI is green"), use `tenx notify`. It reaches their Mac, every browser that turned notifications on in tenx web, and the tenx iOS app; a tap opens this task. When they are at the Mac looking at this task, only the Mac shows it.
+
+    tenx notify --when-done                    # run it right away: sent with your last reply when your turn is over
+    tenx notify "CI is green, PR #12 is ready" # now, for a moment in between
+    tenx notify --cancel                       # take back a --when-done
+
+Don't notify unasked: tenx already notifies when you wait on a permission or a secret.
+
 ## Common commands
 
     tenx task new "<title>" --no-focus --prompt "<what to do>" [--link "Label: value"]…

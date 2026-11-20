@@ -26,7 +26,7 @@ pub(super) struct App {
     pub(super) mcp_token: String,
     pub(super) dev_origins: Vec<String>,
     pub(super) tabs: Arc<Tabs>,
-    pub(super) push: Arc<super::push::Push>,
+    pub(super) push: Arc<crate::push::Push>,
     /// `/mcp`'s sessions and their event streams.
     pub(super) hub: Arc<super::events::Hub>,
 }
@@ -49,6 +49,8 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
         .route("/push/subscribe", post(push_subscribe))
         .route("/push/unsubscribe", post(push_unsubscribe))
         .route("/push/test", post(push_test))
+        .route("/push/apns/subscribe", post(apns_subscribe))
+        .route("/push/apns/unsubscribe", post(apns_unsubscribe))
         .route(
             "/mcp",
             post(super::mcp::post).get(super::mcp::get).delete(super::mcp::delete).layer(DefaultBodyLimit::max(tenx_core::mcp::MAX_BYTES)),
@@ -387,7 +389,7 @@ async fn push_subscribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, h
     if let Err(refused) = authorize(&app, &q, &headers) {
         return *refused;
     }
-    let sub: super::push::Subscription = match serde_json::from_slice(&body) {
+    let sub: crate::push::Subscription = match serde_json::from_slice(&body) {
         Ok(s) => s,
         Err(e) => return (StatusCode::BAD_REQUEST, format!("not a push subscription: {e}")).into_response(),
     };
@@ -417,6 +419,43 @@ async fn push_unsubscribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>,
     }
 }
 
+/// `POST /push/apns/subscribe`: `{token, env}`, the tenx iOS app's device
+/// token and its APNs environment (`sandbox` or `production`), handed to
+/// the page by the app (web/src/lib/native.ts).
+async fn apns_subscribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    let device: crate::push::apns::Device = match serde_json::from_slice(&body) {
+        Ok(d) => d,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("not a device: {e}")).into_response(),
+    };
+    let push = app.push.clone();
+    match tokio::task::spawn_blocking(move || push.apns.subscribe(device).map(|()| push.apns.configured().is_some())).await {
+        Ok(Ok(key)) => json(serde_json::json!({ "ok": true, "key": key })),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// `POST /push/apns/unsubscribe`: `{token}`.
+async fn apns_unsubscribe(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    if let Err(refused) = authorize(&app, &q, &headers) {
+        return *refused;
+    }
+    #[derive(Deserialize)]
+    struct Unsub {
+        token: String,
+    }
+    let Ok(u) = serde_json::from_slice::<Unsub>(&body) else { return StatusCode::BAD_REQUEST.into_response() };
+    let push = app.push.clone();
+    match tokio::task::spawn_blocking(move || push.apns.unsubscribe(&u.token)).await {
+        Ok(Ok(())) => json(serde_json::json!({ "ok": true })),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
 /// `POST /push/test`: a test notification to every subscription —
 /// `{sent, subscriptions}`.
 async fn push_test(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: HeaderMap) -> Response {
@@ -424,7 +463,7 @@ async fn push_test(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, header
         return *refused;
     }
     let push = app.push.clone();
-    let msg = super::push::Message {
+    let msg = crate::push::Message {
         title: "tenx".into(),
         body: format!("Notifications from {} work.", host_name()),
         tag: "tenx-test".into(),

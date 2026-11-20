@@ -1,4 +1,5 @@
 pub mod agentlog;
+pub mod agentnotify;
 pub mod agentview;
 pub mod doctor;
 pub mod hooks;
@@ -65,6 +66,25 @@ pub enum Commands {
         /// Open the window without switching to it
         #[arg(long)]
         no_focus: bool,
+    },
+    /// Notify you on your devices: the Mac, every browser that turned
+    /// notifications on in tenx web, and the tenx iOS app
+    ///
+    /// For an agent, when you asked it to tell you something. Run inside a
+    /// task, the notification names the task and a tap opens it. When you
+    /// are at the Mac looking at that task, only the Mac shows it.
+    Notify {
+        /// What to say (with --when-done: default the agent's last reply)
+        message: Option<String>,
+        /// The title (default: the task's title)
+        #[arg(long)]
+        title: Option<String>,
+        /// Send it when the agent's turn is over, not now
+        #[arg(long)]
+        when_done: bool,
+        /// Take back a --when-done
+        #[arg(long, conflicts_with_all = ["message", "title", "when_done"])]
+        cancel: bool,
     },
     /// Watch tasks and notify when one starts waiting on you
     ///
@@ -978,6 +998,24 @@ pub enum WebCommand {
     Service {
         #[command(subcommand)]
         action: WebServiceAction,
+    },
+    /// Put Apple's push key (`AuthKey_<id>.p8`) in place, so the tenx iOS
+    /// app gets notifications
+    ///
+    /// Made once in the Apple Developer account (Keys → Apple Push
+    /// Notifications service). tenx keeps a copy (600) in ~/.config/tenx.
+    ApnsKey {
+        /// The `.p8` file Apple's download gave you
+        file: std::path::PathBuf,
+        /// The key's id (default: from the file name, AuthKey_<id>.p8)
+        #[arg(long)]
+        key_id: Option<String>,
+        /// The Apple Developer team that made the key
+        #[arg(long, default_value = tenx_core::apns::DEFAULT_TEAM)]
+        team_id: String,
+        /// The app's bundle id
+        #[arg(long, default_value = tenx_core::apns::DEFAULT_TOPIC)]
+        topic: String,
     },
     /// Print the bearer token for `/mcp`, the MCP endpoint (tenx's tasks as
     /// tools, for an agent on another machine behind a gateway)

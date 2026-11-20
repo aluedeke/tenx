@@ -24,7 +24,7 @@ import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { ClipSync } from '@/lib/clipsync';
 import { EmptyClipboard, OtherKind, copyFromMac, copyImageFromMac, fetchMacImage, peekMac, sendImageToMac, sendToMac, toPng, type MacKind } from '@/lib/macclip';
-import { HARDWARE_KEYBOARD_EVENT, nativeApp, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
+import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -472,8 +472,22 @@ export function App() {
         if (lastView.current) openWanted(lastView.current);
       }
     };
+    // The iOS app's notifications: the app fires the tapped one's address,
+    // or keeps it for the page when the tap launched the app.
+    const openAddress = (address: string | null) => {
+      if (!address) return;
+      const url = new URL(address, window.location.origin);
+      const task = url.searchParams.get('task');
+      if (task) onMessage(new MessageEvent('message', { data: { type: 'open-task', task, unlock: url.searchParams.get('unlock') === '1' } }));
+    };
+    const onAppTap = (e: Event) => openAddress(String((e as CustomEvent<string>).detail ?? '/'));
+    nativeTakeTap().then(openAddress, () => {});
     navigator.serviceWorker?.addEventListener('message', onMessage);
-    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+    window.addEventListener(OPEN_TASK_EVENT, onAppTap);
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onMessage);
+      window.removeEventListener(OPEN_TASK_EVENT, onAppTap);
+    };
   }, []);
 
   const needsYou = view?.items.filter((i) => i.kind === 'task' && (i.status === 'blocked' || i.status === 'signaled')).length ?? 0;

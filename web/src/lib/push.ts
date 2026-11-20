@@ -1,9 +1,13 @@
 // Notifications: the service worker (public/sw.js), the browser's push
 // subscription, and telling `tenx web` about it (POST /push/subscribe). The
 // server decides when to push — on the same edges as tenx's desktop
-// notifications — this only turns them on and off for this browser.
+// notifications, and when an agent runs `tenx notify` — this only turns them
+// on and off for this browser. Inside the tenx iOS app, which has no Web
+// Push, the app registers with APNs itself and this hands its device token
+// to the server (POST /push/apns/subscribe).
 
 import { apiUrl } from './api';
+import { nativePushEnable, nativePushState, type NativePush } from './native';
 import { inIosApp } from './viewport';
 
 export type PushState =
@@ -11,8 +15,8 @@ export type PushState =
   | 'unsupported'
   /** iPhone / iPad Safari: Push only works in the Home Screen app. */
   | 'needs-install'
-  /** Inside the tenx iOS app: a WKWebView has no Web Push, and nothing to
-   * install — the page offers neither. */
+  /** Inside a tenx iOS app too old for notifications: a WKWebView has no
+   * Web Push, and nothing to install — the page offers neither. */
   | 'app'
   | 'off'
   | 'on'
@@ -57,8 +61,47 @@ async function post(path: string, body?: unknown): Promise<Response> {
   return res;
 }
 
+/** Turned off in the app: iOS keeps the app registered, so the page
+ * remembers that the user doesn't want them. */
+const APP_OFF_KEY = 'tenx-app-push-off';
+
+function appOff(): boolean {
+  try {
+    return localStorage.getItem(APP_OFF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setAppOff(off: boolean) {
+  try {
+    if (off) localStorage.setItem(APP_OFF_KEY, '1');
+    else localStorage.removeItem(APP_OFF_KEY);
+  } catch {
+    // A page that can't store it asks again next time.
+  }
+}
+
+function inApp(): boolean {
+  return inIosApp(window as Parameters<typeof inIosApp>[0]);
+}
+
+async function appState(): Promise<PushState> {
+  let app: NativePush;
+  try {
+    app = await nativePushState();
+  } catch {
+    return 'app';
+  }
+  if (app.permission === 'denied') return 'denied';
+  if (app.permission !== 'granted' || !app.token || appOff()) return 'off';
+  // Tell the server again: it may have lost the file, or be another run.
+  post('/push/apns/subscribe', { token: app.token, env: app.env }).catch(() => {});
+  return 'on';
+}
+
 export async function state(): Promise<PushState> {
-  if (inIosApp(window as Parameters<typeof inIosApp>[0])) return 'app';
+  if (inApp()) return appState();
   if (!supported()) return isIos() && !standalone() ? 'needs-install' : 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
   const sub = await subscription();
@@ -81,6 +124,14 @@ function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
 /** Turn notifications on. Call straight from the click: the permission
  * prompt only appears inside a user gesture. */
 export async function enable(): Promise<PushState> {
+  if (inApp()) {
+    const app = await nativePushEnable();
+    if (app.permission !== 'granted') return app.permission === 'denied' ? 'denied' : 'off';
+    if (!app.token) throw new Error('iOS gave the app no device token');
+    await post('/push/apns/subscribe', { token: app.token, env: app.env });
+    setAppOff(false);
+    return 'on';
+  }
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'off';
   await register();
@@ -104,6 +155,12 @@ export async function enable(): Promise<PushState> {
 }
 
 export async function disable(): Promise<PushState> {
+  if (inApp()) {
+    setAppOff(true);
+    const app = await nativePushState().catch(() => null);
+    if (app?.token) await post('/push/apns/unsubscribe', { token: app.token }).catch(() => {});
+    return 'off';
+  }
   const sub = await subscription();
   if (sub) {
     await post('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});

@@ -5,6 +5,7 @@ mod git;
 mod live;
 mod palette;
 mod progress;
+mod push;
 mod snapshot;
 mod tmux;
 mod tui;
@@ -91,6 +92,9 @@ fn run() -> Result<()> {
         },
 
         Some(Commands::Watch) => cli::watch::run()?,
+        Some(Commands::Notify { message, title, when_done, cancel }) => {
+            cli::agentnotify::run(message.as_deref(), title.as_deref(), when_done, cancel)?
+        }
 
         Some(Commands::Web { command: Some(cli::WebCommand::Service { action }), .. }) => match action {
             cli::WebServiceAction::Install { listen, port, dev_origin } => web::service::install(&listen, port, &dev_origin)?,
@@ -99,6 +103,9 @@ fn run() -> Result<()> {
             cli::WebServiceAction::Status => web::service::status()?,
         },
         Some(Commands::Web { command: Some(cli::WebCommand::McpToken { rotate }), .. }) => web::mcp_token(rotate)?,
+        Some(Commands::Web { command: Some(cli::WebCommand::ApnsKey { file, key_id, team_id, topic }), .. }) => {
+            push::apns::install_key(&file, key_id.as_deref(), &team_id, &topic)?
+        }
         Some(Commands::Web { command: None, listen, port, open, rotate_token, dev_origin }) => {
             web::run(web::Options { listen, port, open, rotate_token, dev_origins: dev_origin })?
         }
