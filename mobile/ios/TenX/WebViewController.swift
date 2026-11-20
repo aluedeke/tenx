@@ -6,7 +6,8 @@ import WebKit
 /// the microphone granted by the app (no WebKit prompt per visit), the
 /// clipboard read and written without the Paste bubble, kept in step with
 /// the Mac's (`tenx` message handler, web/src/lib/native.ts and clipsync.ts),
-/// whether a hardware keyboard is attached, and no iPadOS shortcut bar over it.
+/// whether a hardware keyboard is attached, notifications (APNs, since a web
+/// view has no Web Push: Notifications.swift), and no iPadOS shortcut bar over it.
 final class WebViewController: UIViewController {
     let server: Server
     /// The page can't be shown: the server refused the token, or isn't there.
@@ -17,6 +18,8 @@ final class WebViewController: UIViewController {
     /// The width last handed to the page as `--window-controls`; nil when
     /// the page (a new document) has none yet.
     private var windowControls: Int?
+    /// The page finished loading once: a tapped notification can go to it.
+    private var loaded = false
 
     init(server: Server) {
         self.server = server
@@ -61,6 +64,7 @@ final class WebViewController: UIViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(hardwareKeyboardChanged), name: .GCKeyboardDidConnect, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(hardwareKeyboardChanged), name: .GCKeyboardDidDisconnect, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(openTapped), name: NotificationTap.opened, object: nil)
     }
 
     override func viewDidLoad() {
@@ -98,6 +102,15 @@ final class WebViewController: UIViewController {
     @objc func openSettings() { onSettings() }
 
     @objc private func keyboardWillShow() { ShortcutBar.hide(in: webView) }
+
+    /// A notification tapped while the page runs: it opens the task
+    /// (web/src/lib/native.ts `OPEN_TASK_EVENT`). Before the page is there,
+    /// the tap waits for it to ask (`takeTap`).
+    @objc private func openTapped() {
+        guard loaded, let url = NotificationTap.take() else { return }
+        let detail = (try? String(data: JSONSerialization.data(withJSONObject: url, options: .fragmentsAllowed), encoding: .utf8)) ?? "\"/\""
+        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('tenx-open-task', { detail: \(detail) }))")
+    }
 
     /// The page hides its key bar while a hardware keyboard is attached
     /// (web/src/lib/native.ts `HARDWARE_KEYBOARD_EVENT`). The notification
@@ -137,6 +150,7 @@ extension WebViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loaded = true
         ShortcutBar.hide(in: webView)
         windowControls = nil
         pushWindowControls()
@@ -203,6 +217,12 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
         case "settings":
             owner.openSettings()
             return (nil, nil)
+        case "pushState":
+            return (await PushRegistration.shared.state(), nil)
+        case "pushEnable":
+            return (await PushRegistration.shared.enable(), nil)
+        case "takeTap":
+            return (NotificationTap.take() ?? NSNull(), nil)
         default:
             return (nil, "unknown action")
         }
