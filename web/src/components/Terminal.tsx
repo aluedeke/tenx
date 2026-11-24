@@ -58,8 +58,8 @@ interface Props {
   /** A key the page keeps (^w) — xterm must not see it. */
   intercept(ev: KeyboardEvent): boolean;
   onFocus(): void;
-  /** A finger held on a link at (`x`, `y`) on the page, and lifted: offer
-   * to copy or open it. */
+  /** A finger held on a link at (`x`, `y`) on the page and lifted, or a
+   * right-click on one: offer to copy or open it. */
   onLinkHold(url: string, x: number, y: number): void;
   /** Images pasted or dropped on the terminal. */
   onImages(files: File[]): void;
@@ -275,6 +275,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       const gesture = { scrolled: false, selecting: false };
       touchScroll(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       touchSelect(xterm, host.current, (d) => propsRef.current.onData(d), gesture, (url, x, y) => propsRef.current.onLinkHold(url, x, y));
+      rightClickLinks(xterm, host.current, (url, x, y) => propsRef.current.onLinkHold(url, x, y));
       tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       catchImages(host.current, (files) => propsRef.current.onImages(files), () => propsRef.current.onPasteStart());
       if (xterm.textarea) keylessText(host.current, xterm.textarea, (d) => propsRef.current.onData(d));
@@ -529,6 +530,61 @@ function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void
   };
   el.addEventListener('pointerup', end, true);
   el.addEventListener('pointercancel', end, true);
+}
+
+/** A right-click on a link (a mouse, an iPad's trackpad) opens the link's
+ * menu, as a finger held on it does; the click doesn't go on to tmux. A
+ * right-click anywhere else is left alone. The menu comes on the button's
+ * release; where no mouse events come for the secondary button, from the
+ * `contextmenu` event alone. */
+function rightClickLinks(xterm: XTerm, el: HTMLElement, onLink: (url: string, x: number, y: number) => void) {
+  let held: { url: string; x: number; y: number } | null = null;
+  let shownAt = -Infinity;
+  const linkUnder = (ev: MouseEvent) => {
+    const cell = cellAt(xterm, el, ev.clientX, ev.clientY);
+    return cell ? linkAt(xterm, cell) : null;
+  };
+  const show = (url: string, x: number, y: number) => {
+    shownAt = performance.now();
+    onLink(url, x, y);
+  };
+  el.addEventListener(
+    'mousedown',
+    (ev) => {
+      if (ev.button !== 2) return;
+      const url = linkUnder(ev);
+      if (!url) return;
+      held = { url, x: ev.clientX, y: ev.clientY };
+      ev.preventDefault();
+      ev.stopPropagation();
+    },
+    true,
+  );
+  el.addEventListener(
+    'mouseup',
+    (ev) => {
+      if (ev.button !== 2 || !held) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const { url, x, y } = held;
+      held = null;
+      show(url, x, y);
+    },
+    true,
+  );
+  el.addEventListener(
+    'contextmenu',
+    (ev) => {
+      const url = linkUnder(ev);
+      if (!url) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      // Shown on the release already, or about to be.
+      if (held || performance.now() - shownAt < 500) return;
+      show(url, ev.clientX, ev.clientY);
+    },
+    true,
+  );
 }
 
 /** A tab's key sent for a tap or a click on the strip: a phone's tap arrives
