@@ -886,6 +886,51 @@ test('on an iPad a link held in the terminal gets its menu at the finger, not in
   expect(x).toBeLessThanOrEqual(m.x + m.width + 1);
 });
 
+test('a right-click on a link in the terminal opens its menu there, and tmux gets no click', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a mouse');
+  await page.addInitScript(() => {
+    const w = window as unknown as { sent: string[] };
+    w.sent = [];
+    const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (data) {
+      if (typeof data === 'string') w.sent.push(data);
+      return send.call(this, data);
+    };
+  });
+  await page.goto('/?renderer=dom');
+  const line = page.locator('.xterm-rows > div', { hasText: 'https://github.com/aluedeke/tenx/pull/42' });
+  await expect(line).toBeVisible();
+  const box = (await line.boundingBox())!;
+  const text = (await line.textContent()) ?? '';
+  const x = box.x + (text.indexOf('https://') + 10) * (box.width / text.length);
+  const y = box.y + box.height / 2;
+  await page.mouse.click(x, y, { button: 'right' });
+  const menu = page.getByTestId('links-menu');
+  await expect(menu).toContainText('github.com/aluedeke/tenx/pull/42');
+  const m = (await menu.boundingBox())!;
+  expect(x).toBeGreaterThanOrEqual(m.x - 1);
+  expect(x).toBeLessThanOrEqual(m.x + m.width + 1);
+  const sent = await page.evaluate(() => (window as unknown as { sent: string[] }).sent.join('\n'));
+  expect(sent).not.toContain('[<2;');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+
+  // Only the contextmenu event, no mouse button events (as an iPad may send).
+  await page.waitForTimeout(600);
+  await page.evaluate(([x, y]) => {
+    const init = { bubbles: true, cancelable: true, button: 2, clientX: x, clientY: y };
+    document.querySelector('.xterm-screen')!.dispatchEvent(new MouseEvent('contextmenu', init));
+  }, [x, y]);
+  await expect(menu).toContainText('github.com/aluedeke/tenx/pull/42');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+
+  // Off the link, a right-click is not the link's.
+  await page.mouse.click(box.x + 3, box.y + box.height * 3, { button: 'right' });
+  await page.waitForTimeout(300);
+  await expect(menu).toHaveCount(0);
+});
+
 test('a paste while the column has the keyboard goes to the terminal, not to the column as keys', async ({ page, isMobile }) => {
   test.skip(isMobile, 'same code path');
   const sent = sentMessages(page);
