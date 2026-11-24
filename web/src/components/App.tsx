@@ -32,7 +32,8 @@ import { Reading, type ReadingState } from '@/lib/speak';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
-import { copyText, linkHref, linkKey, openExternal } from '@/lib/links';
+import { OBSIDIAN_URL, copyText, linkHref, linkKey, openExternal } from '@/lib/links';
+import { palette } from '@/palette';
 import {
   DRAWER_MARGIN,
   SIDEBAR_PX,
@@ -84,6 +85,20 @@ function measureCell(fontSize: number): number {
   return w || fontSize * 0.6;
 }
 
+/** A link held in the terminal as the links menu lists one: the address
+ * without its scheme as the name, icon and colour as tenx_core::links gives
+ * its kind. */
+function heldLinkView(url: string): LinkView {
+  const obsidian = OBSIDIAN_URL.test(url);
+  return {
+    url,
+    label: url.replace(/^[a-z]+:\/\//i, ''),
+    kind: obsidian ? 'obsidian' : 'web',
+    icon: obsidian ? '✎' : '↗',
+    color: obsidian ? palette.ACCENT : palette.MUTED,
+  };
+}
+
 export function App() {
   const [view, setView] = useState<ColumnView | null>(null);
   const [status, setStatus] = useState<Status>('connecting');
@@ -125,6 +140,8 @@ export function App() {
   const [secretsTask, setSecretsTask] = useState<string | null>(null);
   /** What a copied link says, for a moment. */
   const [linkNote, setLinkNote] = useState<string | null>(null);
+  /** A link a finger is held on in the terminal: copy or open it. */
+  const [heldLink, setHeldLink] = useState<LinkView | null>(null);
   /** The notice is a button that brings the keyboard back (after 📎). */
   const [pastingTap, setPastingTap] = useState(false);
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
@@ -1416,6 +1433,16 @@ export function App() {
         sidebarShown={sidebarShown}
         onSidebar={() => toggleSidebarRef.current()}
       />
+      {heldLink && (
+        <LinksMenu
+          own
+          title="in the terminal"
+          links={[heldLink]}
+          touch={touch}
+          onClose={() => setHeldLink(null)}
+          onDone={setLinkNote}
+        />
+      )}
       {shown?.mode.kind === 'links' ? (
         <LinksMenu
           own={false}
@@ -1515,6 +1542,7 @@ export function App() {
             }}
             onImages={pasteImages}
             onPasteStart={() => send({ type: 'paste' })}
+            onLinkHold={(url) => setHeldLink(heldLinkView(url))}
           />
           {opening && (
             <div className="toast" role="status" data-testid="opening">
