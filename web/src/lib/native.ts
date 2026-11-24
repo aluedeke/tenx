@@ -98,6 +98,15 @@ export async function nativeHardwareKeyboard(): Promise<boolean> {
   return (await h.postMessage({ action: 'hardwareKeyboard' })) === true;
 }
 
+/** iOS's own menu for a link held in the terminal — Copy, Open, Share — at
+ * (`x`, `y`) on the page. Rejects outside the app and in an app too old to
+ * have it: the page shows its own menu then. */
+export async function nativeLinkMenu(url: string, x: number, y: number): Promise<void> {
+  const h = handler();
+  if (!h) throw new Error('not in the app');
+  await h.postMessage({ action: 'linkMenu', url, x, y });
+}
+
 /** Open the app's settings (server address, sign out). */
 export function openNativeSettings(): void {
   void handler()?.postMessage({ action: 'settings' });

@@ -821,6 +821,71 @@ test('a link in the terminal opens outside the app', async ({ page, isMobile }) 
     .toEqual([['https://github.com/aluedeke/tenx/pull/42', '_blank', 'noopener,noreferrer']]);
 });
 
+test('a finger held on a link in the terminal offers to copy it, and selects nothing', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch');
+  await page.addInitScript(() => {
+    const w = window as unknown as { copied: string[]; sent: string[] };
+    w.copied = [];
+    w.sent = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async (t: string) => void w.copied.push(t) },
+      configurable: true,
+    });
+    const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (data) {
+      if (typeof data === 'string') w.sent.push(data);
+      return send.call(this, data);
+    };
+  });
+  await page.goto('/?renderer=dom');
+  const line = page.locator('.xterm-rows > div', { hasText: 'https://github.com/aluedeke/tenx/pull/42' });
+  await expect(line).toBeVisible();
+  const box = (await line.boundingBox())!;
+  const text = (await line.textContent()) ?? '';
+  const cellW = box.width / text.length;
+  const x = box.x + (text.indexOf('https://') + 10) * cellW;
+  const at = { pointerType: 'touch', pointerId: 51, isPrimary: true, bubbles: true, clientX: x, clientY: box.y + box.height / 2 };
+  const screen = page.locator('.xterm-screen');
+  await screen.dispatchEvent('pointerdown', at);
+  await page.waitForTimeout(600);
+  await screen.dispatchEvent('pointerup', at);
+  const sheet = page.getByTestId('links-sheet');
+  await expect(sheet).toContainText('github.com/aluedeke/tenx/pull/42');
+  const sent = await page.evaluate(() => (window as unknown as { sent: string[] }).sent.join('\n'));
+  expect(sent).not.toContain('[<0;');
+  await sheet.getByRole('button', { name: 'copy' }).tap();
+  await expect(sheet).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { copied: string[] }).copied))
+    .toEqual(['https://github.com/aluedeke/tenx/pull/42']);
+});
+
+test('on an iPad a link held in the terminal gets its menu at the finger, not in the corner', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch');
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto('/?renderer=dom');
+  const line = page.locator('.xterm-rows > div', { hasText: 'https://github.com/aluedeke/tenx/pull/42' });
+  await expect(line).toBeVisible();
+  const box = (await line.boundingBox())!;
+  const text = (await line.textContent()) ?? '';
+  const x = box.x + (text.indexOf('https://') + 10) * (box.width / text.length);
+  const y = box.y + box.height / 2;
+  const at = { pointerType: 'touch', pointerId: 52, isPrimary: true, bubbles: true, clientX: x, clientY: y };
+  const screen = page.locator('.xterm-screen');
+  await screen.dispatchEvent('pointerdown', at);
+  await page.waitForTimeout(600);
+  await screen.dispatchEvent('pointerup', at);
+  const menu = page.getByTestId('links-menu');
+  await expect(menu).toContainText('github.com/aluedeke/tenx/pull/42');
+  const m = (await menu.boundingBox())!;
+  // Below the finger in the upper half, above it in the lower: never under it.
+  if (y < 384) expect(m.y).toBeGreaterThan(y);
+  else expect(m.y + m.height).toBeLessThan(y);
+  expect(Math.abs(m.y - y)).toBeLessThan(400);
+  expect(x).toBeGreaterThanOrEqual(m.x - 1);
+  expect(x).toBeLessThanOrEqual(m.x + m.width + 1);
+});
+
 test('a paste while the column has the keyboard goes to the terminal, not to the column as keys', async ({ page, isMobile }) => {
   test.skip(isMobile, 'same code path');
   const sent = sentMessages(page);

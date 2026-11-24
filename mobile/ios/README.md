@@ -21,6 +21,11 @@ web app can't do:
   app's settings turns it off. Over Tailscale it works from anywhere; turn
   off Handoff on the Mac if Universal Clipboard shouldn't move the same
   copy too (the sync ignores an echo either way).
+- **iOS's own menu for a link in the terminal.** Hold a finger on a link
+  and lift it: Copy, Open, Share at the finger (`LinkMenu.swift`, asked for
+  by the page through `linkMenu`). The terminal's links are text it draws,
+  not anchors, so WebKit has no menu for them; in Safari, or an app too old
+  for `linkMenu`, the page shows its own.
 - **No key bar over a hardware keyboard.** The app tells the page when one
   is attached (GameController's `GCKeyboard`; a web page can't know), and
   the page's Esc/Ctrl/paste bar goes away until it is detached.

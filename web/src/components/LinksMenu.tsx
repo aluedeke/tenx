@@ -20,6 +20,9 @@ interface Props {
   /** The server's cursor, in `L` mode. */
   selected?: number;
   touch: boolean;
+  /** Where on the page it was asked for (a finger held on a link): the menu
+   * opens there rather than under the header's ↗. */
+  near?: { x: number; y: number };
   /** Opened by the page (the ↗ button): it takes Escape and keeps keys from
    * the column while open. The server's `L` mode leaves keys to the server. */
   own: boolean;
@@ -37,8 +40,19 @@ const GROUPS:  { label: string; kinds: LinkView['kind'][] }[] = [
   { label: 'other', kinds: ['linear', 'slack', 'obsidian', 'port', 'web'] },
 ];
 
+/** The menu's place by a finger at `at`: below it, or above it in the lower
+ * half of the page, so the finger doesn't cover it; inside the page. */
+function nearFinger(at: { x: number; y: number }): React.CSSProperties {
+  const width = Math.min(360, window.innerWidth - 16);
+  const left = Math.min(Math.max(at.x - width / 2, 8), window.innerWidth - width - 8);
+  const gap = 28;
+  return at.y > window.innerHeight / 2
+    ? { left, right: 'auto', top: 'auto', bottom: window.innerHeight - at.y + gap }
+    : { left, right: 'auto', top: at.y + gap };
+}
+
 export function LinksMenu(props: Props) {
-  const { links, selected, touch, own, onClose, onDone } = props;
+  const { links, selected, touch, own, near, onClose, onDone } = props;
   const sheet = touch && window.innerWidth < SHEET_MAX_WIDTH;
   useEffect(() => {
     if (!own) return;
@@ -107,7 +121,7 @@ export function LinksMenu(props: Props) {
           {body}
         </div>
       ) : (
-        <div className="menu links" data-testid="links-menu" role="menu">
+        <div className="menu links" data-testid="links-menu" role="menu" style={near && nearFinger(near)}>
           <div className="lhead">links · {props.title}</div>
           {body}
           <div className="lfoot">{own ? '1-9 open · esc' : '⏎ 1-9 open · y copy · esc'}</div>

@@ -7,7 +7,8 @@ import WebKit
 /// clipboard read and written without the Paste bubble, kept in step with
 /// the Mac's (`tenx` message handler, web/src/lib/native.ts and clipsync.ts),
 /// whether a hardware keyboard is attached, notifications (APNs, since a web
-/// view has no Web Push: Notifications.swift), and no iPadOS shortcut bar over it.
+/// view has no Web Push: Notifications.swift), iOS's own menu for a link held
+/// in the terminal (LinkMenu.swift), and no iPadOS shortcut bar over it.
 final class WebViewController: UIViewController {
     let server: Server
     /// The page can't be shown: the server refused the token, or isn't there.
@@ -20,6 +21,7 @@ final class WebViewController: UIViewController {
     private var windowControls: Int?
     /// The page finished loading once: a tapped notification can go to it.
     private var loaded = false
+    private var linkMenu: LinkMenu?
 
     init(server: Server) {
         self.server = server
@@ -60,6 +62,7 @@ final class WebViewController: UIViewController {
         hold.minimumPressDuration = 1
         hold.cancelsTouchesInView = false
         webView.addGestureRecognizer(hold)
+        linkMenu = LinkMenu(over: self)
 
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(hardwareKeyboardChanged), name: .GCKeyboardDidConnect, object: nil)
@@ -100,6 +103,8 @@ final class WebViewController: UIViewController {
     override var prefersHomeIndicatorAutoHidden: Bool { true }
 
     @objc func openSettings() { onSettings() }
+
+    func showLinkMenu(_ url: URL, at point: CGPoint) { linkMenu?.show(url, at: point) }
 
     @objc private func keyboardWillShow() { ShortcutBar.hide(in: webView) }
 
@@ -221,6 +226,11 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             return (await PushRegistration.shared.state(), nil)
         case "pushEnable":
             return (await PushRegistration.shared.enable(), nil)
+        case "linkMenu":
+            guard let text = body?["url"] as? String, let url = URL(string: text),
+                  let x = body?["x"] as? Double, let y = body?["y"] as? Double else { return (nil, "no link") }
+            owner.showLinkMenu(url, at: CGPoint(x: x, y: y))
+            return (true, nil)
         case "takeTap":
             return (NotificationTap.take() ?? NSNull(), nil)
         default:

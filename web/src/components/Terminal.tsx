@@ -13,7 +13,8 @@ import { DragFilter } from '@/lib/dragfilter';
 import { TabClicks, tabAt } from '@/lib/tabclick';
 import { tabKey } from '@/lib/keys';
 import { VERSION as EMOJI_WIDTHS, widerEmoji } from '@/lib/emojiwidth';
-import { OBSIDIAN_TEXT_URL, openExternal } from '@/lib/links';
+import { OBSIDIAN_TEXT_URL, isOpenableUrl, openExternal } from '@/lib/links';
+import { urlAt } from '@/lib/textlink';
 import { textEdit } from '@/lib/textdiff';
 import { Accumulator, FLING_STOP, LINES_PER_NOTCH, SCROLL_SLOP_PX, decay, wheelNotch } from '@/lib/touchscroll';
 import { SELECT_HOLD_MS, SelectGesture } from '@/lib/touchselect';
@@ -57,6 +58,9 @@ interface Props {
   /** A key the page keeps (^w) — xterm must not see it. */
   intercept(ev: KeyboardEvent): boolean;
   onFocus(): void;
+  /** A finger held on a link at (`x`, `y`) on the page, and lifted: offer
+   * to copy or open it. */
+  onLinkHold(url: string, x: number, y: number): void;
   /** Images pasted or dropped on the terminal. */
   onImages(files: File[]): void;
   /** A paste is about to go to the terminal (the server takes the pane out
@@ -270,7 +274,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.textarea?.setAttribute('writingsuggestions', 'false');
       const gesture = { scrolled: false, selecting: false };
       touchScroll(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
-      touchSelect(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
+      touchSelect(xterm, host.current, (d) => propsRef.current.onData(d), gesture, (url, x, y) => propsRef.current.onLinkHold(url, x, y));
       tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       catchImages(host.current, (files) => propsRef.current.onImages(files), () => propsRef.current.onPasteStart());
       if (xterm.textarea) keylessText(host.current, xterm.textarea, (d) => propsRef.current.onData(d));
@@ -430,10 +434,29 @@ function touchScroll(xterm: XTerm, el: HTMLElement, send: (data: string) => void
 }
 
 /** Press and hold, then drag: selects text the way a mouse drag does
- * (lib/touchselect). */
-function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture) {
+ * (lib/touchselect). Held on a link, the hold is the link's instead: no
+ * selection, and when the finger lifts `onLink` offers to copy or open it
+ * (on the lift, as iOS's own menus come: a menu shown under the finger
+ * could take its lift for a tap outside and close). */
+function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture, onLink: (url: string, x: number, y: number) => void) {
   const select = new SelectGesture();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  /** The link the finger is held on, until it lifts. */
+  let held: { url: string; x: number; y: number } | null = null;
+  /** Until when the mouse events iOS makes of the lift are dropped: xterm
+   * would take them for a click on the link and open it. */
+  let swallowUntil = 0;
+  for (const type of ['mousedown', 'mouseup', 'click']) {
+    el.addEventListener(
+      type,
+      (ev) => {
+        if (performance.now() > swallowUntil) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+      },
+      true,
+    );
+  }
 
   /** The cell under a point, held inside the screen: a drag past an edge
    * keeps selecting up to it. */
@@ -455,10 +478,20 @@ function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void
     (ev) => {
       if (ev.pointerType !== 'touch') return;
       cancel();
+      held = null;
       gesture.selecting = false;
-      if (!select.down(ev.clientX, ev.clientY, cellAt(xterm, el, ev.clientX, ev.clientY))) return;
+      const cell = cellAt(xterm, el, ev.clientX, ev.clientY);
+      const { clientX, clientY } = ev;
+      if (!select.down(ev.clientX, ev.clientY, cell)) return;
       timer = setTimeout(() => {
         timer = null;
+        const url = cell ? linkAt(xterm, cell) : null;
+        if (url) {
+          select.up(null);
+          gesture.scrolled = true; // not a tap
+          held = { url, x: clientX, y: clientY };
+          return;
+        }
         send(select.hold());
         gesture.selecting = true;
         gesture.scrolled = true; // not a tap either
@@ -485,6 +518,11 @@ function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void
   const end = (ev: PointerEvent) => {
     if (ev.pointerType !== 'touch') return;
     cancel();
+    if (held) {
+      swallowUntil = performance.now() + 1000;
+      onLink(held.url, held.x, held.y);
+    }
+    held = null;
     const data = select.up(clamped(ev.clientX, ev.clientY));
     gesture.selecting = false;
     if (data) send(data);
@@ -549,6 +587,39 @@ function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) =>
       moving = false;
     });
   }, true);
+}
+
+/** The link at `cell`: a program's own (OSC 8), else a URL in the text
+ * (lib/textlink). Only links `openExternal` would follow. */
+function linkAt(xterm: XTerm, cell: Cell): string | null {
+  const buf = xterm.buffer.active;
+  const osc = oscLinkAt(xterm, buf.getLine(buf.viewportY + cell.y)?.getCell(cell.x));
+  if (osc && isOpenableUrl(osc)) return osc;
+  const rows: string[][] = [];
+  for (let y = 0; y < xterm.rows; y++) {
+    const line = buf.getLine(buf.viewportY + y);
+    const row: string[] = [];
+    for (let x = 0; x < xterm.cols; x++) {
+      const c = line?.getCell(x);
+      row.push(!c ? ' ' : c.getWidth() === 0 ? '' : c.getChars() || ' ');
+    }
+    rows.push(row);
+  }
+  return urlAt(rows, cell);
+}
+
+/** An OSC 8 link's address. xterm has no public way to read it: the cell's
+ * link id and the core's link service are internals, so this is best effort
+ * and null when they ever move. */
+function oscLinkAt(xterm: XTerm, cell: unknown): string | null {
+  try {
+    const id = (cell as { extended?: { urlId?: number } } | undefined)?.extended?.urlId;
+    if (!id) return null;
+    const core = (xterm as unknown as { _core?: { _oscLinkService?: { getLinkData(id: number): { uri?: string } | undefined } } })._core;
+    return core?._oscLinkService?.getLinkData(id)?.uri ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function screenRows(xterm: XTerm): string[] {
