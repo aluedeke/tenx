@@ -58,8 +58,9 @@ interface Props {
   /** A key the page keeps (^w) — xterm must not see it. */
   intercept(ev: KeyboardEvent): boolean;
   onFocus(): void;
-  /** A finger held on a link: offer to copy or open it. */
-  onLinkHold(url: string): void;
+  /** A finger held on a link at (`x`, `y`) on the page, and lifted: offer
+   * to copy or open it. */
+  onLinkHold(url: string, x: number, y: number): void;
   /** Images pasted or dropped on the terminal. */
   onImages(files: File[]): void;
   /** A paste is about to go to the terminal (the server takes the pane out
@@ -273,7 +274,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       xterm.textarea?.setAttribute('writingsuggestions', 'false');
       const gesture = { scrolled: false, selecting: false };
       touchScroll(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
-      touchSelect(xterm, host.current, (d) => propsRef.current.onData(d), gesture, (url) => propsRef.current.onLinkHold(url));
+      touchSelect(xterm, host.current, (d) => propsRef.current.onData(d), gesture, (url, x, y) => propsRef.current.onLinkHold(url, x, y));
       tapToPlaceCursor(xterm, host.current, (d) => propsRef.current.onData(d), gesture);
       catchImages(host.current, (files) => propsRef.current.onImages(files), () => propsRef.current.onPasteStart());
       if (xterm.textarea) keylessText(host.current, xterm.textarea, (d) => propsRef.current.onData(d));
@@ -434,10 +435,28 @@ function touchScroll(xterm: XTerm, el: HTMLElement, send: (data: string) => void
 
 /** Press and hold, then drag: selects text the way a mouse drag does
  * (lib/touchselect). Held on a link, the hold is the link's instead: no
- * selection, `onLink` offers to copy or open it. */
-function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture, onLink: (url: string) => void) {
+ * selection, and when the finger lifts `onLink` offers to copy or open it
+ * (on the lift, as iOS's own menus come: a menu shown under the finger
+ * could take its lift for a tap outside and close). */
+function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture, onLink: (url: string, x: number, y: number) => void) {
   const select = new SelectGesture();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  /** The link the finger is held on, until it lifts. */
+  let held: { url: string; x: number; y: number } | null = null;
+  /** Until when the mouse events iOS makes of the lift are dropped: xterm
+   * would take them for a click on the link and open it. */
+  let swallowUntil = 0;
+  for (const type of ['mousedown', 'mouseup', 'click']) {
+    el.addEventListener(
+      type,
+      (ev) => {
+        if (performance.now() > swallowUntil) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+      },
+      true,
+    );
+  }
 
   /** The cell under a point, held inside the screen: a drag past an edge
    * keeps selecting up to it. */
@@ -459,8 +478,10 @@ function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void
     (ev) => {
       if (ev.pointerType !== 'touch') return;
       cancel();
+      held = null;
       gesture.selecting = false;
       const cell = cellAt(xterm, el, ev.clientX, ev.clientY);
+      const { clientX, clientY } = ev;
       if (!select.down(ev.clientX, ev.clientY, cell)) return;
       timer = setTimeout(() => {
         timer = null;
@@ -468,7 +489,7 @@ function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void
         if (url) {
           select.up(null);
           gesture.scrolled = true; // not a tap
-          onLink(url);
+          held = { url, x: clientX, y: clientY };
           return;
         }
         send(select.hold());
@@ -497,6 +518,11 @@ function touchSelect(xterm: XTerm, el: HTMLElement, send: (data: string) => void
   const end = (ev: PointerEvent) => {
     if (ev.pointerType !== 'touch') return;
     cancel();
+    if (held) {
+      swallowUntil = performance.now() + 1000;
+      onLink(held.url, held.x, held.y);
+    }
+    held = null;
     const data = select.up(clamped(ev.clientX, ev.clientY));
     gesture.selecting = false;
     if (data) send(data);

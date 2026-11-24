@@ -24,7 +24,7 @@ import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { ClipSync } from '@/lib/clipsync';
 import { EmptyClipboard, OtherKind, copyFromMac, copyImageFromMac, fetchMacImage, peekMac, sendImageToMac, sendToMac, toPng, type MacKind } from '@/lib/macclip';
-import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
+import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -140,8 +140,8 @@ export function App() {
   const [secretsTask, setSecretsTask] = useState<string | null>(null);
   /** What a copied link says, for a moment. */
   const [linkNote, setLinkNote] = useState<string | null>(null);
-  /** A link a finger is held on in the terminal: copy or open it. */
-  const [heldLink, setHeldLink] = useState<LinkView | null>(null);
+  /** A link a finger is held on in the terminal, and where: copy or open it. */
+  const [heldLink, setHeldLink] = useState<{ link: LinkView; x: number; y: number } | null>(null);
   /** The notice is a button that brings the keyboard back (after 📎). */
   const [pastingTap, setPastingTap] = useState(false);
   const [pushState, setPushState] = useState<push.PushState>('unsupported');
@@ -1437,7 +1437,8 @@ export function App() {
         <LinksMenu
           own
           title="in the terminal"
-          links={[heldLink]}
+          links={[heldLink.link]}
+          near={heldLink}
           touch={touch}
           onClose={() => setHeldLink(null)}
           onDone={setLinkNote}
@@ -1542,7 +1543,12 @@ export function App() {
             }}
             onImages={pasteImages}
             onPasteStart={() => send({ type: 'paste' })}
-            onLinkHold={(url) => setHeldLink(heldLinkView(url))}
+            onLinkHold={(url, x, y) => {
+              const page = () => setHeldLink({ link: heldLinkView(url), x, y });
+              // In the app, iOS's own menu; the page's in Safari or an older app.
+              if (nativeApp()) nativeLinkMenu(url, x, y).catch(page);
+              else page();
+            }}
           />
           {opening && (
             <div className="toast" role="status" data-testid="opening">
