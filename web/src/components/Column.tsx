@@ -58,7 +58,8 @@ type FormMode = Extract<ModeView, { kind: (typeof FORM_KINDS)[number] }>;
 const isForm = (m: ModeView): m is FormMode => (FORM_KINDS as readonly string[]).includes(m.kind);
 
 /** A submitted form, followed until its job lands (3g): the jobs running
- * when it was submitted, the form as it was, and the job it started. */
+ * when it was submitted, the form as it was, and the job it started. A
+ * create form is never followed: the new task's own row shows it. */
 interface Tracking {
   known: Set<number>;
   snapshot: FormMode;
@@ -72,9 +73,11 @@ export function Column(props: Props) {
 
   // A submit closes the form on the server and starts a job: keep showing the
   // form, frozen, with that job's progress until it lands (or esc leaves it).
+  // Not a new task's: its row is in the list at once, setting up, and the
+  // list is free to move on to other tasks while it does.
   const sendForm = useCallback(
     (op: FormOp) => {
-      if (op.op === 'submit' && view && isForm(view.mode)) {
+      if (op.op === 'submit' && view && isForm(view.mode) && view.mode.kind !== 'create') {
         setTracking({ known: new Set(view.jobs.map((j) => j.id)), snapshot: view.mode, jobId: null });
       }
       props.onForm(op);

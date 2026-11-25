@@ -551,27 +551,29 @@ test('the new-task form is a real web form', async ({ page, isMobile }) => {
   }
   await name.press('Enter');
   await expect.poll(() => forms().some((m) => m.op === 'submit')).toBe(true);
-  // The job it started: the form stays, frozen, with the progress (3g)…
-  await expect(page.getByTestId('form-progress')).toContainText("creating 'Rate limit login'");
-  await expect(page.getByTestId('form-progress')).toContainText('Work tab');
-  // …until the job lands, and the list is back.
-  await expect(page.locator('.webform')).toHaveCount(0, { timeout: 10_000 });
+  // The task is set up in the background: the form closes at once and the
+  // list is free to use while the job still runs.
+  await expect(page.locator('.webform')).toHaveCount(0);
+  await expect(page.getByTestId('form-progress')).toHaveCount(0);
   await expect(page.getByTestId('list')).toBeVisible();
   // Typing in the form never went to the column as keys.
   expect(sent().some((m) => m.type === 'key' && m.key === 'R')).toBe(false);
 });
 
-test('esc leaves a running job to the Work tab', async ({ page, isMobile }) => {
+test('a new task is set up in the background, the list stays usable', async ({ page, isMobile }) => {
   test.skip(isMobile, 'keyboard');
+  const sent = sentMessages(page);
   await page.goto('/');
   await page.getByTestId('add').click();
   await newTaskItem(page).click();
-  await page.locator('input[data-field=name]').fill('Leave it');
+  await page.locator('input[data-field=name]').fill('In the background');
   await page.locator('input[data-field=name]').press('Enter');
-  await expect(page.getByTestId('form-progress')).toBeVisible();
-  await page.keyboard.press('Escape');
+  // No frozen form waits for the job: the list is back at once…
   await expect(page.locator('.webform')).toHaveCount(0);
-  await expect(page.getByTestId('list')).toBeVisible();
+  await expect(page.getByTestId('form-progress')).toHaveCount(0);
+  // …and another task can be picked while the new one is set up.
+  await page.locator('[data-id="web/better-loading"]').click();
+  await expect.poll(() => sent().some((m) => m.type === 'click' && m.id === 'web/better-loading')).toBe(true);
 });
 
 test('a refused submit shows why inside the form; Escape cancels', async ({ page, isMobile }) => {

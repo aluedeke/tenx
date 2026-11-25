@@ -2143,6 +2143,9 @@ impl Column {
             // spinners and the marquee animate off `frame`.
             return running;
         }
+        // A new task takes the cursor only from its own ghost row: whoever
+        // moved on to another task while it was set up stays there.
+        let on_ghost = self.selected_row().filter(|r| r.pending).map(|r| (r.ws_idx, r.slug.clone()));
         // One rebuild covers every job that landed together.
         self.drop_pending();
         self.rebuild_rows();
@@ -2151,7 +2154,8 @@ impl Column {
             match outcome {
                 Ok(msg) => {
                     self.status_msg = Some(msg);
-                    self.finish(then);
+                    let select = on_ghost.as_ref().is_some_and(|(w, s)| then.builds(*w, s));
+                    self.finish(then, select);
                 }
                 Err(e) => self.status_msg = Some(e),
             }
@@ -2161,7 +2165,8 @@ impl Column {
     }
 
     /// The landed job's follow-up, run against freshly rebuilt rows.
-    fn finish(&mut self, then: super::job::Then) {
+    /// `select`: a task it built takes the cursor (it was on the ghost row).
+    fn finish(&mut self, then: super::job::Then, select: bool) {
         use super::job::Then;
         match then {
             Then::Nothing => {}
@@ -2172,7 +2177,7 @@ impl Column {
             // the selection on it.
             Then::OpenNamed(ws_idx, naming) => {
                 if let Some((slug, _)) = naming.get() {
-                    self.finish(Then::OpenTask(ws_idx, slug));
+                    self.finish(Then::OpenTask(ws_idx, slug), select);
                 }
             }
             Then::OpenTask(ws_idx, slug) => {
@@ -2189,7 +2194,9 @@ impl Column {
                 // `window_id` is stale — re-read so it reads as open, not
                 // closed, the moment it appears.
                 self.rebuild_rows();
-                self.select_task(ws_idx, &slug);
+                if select {
+                    self.select_task(ws_idx, &slug);
+                }
             }
             Then::Workspace(dir) => self.finish_new_workspace(&dir),
         }
@@ -2213,9 +2220,13 @@ impl Column {
     }
 
     /// Remove every ghost row whose job is no longer running. The real ones
-    /// come back from `rebuild_rows`.
+    /// come back from `rebuild_rows`; a task still being set up beside them
+    /// keeps its ghost.
     fn drop_pending(&mut self) {
-        self.rows.retain(|r| !r.pending);
+        let jobs = self.jobs.lock();
+        self.rows
+            .retain(|r| !r.pending || jobs.iter().any(|j| !j.landed() && j.then.builds(r.ws_idx, &r.slug)));
+        drop(jobs);
         self.apply_filter();
     }
 
@@ -2302,8 +2313,12 @@ impl Column {
             self.sort_rows();
             self.apply_filter();
         } else {
-            if self.job_running() {
-                return Err("one repo operation at a time — this one is still running".into());
+            // Other jobs may run meanwhile — new tasks are set up side by
+            // side, `git::lock_repo` serialising what shares a repo — but not
+            // two of the same task, whose directory doesn't exist yet to
+            // refuse the second.
+            if self.rows.iter().any(|r| r.pending && r.ws_idx == ws_idx && r.slug == slug) {
+                return Err(format!("'{name}' is still being set up"));
             }
             let ws = &self.workspaces[ws_idx];
             let ws_dir = ws.dir.clone();
@@ -2380,9 +2395,6 @@ impl Column {
     /// it (`Then::OpenNamed`).
     fn submit_titled(&mut self, form: &CreateForm, prompt: String) -> Result<bool, String> {
         let repos: Vec<String> = form.repos.iter().filter(|(_, on)| *on).map(|(n, _)| n.clone()).collect();
-        if !repos.is_empty() && self.job_running() {
-            return Err("one repo operation at a time — this one is still running".into());
-        }
         let ws_idx = form.ws_idx;
         let ws = &self.workspaces[ws_idx];
         let ws_dir = ws.dir.clone();
@@ -2391,7 +2403,11 @@ impl Column {
         let draft = tenx_core::orchestrate::ask_title(&prompt);
         let plan = tenx_core::progress::Plan::new(format!("creating '{draft}'"), steps);
         // Not a slug `slugify` can make, so it never meets a real task.
-        let naming = super::job::Naming::new(format!("~naming-{}", self.rows.len()));
+        // Numbered, not by row count: a rebuild can shrink the list while an
+        // earlier placeholder is still listed.
+        static PLACEHOLDERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = PLACEHOLDERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let naming = super::job::Naming::new(format!("~naming-{n}"));
         let ghost = self.ghost_row(ws_idx, &naming.placeholder, &draft, &repos, form.agent);
         self.rows.push(ghost);
         self.filter.clear();
