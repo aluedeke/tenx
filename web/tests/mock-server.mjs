@@ -468,6 +468,20 @@ wss.on('connection', (ws, req) => {
       }
     }
   });
+  // A job, as tenx's column runs one: it reports progress, then lands.
+  function startJob(title, done) {
+    const job = { id: ++jobIds, title, counter: '1/2 api', fraction: 0 };
+    st.jobs = [...(st.jobs ?? []), job];
+    const tick = setInterval(() => {
+      job.fraction = Math.min(1, job.fraction + 0.2);
+      if (job.fraction >= 1) {
+        clearInterval(tick);
+        st.jobs = st.jobs.filter((j) => j !== job);
+        st.status = done;
+      }
+      push();
+    }, Number(process.env.MOCK_JOB_TICK_MS ?? 400));
+  }
   // `form` messages, as view.rs `handle_form` takes them.
   function form(m) {
     st.status = null;
@@ -492,17 +506,7 @@ wss.on('connection', (ws, req) => {
           // As tenx: the form closes and a job starts; it reports progress,
           // then lands.
           st.mode = 'list';
-          const job = { id: ++jobIds, title: `creating '${f.name}'`, counter: '1/2 api', fraction: 0 };
-          st.jobs = [...(st.jobs ?? []), job];
-          const tick = setInterval(() => {
-            job.fraction = Math.min(1, job.fraction + 0.2);
-            if (job.fraction >= 1) {
-              clearInterval(tick);
-              st.jobs = st.jobs.filter((j) => j !== job);
-              st.status = `created '${f.name}'`;
-            }
-            push();
-          }, Number(process.env.MOCK_JOB_TICK_MS ?? 400));
+          startJob(`creating '${f.name}'`, `created '${f.name}'`);
         }
       }
     } else if (st.mode === 'reject') {
@@ -524,6 +528,8 @@ wss.on('connection', (ws, req) => {
         // Detaching asks first, as tenx does.
         if (!st.confirmDetach && st.picks.some((p) => p.present && !p.checked)) st.confirmDetach = true;
         else {
+          // Adding only: as tenx, a job attaches the worktrees.
+          if (!st.confirmDetach && st.picks.some((p) => !p.present && p.checked)) startJob('editing repos', 'repos updated');
           st.confirmDetach = false;
           st.mode = 'list';
         }

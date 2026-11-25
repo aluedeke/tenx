@@ -2055,6 +2055,23 @@ impl Column {
         self.active_jobs() > 0
     }
 
+    /// Why a new task in workspace `ws_idx` (as `slug`, when known before
+    /// the job) can't start now. New tasks are set up side by side —
+    /// `git::lock_repo` serialises what shares a repo — but not the same task
+    /// twice (its directory doesn't exist yet to refuse the second), and not
+    /// while a new workspace lands: that reorders the workspaces a create's
+    /// follow-up names by index. The jobs are every column's (`tenx web`'s
+    /// tabs share them), not just the ghost rows of this one.
+    fn create_refusal(&self, ws_idx: usize, slug: Option<&str>, name: &str) -> Option<String> {
+        let jobs = self.jobs.lock();
+        let running = || jobs.iter().filter(|j| !j.landed());
+        if running().any(|j| matches!(j.then, super::job::Then::Workspace(_))) {
+            return Some("a new workspace is being set up — create the task once it is there".into());
+        }
+        let slug = slug?;
+        running().any(|j| j.then.builds(ws_idx, slug)).then(|| format!("'{name}' is still being set up"))
+    }
+
     /// Keep this many settled jobs. They are the only record of an outcome
     /// once the footer message has been replaced — a failed clone you were
     /// not looking at when it failed would otherwise leave no trace.
@@ -2143,22 +2160,38 @@ impl Column {
             // spinners and the marquee animate off `frame`.
             return running;
         }
-        // A new task takes the cursor only from its own ghost row: whoever
-        // moved on to another task while it was set up stays there.
-        let on_ghost = self.selected_row().filter(|r| r.pending).map(|r| (r.ws_idx, r.slug.clone()));
+        // A new task takes the cursor only from its own ghost row, and only
+        // while the task list is shown: whoever moved on to another task (or
+        // tab) while it was set up stays there.
+        let kept = self.selected_row().map(|r| (r.ws_idx, r.slug.clone()));
+        let on_ghost = if self.tab.lists_tasks() {
+            self.selected_row().filter(|r| r.pending).map(|r| (r.ws_idx, r.slug.clone()))
+        } else {
+            None
+        };
         // One rebuild covers every job that landed together.
         self.drop_pending();
         self.rebuild_rows();
         self.rebuild_repo_rows();
+        let mut moved = false;
         for (then, outcome) in settled {
             match outcome {
                 Ok(msg) => {
                     self.status_msg = Some(msg);
                     let select = on_ghost.as_ref().is_some_and(|(w, s)| then.builds(*w, s));
+                    moved |= select || matches!(then, super::job::Then::SelectTask(..) | super::job::Then::Workspace(_));
                     self.finish(then, select);
                 }
                 Err(e) => self.status_msg = Some(e),
             }
+        }
+        // The rebuilds re-sorted the list under a bare index: put it back on
+        // the task it was on, as `tidy` does.
+        if !moved
+            && let Some((ws_idx, slug)) = kept
+            && let Some(pos) = self.filtered.iter().position(|&i| self.rows[i].ws_idx == ws_idx && self.rows[i].slug == slug)
+        {
+            self.selected = pos;
         }
         self.clamp_work_selection();
         true
@@ -2313,12 +2346,8 @@ impl Column {
             self.sort_rows();
             self.apply_filter();
         } else {
-            // Other jobs may run meanwhile — new tasks are set up side by
-            // side, `git::lock_repo` serialising what shares a repo — but not
-            // two of the same task, whose directory doesn't exist yet to
-            // refuse the second.
-            if self.rows.iter().any(|r| r.pending && r.ws_idx == ws_idx && r.slug == slug) {
-                return Err(format!("'{name}' is still being set up"));
+            if let Some(why) = self.create_refusal(ws_idx, Some(&slug), &name) {
+                return Err(why);
             }
             let ws = &self.workspaces[ws_idx];
             let ws_dir = ws.dir.clone();
@@ -2396,6 +2425,9 @@ impl Column {
     fn submit_titled(&mut self, form: &CreateForm, prompt: String) -> Result<bool, String> {
         let repos: Vec<String> = form.repos.iter().filter(|(_, on)| *on).map(|(n, _)| n.clone()).collect();
         let ws_idx = form.ws_idx;
+        if let Some(why) = self.create_refusal(ws_idx, None, &prompt) {
+            return Err(why);
+        }
         let ws = &self.workspaces[ws_idx];
         let ws_dir = ws.dir.clone();
         let mut steps = vec!["title".to_string()];
@@ -2937,16 +2969,18 @@ impl Column {
             self.status_msg = None; // cancelled
             return;
         }
+        // Refused before anything is closed: a refused delete must leave the
+        // task's agent running.
+        if self.job_running() {
+            self.status_msg = Some("one repo operation at a time — this one is still running".into());
+            return;
+        }
         // Close the window first (best-effort) so it doesn't linger after the
         // dir goes. Looked up live, and by task — never the cached id (tmux
         // reuses `@N` after a server restart) and never by name alone (a slug
         // is unique only within its workspace).
         if let Some(w) = crate::tmux::find_task_window(&confirm.slug, &confirm.path).ok().flatten() {
             let _ = crate::tmux::kill_window(&w.id);
-        }
-        if self.job_running() {
-            self.status_msg = Some("one repo operation at a time — this one is still running".into());
-            return;
         }
         // Removing N worktrees is local, but on a large repo it is still
         // seconds of filesystem work — long enough to be worth not freezing

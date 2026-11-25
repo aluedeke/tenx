@@ -576,6 +576,20 @@ test('a new task is set up in the background, the list stays usable', async ({ p
   await expect.poll(() => sent().some((m) => m.type === 'click' && m.id === 'web/better-loading')).toBe(true);
 });
 
+test("other forms stay, frozen, with their job's progress; esc leaves it running", async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the row menu by right-click');
+  await page.goto('/');
+  await page.locator('[data-id="web/better-loading"]').click({ button: 'right' });
+  await page.getByText('edit repos').click();
+  await page.locator('.wf-row', { hasText: 'web' }).click();
+  await page.getByRole('button', { name: /apply/i }).click();
+  await expect(page.getByTestId('form-progress')).toContainText('editing repos');
+  await expect(page.getByTestId('form-progress')).toContainText('Work tab');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.webform')).toHaveCount(0);
+  await expect(page.getByTestId('list')).toBeVisible();
+});
+
 test('a refused submit shows why inside the form; Escape cancels', async ({ page, isMobile }) => {
   test.skip(isMobile, 'keyboard');
   const sent = sentMessages(page);
