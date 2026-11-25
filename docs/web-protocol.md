@@ -252,7 +252,9 @@ set it shows only the prompt. A refused submit shows the view's `status` under t
 it is about (else above the bar). A submit that starts a job keeps the form on
 screen, frozen, with that job's progress from `view.jobs` (the one whose `id`
 wasn't there before the submit) until it lands; esc leaves it running on the
-Work tab. A delete asks on its row with `key` messages
+Work tab. The create form is the exception: it closes on submit, since the
+new task is listed at once as a row that is setting up, and the list stays
+usable meanwhile. A delete asks on its row with `key` messages
 (y, n). Tapping
 something that takes typing focuses an off-screen input so a phone raises its
 keyboard; what it types goes over as `key` messages.

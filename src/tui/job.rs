@@ -58,6 +58,19 @@ pub(super) enum Then {
     Workspace(PathBuf),
 }
 
+impl Then {
+    /// The task this follow-up opens is the one listed as (`ws_idx`, `slug`):
+    /// that ghost row stands for this job's task, under its placeholder or,
+    /// once the job has named it, its slug.
+    pub(super) fn builds(&self, ws_idx: usize, slug: &str) -> bool {
+        match self {
+            Then::OpenTask(w, s) => *w == ws_idx && s == slug,
+            Then::OpenNamed(w, n) => *w == ws_idx && (n.placeholder == slug || n.get().is_some_and(|(s, _)| s == slug)),
+            _ => false,
+        }
+    }
+}
+
 /// The name a job picks for the task it creates, shared with the column:
 /// the worker sets it once Claude has answered, and the column renames the
 /// ghost row (listed under `placeholder` until then) and opens the task.
@@ -276,6 +289,22 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     use tenx_core::progress::Phase;
+
+    #[test]
+    fn a_follow_up_knows_the_ghost_row_of_its_task() {
+        let open = Then::OpenTask(1, "login".into());
+        assert!(open.builds(1, "login"));
+        assert!(!open.builds(0, "login"), "the same slug in another workspace");
+        assert!(!open.builds(1, "logout"));
+        let naming = Naming::new("~naming-3".into());
+        let named = Then::OpenNamed(0, naming.clone());
+        assert!(named.builds(0, "~naming-3"));
+        assert!(!named.builds(0, "rate-limit"));
+        naming.set("rate-limit", "Rate limit");
+        assert!(named.builds(0, "rate-limit"), "renamed by `name_ghosts`");
+        assert!(!Then::SelectTask(0, "login".into()).builds(0, "login"));
+        assert!(!Then::Nothing.builds(0, "login"));
+    }
 
     /// Wait for `f` to hold, draining the job — the worker is a real thread,
     /// so the test has to let it run.
