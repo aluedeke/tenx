@@ -23,6 +23,9 @@ jobs:
             range="${{ github.sha }}~1..${{ github.sha }}"
           fi
           ./scripts/check-commit-msg.sh --range "$range"
+      # The PR description check itself (scripts/check-pr-body.py).
+      - name: Test the PR description check
+        run: python3 scripts/test_check_pr_body.py
 
   test:
     strategy:

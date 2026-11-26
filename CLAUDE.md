@@ -69,3 +69,13 @@ Independent layers wired together by `main.rs`'s CLI dispatch; each layer only k
 - Derive state from live sources (disk, the session registry, `tmux list-windows`) rather than recording it; the only tenx-owned per-task files are `.tenx-window-id` (a cache — never act destructively on it, look the window up by slug), `.tenx-pinned`, `.tenx-prompt` (a first message waiting for the window), `.tenx-notify` (an armed `tenx notify --when-done`), `.tenx-run` (a scheduled run's record), `.tenx-live.json` (a cache of external facts, written only by the watcher), the two secrets-pending queues, and their three side files (`.secrets-why`, `.secrets-denied`, `.secrets-clipboard`).
 - Shell out to the real `git`/`tmux`/`age`/`sops`; never link a library for them.
 - Keep `make test` green: clippy runs with `-D warnings`.
+
+## Pull requests
+
+Every PR description follows `.github/pull_request_template.md`, and the `pr-description` check (`scripts/check-pr-body.py`, `.github/workflows/pr-description.yml`) is required for merging: each section filled in, every box ticked. `gh pr create --body` skips the template, so write the body from it and pass it with `--body-file`; check it locally with `scripts/check-pr-body.py <file>`. Before you open the PR, or tick a box:
+
+- **Write for a reader who did not follow the work**: what the feature or fix is for, then what changed, in simple words.
+- **Contracts**: list every change to what other programs rely on — `docs/web-protocol.md`, the MCP tools (tenx-agent calls them), CLI commands, flags and `--json` output, config and on-disk files, hooks and skills. "None" only when there is none.
+- **Screenshots**: before (the code on `main`) and after, for every UI change — the column, the web page (Playwright against `make web-dev`), the iOS app (simulator). `scripts/pr-image.sh <file>` uploads one to the `pr-assets` branch and prints the line to paste.
+- **AI review**: run `/code-review` on the branch, fix the findings, run it again — **3 rounds at most**. Whatever is still open after round 3 goes under "Risks and follow-ups" with the reason; don't start a fourth round.
+- Tick a box only for work that was done.

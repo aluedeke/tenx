@@ -64,6 +64,7 @@ installed:
 test:
 	cargo test -p tenx-cli -p tenx-core
 	cargo clippy -p tenx-cli -p tenx-core --all-targets -- -D warnings
+	python3 scripts/test_check_pr_body.py
 
 # Regenerate docs/column.svg from the column's own widgets and fixture data
 # (src/tui/column/screenshot.rs) — no real workspace involved.
