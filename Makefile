@@ -80,13 +80,15 @@ screenshot:
 # which builds the binaries, publishes the GitHub Release and the Homebrew
 # formula, and creates the tag. It runs there, not here, because main takes a
 # commit only with a passed `pr-description` check reported by GitHub Actions.
-# `make release minor DRY=1` only prints the version it would cut, locally.
+# `make release minor DRY=1` only prints the version it would cut, from the
+# same origin/main the release would start from.
 BUMP := $(filter auto patch minor major,$(MAKECMDGOALS))
 auto patch minor major:
 	@:
 release:
 	@test -n "$(BUMP)" || { echo "usage: make release auto|patch|minor|major [DRY=1]"; exit 1; }
-	$(if $(DRY),./scripts/release.sh $(BUMP) --dry-run,gh workflow run bump.yml -f bump=$(BUMP))
+	gh workflow run bump.yml -f bump=$(BUMP) $(if $(DRY),-f dry-run=true)
+	@echo "watch: gh run watch \$$(gh run list --workflow=bump.yml -L1 --json databaseId -q '.[0].databaseId')"
 
 # Regenerate docs/demo.svg (animated) and docs/demo.cast (asciinema) by
 # playing a scripted client session — the column beside a fixture task —

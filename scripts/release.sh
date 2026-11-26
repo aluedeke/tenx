@@ -32,9 +32,10 @@ for arg in "$@"; do
 done
 [ -n "$bump" ] || usage
 # main takes a commit only with a `pr-description` check reported by GitHub
-# Actions (see the push below), so a push from anywhere else would be refused.
-if [ "$push" -eq 1 ] && [ "$dry" -eq 0 ] && [ "${GITHUB_ACTIONS:-}" != true ]; then
-    echo "release: main takes a release only from GitHub Actions: gh workflow run bump.yml -f bump=$bump" >&2
+# Actions (see the push below): a release commit made anywhere else could
+# never reach it, so only a dry run works outside Actions.
+if [ "$dry" -eq 0 ] && [ "${GITHUB_ACTIONS:-}" != true ]; then
+    echo "release: a release runs only in GitHub Actions: make release $bump (or gh workflow run bump.yml -f bump=$bump)" >&2
     exit 1
 fi
 
@@ -106,7 +107,7 @@ rm -f Cargo.toml.bak tenx-core/Cargo.toml.bak
 if grep -q "^## \[$version\]" CHANGELOG.md; then
     edited=$(git log -1 --format=%H -- CHANGELOG.md)
     if git cliff "$edited..HEAD" --strip all 2>/dev/null | grep -q '^- '; then
-        echo "release: CHANGELOG.md has a hand-written $version section, but commits since its last edit (${edited:0:7}) aren't in it." >&2
+        echo "release: CHANGELOG.md has a hand-written $version section, but commits since its last edit ($(git rev-parse --short "$edited")) aren't in it." >&2
         echo "  Add them (git cliff $edited..HEAD --strip all), commit, and run again." >&2
         exit 1
     fi
@@ -132,12 +133,18 @@ echo "  ✓ committed release $tag"
 if [ "$push" -eq 1 ]; then
     # main takes only commits whose `pr-description` check passed, reported by
     # GitHub Actions (the "Require PR description" ruleset). A release commit
-    # has no PR, so bump.yml reports it itself: the commit goes to a branch of
-    # its own first, is marked there, and then main moves to it.
+    # has no PR, so bump.yml reports it itself: the commit goes to a ref of its
+    # own first (not a branch: no ruleset, no CI, nothing to clean up by hand),
+    # is marked there, and then main moves to it.
+    git fetch -q origin "$branch"
+    if [ "$(git rev-parse HEAD~1)" != "$(git rev-parse FETCH_HEAD)" ]; then
+        echo "release: $branch moved while the release was prepared; run bump.yml again" >&2
+        exit 1
+    fi
     sha=$(git rev-parse HEAD)
-    staging="release-staging/$tag"
-    git push origin "HEAD:refs/heads/$staging"
-    trap 'git push -q origin --delete "$staging" || true' EXIT
+    staging="refs/release-staging/$tag"
+    git push -f origin "HEAD:$staging"
+    trap 'git push -q origin --delete "$staging" || true' EXIT INT TERM
     gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state=success -f context=pr-description \
         -f description="Release commit, made by bump.yml" --silent
     git push origin "HEAD:$branch"

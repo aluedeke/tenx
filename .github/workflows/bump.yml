@@ -30,6 +30,11 @@ permissions:
   # takes only commits that passed it.
   statuses: write
 
+# One release at a time: a second would start from a main the first moves.
+concurrency:
+  group: bump
+  cancel-in-progress: false
+
 jobs:
   bump:
     runs-on: ubuntu-24.04

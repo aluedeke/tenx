@@ -522,10 +522,12 @@ Releases are built by [cargo-dist](https://axodotdev.github.io/cargo-dist/) from
 ```sh
 gh workflow run bump.yml                   # auto: version from the commits since the last tag
 gh workflow run bump.yml -f bump=minor     # or force patch, minor, major
-make release auto                          # the same, from a checkout of main
+make release auto                          # the same (it starts bump.yml); DRY=1 only prints the version
 ```
 
 Nobody types a version or writes a changelog. Commits follow Conventional Commits with the area as scope (`feat(column): …`, `fix(tmux): …`, `docs: …`); [git-cliff](https://git-cliff.org) derives the bump from them (`feat` minor, `fix` patch, breaking changes minor until 1.0) and generates the `CHANGELOG.md` section, which becomes the GitHub Release notes. The bump commits `release vX.Y.Z` with both crates bumped and the changelog section added, then dispatches the release workflow, which builds static binaries for macOS and Linux, publishes them with checksums and the installer as a GitHub Release, pushes the formula to `aluedeke/homebrew-tap`, and creates the tag. It refuses to run off `main`, with uncommitted changes, or with no commits since the last release.
+
+A release runs only in GitHub Actions. `main` takes a commit only when its `pr-description` check passed and GitHub Actions reported it (the "Require PR description" ruleset), and a release commit has no PR. So `scripts/release.sh` pushes it to `refs/release-staging/<tag>` first, marks its check as passed there, and then moves `main` to it.
 
 The release commit also carries a freshly rendered README demo: `scripts/release.sh` runs `make demo demo-gif`, so the picture at the top of this page always shows the released column, never an older one.
 
