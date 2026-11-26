@@ -7,11 +7,16 @@
 Rules, read from .github/pull_request_template.md so the two never disagree:
   - every `## ` section of the template is in the body, and not empty
     (HTML comments and the empty screenshot table don't count as text);
-  - "Screenshots" holds an image or video, or says "No UI change";
-  - every checklist item of the template is in the body, ticked (`- [x]`).
+  - "None" is an answer only where the template allows it;
+  - "Screenshots" holds an image, or is just "No UI change";
+  - every checklist item of the template is ticked (`- [x]`) in the body's
+    checklist section.
+Code (fenced blocks and `inline`) counts as text, never as a heading, a
+checkbox or a comment.
 
 CI runs it on every change to a PR, its description included
 (.github/workflows/pr-description.yml); the check is required for merging.
+Tests: scripts/test_check_pr_body.py.
 """
 import os
 import re
@@ -20,34 +25,47 @@ import sys
 TEMPLATE = ".github/pull_request_template.md"
 SCREENSHOTS = "screenshots"
 NO_UI = "no ui change"
-
-# An unclosed comment hides the rest of the page, so it counts to the end.
-COMMENT = re.compile(r"<!--.*?(-->|\Z)", re.S)
-FENCE = re.compile(r"^\s*(```|~~~)")
-HEADING = re.compile(r"^##\s+(.+?)\s*#*\s*$")
-CHECKBOX = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s+(.+?)\s*$")
-EMPTY_ROW = re.compile(r"^\|[\s|:-]*\|$")
-# Only what GitHub really shows: an embedded image, or a browser upload.
-MEDIA = re.compile(r"!\[[^\]]*\]\(\S+\)|<img\s[^>]*src=|<video\s|user-attachments/assets/", re.I)
 # Sections where "None" is an answer; elsewhere it is a placeholder.
 NONE_OK = {"contract changes", "risks and follow-ups"}
 PLACEHOLDER = {"none", "n/a", "na", "-", "tbd", "todo"}
+
+FENCE = re.compile(r"^\s*(```|~~~)")
+INLINE_CODE = re.compile(r"`+[^`\n]*`+")
+# An unclosed comment hides the rest of the page, so it counts to the end.
+COMMENT = re.compile(r"<!--.*?(-->|\Z)", re.S)
+HEADING = re.compile(r"^##\s+(.+?)\s*#*\s*$")
+CHECKBOX = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s+(.+?)\s*$")
+BULLET = re.compile(r"^([-*+]|\d+\.)\s+")
+EMPTY_ROW = re.compile(r"^\|[\s|:-]*\|$")
+# Only what GitHub really shows: an embedded image, or a browser upload.
+MEDIA = re.compile(r"!\[[^\]]*\]\(\S+\)|<img\s[^>]*src=|<video\s|user-attachments/assets/", re.I)
 
 
 def norm(text):
     return " ".join(text.split()).lower()
 
 
-def sections(text):
-    """`## ` heading (normalized) → its lines, in order."""
-    out, current, fenced = {}, None, False
-    for line in COMMENT.sub("", text).splitlines():
+def without_code(text):
+    """The text with code replaced by a neutral word, as GitHub shows it."""
+    out, fenced = [], False
+    for line in text.splitlines():
         if FENCE.match(line):
             fenced = not fenced
-        m = None if fenced else HEADING.match(line)
+            out.append("code")
+        elif fenced:
+            out.append("code")
+        else:
+            out.append(INLINE_CODE.sub("code", line))
+    return "\n".join(out)
+
+
+def sections(text):
+    """`## ` heading (normalized) → its lines, in order. A repeated heading
+    is not a new section: its lines are added to the first one."""
+    out, current = {}, None
+    for line in COMMENT.sub("", without_code(text)).splitlines():
+        m = HEADING.match(line)
         if m:
-            # A repeated heading (e.g. pasted from elsewhere) is not a new
-            # section: its lines are added to the first one.
             current = norm(m.group(1))
             out.setdefault(current, [])
         elif current is not None:
@@ -56,10 +74,11 @@ def sections(text):
 
 
 def answer(lines, skeleton):
-    """The section's text, without whitespace and the template's own table."""
+    """The section's text, without whitespace, list markers and the
+    template's own table."""
     kept = []
     for line in lines:
-        s = line.strip()
+        s = BULLET.sub("", line.strip())
         if s and not EMPTY_ROW.match(s) and norm(s) not in skeleton:
             kept.append(s)
     return norm(" ".join(kept))
@@ -81,6 +100,7 @@ def short(text):
 
 def check(body, template):
     errors = []
+    # The template's code (e.g. `make test`) is compared as the body's is.
     want, got = sections(template), sections(body)
     # Lines of the template's sections that are not an answer, e.g. the
     # header row "| Before | After |" of the screenshot table.
@@ -88,29 +108,27 @@ def check(body, template):
 
     for name, lines in want.items():
         title = name.capitalize()
+        wanted = checklist(lines)
         if name not in got:
             errors.append(f'Section "{title}" is missing.')
-        elif checklist(lines):
-            continue  # the checklist: its items are checked below
-        elif name == SCREENSHOTS:
-            text = "\n".join(got[name])
-            if NO_UI not in norm(text) and not MEDIA.search(text):
-                errors.append('Section "Screenshots" has no image. Add before and after screenshots, or write "No UI change".')
-        elif not answer(got[name], skeleton):
+            continue
+        if wanted:
+            ticked = checklist(got[name])
+            for key, (item, _) in wanted.items():
+                if key not in ticked:
+                    errors.append(f'Checklist item is missing: "{short(item)}"')
+                elif not ticked[key][1]:
+                    errors.append(f'Checklist item is not ticked: "{short(item)}"')
+            continue
+        text = answer(got[name], skeleton)
+        bare = text.strip(".")
+        if name == SCREENSHOTS:
+            if bare != NO_UI and not MEDIA.search("\n".join(got[name])):
+                errors.append('Section "Screenshots" has no image. Add before and after screenshots, or write just "No UI change".')
+        elif not text:
             errors.append(f'Section "{title}" is empty. Fill it in, or write "None" where the template allows it.')
-        elif name not in NONE_OK and answer(got[name], skeleton).strip(".") in PLACEHOLDER:
-            errors.append(f'Section "{title}" needs a real answer, not "{answer(got[name], skeleton)}".')
-
-    wanted, ticked = {}, {}
-    for lines in want.values():
-        wanted.update(checklist(lines))
-    for lines in got.values():
-        ticked.update(checklist(lines))
-    for key, (text, _) in wanted.items():
-        if key not in ticked:
-            errors.append(f'Checklist item is missing: "{short(text)}"')
-        elif not ticked[key][1]:
-            errors.append(f'Checklist item is not ticked: "{short(text)}"')
+        elif name not in NONE_OK and bare in PLACEHOLDER:
+            errors.append(f'Section "{title}" needs a real answer, not "{text}".')
     return errors
 
 
