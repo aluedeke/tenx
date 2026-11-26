@@ -517,6 +517,10 @@ pub(crate) struct Column {
     /// task — drawn with the "current" marker. A directory, not a slug: two
     /// workspaces can each have a task with the same slug.
     current: Option<PathBuf>,
+    /// The tab the session's current window shows, when it is a tabbed task
+    /// window (`tenx_core::tabs`) — `tenx web` draws the tabs itself
+    /// (`ColumnView::window_tab`). Read with `current`.
+    window_tab: Option<tenx_core::tabs::Tab>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
 }
@@ -709,6 +713,7 @@ impl Column {
             last_swept: None,
             windows: snapshot::Windows::default(),
             current: None,
+            window_tab: None,
             slow_refreshed: None,
         }
     }
@@ -814,7 +819,7 @@ impl Column {
         self.rows = rows;
         self.sort_rows();
         self.apply_filter();
-        self.current = self.current_from(crate::tmux::current_window_id_in(&self.session));
+        self.read_current();
     }
 
     fn sort_rows(&mut self) {
@@ -871,13 +876,21 @@ impl Column {
         }
         // Fresher than the slow refresh's window list: the task beside the
         // column is what ↓/↑ start from.
-        self.current = self.current_from(crate::tmux::current_window_id_in(&self.session));
+        self.read_current();
     }
 
     /// One `list-windows` for both the bell signals and the open windows.
     fn refresh_windows(&mut self) {
         self.windows = snapshot::Windows::read_in(&self.session);
         self.slow_refreshed = Some(Instant::now());
+    }
+
+    /// The session's current window, live: which task it is (`current`) and
+    /// the tab it shows (`window_tab`).
+    fn read_current(&mut self) {
+        let (id, tab) = crate::tmux::current_window_in(&self.session).unzip();
+        self.current = self.current_from(id);
+        self.window_tab = tab.flatten();
     }
 
     /// The directory of the task whose window is `window_id`, if any row

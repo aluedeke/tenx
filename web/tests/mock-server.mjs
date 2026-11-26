@@ -133,6 +133,7 @@ function view(st) {
   return {
     tabs: [{ label: 'Tasks', active: true, running: 0 }, { label: 'Repos', active: false, running: 0 }, { label: 'Work', active: false, running: 1 }],
     focus: st.focus, filter: st.filter, current: shownId, items,
+    window_tab: st.windowTab ?? 'agent',
     shown_closed: closedSel ? (({ id, title, ws, ws_color }) => ({ id, title, ws, ws_color }))(TASKS.find((t) => t.id === closedSel)) : null, mode, footer, help: HELP, status: st.status ?? null,
     jobs: st.jobs ?? [],
     sidebar: shownId ? SIDEBAR : null,
@@ -394,6 +395,13 @@ wss.on('connection', (ws, req) => {
   push();
   ws.on('message', (data, binary) => {
     if (binary) {
+      // A tab's key (Alt+1/2/3): tmux shows that tab, the view says so.
+      const tab = /^\x1b([1-3])$/.exec(data.toString());
+      if (tab) {
+        st.windowTab = ['agent', 'shell', 'nvim'][Number(tab[1]) - 1];
+        push();
+        return;
+      }
       // Echo keyboard input, as a shell at a prompt would.
       ws.send(Buffer.from(data.toString().replace(/\r/g, '\r\n')));
       return;

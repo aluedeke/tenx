@@ -279,6 +279,17 @@ sends `action: open`. Tasks and windows are matched by task directory, never
 by name alone (`snapshot::Windows::window_of`), and a tab's current window is
 its own grouped session's (`tmux::current_window_id_in`).
 
+The tab bar: when that window is a tabbed task window, `view.window_tab`
+names the tab it shows (`agent`, `shell` or `nvim`; `null` otherwise, read
+with the current window by `tmux::current_window_in`). The page then draws the tabs as a bar above the
+terminal (`TaskTabs`) and hides tmux's own strip, the window's top line, under
+it: the terminal is laid out one row taller and starts one row higher, so the
+grid tmux draws is the same. A click on a tab sends that tab's key (`ESC 1`…
+`ESC 3`, Alt+1/2/3) as terminal input, the same switch as the key — the
+terminal client and SSH keep tmux's strip. Under a closed task's empty
+screen the bar goes but the strip stays hidden, so the terminal keeps its
+size while the cursor passes closed tasks.
+
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).
 

@@ -1086,6 +1086,7 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
         let id = hello["session"].as_str().unwrap().to_string();
         let first = next_of(&mut ws, &mut term, "view").await;
         assert!(first["view"]["items"].to_string().contains("Web task"), "{first}");
+        assert_eq!(first["view"]["window_tab"], serde_json::Value::Null, "a split window has no tabs for the page to draw");
         assert_eq!(first["view"]["filter"], "");
 
         // The terminal: attached once the page says its size.
@@ -1609,6 +1610,71 @@ fn tmux_restart_rebuilds_the_session() {
 
 /// The default layout: the agent over the whole window, the shell and
 /// nvim as tabs that wait in a session of their own while hidden.
+#[test]
+fn web_names_the_tab_a_tabbed_window_shows() {
+    use futures_util::{SinkExt, StreamExt};
+    use std::io::BufRead;
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+
+    let Some(h) = Harness::named("-webtabs") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Tabbed", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    fs::create_dir_all(h.root.join("home/.config/tenx/workspaces.d")).unwrap();
+    fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
+    let window = h.tmux_out(&["display", "-p", "-t", "tenx:tabbed", "#{window_id}"]);
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let mut server = h.tenx().args(["web", "--port", &port.to_string()]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+    let mut lines = std::io::BufReader::new(server.stdout.take().unwrap()).lines();
+    let token = lines
+        .by_ref()
+        .map_while(Result::ok)
+        .find_map(|l| l.split_once("?token=").map(|(_, t)| t.trim().to_string()))
+        .expect("tenx web printed its address");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let seen = rt.block_on(async {
+        let mut req = format!("ws://127.0.0.1:{port}/ws").into_client_request().unwrap();
+        req.headers_mut().insert("Origin", format!("http://127.0.0.1:{port}").parse().unwrap());
+        req.headers_mut().insert("Cookie", format!("tenx_web={token}").parse().unwrap());
+        let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+        // Each view's `window_tab`, until it says `want`.
+        async fn until<S>(ws: &mut S, want: &str) -> Vec<String>
+        where
+            S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+        {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+            let mut seen = Vec::new();
+            while let Ok(Some(Ok(msg))) = tokio::time::timeout_at(deadline, ws.next()).await {
+                let Message::Text(t) = msg else { continue };
+                let v: serde_json::Value = serde_json::from_str(&t).unwrap();
+                if v["type"] != "view" {
+                    continue;
+                }
+                let tab = v["view"]["window_tab"].to_string();
+                let done = tab == format!("\"{want}\"");
+                seen.push(tab);
+                if done {
+                    break;
+                }
+            }
+            seen
+        }
+        ws.send(Message::Text(r#"{"type":"resize","cols":120,"rows":40}"#.into())).await.unwrap();
+        // The page's session starts on the task window, its agent shown.
+        let mut seen = until(&mut ws, "agent").await;
+        // Another tab, switched outside the page (a key in the terminal
+        // client): the next views say so.
+        h.tab(&window, "shell");
+        seen.extend(until(&mut ws, "shell").await);
+        seen
+    });
+    let _ = server.kill();
+    assert!(seen.contains(&"\"agent\"".to_string()) && seen.last().map(String::as_str) == Some("\"shell\""), "window_tab in each view: {seen:?}");
+}
+
 #[test]
 fn tabs_swap_over_the_window_and_go_with_it() {
     let Some(h) = Harness::named("-tabs") else {

@@ -1005,8 +1005,19 @@ pub fn popup_tenx(client: &str, cwd: &str, title: &str, tenx_bin: &str, args: &s
 /// against windows it already matched to task directories. A session, since
 /// a `tenx web` tab's grouped session has a current window of its own.
 pub fn current_window_id_in(session: &str) -> Option<String> {
-    let id = run(&["display-message", "-p", "-t", session, "#{window_id}"]).ok()?.trim().to_string();
-    (!id.is_empty()).then_some(id)
+    current_window_in(session).map(|(id, _)| id)
+}
+
+/// [`current_window_id_in`], and the tab that window shows when it is a
+/// tabbed task window (`tenx_core::tabs::CURRENT_OPTION`) — in the same one
+/// `display-message`, so a front end that draws the tabs itself (`tenx web`)
+/// learns it at no extra cost.
+pub fn current_window_in(session: &str) -> Option<(String, Option<tenx_core::tabs::Tab>)> {
+    let format = format!("#{{window_id}}\t#{{{}}}", tenx_core::tabs::CURRENT_OPTION);
+    let out = run(&["display-message", "-p", "-t", session, &format]).ok()?;
+    let (id, tab) = out.trim_end_matches('\n').split_once('\t').unwrap_or((out.trim(), ""));
+    let id = id.trim();
+    (!id.is_empty()).then(|| (id.to_string(), tenx_core::tabs::Tab::parse(tab)))
 }
 
 /// A window's panes in window order, and whether it is zoomed; `None` when

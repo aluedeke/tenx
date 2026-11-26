@@ -66,6 +66,10 @@ interface Props {
   /** A paste is about to go to the terminal (the server takes the pane out
    * of copy-mode, where tmux would drop it). */
   onPasteStart(): void;
+  /** The window's top line is tmux's tab strip and the page draws the tabs
+   * itself (TaskTabs): lay the terminal out one row taller, starting a row
+   * higher, under the bar — tmux's grid is then the same, minus the strip. */
+  stripHidden?: boolean;
 }
 
 // The ANSI colours agg renders the demo with (Makefile `demo-gif`): the
@@ -260,6 +264,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       reportRef.current = () => {
         if (!xterm) return;
         const size = sizeOf(xterm);
+        // One row's height, for the layout that hides the strip row.
+        if (size.rows && size.height) host.current?.style.setProperty('--cell-h', `${size.height / size.rows}px`);
         const key = `${size.cols}x${size.rows}/${size.width}x${size.height}`;
         if (key === last) return;
         last = key;
@@ -322,7 +328,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
     });
   }, [props.fontSize, props.fontWeight]);
 
-  return <div className="xterm-host" ref={host} data-testid="terminal" />;
+  return <div className={props.stripHidden ? 'xterm-host strip-hidden' : 'xterm-host'} ref={host} data-testid="terminal" />;
 });
 
 /** A tap — or an Alt/Option-click — in the text being edited walks the

@@ -14,6 +14,11 @@ export interface ColumnView {
   /** The cursor rests on a task with no open window: show its empty "⏎ open
    * it here" screen in place of the terminal. */
   shown_closed: { id: string; title: string; ws: string; ws_color: string } | null;
+  /** The tab the terminal's window shows when it is a tabbed task window:
+   * the page draws the tab bar (TaskTabs) and hides tmux's strip, the
+   * window's top line. `null` for any other window. Set under
+   * `shown_closed` too: the strip stays hidden, the bar goes. */
+  window_tab: WindowTab | null;
   items: Item[];
   mode: ModeView;
   footer: Footer;
@@ -27,6 +32,10 @@ export interface ColumnView {
   /** The sidebar of the task the terminal area shows (tenx_core::sidebar). */
   sidebar: SidebarView | null;
 }
+
+/** A tabbed task window's tabs, in key order (Alt+1/2/3): `tenx_core::tabs::Tab`. */
+export const WINDOW_TABS = ['agent', 'shell', 'nvim'] as const;
+export type WindowTab = (typeof WINDOW_TABS)[number];
 
 /** A task's sidebar: its links grouped with their state, its repos' git
  * state, its todos. */

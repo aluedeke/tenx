@@ -54,6 +54,31 @@ function sentMessages(page: import('@playwright/test').Page): () => Array<Record
   return () => sent.map((t) => JSON.parse(t));
 }
 
+test('a tabbed task window gets its tabs as a bar over tmux’s strip; a click sends the tab’s key', async ({ page, isMobile }) => {
+  const keys: string[] = [];
+  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && keys.push(f.payload.toString())));
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  await expect(tabs).toBeVisible();
+  await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'true');
+
+  // tmux's strip, the window's top row, lies under the bar: the terminal
+  // starts one row higher, and its second row right below the bar.
+  const host = page.getByTestId('terminal');
+  await expect(host).toHaveClass(/strip-hidden/);
+  const bar = (await tabs.boundingBox())!;
+  const screen = (await page.locator('.xterm-screen').boundingBox())!;
+  const cell = parseFloat(await host.evaluate((el) => el.style.getPropertyValue('--cell-h')));
+  expect(cell).toBeGreaterThan(8);
+  expect(Math.abs(screen.y + cell - (bar.y + bar.height))).toBeLessThan(2);
+
+  const shell = tabs.getByRole('tab', { name: 'shell' });
+  await (isMobile ? shell.tap() : shell.click());
+  await expect.poll(() => keys.includes('\x1b2')).toBe(true);
+  await expect(shell).toHaveAttribute('aria-selected', 'true');
+  await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'false');
+});
+
 test('the mouse alone shows and hides the column and drives it', async ({ page, isMobile }) => {
   const sent = sentMessages(page);
   await page.goto('/');
