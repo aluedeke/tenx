@@ -122,9 +122,12 @@ a:hover {
 
 /* A tabbed task window: the page's tab bar (TaskTabs) over the top, and the
    terminal one row higher, so tmux's own strip — the window's top line — is
-   under the bar. --cell-h is one row (Terminal sets it). */
+   under the bar. --cell-h is one row (Terminal sets it on .terminal-wrap, so the bar sees it
+   too). */
 .terminal-wrap {
-  --tabs-h: 32px;
+  /* Never shorter than a row and a little: with a large font the strip row
+     must still fit under the bar, not stick out above the page. */
+  --tabs-h: max(32px, calc(var(--cell-h, 0px) + 4px));
 }
 .xterm-host.strip-hidden {
   top: calc(var(--tabs-h) - var(--cell-h, 0px));

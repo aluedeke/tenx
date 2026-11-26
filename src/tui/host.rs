@@ -211,7 +211,7 @@ impl Ticker {
             } else {
                 // The tab bar of `tenx web` follows a switch made meanwhile
                 // (Alt+2 typed in the terminal, another client).
-                column.read_window_tab();
+                column.read_current_for_tabs();
             }
         }
     }

@@ -359,9 +359,10 @@ struct Driver {
     /// A switch the page's tab bar asked for, running on a thread of its
     /// own (`PageMsg::Tab`); its outcome is picked up with the next frame.
     tab_switch: Option<mpsc::Receiver<Result<(), String>>>,
-    /// The tab asked for while a switch ran: one switch at a time, in click
-    /// order, and only the last one waiting — quick clicks end on the last.
-    tab_next: Option<tenx_core::tabs::Tab>,
+    /// The tab asked for while a switch ran, and the window it was asked in:
+    /// one switch at a time, in click order, and only the last one waiting —
+    /// quick clicks end on the last.
+    tab_next: Option<(String, tenx_core::tabs::Tab)>,
 }
 
 impl Driver {
@@ -488,8 +489,7 @@ impl Driver {
     /// Show `tab` in the window in front, off this thread, as the TUI client
     /// does: a first show starts the tab's program, and a switch from another
     /// client holds the lock meanwhile — the terminal must keep flowing.
-    fn start_tab_switch(&mut self, tab: tenx_core::tabs::Tab) {
-        let Some(window) = crate::tmux::current_window_id_in(&self.session) else { return };
+    fn start_tab_switch(&mut self, window: String, tab: tenx_core::tabs::Tab) {
         let (done, outcome) = mpsc::channel();
         std::thread::spawn(move || {
             let _ = done.send(crate::tmux::switch_tab(&window, tab).map_err(|e| format!("{e:#}")));
@@ -526,10 +526,12 @@ impl Driver {
                     self.column.set_status(format!("no tab called '{tab}'"));
                     return;
                 };
+                // The window the click was made in, also for a click that waits.
+                let Some(window) = crate::tmux::current_window_id_in(&self.session) else { return };
                 if self.tab_switch.is_some() {
-                    self.tab_next = Some(tab);
+                    self.tab_next = Some((window, tab));
                 } else {
-                    self.start_tab_switch(tab);
+                    self.start_tab_switch(window, tab);
                 }
             }
             PageMsg::Log { message } => {
@@ -583,25 +585,20 @@ impl Driver {
         self.request(req);
         // The tab bar's switch ended: the view says the tab now, not on the
         // next refresh — or why it didn't happen.
-        if let Some(outcome) = &self.tab_switch {
-            match outcome.try_recv() {
-                Ok(result) => {
-                    self.tab_switch = None;
-                    self.column.read_current();
-                    if let Err(e) = result {
-                        self.column.set_status(e);
-                    }
-                    if let Some(tab) = self.tab_next.take() {
-                        self.start_tab_switch(tab);
-                    }
-                }
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.tab_switch = None;
-                    if let Some(tab) = self.tab_next.take() {
-                        self.start_tab_switch(tab);
-                    }
-                }
-                Err(mpsc::TryRecvError::Empty) => {}
+        let ended = match self.tab_switch.as_ref().map(|o| o.try_recv()) {
+            Some(Ok(result)) => Some(result),
+            // The thread ended without a word (a panic): say so, and look.
+            Some(Err(mpsc::TryRecvError::Disconnected)) => Some(Err("the tab switch failed".to_string())),
+            Some(Err(mpsc::TryRecvError::Empty)) | None => None,
+        };
+        if let Some(result) = ended {
+            self.tab_switch = None;
+            self.column.read_current();
+            if let Err(e) = result {
+                self.column.set_status(e);
+            }
+            if let Some((window, tab)) = self.tab_next.take() {
+                self.start_tab_switch(window, tab);
             }
         }
         self.ticker.tick(&mut self.column);

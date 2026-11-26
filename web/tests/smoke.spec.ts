@@ -67,7 +67,7 @@ test('a tabbed task window gets its tabs as a bar over tmux’s strip; a click a
   await expect(host).toHaveClass(/strip-hidden/);
   const bar = (await tabs.boundingBox())!;
   const screen = (await page.locator('.xterm-screen').boundingBox())!;
-  const cell = parseFloat(await host.evaluate((el) => el.style.getPropertyValue('--cell-h')));
+  const cell = parseFloat(await host.evaluate((el) => el.parentElement!.style.getPropertyValue('--cell-h')));
   expect(cell).toBeGreaterThan(8);
   expect(Math.abs(screen.y + cell - (bar.y + bar.height))).toBeLessThan(2);
 

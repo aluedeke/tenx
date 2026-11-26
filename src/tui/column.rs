@@ -885,20 +885,42 @@ impl Column {
         self.slow_refreshed = Some(Instant::now());
     }
 
-    /// The session's current window, live: which task it is (`current`) and
-    /// the tab it shows (`window_tab`).
-    pub(crate) fn read_current(&mut self) {
-        let (id, tab) = crate::tmux::current_window_in(&self.session).unzip();
-        self.current = self.current_from(id);
-        self.window_tab = tab.flatten();
+    /// Whether a front end draws this column's window tabs itself: a
+    /// `tenx web` tab, whose session is its own. The terminal client shows
+    /// tmux's strip, and never asks for the tab.
+    fn draws_tabs(&self) -> bool {
+        self.session != crate::tmux::SESSION
     }
 
-    /// Only the tab the session's current window shows: after a switch this
-    /// column made itself (the row is known), and while a form or the
-    /// search field holds off the full refresh.
-    pub(crate) fn read_window_tab(&mut self) {
-        if !self.offline {
+    /// The session's current window, live: which task it is (`current`) and,
+    /// for `tenx web`, the tab it shows (`window_tab`).
+    pub(crate) fn read_current(&mut self) {
+        if self.offline {
+            return;
+        }
+        if self.draws_tabs() {
+            let (id, tab) = crate::tmux::current_window_in(&self.session).unzip();
+            self.current = self.current_from(id);
+            self.window_tab = tab.flatten();
+        } else {
+            self.current = self.current_from(crate::tmux::current_window_id_in(&self.session));
+        }
+    }
+
+    /// Only the tab the session's current window shows, for `tenx web`: after
+    /// a switch this column made itself, whose task it already knows.
+    fn read_window_tab(&mut self) {
+        if !self.offline && self.draws_tabs() {
             self.window_tab = crate::tmux::current_window_in(&self.session).and_then(|(_, tab)| tab);
+        }
+    }
+
+    /// `tenx web`'s window and tab while a form or the search field holds off
+    /// the full refresh (`tui::host::Ticker`): both together, so the view
+    /// never pairs one window's tab with another's task.
+    pub(crate) fn read_current_for_tabs(&mut self) {
+        if self.draws_tabs() {
+            self.read_current();
         }
     }
 

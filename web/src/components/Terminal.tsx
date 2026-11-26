@@ -259,7 +259,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
         if (!xterm) return;
         const size = sizeOf(xterm);
         // One row's height, for the layout that hides the strip row.
-        if (size.rows && size.height) host.current?.style.setProperty('--cell-h', `${size.height / size.rows}px`);
+        if (size.rows && size.height) setCellHeight(host.current, size);
         const key = `${size.cols}x${size.rows}/${size.width}x${size.height}`;
         if (key === last) return;
         last = key;
@@ -286,7 +286,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       // The row height before the first fit: the layout that hides the
       // strip row needs it, or the first fit is at another size than the next.
       const before = sizeOf(xterm);
-      if (before.rows && before.height) host.current.style.setProperty('--cell-h', `${before.height / before.rows}px`);
+      if (before.rows && before.height) setCellHeight(host.current, before);
       fit.fit();
       reportRef.current();
       observer = new ResizeObserver(() => {
@@ -341,6 +341,12 @@ interface Gesture {
 
 /** The grid and the pixels it covers (the screen element is exactly the
  * cells: xterm sizes it to cols × cell width). */
+/** One row's height as `--cell-h`, on the terminal's parent (`.terminal-wrap`):
+ * the tab bar beside the terminal sizes itself by it too (globals.css). */
+function setCellHeight(host: HTMLElement | null, size: TermSize) {
+  host?.parentElement?.style.setProperty('--cell-h', `${size.height / size.rows}px`);
+}
+
 function sizeOf(xterm: XTerm): TermSize {
   const r = xterm.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
   return { cols: xterm.cols, rows: xterm.rows, width: Math.round(r?.width ?? 0), height: Math.round(r?.height ?? 0) };
