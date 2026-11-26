@@ -12,7 +12,7 @@ Rules, read from .github/pull_request_template.md so the two never disagree:
   - every checklist item of the template is ticked (`- [x]`) in the body's
     checklist section.
 Code (fenced blocks and `inline`) counts as text, never as a heading, a
-checkbox or a comment.
+checkbox or a comment. A heading may end in punctuation ("What and why:").
 
 CI runs it on every change to a PR, its description included
 (.github/workflows/pr-description.yml); the check is required for merging.
@@ -33,20 +33,30 @@ FENCE = re.compile(r"^\s*(```|~~~)")
 INLINE_CODE = re.compile(r"`+[^`\n]*`+")
 # An unclosed comment hides the rest of the page, so it counts to the end.
 COMMENT = re.compile(r"<!--.*?(-->|\Z)", re.S)
-HEADING = re.compile(r"^##\s+(.+?)\s*#*\s*$")
-CHECKBOX = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s+(.+?)\s*$")
+HEADING = re.compile(r"^##\s+(.+?)[\s:?.!#]*$")
+CHECKBOX = re.compile(r"^\s*[-*+]\s+\[( |x|X)\]\s+(.+?)\s*$")
 BULLET = re.compile(r"^([-*+]|\d+\.)\s+")
 EMPTY_ROW = re.compile(r"^\|[\s|:-]*\|$")
-# Only what GitHub really shows: an embedded image, or a browser upload.
-MEDIA = re.compile(r"!\[[^\]]*\]\(\S+\)|<img\s[^>]*src=|<video\s|user-attachments/assets/", re.I)
+# Only what GitHub really shows: an embedded image with a real address, or a
+# browser upload.
+MEDIA = re.compile(
+    r"!\[[^\]]*\]\(\s*https?://\S+\)|<(img|video)\s[^>]*src=[\"']?https?://|user-attachments/assets/",
+    re.I,
+)
 
 
 def norm(text):
     return " ".join(text.split()).lower()
 
 
+def plain_code(span):
+    """Inline code as text, without comment markers, which GitHub shows."""
+    return span.group(0).replace("<!--", "").replace("-->", "")
+
+
 def without_code(text):
-    """The text with code replaced by a neutral word, as GitHub shows it."""
+    """The text with fenced code replaced by a neutral word and inline code
+    made harmless, as GitHub shows it."""
     out, fenced = [], False
     for line in text.splitlines():
         if FENCE.match(line):
@@ -55,7 +65,7 @@ def without_code(text):
         elif fenced:
             out.append("code")
         else:
-            out.append(INLINE_CODE.sub("code", line))
+            out.append(INLINE_CODE.sub(plain_code, line))
     return "\n".join(out)
 
 

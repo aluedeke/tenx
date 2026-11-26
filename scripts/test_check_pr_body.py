@@ -6,7 +6,10 @@
 import importlib.util
 import os
 import re
+import sys
 import unittest
+
+sys.dont_write_bytecode = True  # no scripts/__pycache__ from loading the script
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("check_pr_body", os.path.join(HERE, "check-pr-body.py"))
@@ -72,6 +75,19 @@ class CheckPrBody(unittest.TestCase):
         self.assertTrue(errors(filled(screenshots="| TODO.png | TODO |")))
         self.assertTrue(errors(filled(screenshots="No UI change in the column, but the header moved")))
         self.assertEqual(errors(filled(screenshots='<img src="https://x/y.png" width="400">')), [])
+
+    def test_screenshot_needs_a_real_address(self):
+        self.assertTrue(errors(filled(screenshots="| ![before](TODO) | <img src=\"\"> |")))
+
+    def test_heading_may_end_in_punctuation(self):
+        self.assertEqual(errors(filled().replace("## What and why", "## What and Why:")), [])
+
+    def test_plus_list_marker(self):
+        self.assertEqual(errors(filled().replace("- [x]", "+ [x]")), [])
+
+    def test_messages_show_the_item_as_written(self):
+        body = filled().replace("- [x] Tests cover", "- [ ] Tests cover")
+        self.assertIn("`make test`", errors(body)[0])
 
     def test_none_only_where_allowed(self):
         self.assertTrue(errors(filled(**{"What and why": "None"})))
