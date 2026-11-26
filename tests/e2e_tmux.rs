@@ -913,7 +913,7 @@ fn web_serves_the_column_over_a_socket_with_a_session_of_its_own() {
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let mut server = h
         .tenx()
-        .args(["web", "--port", &port.to_string()])
+        .args(["web", "--port", &port.to_string(), "--proxy-port", "0"])
         .env("TENX_WEB_GRACE_MS", "800")
         .env("TENX_WEB_CLIPBOARD", h.root.join("clipboard.txt"))
         .stdout(Stdio::piped())
@@ -1721,12 +1721,16 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     let serve = format!("cd {} && python3 -m http.server {dev} --bind 127.0.0.1", site.display());
     let shell = h.tmux().args(["split-window", "-d", "-t", "tenx:proxied", &serve]).status().unwrap();
     assert!(shell.success());
+    // A server in the home window: inside tenx's session, but no task's.
+    let home = free();
+    let at_home = format!("cd {} && python3 -m http.server {home} --bind 127.0.0.1", site.display());
+    assert!(h.tmux().args(["split-window", "-d", "-t", "tenx:home", &at_home]).status().unwrap().success());
     // A listener no task owns: this test's own.
     let stranger = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let stranger_port = stranger.local_addr().unwrap().port();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while std::net::TcpStream::connect(("127.0.0.1", dev)).is_err() {
-        assert!(std::time::Instant::now() < deadline, "the dev server never listened");
+    while std::net::TcpStream::connect(("127.0.0.1", dev)).is_err() || std::net::TcpStream::connect(("127.0.0.1", home)).is_err() {
+        assert!(std::time::Instant::now() < deadline, "the dev servers never listened");
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
@@ -1772,6 +1776,7 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     let through = ask(format!("CONNECT localhost:{dev} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
     let no_token = ask(format!("CONNECT localhost:{dev} HTTP/1.1\r\n\r\n"));
     let not_a_task = ask(format!("CONNECT localhost:{stranger_port} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
+    let home_window = ask(format!("CONNECT localhost:{home} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
     let tenx_itself = ask(format!("CONNECT localhost:{port} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
     let _ = server.kill();
     let _ = server.wait();
@@ -1780,6 +1785,7 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     assert!(no_token.starts_with("HTTP/1.1 407"), "{no_token}");
     assert!(not_a_task.starts_with("HTTP/1.1 403"), "{not_a_task}");
     assert!(tenx_itself.starts_with("HTTP/1.1 403"), "{tenx_itself}");
+    assert!(home_window.starts_with("HTTP/1.1 403"), "the home window is no task: {home_window}");
 }
 
 /// The default layout: the agent over the whole window, the shell and

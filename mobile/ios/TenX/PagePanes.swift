@@ -228,15 +228,19 @@ struct PageProxy {
         return proxy
     }
 
+    /// The Mac's own address as a page names it: every loopback name
+    /// (web/src/lib/pages.ts `isLocalUrl`). Only `localhost` and `127.0.0.1`
+    /// go through the proxy (`matchDomains`); the page shows a note for the
+    /// rest (`viaProxy`).
     static func isLocal(_ url: URL) -> Bool {
-        let host = url.host?.lowercased() ?? ""
-        return host == "localhost" || host.hasSuffix(".localhost") || host == "127.0.0.1"
+        let host = (url.host ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        return host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
     }
 
     /// The page shown when a `localhost` page didn't load.
     static func failure(url: URL, via: PageProxy?, error: String) -> String {
         func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
-        let what = url.host.map { "\($0):\(url.port ?? 80)" } ?? url.absoluteString
+        let what = url.host.map { "\($0):\(url.port ?? (url.scheme == "https" ? 443 : 80))" } ?? url.absoluteString
         let how: String
         if let via {
             how = "It goes through tenx web's page proxy on \(esc(via.host)):\(via.port). Either no task listens on that port, or this device can't reach the proxy: on a tailnet the Mac needs <code>tailscale serve --bg --tls-terminated-tcp=\(via.port) tcp://127.0.0.1:\(via.port)</code>."

@@ -574,13 +574,14 @@ impl Column {
         o
     }
 
-    /// List (and start) jobs in `jobs` instead of a list of its own — how
-    /// every `tenx web` tab shows the same Work tab.
+    /// The page proxy's port, for the view (`ColumnView::pages`).
     pub(crate) fn with_pages_proxy(mut self, port: Option<u16>) -> Self {
         self.pages_proxy = port;
         self
     }
 
+    /// List (and start) jobs in `jobs` instead of a list of its own — how
+    /// every `tenx web` tab shows the same Work tab.
     pub(crate) fn with_jobs(mut self, jobs: super::job::Jobs) -> Self {
         self.jobs = jobs;
         self

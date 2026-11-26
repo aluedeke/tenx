@@ -29,6 +29,19 @@ export function isLocalUrl(url: string): boolean {
   }
 }
 
+/** A `localhost` address the iOS app sends through `tenx web`'s page proxy:
+ * the names its `ProxyConfiguration` matches (`localhost`, `127.0.0.1`).
+ * Another loopback name (`[::1]`, `127.0.0.2`, `app.localhost`) would reach
+ * the phone itself. */
+export function viaProxy(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 /** What a chip says: the page's title, else its host and path. */
 export function chipLabel(page: PageView): string {
   if (page.title.trim()) return page.title.trim();

@@ -13,7 +13,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PageView } from '@/protocol';
 import { PAGE_EVENT, nativePageDo, nativePageHide, nativePageShow, type NativePageState } from '@/lib/native';
-import { isLocalUrl, workspaceOf } from '@/lib/pages';
+import { isLocalUrl, viaProxy, workspaceOf } from '@/lib/pages';
 
 interface Props {
   task: string;
@@ -51,7 +51,7 @@ export function PagePane({ task, pageKey, page, store, proxy, onRefused, onMoved
   const hole = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<NativePageState | null>(null);
   // The Mac's own address with no way to it.
-  const local = isLocalUrl(page.url) && proxy === null;
+  const local = isLocalUrl(page.url) && (proxy === null || !viaProxy(page.url));
   // Shown where the hole is, again whenever the hole moves (a resize, the
   // keyboard, the sidebar); hidden when the pane goes.
   const refused = useRef(onRefused);
@@ -166,7 +166,7 @@ export function PagePane({ task, pageKey, page, store, proxy, onRefused, onMoved
         <div className="page-note" data-testid="page-local">
           <strong>{url.replace(/^https?:\/\//, '')} is on the Mac</strong>
           <span>
-            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it: tenx web runs without its page proxy (`--proxy-port`).
+            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it: {proxy === null ? 'tenx web runs without its page proxy (`--proxy-port`).' : 'only localhost and 127.0.0.1 go through tenx web’s page proxy.'}
           </span>
         </div>
       ) : (

@@ -3,17 +3,26 @@
 //! loopback, `CONNECT` only, behind `tailscale serve --tls-terminated-tcp`.
 
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tenx_core::pageproxy::{self, Decision};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{Mutex, Semaphore};
 
 /// The ports tasks listen on, scanned at most this often; a port not in a
 /// scan older than `RESCAN_MISS` is looked for again (a dev server started
 /// a moment ago).
 const RESCAN: Duration = Duration::from_secs(5);
-const RESCAN_MISS: Duration = Duration::from_millis(500);
+const RESCAN_MISS: Duration = Duration::from_secs(2);
+
+/// Tunnels open at once; one more waits for a slot.
+const MAX_TUNNELS: usize = 256;
+
+/// A tunnel with no byte either way for this long is closed: a phone that
+/// slept or left the tailnet may never say goodbye.
+const IDLE: Duration = Duration::from_secs(15 * 60);
 
 /// A request head must arrive within this.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
@@ -28,11 +37,21 @@ pub(super) async fn serve(listener: std::net::TcpListener, token: String) {
     let Ok(listener) = TcpListener::from_std(listener) else { return };
     let token = Arc::new(token);
     let ports = Arc::new(Mutex::new(Ports::default()));
+    let slots = Arc::new(Semaphore::new(MAX_TUNNELS));
     loop {
-        let Ok((conn, _)) = listener.accept().await else { continue };
+        let Ok(slot) = slots.clone().acquire_owned().await else { return };
+        let conn = match listener.accept().await {
+            Ok((conn, _)) => conn,
+            // Out of descriptors, say: not a busy loop.
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
+        };
         let (token, ports) = (token.clone(), ports.clone());
         tokio::spawn(async move {
             let _ = handle(conn, &token, &ports).await;
+            drop(slot);
         });
     }
 }
@@ -70,23 +89,63 @@ async fn handle(mut conn: TcpStream, token: &str, ports: &Mutex<Ports>) -> std::
     if !early.is_empty() {
         server.write_all(&early).await?;
     }
-    tokio::io::copy_bidirectional(&mut conn, &mut server).await.map(|_| ())
+    join(conn, server).await;
+    Ok(())
+}
+
+/// Copy both ways until either side ends, or neither has said anything for
+/// `IDLE`.
+async fn join(client: TcpStream, server: TcpStream) {
+    let started = Instant::now();
+    let last = AtomicU64::new(0);
+    let (mut cr, mut cw) = client.into_split();
+    let (mut sr, mut sw) = server.into_split();
+    let both = async {
+        tokio::join!(pump(&mut cr, &mut sw, &last, started), pump(&mut sr, &mut cw, &last, started));
+    };
+    let idle = async {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            let quiet = started.elapsed().as_secs().saturating_sub(last.load(Ordering::Relaxed));
+            if quiet >= IDLE.as_secs() {
+                return;
+            }
+        }
+    };
+    tokio::select! {
+        _ = both => {}
+        _ = idle => {}
+    }
+}
+
+/// One direction: read, write on, note the time; at the end, close the
+/// other side's writing half.
+async fn pump(from: &mut tokio::net::tcp::OwnedReadHalf, to: &mut tokio::net::tcp::OwnedWriteHalf, last: &AtomicU64, started: Instant) {
+    let mut buf = vec![0u8; 16 * 1024];
+    loop {
+        match from.read(&mut buf).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                last.store(started.elapsed().as_secs(), Ordering::Relaxed);
+                if to.write_all(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    let _ = to.shutdown().await;
 }
 
 /// The ports tasks listen on: scanned again when the last scan is old, or,
-/// with `missed`, when it is older than a moment.
+/// with `missed`, when it is older than a moment. One scan at a time: the
+/// lock is held across it, so the connections of one page load share it.
 async fn task_ports(ports: &Mutex<Ports>, missed: bool) -> HashSet<u16> {
-    let fresh = {
-        let p = ports.lock().unwrap_or_else(|e| e.into_inner());
-        let limit = if missed { RESCAN_MISS } else { RESCAN };
-        p.at.is_some_and(|at| at.elapsed() < limit).then(|| p.seen.clone())
-    };
-    if let Some(seen) = fresh {
-        return seen;
+    let mut p = ports.lock().await;
+    let limit = if missed { RESCAN_MISS } else { RESCAN };
+    if p.at.is_some_and(|at| at.elapsed() < limit) {
+        return p.seen.clone();
     }
-    let seen = tokio::task::spawn_blocking(crate::live::task_ports).await.unwrap_or_default();
-    let mut p = ports.lock().unwrap_or_else(|e| e.into_inner());
-    p.seen = seen.clone();
+    p.seen = tokio::task::spawn_blocking(crate::live::task_ports).await.unwrap_or_default();
     p.at = Some(Instant::now());
-    seen
+    p.seen.clone()
 }

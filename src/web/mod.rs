@@ -80,8 +80,14 @@ pub fn run(o: Options) -> Result<()> {
     listener.set_nonblocking(true)?;
     // The page proxy: a phone's way to a task's dev server. Not starting it
     // (its port taken) leaves the page as it was, a note for localhost pages.
+    // It listens on loopback only, for `tailscale serve` to publish: a
+    // `--listen` beyond this machine would advertise a port nobody reaches.
     let proxy = match o.proxy_port {
         0 => None,
+        _ if !tenx_core::web::is_loopback(&o.listen) => {
+            eprintln!("  page proxy: off, since --listen {} isn't loopback; tasks' localhost pages stay on the Mac", o.listen);
+            None
+        }
         port => match std::net::TcpListener::bind(("127.0.0.1", port)) {
             Ok(l) if l.set_nonblocking(true).is_ok() => Some((l, port)),
             Ok(_) => None,

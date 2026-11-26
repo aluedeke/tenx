@@ -137,6 +137,19 @@ pub fn services() -> Vec<ServiceRecord> {
     out
 }
 
+/// Every service whose wrapper still runs, without touching the records of
+/// the others (`services` prunes those): for readers that must not stop
+/// anything, like `tenx web`'s page proxy.
+pub fn running() -> Vec<ServiceRecord> {
+    let Some(entries) = services_dir().and_then(|d| std::fs::read_dir(d).ok()) else { return Vec::new() };
+    entries
+        .flatten()
+        .filter_map(|e| std::fs::read(e.path()).ok())
+        .filter_map(|b| serde_json::from_slice::<ServiceRecord>(&b).ok())
+        .filter(|r| is_wrapper(r.pid))
+        .collect()
+}
+
 fn is_wrapper(pid: u32) -> bool {
     crate::workspace::sessions::pid_alive(pid)
         && crate::live::run_capture("ps", &["-o", "command=", "-p", &pid.to_string()]).contains(" service")

@@ -178,13 +178,27 @@ pub fn ports_by_window() -> HashMap<String, Vec<u16>> {
     port_scan().by_window
 }
 
-/// Every port a task's process listens on: its window's processes and its
-/// `tenx service`s — what `tenx web`'s page proxy may reach.
+/// Every port a task's process listens on: the processes of task windows
+/// (never the home window's, or another window opened for no task) and the
+/// `tenx service`s started in a task with an open window — what `tenx web`'s
+/// page proxy may reach. Reads only: no record is pruned here.
 pub fn task_ports() -> std::collections::HashSet<u16> {
-    let scan = port_scan();
-    let mut ports: std::collections::HashSet<u16> = scan.by_window.values().flatten().copied().collect();
-    for r in crate::cli::service::services() {
-        ports.extend(tenx_core::live::ports_for(&[r.child], &scan.listeners, &scan.tree));
+    let panes = crate::tmux::task_pane_pids().unwrap_or_default();
+    if panes.is_empty() {
+        return Default::default();
+    }
+    let listeners = tenx_core::live::parse_lsof(&run_capture("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"]));
+    if listeners.is_empty() {
+        return Default::default();
+    }
+    let tree = tenx_core::live::parse_ps(&run_capture("ps", &["-axo", "pid=,ppid="]));
+    let pids: Vec<u32> = panes.iter().map(|(_, pid)| *pid).collect();
+    let mut ports: std::collections::HashSet<u16> = tenx_core::live::ports_for(&pids, &listeners, &tree).into_iter().collect();
+    let dirs: Vec<PathBuf> = panes.iter().map(|(d, _)| d.canonicalize().unwrap_or_else(|_| d.clone())).collect();
+    for r in crate::cli::service::running() {
+        if dirs.iter().any(|d| r.cwd.starts_with(d)) {
+            ports.extend(tenx_core::live::ports_for(&[r.child], &listeners, &tree));
+        }
     }
     ports
 }
