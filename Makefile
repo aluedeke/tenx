@@ -89,7 +89,7 @@ auto patch minor major:
 release:
 	@test -n "$(BUMP)" || { echo "usage: make release auto|patch|minor|major [DRY=1]"; exit 1; }
 	gh workflow run bump.yml -f bump=$(BUMP) $(if $(DRY),-f dry-run=true)
-	@sleep 3; gh run list --workflow=bump.yml -L1 --json url,status -q '"bump run (\(.[0].status)): \(.[0].url)"'
+
 
 # Regenerate docs/demo.svg (animated) and docs/demo.cast (asciinema) by
 # playing a scripted client session — the column beside a fixture task —

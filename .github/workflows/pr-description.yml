@@ -1,8 +1,8 @@
 # The PR description must follow .github/pull_request_template.md
 # (scripts/check-pr-body.py). The job's name, `pr-description`, is a required
-# status check of the "Protect Main" ruleset, so a PR can't be merged until
-# the description is complete. `edited` runs it again when the description
-# changes.
+# status check of the "Require PR description" ruleset, so a PR can't be
+# merged until the description is complete. `edited` runs it again when the
+# description changes.
 #
 # `pull_request_target`: this workflow, the template and the script all come
 # from the base branch, never from the PR, so a PR can't loosen the check it

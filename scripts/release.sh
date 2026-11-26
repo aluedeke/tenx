@@ -56,11 +56,13 @@ if [ -n "$last_tag" ]; then
     since=$(git rev-list --count "$last_tag..HEAD")
     [ "$since" -gt 0 ] || { echo "release: no commits since $last_tag, nothing to release" >&2; exit 1; }
 fi
-# A release commit without its tag yet: release.yml is still building it, and
-# a second release now would repeat its changelog.
-case $(git log -1 --format=%s) in
-    "release v"*) echo "release: $(git log -1 --format=%s) is still being built (release.yml creates its tag); wait for it" >&2; exit 1 ;;
-esac
+# Cargo.toml's version without its tag: release.yml hasn't finished it (it
+# creates the tag last), and a release now would repeat its changelog.
+if ! git rev-parse -q --verify "refs/tags/v$current" >/dev/null; then
+    echo "release: v$current has no tag yet: release.yml is still building it, or failed." >&2
+    echo "  Wait for it, or run it again: gh workflow run release.yml -f tag=v$current" >&2
+    exit 1
+fi
 
 if [ "$bump" = auto ]; then
     version=$(git cliff --bumped-version 2>/dev/null | tail -1)
