@@ -148,3 +148,73 @@ export async function nativeTakeTap(): Promise<string | null> {
   const url = await h.postMessage({ action: 'takeTap' });
   return typeof url === 'string' ? url : null;
 }
+
+// ── A task's pages (lib/pages, PagePane) ─────────────────
+
+/** One of a task's pages, shown by the app in a web view of its own over
+ * `rect` (the page's CSS pixels, which are the app's points: the page is
+ * never zoomed). `key` names the web view (task and page id), so a page
+ * shown again comes back as it was left; `store` is the workspace's cookie
+ * store (`tenx_core::pages::store_id`), `storeName` what the app's settings
+ * call it. */
+export interface NativePage {
+  key: string;
+  url: string;
+  store: string;
+  storeName: string;
+  rect: { x: number; y: number; width: number; height: number };
+}
+
+/** Show (or move) a page. Rejects outside the app and in an app too old to
+ * show pages: the page opens the address outside it then. */
+export async function nativePageShow(page: NativePage): Promise<void> {
+  const h = handler();
+  if (!h) throw new Error('not in the app');
+  await h.postMessage({ action: 'pageShow', ...page });
+}
+
+/** Whether the app shows pages: an app too old to answers no action of
+ * theirs. */
+export async function nativePagesSupported(): Promise<boolean> {
+  const h = handler();
+  if (!h) return false;
+  try {
+    return (await h.postMessage({ action: 'pageHide' })) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Hide the page shown, if any; it keeps its place for the next show. */
+export function nativePageHide(): void {
+  void handler()
+    ?.postMessage({ action: 'pageHide' })
+    .catch(() => {});
+}
+
+/** Back, forward or reload in the page `key`. */
+export function nativePageDo(key: string, what: 'back' | 'forward' | 'reload'): void {
+  void handler()
+    ?.postMessage({ action: 'pageDo', key, what })
+    .catch(() => {});
+}
+
+/** The page `key` was closed: the app drops its web view. */
+export function nativePageClose(key: string): void {
+  void handler()
+    ?.postMessage({ action: 'pageClose', key })
+    .catch(() => {});
+}
+
+/** The event the app fires on the window when a page it shows moves on:
+ * `detail` is a `NativePageState`. */
+export const PAGE_EVENT = 'tenx-page';
+
+export interface NativePageState {
+  key: string;
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+}

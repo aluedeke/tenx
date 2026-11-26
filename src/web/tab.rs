@@ -57,11 +57,34 @@ pub(super) enum PageMsg {
     /// tmux's Alt key binding, which starts a `tenx` of its own and leaves
     /// the page to learn the outcome on the next refresh.
     Tab { tab: String },
+    /// Open, close or follow one of a task's pages (`tenx_core::pages`), the
+    /// web pages its tab bar lists after its terminal tabs. `task` is the row
+    /// id (`view::row_id`) the page showed the bar for.
+    Page {
+        task: String,
+        #[serde(flatten)]
+        op: PageOp,
+    },
     /// A line for the server's log (`~/.config/tenx/web.log` under the
     /// service): what the page saw where only the device can see it — e.g.
     /// which clipboard types a paste found, or the error it got. Never
     /// content; trimmed to one short line.
     Log { message: String },
+}
+
+/// What a `page` message does to the task's pages.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub(super) enum PageOp {
+    Open { url: String },
+    Close { id: String },
+    /// The page went to `url` or learned its `title` (the iOS app reports it).
+    Navigated {
+        id: String,
+        url: String,
+        #[serde(default)]
+        title: String,
+    },
 }
 
 /// A page message and its `seq`, if the page numbered it: inputs that change
@@ -521,6 +544,19 @@ impl Driver {
             PageMsg::Paste => {
                 let _ = crate::tmux::leave_mode_in(&self.session);
             }
+            PageMsg::Page { task, op } => {
+                let done = self.column.edit_pages(&task, |pages| match op {
+                    PageOp::Open { url } => {
+                        let before = pages.pages.len();
+                        pages.open(&url).map(|_| pages.pages.len() != before).map_err(|e| e.to_string())
+                    }
+                    PageOp::Close { id } => Ok(pages.close(&id)),
+                    PageOp::Navigated { id, url, title } => Ok(pages.navigated(&id, &url, &title)),
+                });
+                if let Err(e) = done {
+                    self.column.set_status(e);
+                }
+            }
             PageMsg::Tab { tab } => {
                 let Some(tab) = tenx_core::tabs::Tab::parse(&tab) else {
                     self.column.set_status(format!("no tab called '{tab}'"));
@@ -730,6 +766,10 @@ mod tests {
         assert!(matches!(serde_json::from_str(r#"{"type":"visible"}"#).unwrap(), PageMsg::Visible));
         assert!(matches!(serde_json::from_str(r#"{"type":"paste"}"#).unwrap(), PageMsg::Paste));
         assert!(matches!(serde_json::from_str(r#"{"type":"tab","tab":"shell"}"#).unwrap(), PageMsg::Tab { ref tab } if tab == "shell"));
+        let open: PageMsg = serde_json::from_str(r#"{"type":"page","task":"acme/fix","op":"open","url":"https://linear.app"}"#).unwrap();
+        assert!(matches!(open, PageMsg::Page { ref task, op: PageOp::Open { ref url } } if task == "acme/fix" && url == "https://linear.app"));
+        let moved: PageMsg = serde_json::from_str(r#"{"type":"page","task":"acme/fix","op":"navigated","id":"p1","url":"https://x.dev"}"#).unwrap();
+        assert!(matches!(moved, PageMsg::Page { op: PageOp::Navigated { ref id, ref title, .. }, .. } if id == "p1" && title.is_empty()));
         let set: PageMsg = serde_json::from_str(r#"{"type":"form","op":"set","field":"name","value":"Fix"}"#).unwrap();
         assert!(matches!(set, PageMsg::Form(crate::tui::column::view::FormOp::Set { ref field, ref value }) if field == "name" && value == "Fix"));
         let pick: PageMsg = serde_json::from_str(r#"{"type":"form","op":"pick","field":"agent","index":2}"#).unwrap();

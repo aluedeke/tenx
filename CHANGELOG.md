@@ -5,6 +5,15 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.45.0] - 2026-11-26
+
+### Added
+
+- **web:** Draw a tabbed window's tabs as a bar over tmux's strip (#66)
+- **web:** Keep web pages as tabs of a task, with workspace logins (#68)
+
+[0.45.0]: https://github.com/aluedeke/tenx/compare/v0.44.0...v0.45.0
+
 ## [0.44.0] - 2026-11-25
 
 ### Added

@@ -36,6 +36,8 @@ pub(crate) struct ColumnView {
     /// window. Also under `shown_closed`, which only covers the terminal: the
     /// strip stays hidden, so the terminal keeps its size.
     pub(crate) window_tab: Option<&'static str>,
+    /// The task's pages, beside `window_tab`'s tabs: set exactly when it is.
+    pub(crate) pages: Option<PagesView>,
     /// The active tab's list, top to bottom.
     pub(crate) items: Vec<Item>,
     pub(crate) mode: ModeView,
@@ -52,6 +54,18 @@ pub(crate) struct ColumnView {
     pub(crate) help: Vec<HelpSection>,
     /// The sidebar of the task the task area shows.
     pub(crate) sidebar: Option<SidebarView>,
+}
+
+/// A tabbed task's pages (`tenx_core::pages`): the web pages the page's tab
+/// bar lists after agent, shell and nvim.
+#[derive(Debug, Serialize, PartialEq)]
+pub(crate) struct PagesView {
+    /// The cookie store they open with: one per workspace
+    /// (`tenx_core::pages::store_id`).
+    pub(crate) store: String,
+    pub(crate) list: Vec<tenx_core::pages::Page>,
+    /// How many pages a task keeps (`tenx_core::pages::MAX_PAGES`).
+    pub(crate) max: usize,
 }
 
 /// The sidebar beside a task: its title, then its sections
@@ -556,6 +570,10 @@ impl Column {
             filter: self.filter.clone(),
             current,
             window_tab: self.window_tab.map(|t| t.name()),
+            pages: self
+                .window_tab
+                .and(self.pages_view())
+                .map(|(store, list)| PagesView { store: store.to_string(), list: list.to_vec(), max: tenx_core::pages::MAX_PAGES }),
             shown_closed,
             items,
             mode: self.mode_view(),

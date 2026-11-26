@@ -19,6 +19,8 @@ export interface ColumnView {
    * window's top line. `null` for any other window. Set under
    * `shown_closed` too: the strip stays hidden, the bar goes. */
   window_tab: WindowTab | null;
+  /** The task's pages, set exactly when `window_tab` is (lib/pages). */
+  pages: PagesView | null;
   items: Item[];
   mode: ModeView;
   footer: Footer;
@@ -31,6 +33,25 @@ export interface ColumnView {
   help: HelpSection[];
   /** The sidebar of the task the terminal area shows (tenx_core::sidebar). */
   sidebar: SidebarView | null;
+}
+
+/** One of a task's pages (`tenx_core::pages::Page`). */
+export interface PageView {
+  /** `p1`, `p2`, …: unique within the task. */
+  id: string;
+  url: string;
+  /** Empty until the page loaded once. */
+  title: string;
+  /** The address it was opened with (`url` follows the page). */
+  opened: string;
+}
+
+export interface PagesView {
+  /** The workspace's cookie store, a UUID. */
+  store: string;
+  list: PageView[];
+  /** How many pages a task keeps. */
+  max: number;
 }
 
 /** A tabbed task window's tabs, in key order (Alt+1/2/3): `tenx_core::tabs::Tab`. */
@@ -342,6 +363,9 @@ export type ClientMessage =
   | { type: 'paste' }
   /** Show this tab of the tabbed task window in front (TaskTabs). */
   | { type: 'tab'; tab: WindowTab }
+  | { type: 'page'; task: string; op: 'open'; url: string }
+  | { type: 'page'; task: string; op: 'close'; id: string }
+  | { type: 'page'; task: string; op: 'navigated'; id: string; url: string; title: string }
   /** A diagnostic line for the server's log (never content). */
   | { type: 'log'; message: string };
 
