@@ -189,6 +189,14 @@ without `seq` work as before.
 // The tab bar: show this tab of the tabbed task window in front (`agent`,
 // `shell`, `nvim`); the next view's `window_tab` says so.
 { "type": "tab", "tab": "shell" }
+
+// A task's pages (the tab bar's chips): open an address, close a page, or
+// follow where a page went (the iOS app reports it). `task` is the row id the
+// bar was drawn for; the next view's `pages` says so. A refusal (not an
+// http(s) address, twelve pages already) is the view's `status`.
+{ "type": "page", "task": "acme/fix-login", "op": "open", "url": "https://linear.app/acme" }
+{ "type": "page", "task": "acme/fix-login", "op": "close", "id": "p1" }
+{ "type": "page", "task": "acme/fix-login", "op": "navigated", "id": "p1", "url": "https://linear.app/acme/issue/ENG-1", "title": "ENG-1" }
 ```
 
 ## Keys the browser keeps
@@ -297,6 +305,25 @@ view's `status`. The tab shown is the window's active pane's
 confirms it (`lib/tasktabs`). The terminal client and SSH keep tmux's strip. Under a closed task's empty
 screen the bar goes but the strip stays hidden, so the terminal keeps its
 size while the cursor passes closed tasks.
+
+The task's pages: with `window_tab`, `view.pages` is
+`{store, list: [{id, url, title}]}` — web pages kept as tabs after agent,
+shell and nvim (`tenx_core::pages`, saved in the task's `.tenx-pages.json`, so
+every device lists the same ones; at most twelve, ids `p1`, `p2`, … never
+reused). `store` is the workspace's cookie store, a UUID made from the
+workspace's directory (`tenx_core::pages::store_id`). Which page a device shows
+is its own: in a browser a chip opens the address in a tab of its own (most
+sites refuse to be shown inside another page); in the iOS app it lays a web
+view over the terminal under the bar, with that store, so every task of a
+workspace shares its logins and no other workspace sees them. The page asks
+the app through the `tenx` message handler (`pageShow {key, url, store,
+storeName, rect}` — `key` is `<task>#<id>`, `rect` the hole under the page's
+own address bar in CSS pixels —, `pageHide`, `pageDo {key, what: back |
+forward | reload}`, `pageClose {key}`) and the app reports where a shown page
+went as a `tenx-page` window event, which the page passes on as `navigated`.
+In the app a web link (the terminal's, the sidebar's, the links box's) opens as
+a page of the shown task; holding it still offers Safari. A `localhost`
+address is the Mac's own: the app shows a note instead.
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

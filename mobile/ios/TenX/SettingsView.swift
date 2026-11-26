@@ -11,6 +11,7 @@ struct SettingsView: View {
     let onSignOut: () -> Void
 
     @State private var address = ""
+    @State private var stores = PageStores.names
     @State private var error: String?
     @AppStorage(Pasteboard.syncKey) private var clipboardSync = true
     @Environment(\.dismiss) private var dismiss
@@ -43,6 +44,22 @@ struct SettingsView: View {
                         Toggle("Sync clipboard with the Mac", isOn: $clipboardSync)
                     } footer: {
                         Text("Text and images you copy here land on the Mac's clipboard, and the other way round, while the app is open. Passwords from a password manager stay here. Needs Settings → Apps → tenx → Paste from Other Apps → Allow.")
+                    }
+                }
+                if current != nil && !stores.isEmpty {
+                    Section {
+                        ForEach(stores.sorted { $0.value < $1.value }, id: \.key) { store, name in
+                            Button("Forget logins of \(name.isEmpty ? "a workspace" : name)", role: .destructive) {
+                                Task {
+                                    await PageStores.forget(store)
+                                    stores = PageStores.names
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Pages")
+                    } footer: {
+                        Text("A task's pages keep cookies and logins per workspace: every task of the workspace shares them, other workspaces never see them.")
                     }
                 }
                 if let current {
@@ -80,5 +97,6 @@ enum WKWebsiteDataStoreReset {
     @MainActor static func all() {
         let store = WKWebsiteDataStore.default()
         store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
+        Task { await PageStores.forgetAll() }
     }
 }

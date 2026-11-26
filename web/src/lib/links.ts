@@ -32,9 +32,28 @@ export function isOpenableUrl(url: string): boolean {
   return isWebUrl(url) || OBSIDIAN_URL.test(url);
 }
 
-/** Open `url` outside the app, as far as the platform allows. */
+/** Who takes a web link before it leaves the app: in the iOS app, the shown
+ * task's tab bar, which opens it as one of its pages (App). True when taken. */
+let linkRouter: ((url: string) => boolean) | null = null;
+
+/** Set the router; returns its removal. */
+export function routeLinks(router: (url: string) => boolean): () => void {
+  linkRouter = router;
+  return () => {
+    if (linkRouter === router) linkRouter = null;
+  };
+}
+
+/** Hand a web link to the router; true when it took it. */
+export function routeLink(url: string): boolean {
+  return isWebUrl(url) && (linkRouter?.(url) ?? false);
+}
+
+/** Open `url` outside the app, as far as the platform allows — unless the
+ * router takes it. */
 export function openExternal(url: string): void {
   if (!isOpenableUrl(url)) return;
+  if (routeLink(url)) return;
   const w = window.open(url, '_blank', 'noopener,noreferrer');
   if (w) w.opener = null;
 }

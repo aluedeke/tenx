@@ -8,7 +8,8 @@ import WebKit
 /// the Mac's (`tenx` message handler, web/src/lib/native.ts and clipsync.ts),
 /// whether a hardware keyboard is attached, notifications (APNs, since a web
 /// view has no Web Push: Notifications.swift), iOS's own menu for a link held
-/// in the terminal (LinkMenu.swift), and no iPadOS shortcut bar over it.
+/// in the terminal (LinkMenu.swift), no iPadOS shortcut bar over it, and a
+/// task's pages in web views of their own over the terminal (PagePanes.swift).
 final class WebViewController: UIViewController {
     let server: Server
     /// The page can't be shown: the server refused the token, or isn't there.
@@ -22,6 +23,7 @@ final class WebViewController: UIViewController {
     /// The page finished loading once: a tapped notification can go to it.
     private var loaded = false
     private var linkMenu: LinkMenu?
+    private(set) var pages: PagePanes!
 
     init(server: Server) {
         self.server = server
@@ -54,7 +56,14 @@ final class WebViewController: UIViewController {
         #if DEBUG
         webView.isInspectable = true
         #endif
-        view = webView
+        // The page fills the view; a task's pages go over it (PagePanes).
+        let container = UIView()
+        container.backgroundColor = .ground
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(webView)
+        view = container
+        pages = PagePanes(over: container) { [weak self] js in self?.webView.evaluateJavaScript(js) }
 
         // Settings without a menu in the way: hold two fingers for a second.
         let hold = UILongPressGestureRecognizer(target: self, action: #selector(openSettings))
@@ -230,6 +239,26 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             guard let text = body?["url"] as? String, let url = URL(string: text),
                   let x = body?["x"] as? Double, let y = body?["y"] as? Double else { return (nil, "no link") }
             owner.showLinkMenu(url, at: CGPoint(x: x, y: y))
+            return (true, nil)
+        case "pageShow":
+            guard let key = body?["key"] as? String,
+                  let text = body?["url"] as? String, let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  let store = (body?["store"] as? String).flatMap(UUID.init(uuidString:)),
+                  let rect = body?["rect"] as? [String: Double],
+                  let x = rect["x"], let y = rect["y"], let width = rect["width"], let height = rect["height"]
+            else { return (nil, "no page") }
+            owner.pages.show(key: key, url: url, store: store, storeName: body?["storeName"] as? String ?? "", rect: CGRect(x: x, y: y, width: width, height: height))
+            return (true, nil)
+        case "pageHide":
+            owner.pages.hide()
+            return (true, nil)
+        case "pageDo":
+            guard let key = body?["key"] as? String, let what = body?["what"] as? String else { return (nil, "no page") }
+            owner.pages.perform(key: key, what: what)
+            return (true, nil)
+        case "pageClose":
+            guard let key = body?["key"] as? String else { return (nil, "no page") }
+            owner.pages.close(key: key)
             return (true, nil)
         case "takeTap":
             return (NotificationTap.take() ?? NSNull(), nil)

@@ -521,8 +521,18 @@ pub(crate) struct Column {
     /// window (`tenx_core::tabs`) — `tenx web` draws the tabs itself
     /// (`ColumnView::window_tab`). Read with `current`.
     window_tab: Option<tenx_core::tabs::Tab>,
+    /// The pages (`tenx_core::pages`) of the task in a tabbed current window,
+    /// for `tenx web`'s tab bar. Read with `window_tab`, so another device's
+    /// open or close shows within a tick.
+    pages: tenx_core::pages::Pages,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
+}
+
+fn read_pages_in(task_dir: &std::path::Path) -> tenx_core::pages::Pages {
+    std::fs::read_to_string(task_dir.join(tenx_core::pages::FILE))
+        .map(|t| tenx_core::pages::Pages::parse(&t))
+        .unwrap_or_default()
 }
 
 /// How often the idle tick re-reads the *slow* inputs — `tmux list-windows`
@@ -714,6 +724,7 @@ impl Column {
             windows: snapshot::Windows::default(),
             current: None,
             window_tab: None,
+            pages: Default::default(),
             slow_refreshed: None,
         }
     }
@@ -902,6 +913,7 @@ impl Column {
             let (id, tab) = crate::tmux::current_window_in(&self.session).unzip();
             self.current = self.current_from(id);
             self.window_tab = tab.flatten();
+            self.read_pages();
         } else {
             self.current = self.current_from(crate::tmux::current_window_id_in(&self.session));
         }
@@ -912,7 +924,47 @@ impl Column {
     fn read_window_tab(&mut self) {
         if !self.offline && self.draws_tabs() {
             self.window_tab = crate::tmux::current_window_in(&self.session).and_then(|(_, tab)| tab);
+            self.read_pages();
         }
+    }
+
+    /// The current task's pages, while its window is tabbed.
+    fn read_pages(&mut self) {
+        self.pages = match (&self.current, self.window_tab) {
+            (Some(dir), Some(_)) => read_pages_in(dir),
+            _ => Default::default(),
+        };
+    }
+
+    /// Change the pages of the task with row id `task` (`view::row_id`; the
+    /// page names it, so a click never lands on a task the window moved to
+    /// since) and save them if `edit` says it changed them.
+    pub(crate) fn edit_pages(
+        &mut self,
+        task: &str,
+        edit: impl FnOnce(&mut tenx_core::pages::Pages) -> Result<bool, String>,
+    ) -> Result<(), String> {
+        let dir = self.rows.iter().find(|r| view::row_id(r) == task).map(|r| r.path.clone()).ok_or("no such task")?;
+        let mut pages = read_pages_in(&dir);
+        if edit(&mut pages)? {
+            let path = dir.join(tenx_core::pages::FILE);
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, pages.render())
+                .and_then(|()| std::fs::rename(&tmp, &path))
+                .map_err(|e| format!("couldn't save the pages: {e}"))?;
+        }
+        if self.current.as_ref() == Some(&dir) && self.window_tab.is_some() {
+            self.pages = pages;
+        }
+        Ok(())
+    }
+
+    /// The pages' cookie store: the current task's workspace's.
+    pub(crate) fn pages_store(&self) -> Option<String> {
+        let dir = self.current.as_ref()?;
+        let row = self.rows.iter().find(|r| &r.path == dir)?;
+        let ws = self.workspaces.get(row.ws_idx)?;
+        Some(tenx_core::pages::store_id(&ws.dir.to_string_lossy()))
     }
 
     /// `tenx web`'s window and tab while a form or the search field holds off

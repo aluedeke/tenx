@@ -16,6 +16,7 @@ import { PasteBox } from './PasteBox';
 import { SecretsForm } from './SecretsForm';
 import { Sidebar } from './Sidebar';
 import { TaskTabs } from './TaskTabs';
+import { PagePane } from './PagePane';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, isNewTask, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
@@ -25,7 +26,7 @@ import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { ClipSync } from '@/lib/clipsync';
 import { EmptyClipboard, OtherKind, copyFromMac, copyImageFromMac, fetchMacImage, peekMac, sendImageToMac, sendToMac, toPng, type MacKind } from '@/lib/macclip';
-import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
+import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativePageClose, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -33,7 +34,8 @@ import { Reading, type ReadingState } from '@/lib/speak';
 import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
-import { OBSIDIAN_URL, copyText, linkHref, linkKey, openExternal } from '@/lib/links';
+import { OBSIDIAN_URL, copyText, linkHref, linkKey, openExternal, routeLinks } from '@/lib/links';
+import { pageKey } from '@/lib/pages';
 import { palette } from '@/palette';
 import {
   DRAWER_MARGIN,
@@ -1370,6 +1372,41 @@ export function App() {
   const shown = predicted?.view ?? view;
   // A tabbed task window: the page draws its tabs (TaskTabs, `view.window_tab`).
   const windowTab = shown?.window_tab ?? null;
+  // The task's pages (lib/pages), and the one this device shows over the
+  // terminal: only the app shows one; a browser opens it in a tab of its own.
+  const barTask = windowTab && !shown?.shown_closed ? (shown?.current ?? null) : null;
+  const pages = barTask ? (shown?.pages ?? null) : null;
+  const [pageShown, setPageShown] = useState<{ task: string; id: string } | null>(null);
+  const shownPage =
+    pages && pageShown && pageShown.task === barTask ? (pages.list.find((p) => p.id === pageShown.id) ?? null) : null;
+  // A page just asked for: shown once the view lists it.
+  const wantPage = useRef<{ task: string; url: string } | null>(null);
+  useEffect(() => {
+    const want = wantPage.current;
+    if (!want || !pages || want.task !== barTask) return;
+    const page = pages.list.find((p) => p.url === want.url);
+    if (!page) return;
+    wantPage.current = null;
+    setPageShown({ task: want.task, id: page.id });
+  }, [pages, barTask]);
+  const openPage = useCallback(
+    (url: string) => {
+      if (!barTask) return;
+      wantPage.current = nativeApp() ? { task: barTask, url } : null;
+      send({ type: 'page', task: barTask, op: 'open', url });
+      if (!nativeApp()) openExternal(url);
+    },
+    [barTask, send],
+  );
+  // In the app, a web link (the terminal's, the sidebar's, the links box)
+  // opens as one of the shown task's pages; holding it still offers Safari.
+  useEffect(() => {
+    if (!barTask || !nativeApp()) return;
+    return routeLinks((url) => {
+      openPage(url);
+      return true;
+    });
+  }, [barTask, openPage]);
   // A predicted open hands the keyboard to the terminal now, as the server's
   // `focus_terminal` will once it has switched.
   const opened = useRef(0);
@@ -1536,7 +1573,46 @@ export function App() {
           {windowTab && !shown?.shown_closed && (
             // One per task: a click still waiting for its view belongs to
             // the window it was made in, not to the next one shown.
-            <TaskTabs key={shown?.current ?? ''} shown={windowTab} onSelect={(tab) => send({ type: 'tab', tab })} />
+            <TaskTabs
+              key={shown?.current ?? ''}
+              shown={windowTab}
+              onSelect={(tab) => {
+                setPageShown(null);
+                if (tab !== windowTab || !shownPage) send({ type: 'tab', tab });
+              }}
+              pages={pages?.list ?? []}
+              pageShown={shownPage?.id ?? null}
+              onPage={(page) => {
+                if (!barTask) return;
+                if (nativeApp()) setPageShown({ task: barTask, id: page.id });
+                else openExternal(page.url);
+              }}
+              onClosePage={(page) => {
+                if (!barTask) return;
+                if (shownPage?.id === page.id) setPageShown(null);
+                nativePageClose(pageKey(barTask, page.id));
+                send({ type: 'page', task: barTask, op: 'close', id: page.id });
+              }}
+              onOpenPage={openPage}
+            />
+          )}
+          {barTask && pages && shownPage && (
+            <PagePane
+              key={pageKey(barTask, shownPage.id)}
+              task={barTask}
+              pageKey={pageKey(barTask, shownPage.id)}
+              page={shownPage}
+              store={pages.store}
+              onRefused={() => {
+                setPageShown(null);
+                window.open(shownPage.url, '_blank', 'noopener,noreferrer');
+              }}
+              onMoved={(url, title) => {
+                if (url === shownPage.url && (!title || title === shownPage.title)) return;
+                send({ type: 'page', task: barTask, op: 'navigated', id: shownPage.id, url, title });
+              }}
+              onSafari={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+            />
           )}
           <Terminal
             stripHidden={!!windowTab}

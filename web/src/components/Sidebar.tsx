@@ -13,7 +13,7 @@
 
 import { useRef, useState } from 'react';
 import type { LinkView, SidebarEntry, SidebarView } from '@/protocol';
-import { linkHref } from '@/lib/links';
+import { linkHref, routeLink } from '@/lib/links';
 import { DRAWER_MARGIN, SIDEBAR_PX, type Drag } from '@/lib/sidebarfit';
 import { ResizeEdge } from './ResizeEdge';
 
@@ -100,7 +100,11 @@ export function Sidebar({ view, overlay, onClose, width, resizable, touch, dragT
         target={e.kind === 'obsidian' ? undefined : '_blank'}
         rel="noopener noreferrer"
         title={e.url}
-        onClick={() => overlay && onClose()}
+        onClick={(ev) => {
+          // In the app, a web link opens as one of the task's pages.
+          if (routeLink(href)) ev.preventDefault();
+          if (overlay) onClose();
+        }}
       >
         {body}
       </a>

@@ -78,6 +78,91 @@ test('a tabbed task window gets its tabs as a bar over tmux’s strip; a click a
   await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'false');
 });
 
+test('a task keeps pages in its tab bar; in a browser a page opens in a tab of its own', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the phone runs the app test below');
+  const sent = sentMessages(page);
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  await tabs.getByTestId('page-add').click();
+  await page.getByTestId('page-url').fill('linear.app/acme');
+  const [popup] = await Promise.all([page.waitForEvent('popup'), page.getByTestId('page-url').press('Enter')]);
+  await expect.poll(() => popup.url()).toContain('linear.app/acme');
+  await popup.close();
+  expect(sent().some((m) => m.type === 'page' && m.op === 'open' && m.url === 'https://linear.app/acme')).toBe(true);
+  const chip = tabs.getByTestId('page-p1');
+  await expect(chip).toHaveText('linear.app/acme');
+  // In a browser no page is shown over the terminal: the switch stays lit.
+  await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('page-pane')).toHaveCount(0);
+  await tabs.getByRole('button', { name: 'close linear.app/acme' }).click();
+  await expect(chip).toHaveCount(0);
+});
+
+test('in the iOS app a page shows over the terminal and follows where it goes', async ({ page }) => {
+  // The app's message handler, faked: what the page asks of it.
+  await page.addInitScript(() => {
+    const calls: unknown[] = [];
+    (window as unknown as { __calls: unknown[] }).__calls = calls;
+    (window as unknown as { webkit: unknown }).webkit = {
+      messageHandlers: {
+        tenx: {
+          postMessage: async (m: { action: string }) => {
+            calls.push(m);
+            if (m.action === 'clipboardPeek') return { count: 0 };
+            if (m.action === 'pushState') return { permission: 'denied', env: 'sandbox' };
+            return m.action.startsWith('page') ? true : null;
+          },
+        },
+      },
+    };
+  });
+  const sent = sentMessages(page);
+  const calls = async () =>
+    (await page.evaluate(() => (window as unknown as { __calls: { action: string }[] }).__calls)).filter((c) => c.action.startsWith('page'));
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  await tabs.getByTestId('page-add').click();
+  await page.getByTestId('page-url').fill('github.com/acme/shop');
+  await page.getByTestId('page-url').press('Enter');
+  const pane = page.getByTestId('page-pane');
+  await expect(pane).toBeVisible();
+  await expect(tabs.getByRole('tab', { selected: true })).toHaveText('github.com/acme/shop');
+  // The app lays its web view over the hole under the page's own bar.
+  await expect.poll(async () => (await calls()).some((c) => c.action === 'pageShow')).toBe(true);
+  const show = (await calls()).find((c) => c.action === 'pageShow') as unknown as {
+    key: string; url: string; store: string; storeName: string; rect: { y: number; height: number };
+  };
+  expect(show.url).toBe('https://github.com/acme/shop');
+  expect(show.key).toBe('acme/fix-login-timeout#p1');
+  expect(show.store).toMatch(/^[0-9a-f-]{36}$/);
+  expect(show.storeName).toBe('acme');
+  const bar = (await tabs.boundingBox())!;
+  expect(show.rect.y).toBeGreaterThan(bar.y + bar.height);
+  expect(show.rect.height).toBeGreaterThan(100);
+
+  // The page went somewhere: every device's list follows, the chip takes the title.
+  await page.evaluate(() =>
+    window.dispatchEvent(new CustomEvent('tenx-page', {
+      detail: { key: 'acme/fix-login-timeout#p1', url: 'https://github.com/acme/shop/pulls', title: 'Pull requests', canGoBack: true, canGoForward: false, loading: false },
+    })),
+  );
+  await expect.poll(() => sent().some((m) => m.type === 'page' && m.op === 'navigated' && m.title === 'Pull requests')).toBe(true);
+  await expect(tabs.getByTestId('page-p1')).toHaveText('Pull requests');
+  await expect(pane.getByRole('button', { name: 'back' })).toBeEnabled();
+
+  // A terminal tab puts the terminal back.
+  await tabs.getByRole('tab', { name: 'agent' }).click();
+  await expect(pane).toHaveCount(0);
+  await expect.poll(async () => (await calls()).some((c) => c.action === 'pageHide')).toBe(true);
+  await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'true');
+
+  // A localhost address is the Mac's own: a note, no web view.
+  await tabs.getByTestId('page-add').click();
+  await page.getByTestId('page-url').fill('localhost:3000');
+  await page.getByTestId('page-url').press('Enter');
+  await expect(page.getByTestId('page-local')).toBeVisible();
+});
+
 test('quick clicks on two tabs light the last one, never the one between', async ({ page, isMobile }) => {
   test.skip(isMobile, 'one run is enough');
   // Every view a second late: the view for the first click arrives after the second.
