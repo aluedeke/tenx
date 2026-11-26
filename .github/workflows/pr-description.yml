@@ -3,21 +3,33 @@
 # status check of the "Protect Main" ruleset, so a PR can't be merged until
 # the description is complete. `edited` runs it again when the description
 # changes.
+#
+# `pull_request_target`: this workflow, the template and the script all come
+# from the base branch, never from the PR, so a PR can't loosen the check it
+# is judged by. Nothing from the PR is checked out or run; its description
+# only reaches the script through the environment.
 name: pr-description
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
+
+# Quick edits: only the newest description counts.
+concurrency:
+  group: pr-description-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   pr-description:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      # The body goes through the environment, never into the script's text.
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
       - name: Check the PR description
         env:
           PR_BODY: ${{ github.event.pull_request.body }}

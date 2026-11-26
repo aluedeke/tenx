@@ -21,15 +21,17 @@ TEMPLATE = ".github/pull_request_template.md"
 SCREENSHOTS = "screenshots"
 NO_UI = "no ui change"
 
-COMMENT = re.compile(r"<!--.*?-->", re.S)
+# An unclosed comment hides the rest of the page, so it counts to the end.
+COMMENT = re.compile(r"<!--.*?(-->|\Z)", re.S)
+FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^##\s+(.+?)\s*#*\s*$")
 CHECKBOX = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s+(.+?)\s*$")
 EMPTY_ROW = re.compile(r"^\|[\s|:-]*\|$")
-MEDIA = re.compile(
-    r"!\[|<img\s|<video\s|user-attachments/|"
-    r"\.(png|jpe?g|gif|webp|svg|mp4|mov)(\?[^\s)]*)?(\)|\s|$)",
-    re.I,
-)
+# Only what GitHub really shows: an embedded image, or a browser upload.
+MEDIA = re.compile(r"!\[[^\]]*\]\(\S+\)|<img\s[^>]*src=|<video\s|user-attachments/assets/", re.I)
+# Sections where "None" is an answer; elsewhere it is a placeholder.
+NONE_OK = {"contract changes", "risks and follow-ups"}
+PLACEHOLDER = {"none", "n/a", "na", "-", "tbd", "todo"}
 
 
 def norm(text):
@@ -38,24 +40,29 @@ def norm(text):
 
 def sections(text):
     """`## ` heading (normalized) → its lines, in order."""
-    out, current = {}, None
+    out, current, fenced = {}, None, False
     for line in COMMENT.sub("", text).splitlines():
-        m = HEADING.match(line)
+        if FENCE.match(line):
+            fenced = not fenced
+        m = None if fenced else HEADING.match(line)
         if m:
+            # A repeated heading (e.g. pasted from elsewhere) is not a new
+            # section: its lines are added to the first one.
             current = norm(m.group(1))
-            out[current] = []
+            out.setdefault(current, [])
         elif current is not None:
             out[current].append(line)
     return out
 
 
-def has_text(lines, skeleton):
-    """True if a line is more than whitespace or the template's own table."""
+def answer(lines, skeleton):
+    """The section's text, without whitespace and the template's own table."""
+    kept = []
     for line in lines:
         s = line.strip()
         if s and not EMPTY_ROW.match(s) and norm(s) not in skeleton:
-            return True
-    return False
+            kept.append(s)
+    return norm(" ".join(kept))
 
 
 def checklist(lines):
@@ -89,8 +96,10 @@ def check(body, template):
             text = "\n".join(got[name])
             if NO_UI not in norm(text) and not MEDIA.search(text):
                 errors.append('Section "Screenshots" has no image. Add before and after screenshots, or write "No UI change".')
-        elif not has_text(got[name], skeleton):
+        elif not answer(got[name], skeleton):
             errors.append(f'Section "{title}" is empty. Fill it in, or write "None" where the template allows it.')
+        elif name not in NONE_OK and answer(got[name], skeleton).strip(".") in PLACEHOLDER:
+            errors.append(f'Section "{title}" needs a real answer, not "{answer(got[name], skeleton)}".')
 
     wanted, ticked = {}, {}
     for lines in want.values():
