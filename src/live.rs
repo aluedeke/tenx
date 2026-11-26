@@ -178,6 +178,17 @@ pub fn ports_by_window() -> HashMap<String, Vec<u16>> {
     port_scan().by_window
 }
 
+/// Every port a task's process listens on: its window's processes and its
+/// `tenx service`s — what `tenx web`'s page proxy may reach.
+pub fn task_ports() -> std::collections::HashSet<u16> {
+    let scan = port_scan();
+    let mut ports: std::collections::HashSet<u16> = scan.by_window.values().flatten().copied().collect();
+    for r in crate::cli::service::services() {
+        ports.extend(tenx_core::live::ports_for(&[r.child], &scan.listeners, &scan.tree));
+    }
+    ports
+}
+
 /// One port scan: the ports per task window, and what they came from — every
 /// listener (pid, port) and the process tree — for the ports of processes
 /// outside a window's own tree (`cli::service::shown_in`).

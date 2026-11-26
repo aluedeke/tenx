@@ -1,3 +1,4 @@
+import Network
 import UIKit
 import WebKit
 
@@ -10,6 +11,9 @@ import WebKit
 @MainActor
 final class PagePanes: NSObject {
     private weak var host: UIView?
+    /// The tenx server: its host and token reach a page's `localhost`
+    /// through `tenx web`'s page proxy.
+    private let server: Server
     /// Runs a script in the tenx page: where a page went (`tenx-page`).
     private let report: (String) -> Void
     private var views: [String: PageWebView] = [:]
@@ -17,8 +21,9 @@ final class PagePanes: NSObject {
     private var order: [String] = []
     private static let keep = 6
 
-    init(over host: UIView, report: @escaping (String) -> Void) {
+    init(over host: UIView, server: Server, report: @escaping (String) -> Void) {
         self.host = host
+        self.server = server
         self.report = report
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(storeForgotten(_:)), name: PageStores.forgetting, object: nil)
@@ -26,15 +31,15 @@ final class PagePanes: NSObject {
 
     /// Show page `key` over `rect` (the tenx page's CSS pixels, which are the
     /// host's points), loading `url` only into a web view made now.
-    func show(key: String, url: URL, store: UUID, storeName: String, rect: CGRect) {
+    func show(key: String, url: URL, store: UUID, storeName: String, proxy: UInt16?, rect: CGRect) {
         guard let host else { return }
         PageStores.remember(store, as: storeName)
         let page: PageWebView
-        if let known = views[key], known.store == store {
+        if let known = views[key], known.store == store, known.proxy == proxy {
             page = known
         } else {
             views[key]?.removeFromSuperview()
-            page = PageWebView(key: key, store: store, report: report)
+            page = PageWebView(key: key, store: store, proxy: proxy.map { PageProxy(server: server, port: $0) }, report: report)
             views[key] = page
             page.load(URLRequest(url: url))
         }
@@ -61,7 +66,14 @@ final class PagePanes: NSObject {
         switch what {
         case "back": page.goBack()
         case "forward": page.goForward()
-        case "reload": if page.isLoading { page.stopLoading() } else { page.reload() }
+        case "reload":
+            if page.isLoading {
+                page.stopLoading()
+            } else if let failed = page.failed {
+                page.load(URLRequest(url: failed))
+            } else {
+                page.reload()
+            }
         default: break
         }
     }
@@ -83,15 +95,23 @@ final class PagePanes: NSObject {
 private final class PageWebView: WKWebView {
     let key: String
     let store: UUID
+    let proxy: UInt16?
+    private let via: PageProxy?
     private let report: (String) -> Void
+    /// The `localhost` address whose failure the page shows: what the bar
+    /// says and what reload tries again.
+    private(set) var failed: URL?
     private var watching: [NSKeyValueObservation] = []
 
-    init(key: String, store: UUID, report: @escaping (String) -> Void) {
+    init(key: String, store: UUID, proxy: PageProxy?, report: @escaping (String) -> Void) {
         self.key = key
         self.store = store
+        self.proxy = proxy?.port
+        self.via = proxy
         self.report = report
         let config = WKWebViewConfiguration()
         config.websiteDataStore = WKWebsiteDataStore(forIdentifier: store)
+        if let proxy { config.websiteDataStore.proxyConfigurations = [proxy.configuration] }
         config.allowsInlineMediaPlayback = true
         super.init(frame: .zero, configuration: config)
         navigationDelegate = self
@@ -132,7 +152,7 @@ private final class PageWebView: WKWebView {
         guard !isHidden else { return }
         let state: [String: Any] = [
             "key": key,
-            "url": url?.absoluteString ?? "",
+            "url": failed?.absoluteString ?? url?.absoluteString ?? "",
             "title": title ?? "",
             "canGoBack": canGoBack,
             "canGoForward": canGoForward,
@@ -146,6 +166,7 @@ private final class PageWebView: WKWebView {
 extension PageWebView: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url, let scheme = url.scheme?.lowercased() else { return .cancel }
+        if action.targetFrame?.isMainFrame ?? true, scheme == "http" || scheme == "https" { failed = nil }
         if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
         // mailto:, tel:, another app's link: iOS's, for a link tapped in the
         // page itself; a script or a frame (an ad, an embed) never switches apps.
@@ -175,6 +196,54 @@ extension PageWebView: WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
+    }
+
+    /// A `localhost` page that didn't load: say what it takes, in its place.
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        let e = error as NSError
+        guard !(e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled),
+              let url = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL, PageProxy.isLocal(url)
+        else { return }
+        failed = url
+        webView.loadHTMLString(PageProxy.failure(url: url, via: via, error: e.localizedDescription), baseURL: nil)
+    }
+}
+
+/// `tenx web`'s page proxy (`tenx_core::pageproxy`) as the server's host
+/// sees it: a page's `localhost` connections go there, the Mac's own ports
+/// instead of the phone's. Through Tailscale's TLS for an https server.
+struct PageProxy {
+    let server: Server
+    let port: UInt16
+
+    var host: String { server.base.host ?? "localhost" }
+
+    var configuration: ProxyConfiguration {
+        let endpoint = NWEndpoint.hostPort(host: .init(host), port: .init(rawValue: port) ?? 7075)
+        let tls = server.base.scheme?.lowercased() == "https" ? NWProtocolTLS.Options() : nil
+        var proxy = ProxyConfiguration(httpCONNECTProxy: endpoint, tlsOptions: tls)
+        proxy.applyCredential(username: "tenx", password: server.token)
+        // Only the Mac's own addresses: every other site goes its own way.
+        proxy.matchDomains = ["localhost", "127.0.0.1"]
+        return proxy
+    }
+
+    static func isLocal(_ url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        return host == "localhost" || host.hasSuffix(".localhost") || host == "127.0.0.1"
+    }
+
+    /// The page shown when a `localhost` page didn't load.
+    static func failure(url: URL, via: PageProxy?, error: String) -> String {
+        func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
+        let what = url.host.map { "\($0):\(url.port ?? 80)" } ?? url.absoluteString
+        let how: String
+        if let via {
+            how = "It goes through tenx web's page proxy on \(esc(via.host)):\(via.port). Either no task listens on that port, or this device can't reach the proxy: on a tailnet the Mac needs <code>tailscale serve --bg --tls-terminated-tcp=\(via.port) tcp://127.0.0.1:\(via.port)</code>."
+        } else {
+            how = "tenx web runs without its page proxy, so this device can't reach the Mac's own addresses."
+        }
+        return "<!doctype html><meta name=viewport content=\"width=device-width\"><body style=\"font:15px -apple-system;background:#171820;color:#c8ccd4;padding:24px;line-height:1.45\"><h3 style=\"color:#fff\">\(esc(what)) didn't load</h3><p>\(how)</p><p style=\"opacity:.6\">\(esc(error))</p>"
     }
 }
 

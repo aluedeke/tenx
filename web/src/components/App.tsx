@@ -1638,6 +1638,7 @@ export function App() {
               pageKey={pageKey(barTask, shownPage.id)}
               page={shownPage}
               store={pages.store}
+              proxy={pages.proxy}
               onRefused={() => {
                 setPageShown(null);
                 window.open(shownPage.url, '_blank', 'noopener,noreferrer');

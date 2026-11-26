@@ -1249,7 +1249,7 @@ fn web_pushes_a_blocked_task_to_subscribed_browsers() {
 
     let (push_port, pushes) = fake_push_service();
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    let mut server = h.tenx().args(["web", "--port", &port.to_string()]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+    let mut server = h.tenx().args(["web", "--port", &port.to_string(), "--proxy-port", "0"]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
     let mut lines = std::io::BufReader::new(server.stdout.take().unwrap()).lines();
     let token = lines
         .by_ref()
@@ -1626,7 +1626,7 @@ fn web_names_the_tab_a_tabbed_window_shows() {
     fs::write(h.root.join("home/.config/tenx/workspaces.d/e2e.toml"), format!("path = \"{}\"\n", h.ws())).unwrap();
     let window = h.tmux_out(&["display", "-p", "-t", "tenx:tabbed", "#{window_id}"]);
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    let mut server = h.tenx().args(["web", "--port", &port.to_string()]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+    let mut server = h.tenx().args(["web", "--port", &port.to_string(), "--proxy-port", "0"]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
     let mut lines = std::io::BufReader::new(server.stdout.take().unwrap()).lines();
     let token = lines
         .by_ref()
@@ -1698,6 +1698,88 @@ fn web_names_the_tab_a_tabbed_window_shows() {
     assert_eq!(pages["store"].as_str().map(str::len), Some(36), "a UUID: {pages}");
     let file = std::fs::read_to_string(std::path::Path::new(&h.ws()).join("tasks/tabbed/.tenx-pages.json")).unwrap();
     assert!(file.contains("https://linear.app/acme"), "{file}");
+}
+
+/// `tenx web`'s page proxy (`tenx_core::pageproxy`): a `CONNECT` with the
+/// page token reaches a port a task's process listens on, and nothing else.
+#[test]
+fn web_page_proxy_reaches_only_a_tasks_own_port() {
+    use std::io::{BufRead, Read, Write};
+
+    let Some(h) = Harness::named("-proxy") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Proxied", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let free = || std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    // The task's dev server, started in its window.
+    let dev = free();
+    let site = h.root.join("site");
+    fs::create_dir_all(&site).unwrap();
+    fs::write(site.join("index.html"), "dev server of the task").unwrap();
+    let serve = format!("cd {} && python3 -m http.server {dev} --bind 127.0.0.1", site.display());
+    let shell = h.tmux().args(["split-window", "-d", "-t", "tenx:proxied", &serve]).status().unwrap();
+    assert!(shell.success());
+    // A listener no task owns: this test's own.
+    let stranger = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let stranger_port = stranger.local_addr().unwrap().port();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while std::net::TcpStream::connect(("127.0.0.1", dev)).is_err() {
+        assert!(std::time::Instant::now() < deadline, "the dev server never listened");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    let (port, proxy) = (free(), free());
+    let mut server = h
+        .tenx()
+        .args(["web", "--port", &port.to_string(), "--proxy-port", &proxy.to_string()])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let lines: Vec<String> = std::io::BufReader::new(server.stdout.take().unwrap()).lines().map_while(Result::ok).take(3).collect();
+    let token = lines.iter().find_map(|l| l.split_once("?token=").map(|(_, t)| t.trim().to_string())).expect("tenx web printed its address");
+    assert!(lines.iter().any(|l| l.contains("page proxy on 127.0.0.1:") && l.contains("--tls-terminated-tcp")), "{lines:?}");
+
+    // Base64, by hand: the one place a test needs it.
+    let auth = {
+        const ABC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let bytes = format!("tenx:{token}").into_bytes();
+        let mut out = String::new();
+        for chunk in bytes.chunks(3) {
+            let n = chunk.iter().enumerate().fold(0u32, |n, (i, b)| n | (*b as u32) << (16 - 8 * i));
+            for i in 0..4 {
+                out.push(if i <= chunk.len() { ABC[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+            }
+        }
+        out
+    };
+    let ask = |head: String| -> String {
+        let mut c = std::net::TcpStream::connect(("127.0.0.1", proxy)).unwrap();
+        c.set_read_timeout(Some(std::time::Duration::from_secs(10))).unwrap();
+        c.write_all(head.as_bytes()).unwrap();
+        if head.contains(&auth) && head.contains(&format!(":{dev} ")) {
+            let mut answer = [0u8; 64];
+            let n = c.read(&mut answer).unwrap();
+            assert!(String::from_utf8_lossy(&answer[..n]).starts_with("HTTP/1.1 200"), "{}", String::from_utf8_lossy(&answer[..n]));
+            c.write_all(format!("GET / HTTP/1.0\r\nHost: localhost:{dev}\r\n\r\n").as_bytes()).unwrap();
+        }
+        let mut all = String::new();
+        let _ = c.read_to_string(&mut all);
+        all
+    };
+    let through = ask(format!("CONNECT localhost:{dev} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
+    let no_token = ask(format!("CONNECT localhost:{dev} HTTP/1.1\r\n\r\n"));
+    let not_a_task = ask(format!("CONNECT localhost:{stranger_port} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
+    let tenx_itself = ask(format!("CONNECT localhost:{port} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
+    let _ = server.kill();
+    let _ = server.wait();
+    drop(stranger);
+    assert!(through.contains("dev server of the task"), "{through}");
+    assert!(no_token.starts_with("HTTP/1.1 407"), "{no_token}");
+    assert!(not_a_task.starts_with("HTTP/1.1 403"), "{not_a_task}");
+    assert!(tenx_itself.starts_with("HTTP/1.1 403"), "{tenx_itself}");
 }
 
 /// The default layout: the agent over the whole window, the shell and

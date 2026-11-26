@@ -529,6 +529,9 @@ pub(crate) struct Column {
     /// so a tick reads it again only when it changed. With it, the pages'
     /// cookie store (`tenx_core::pages::store_id`), worked out once.
     pages_read: Option<PagesRead>,
+    /// `tenx web`'s page proxy port, which the iOS app reaches a page's
+    /// `localhost` through (`ColumnView::pages`).
+    pages_proxy: Option<u16>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
 }
@@ -573,6 +576,11 @@ impl Column {
 
     /// List (and start) jobs in `jobs` instead of a list of its own — how
     /// every `tenx web` tab shows the same Work tab.
+    pub(crate) fn with_pages_proxy(mut self, port: Option<u16>) -> Self {
+        self.pages_proxy = port;
+        self
+    }
+
     pub(crate) fn with_jobs(mut self, jobs: super::job::Jobs) -> Self {
         self.jobs = jobs;
         self
@@ -734,6 +742,7 @@ impl Column {
             window_tab: None,
             pages: Default::default(),
             pages_read: None,
+            pages_proxy: None,
             slow_refreshed: None,
         }
     }
@@ -997,9 +1006,9 @@ impl Column {
     }
 
     /// The current task's pages and their cookie store, for the view.
-    pub(crate) fn pages_view(&self) -> Option<(&str, &[tenx_core::pages::Page])> {
+    pub(crate) fn pages_view(&self) -> Option<(&str, &[tenx_core::pages::Page], Option<u16>)> {
         let (_, _, store) = self.pages_read.as_ref()?;
-        Some((store, &self.pages.pages))
+        Some((store, &self.pages.pages, self.pages_proxy))
     }
 
     /// `tenx web`'s window and tab while a form or the search field holds off

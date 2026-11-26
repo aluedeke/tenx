@@ -19,6 +19,7 @@ pub mod mcppush;
 pub mod notify;
 pub mod live;
 pub mod orchestrate;
+pub mod pageproxy;
 pub mod pages;
 pub mod progress;
 pub mod prstate;

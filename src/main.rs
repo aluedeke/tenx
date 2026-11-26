@@ -106,8 +106,8 @@ fn run() -> Result<()> {
         Some(Commands::Web { command: Some(cli::WebCommand::ApnsKey { file, key_id, team_id, topic }), .. }) => {
             push::apns::install_key(&file, key_id.as_deref(), &team_id, &topic)?
         }
-        Some(Commands::Web { command: None, listen, port, open, rotate_token, dev_origin }) => {
-            web::run(web::Options { listen, port, open, rotate_token, dev_origins: dev_origin })?
+        Some(Commands::Web { command: None, listen, port, open, rotate_token, dev_origin, proxy_port }) => {
+            web::run(web::Options { listen, port, open, rotate_token, dev_origins: dev_origin, proxy_port })?
         }
 
         Some(Commands::Agent { command }) => match command {
