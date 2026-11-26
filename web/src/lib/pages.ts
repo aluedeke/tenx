@@ -9,8 +9,10 @@
 
 import type { PageView } from '@/protocol';
 
-/** Pages a task keeps at most (`tenx_core::pages::MAX_PAGES`). */
-export const MAX_PAGES = 12;
+/** Whether opening `url` is `page`: where it is, or what it was opened with. */
+export function isPage(page: PageView, url: string): boolean {
+  return page.url === url || page.opened === url;
+}
 
 /** The web view's name in the app: page ids are per task. */
 export function pageKey(task: string, id: string): string {

@@ -30,7 +30,8 @@ interface Props {
 /** Whether something the page drew lies over the hole: a point inside it
  * (the middle and near each corner) whose topmost element isn't the hole. */
 function covered(hole: HTMLElement, r: DOMRect): boolean {
-  const inset = 8;
+  // Past a panel's resize handle, which reaches 11px over its edge.
+  const inset = 24;
   const points: [number, number][] = [
     [r.left + r.width / 2, r.top + r.height / 2],
     [r.left + inset, r.top + inset],
@@ -60,6 +61,8 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
     if (!el || local) return;
     let gaveUp = false;
     let hidden = false;
+    // What the app was last told: only a change is sent again.
+    let last = '';
     const show = () => {
       const r = el.getBoundingClientRect();
       if (gaveUp || r.width < 1 || r.height < 1) return;
@@ -68,6 +71,7 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
       if (covered(el, r)) {
         if (!hidden) nativePageHide();
         hidden = true;
+        last = '';
         return;
       }
       hidden = false;
@@ -76,6 +80,9 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
       const vv = window.visualViewport;
       const x = r.left - (vv?.offsetLeft ?? 0);
       const y = r.top - (vv?.offsetTop ?? 0);
+      const at = `${x},${y},${r.width},${r.height}`;
+      if (at === last) return;
+      last = at;
       nativePageShow({
         key: pageKey,
         url: page.url,

@@ -31,6 +31,17 @@ pub struct Page {
     /// The page's title, empty until it loaded once.
     #[serde(default)]
     pub title: String,
+    /// The address it was opened with: opening it again is this page,
+    /// wherever it went since.
+    #[serde(default)]
+    pub opened: String,
+}
+
+impl Page {
+    /// Whether opening `url` is this page.
+    pub fn is(&self, url: &str) -> bool {
+        self.url == url || self.opened == url
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -88,7 +99,7 @@ impl Pages {
         if !web_url(url) {
             return Err(OpenError::NotWeb);
         }
-        if let Some(page) = self.pages.iter().find(|p| p.url == url) {
+        if let Some(page) = self.pages.iter().find(|p| p.is(url)) {
             return Ok(page.id.clone());
         }
         if self.pages.len() >= MAX_PAGES {
@@ -96,7 +107,7 @@ impl Pages {
         }
         self.last += 1;
         let id = format!("p{}", self.last);
-        self.pages.push(Page { id: id.clone(), url: url.to_string(), title: String::new() });
+        self.pages.push(Page { id: id.clone(), url: url.to_string(), title: String::new(), opened: url.to_string() });
         Ok(id)
     }
 
@@ -201,6 +212,7 @@ mod tests {
         assert!(!p.navigated(&id, "about:blank", ""), "a non-web address keeps the last one");
         assert!(!p.navigated("p9", "https://x.dev", "X"));
         assert_eq!(p.pages[0].url, "https://github.com/");
+        assert_eq!(p.open("https://github.com/login").unwrap(), id, "the address it was opened with is still this page");
         assert_eq!(p.pages[0].title, "GitHub");
         p.navigated(&id, "https://github.com/", &"t".repeat(500));
         assert_eq!(p.pages[0].title.len(), MAX_TITLE);

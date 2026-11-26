@@ -35,7 +35,7 @@ import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import { OBSIDIAN_URL, copyText, linkHref, linkKey, openExternal, routeLinks } from '@/lib/links';
-import { MAX_PAGES, pageKey } from '@/lib/pages';
+import { isPage, pageKey } from '@/lib/pages';
 import { palette } from '@/palette';
 import {
   DRAWER_MARGIN,
@@ -1387,11 +1387,16 @@ export function App() {
   const shownPage =
     pages && pageShown && pageShown.task === barTask ? (pages.list.find((p) => p.id === pageShown.id) ?? null) : null;
   // A page just asked for: shown once the view lists it.
-  const wantPage = useRef<{ task: string; url: string } | null>(null);
+  // Given up on another task, or when no view lists it soon (a refusal).
+  const wantPage = useRef<{ task: string; url: string; at: number } | null>(null);
   useEffect(() => {
     const want = wantPage.current;
-    if (!want || !pages || want.task !== barTask) return;
-    const page = pages.list.find((p) => p.url === want.url);
+    if (!want || !pages) return;
+    if (want.task !== barTask || Date.now() - want.at > 5000) {
+      wantPage.current = null;
+      return;
+    }
+    const page = pages.list.find((p) => isPage(p, want.url));
     if (!page) return;
     wantPage.current = null;
     setPageShown({ task: want.task, id: page.id });
@@ -1400,12 +1405,12 @@ export function App() {
     (url: string) => {
       if (!barTask) return;
       // Already one of the task's pages: that page, no new one.
-      const known = appPages ? pages?.list.find((p) => p.url === url) : undefined;
+      const known = appPages ? pages?.list.find((p) => isPage(p, url)) : undefined;
       if (known) {
         setPageShown({ task: barTask, id: known.id });
         return;
       }
-      wantPage.current = appPages ? { task: barTask, url } : null;
+      wantPage.current = appPages ? { task: barTask, url, at: Date.now() } : null;
       send({ type: 'page', task: barTask, op: 'open', url });
       if (!appPages) window.open(url, '_blank', 'noopener,noreferrer');
     },
@@ -1432,7 +1437,7 @@ export function App() {
     if (!barTask || !appPages) return;
     return routeLinks((url) => {
       const list = pages?.list ?? [];
-      if (list.length >= MAX_PAGES && !list.some((p) => p.url === url)) return false;
+      if (list.length >= (pages?.max ?? 0) && !list.some((p) => isPage(p, url))) return false;
       openPage(url);
       return true;
     });

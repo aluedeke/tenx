@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chipLabel, isLocalUrl, pageKey, typedUrl, workspaceOf } from '../src/lib/pages.ts';
+import { chipLabel, isLocalUrl, isPage, pageKey, typedUrl, workspaceOf } from '../src/lib/pages.ts';
 
 test('names a web view by task and page', () => {
   assert.equal(pageKey('acme/fix-login', 'p2'), 'acme/fix-login#p2');
@@ -19,9 +19,9 @@ test('knows the Mac-only addresses', () => {
 });
 
 test('labels a chip by title, else host and path', () => {
-  assert.equal(chipLabel({ id: 'p1', url: 'https://linear.app/acme', title: ' Acme – Linear ' }), 'Acme – Linear');
-  assert.equal(chipLabel({ id: 'p1', url: 'https://github.com/', title: '' }), 'github.com');
-  assert.equal(chipLabel({ id: 'p1', url: 'https://github.com/acme/shop', title: '' }), 'github.com/acme/shop');
+  assert.equal(chipLabel({ id: 'p1', url: 'https://linear.app/acme', title: ' Acme – Linear ', opened: '' }), 'Acme – Linear');
+  assert.equal(chipLabel({ id: 'p1', url: 'https://github.com/', title: '', opened: '' }), 'github.com');
+  assert.equal(chipLabel({ id: 'p1', url: 'https://github.com/acme/shop', title: '', opened: '' }), 'github.com/acme/shop');
 });
 
 test('turns what was typed into an address', () => {
@@ -33,4 +33,11 @@ test('turns what was typed into an address', () => {
   assert.equal(typedUrl('two words'), null);
   assert.equal(typedUrl('javascript:alert(1)'), null);
   assert.equal(typedUrl('mailto:a@b.c'), null);
+});
+
+test('a page is what it was opened with, wherever it went', () => {
+  const page = { id: 'p1', url: 'https://github.com/acme/shop/pull/1#issuecomment-9', title: '', opened: 'https://github.com/acme/shop/pull/1' };
+  assert.equal(isPage(page, 'https://github.com/acme/shop/pull/1'), true);
+  assert.equal(isPage(page, 'https://github.com/acme/shop/pull/1#issuecomment-9'), true);
+  assert.equal(isPage(page, 'https://github.com/acme/shop/pull/2'), false);
 });

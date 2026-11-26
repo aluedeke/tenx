@@ -135,7 +135,7 @@ function view(st) {
     focus: st.focus, filter: st.filter, current: shownId, items,
     window_tab: st.windowTab ?? 'agent',
     // A task's pages (tenx_core::pages), one cookie store for the workspace.
-    pages: { store: '6f1c2a3b-4d5e-5f60-8a1b-2c3d4e5f6a7b', list: st.pages?.[shownId]?.list ?? [] },
+    pages: { store: '6f1c2a3b-4d5e-5f60-8a1b-2c3d4e5f6a7b', list: st.pages?.[shownId]?.list ?? [], max: 12 },
     shown_closed: closedSel ? (({ id, title, ws, ws_color }) => ({ id, title, ws, ws_color }))(TASKS.find((t) => t.id === closedSel)) : null, mode, footer, help: HELP, status: st.status ?? null,
     jobs: st.jobs ?? [],
     sidebar: shownId ? SIDEBAR : null,
@@ -429,8 +429,8 @@ wss.on('connection', (ws, req) => {
         // A task's pages, as tenx_core::pages keeps them.
         st.pages ??= {};
         const p = (st.pages[m.task] ??= { list: [], last: 0 });
-        if (m.op === 'open' && /^https?:\/\/[^/\s]/i.test(m.url) && !p.list.some((x) => x.url === m.url)) {
-          p.list.push({ id: `p${++p.last}`, url: m.url, title: '' });
+        if (m.op === 'open' && /^https?:\/\/[^/\s]/i.test(m.url) && !p.list.some((x) => x.url === m.url || x.opened === m.url)) {
+          p.list.push({ id: `p${++p.last}`, url: m.url, title: '', opened: m.url });
         } else if (m.op === 'close') {
           p.list = p.list.filter((x) => x.id !== m.id);
         } else if (m.op === 'navigated') {

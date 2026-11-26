@@ -525,13 +525,17 @@ pub(crate) struct Column {
     /// for `tenx web`'s tab bar. Read with `window_tab`, so another device's
     /// open or close shows within a tick.
     pages: tenx_core::pages::Pages,
-    /// What `pages` was read from: the task directory and the file's time,
+    /// What `pages` was read from: the task directory and the file's time and length,
     /// so a tick reads it again only when it changed. With it, the pages'
     /// cookie store (`tenx_core::pages::store_id`), worked out once.
-    pages_read: Option<(PathBuf, Option<std::time::SystemTime>, String)>,
+    pages_read: Option<PagesRead>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
 }
+
+/// `Column::pages_read`: the task directory, the file's time and length
+/// (none while there's no file), and the pages' cookie store.
+type PagesRead = (PathBuf, Option<(std::time::SystemTime, u64)>, String);
 
 fn read_pages_in(task_dir: &std::path::Path) -> tenx_core::pages::Pages {
     std::fs::read_to_string(task_dir.join(tenx_core::pages::FILE))
@@ -941,7 +945,9 @@ impl Column {
             self.pages_read = None;
             return;
         };
-        let time = std::fs::metadata(dir.join(tenx_core::pages::FILE)).and_then(|m| m.modified()).ok();
+        // The time and the length: two edits within a coarse clock's tick
+        // rarely leave the same length.
+        let time = std::fs::metadata(dir.join(tenx_core::pages::FILE)).ok().and_then(|m| Some((m.modified().ok()?, m.len())));
         if self.pages_read.as_ref().is_some_and(|(d, t, _)| *d == dir && *t == time) {
             return;
         }
@@ -969,7 +975,11 @@ impl Column {
         let _one = EDITING.lock().unwrap_or_else(|e| e.into_inner());
         let mut pages = read_pages_in(&dir);
         if edit(&mut pages)? {
-            crate::cli::schedule::write_atomic(&dir.join(tenx_core::pages::FILE), &pages.render())
+            // A task deleted a moment ago stays deleted.
+            if !dir.join("TASK.md").exists() {
+                return Err("the task is gone".into());
+            }
+            crate::workspace::write_atomic(&dir.join(tenx_core::pages::FILE), &pages.render())
                 .map_err(|e| format!("couldn't save the pages: {e:#}"))?;
         }
         if self.current.as_ref() == Some(&dir) && self.window_tab.is_some() {

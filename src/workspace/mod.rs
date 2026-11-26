@@ -873,9 +873,16 @@ fn read_branch(worktree_dir: &Path) -> Option<String> {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn atomic_write_toml<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    let text = toml::to_string_pretty(value).context("serialize toml")?;
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, &text).with_context(|| format!("write {}", tmp.display()))?;
+    write_atomic(path, &toml::to_string_pretty(value).context("serialize toml")?)
+}
+
+/// Write `text` to `path` whole or not at all: a temporary file beside it,
+/// then a rename. The directory must exist; this never makes one.
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<()> {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".tmp");
+    let tmp = path.with_file_name(name);
+    fs::write(&tmp, text).with_context(|| format!("write {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("rename to {}", path.display()))?;
     Ok(())
 }

@@ -307,10 +307,11 @@ screen the bar goes but the strip stays hidden, so the terminal keeps its
 size while the cursor passes closed tasks.
 
 The task's pages: with `window_tab`, `view.pages` is
-`{store, list: [{id, url, title}]}` — web pages kept as tabs after agent,
-shell and nvim (`tenx_core::pages`, saved in the task's `.tenx-pages.json`, so
-every device lists the same ones; at most twelve, ids `p1`, `p2`, … never
-reused). `store` is the workspace's cookie store, a UUID made from the
+`{store, list: [{id, url, title, opened}], max}` — web pages kept as tabs
+after agent, shell and nvim (`tenx_core::pages`, saved in the task's
+`.tenx-pages.json`, so every device lists the same ones; at most `max`, ids
+`p1`, `p2`, … never reused). `url` follows the page; opening the address it
+was `opened` with again is that page, not a new one. `store` is the workspace's cookie store, a UUID made from the
 workspace's directory (`tenx_core::pages::store_id`). Which page a device shows
 is its own: in a browser a chip opens the address in a tab of its own (most
 sites refuse to be shown inside another page); in the iOS app it lays a web

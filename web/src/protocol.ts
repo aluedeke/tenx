@@ -42,12 +42,16 @@ export interface PageView {
   url: string;
   /** Empty until the page loaded once. */
   title: string;
+  /** The address it was opened with (`url` follows the page). */
+  opened: string;
 }
 
 export interface PagesView {
   /** The workspace's cookie store, a UUID. */
   store: string;
   list: PageView[];
+  /** How many pages a task keeps. */
+  max: number;
 }
 
 /** A tabbed task window's tabs, in key order (Alt+1/2/3): `tenx_core::tabs::Tab`. */
