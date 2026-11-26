@@ -3,33 +3,37 @@
 // A tabbed task window's tabs, drawn by the page above the terminal: the
 // agent, a shell and nvim as one switch. tmux keeps drawing its own strip on
 // the window's top line for the terminal client and SSH; the page hides that
-// line under this bar (Terminal `stripHidden`). A click sends the tab's key,
-// Alt+1/2/3 — the same switch as the key, so tmux stays the one that knows
-// which tab is shown (`view.window_tab`).
+// line under this bar (Terminal `stripHidden`). A click asks `tenx web` to
+// show the tab (a `tab` message); tmux stays the one that knows which tab is
+// shown, and the next view says so (`view.window_tab`).
 
 import { useEffect, useState } from 'react';
 import { WINDOW_TABS, type WindowTab } from '@/protocol';
+import { GIVE_UP_MS, litTab, type Asked } from '@/lib/tasktabs';
 
 interface Props {
   /** The tab the window shows (`view.window_tab`). */
   shown: WindowTab;
-  /** Terminal input: the tab's key. */
-  onKey(data: string): void;
+  onSelect(tab: WindowTab): void;
 }
 
-/** How long a clicked tab stays lit before the view confirms it. */
-const PENDING_MS = 1500;
-
-export function TaskTabs({ shown, onKey }: Props) {
-  // The clicked tab, lit at once: the view says so only on its next tick.
-  const [pending, setPending] = useState<WindowTab | null>(null);
-  useEffect(() => setPending(null), [shown]);
+export function TaskTabs({ shown, onSelect }: Props) {
+  // The last tab clicked, lit until the view shows it (lib/tasktabs).
+  const [asked, setAsked] = useState<Asked | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const lit = litTab(shown, asked, now);
+  // Confirmed: from now on the view alone says which tab is shown (an
+  // Alt key typed in the terminal moves it too).
   useEffect(() => {
-    if (!pending) return;
-    const t = setTimeout(() => setPending(null), PENDING_MS);
+    if (asked && shown === asked.tab) setAsked(null);
+  }, [asked, shown]);
+  // Lit for a click the view never confirmed only until it gives up: then
+  // a render, so the bar falls back to what the window shows.
+  useEffect(() => {
+    if (!asked || lit !== asked.tab) return;
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, asked.at + GIVE_UP_MS - Date.now()) + 10);
     return () => clearTimeout(t);
-  }, [pending]);
-  const lit = pending ?? shown;
+  }, [asked, lit]);
   return (
     <div className="task-tabs" data-testid="task-tabs">
       <div className="task-tabs-switch" role="tablist" aria-label="task window">
@@ -45,8 +49,10 @@ export function TaskTabs({ shown, onKey }: Props) {
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               if (tab === lit) return;
-              setPending(tab);
-              onKey(`\x1b${i + 1}`);
+              const at = Date.now();
+              setAsked({ tab, at });
+              setNow(at);
+              onSelect(tab);
             }}
           >
             {tab}

@@ -51,6 +51,12 @@ pub(super) enum PageMsg {
     /// What the page sends next on the terminal is a paste: out of copy-mode
     /// first, where tmux would drop it.
     Paste,
+    /// Show this tab (`agent`, `shell`, `nvim`) in the tabbed task window in
+    /// front: the page's tab bar. Switched here, as the TUI client does for a
+    /// click on the strip, and the next view says so at once — not through
+    /// tmux's Alt key binding, which starts a `tenx` of its own and leaves
+    /// the page to learn the outcome on the next refresh.
+    Tab { tab: String },
     /// A line for the server's log (`~/.config/tenx/web.log` under the
     /// service): what the page saw where only the device can see it — e.g.
     /// which clipboard types a paste found, or the error it got. Never
@@ -495,6 +501,12 @@ impl Driver {
             PageMsg::Paste => {
                 let _ = crate::tmux::leave_mode_in(&self.session);
             }
+            PageMsg::Tab { tab } => {
+                if let Some(window) = crate::tmux::current_window_id_in(&self.session) {
+                    crate::tmux::tab_command(&tab, &window);
+                }
+                self.column.read_current();
+            }
             PageMsg::Log { message } => {
                 let line: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
                 eprintln!("page {}: {line}", self.session);
@@ -672,6 +684,7 @@ mod tests {
         assert!(matches!(pixels, PageMsg::Resize { width: 1000, height: 700, .. }));
         assert!(matches!(serde_json::from_str(r#"{"type":"visible"}"#).unwrap(), PageMsg::Visible));
         assert!(matches!(serde_json::from_str(r#"{"type":"paste"}"#).unwrap(), PageMsg::Paste));
+        assert!(matches!(serde_json::from_str(r#"{"type":"tab","tab":"shell"}"#).unwrap(), PageMsg::Tab { ref tab } if tab == "shell"));
         let set: PageMsg = serde_json::from_str(r#"{"type":"form","op":"set","field":"name","value":"Fix"}"#).unwrap();
         assert!(matches!(set, PageMsg::Form(crate::tui::column::view::FormOp::Set { ref field, ref value }) if field == "name" && value == "Fix"));
         let pick: PageMsg = serde_json::from_str(r#"{"type":"form","op":"pick","field":"agent","index":2}"#).unwrap();

@@ -413,6 +413,11 @@ wss.on('connection', (ws, req) => {
         // The page's diagnostics, for a run by hand (MOCK_LOG=1).
         if (process.env.MOCK_LOG) console.log(`log: ${m.message}`);
         break;
+      case 'tab':
+        // tenx web switches the window's tab; the view says so.
+        st.windowTab = m.tab;
+        push();
+        return;
       case 'viewport':
         json({ type: 'layout', column_cols: Math.max(30, Math.min(48, Math.round(m.cols * 0.28))), narrow: m.cols < 100 });
         return;

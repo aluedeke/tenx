@@ -1533,7 +1533,7 @@ export function App() {
           </div>
         )}
         <div className="terminal-wrap" onMouseDown={() => setFocus('terminal')}>
-          {windowTab && !shown?.shown_closed && <TaskTabs shown={windowTab} onKey={(key) => conn.current?.input(key)} />}
+          {windowTab && !shown?.shown_closed && <TaskTabs shown={windowTab} onSelect={(tab) => send({ type: 'tab', tab })} />}
           <Terminal
             stripHidden={!!windowTab}
             ref={term}

@@ -887,7 +887,7 @@ impl Column {
 
     /// The session's current window, live: which task it is (`current`) and
     /// the tab it shows (`window_tab`).
-    fn read_current(&mut self) {
+    pub(crate) fn read_current(&mut self) {
         let (id, tab) = crate::tmux::current_window_in(&self.session).unzip();
         self.current = self.current_from(id);
         self.window_tab = tab.flatten();

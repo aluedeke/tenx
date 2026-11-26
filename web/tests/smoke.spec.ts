@@ -54,9 +54,8 @@ function sentMessages(page: import('@playwright/test').Page): () => Array<Record
   return () => sent.map((t) => JSON.parse(t));
 }
 
-test('a tabbed task window gets its tabs as a bar over tmux’s strip; a click sends the tab’s key', async ({ page, isMobile }) => {
-  const keys: string[] = [];
-  page.on('websocket', (ws) => ws.on('framesent', (f) => typeof f.payload !== 'string' && keys.push(f.payload.toString())));
+test('a tabbed task window gets its tabs as a bar over tmux’s strip; a click asks for the tab', async ({ page, isMobile }) => {
+  const sent = sentMessages(page);
   await page.goto('/');
   const tabs = page.getByTestId('task-tabs');
   await expect(tabs).toBeVisible();
@@ -74,9 +73,26 @@ test('a tabbed task window gets its tabs as a bar over tmux’s strip; a click s
 
   const shell = tabs.getByRole('tab', { name: 'shell' });
   await (isMobile ? shell.tap() : shell.click());
-  await expect.poll(() => keys.includes('\x1b2')).toBe(true);
+  await expect.poll(() => sent().some((m) => m.type === 'tab' && m.tab === 'shell')).toBe(true);
   await expect(shell).toHaveAttribute('aria-selected', 'true');
   await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'false');
+});
+
+test('quick clicks on two tabs light the last one, never the one between', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'one run is enough');
+  // Every view a second late: the view for the first click arrives after the second.
+  await page.context().addCookies([{ name: 'mocklag', value: '1000', url: 'http://127.0.0.1:7071' }]);
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  const nvim = tabs.getByRole('tab', { name: 'nvim' });
+  await tabs.getByRole('tab', { name: 'shell' }).click();
+  await nvim.click();
+  const lit: string[] = [];
+  for (let i = 0; i < 25; i++) {
+    lit.push((await tabs.getByRole('tab', { selected: true }).textContent()) ?? '');
+    await page.waitForTimeout(100);
+  }
+  expect(lit.every((t) => t === 'nvim'), lit.join(' ')).toBe(true);
 });
 
 test('the mouse alone shows and hides the column and drives it', async ({ page, isMobile }) => {

@@ -340,6 +340,8 @@ export type ClientMessage =
   | { type: 'focus'; column: boolean }
   | { type: 'visible' }
   | { type: 'paste' }
+  /** Show this tab of the tabbed task window in front (TaskTabs). */
+  | { type: 'tab'; tab: WindowTab }
   /** A diagnostic line for the server's log (never content). */
   | { type: 'log'; message: string };
 

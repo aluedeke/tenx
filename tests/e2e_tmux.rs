@@ -1669,10 +1669,16 @@ fn web_names_the_tab_a_tabbed_window_shows() {
         // client): the next views say so.
         h.tab(&window, "shell");
         seen.extend(until(&mut ws, "shell").await);
+        // The page's own tab bar: switched by tenx web, and said at once.
+        let asked = std::time::Instant::now();
+        ws.send(Message::Text(r#"{"type":"tab","tab":"nvim"}"#.into())).await.unwrap();
+        seen.extend(until(&mut ws, "nvim").await);
+        assert!(asked.elapsed() < std::time::Duration::from_millis(400), "the view said nvim only after {:?}", asked.elapsed());
         seen
     });
     let _ = server.kill();
-    assert!(seen.contains(&"\"agent\"".to_string()) && seen.last().map(String::as_str) == Some("\"shell\""), "window_tab in each view: {seen:?}");
+    let _ = server.wait();
+    assert!(seen.contains(&"\"agent\"".to_string()) && seen.contains(&"\"shell\"".to_string()) && seen.last().map(String::as_str) == Some("\"nvim\""), "window_tab in each view: {seen:?}");
 }
 
 #[test]

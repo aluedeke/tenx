@@ -185,6 +185,10 @@ without `seq` work as before.
 // The next terminal bytes are a paste: the pane leaves copy-mode first (a
 // touch scroll leaves it there, and tmux drops a paste that reaches it).
 { "type": "paste" }
+
+// The tab bar: show this tab of the tabbed task window in front (`agent`,
+// `shell`, `nvim`); the next view's `window_tab` says so.
+{ "type": "tab", "tab": "shell" }
 ```
 
 ## Keys the browser keeps
@@ -284,9 +288,11 @@ names the tab it shows (`agent`, `shell` or `nvim`; `null` otherwise, read
 with the current window by `tmux::current_window_in`). The page then draws the tabs as a bar above the
 terminal (`TaskTabs`) and hides tmux's own strip, the window's top line, under
 it: the terminal is laid out one row taller and starts one row higher, so the
-grid tmux draws is the same. A click on a tab sends that tab's key (`ESC 1`…
-`ESC 3`, Alt+1/2/3) as terminal input, the same switch as the key — the
-terminal client and SSH keep tmux's strip. Under a closed task's empty
+grid tmux draws is the same. A click on a tab sends `{type: "tab", tab}`: the
+server switches the window's tab (`tmux::tab_command`, what Alt+1/2/3 and a
+click on the TUI's strip run) and re-reads it at once, so the next view says
+so without waiting for the refresh. The clicked tab stays lit until a view
+confirms it (`lib/tasktabs`). The terminal client and SSH keep tmux's strip. Under a closed task's empty
 screen the bar goes but the strip stays hidden, so the terminal keeps its
 size while the cursor passes closed tasks.
 
