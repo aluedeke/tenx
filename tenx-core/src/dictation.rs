@@ -59,9 +59,9 @@ pub struct Dictation {
     tentative: Vec<String>,
     /// Where the buffer starts in the whole recording, in samples.
     pub start: usize,
-    /// How many words were committed when a cut at a pause last didn't
-    /// fit: no new try before more are committed.
-    cut_tried_at: Option<usize>,
+    /// When a cut at a pause last didn't fit: the last committed sentence
+    /// end then, and how many words were committed ([`Dictation::cut_plan`]).
+    cut_tried_at: Option<(Option<usize>, usize)>,
 }
 
 /// Where to end a finished sentence: `end` samples into the buffer, taking
@@ -70,6 +70,19 @@ pub struct Dictation {
 pub struct Cut {
     pub end: usize,
     words: usize,
+}
+
+/// What a run over the speech server's buffer does about a cut
+/// ([`Dictation::cut_plan`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CutPlan {
+    /// Try a final pass at pauses ([`cut_candidates`]).
+    pub pauses: bool,
+    /// The buffer is long: a cut needn't end a sentence.
+    pub long: bool,
+    /// Past [`SERVER_MAX_SECS`]: if no pause fits, cut anyway
+    /// ([`Dictation::force_cut`]).
+    pub force: bool,
 }
 
 /// How a final pass over the audio up to a pause fits the committed words
@@ -190,20 +203,23 @@ impl Dictation {
         self.agree(text.split_whitespace().map(str::to_string).collect());
     }
 
-    /// Whether to look for a pause to cut at (the speech server's buffer,
-    /// `buffer_secs` long): a committed word ends a sentence, or the buffer
-    /// is long and something is committed.
-    /// Not again before more words are committed after a try that didn't
-    /// fit ([`Dictation::cut_missed`]): "Dr." ends no sentence, and every try
-    /// is a request.
-    pub fn wants_cut(&self, buffer_secs: f32) -> bool {
-        self.cut_tried_at != Some(self.committed.len())
-            && (self.committed.iter().any(|w| ends_sentence(w)) || (buffer_secs > SERVER_TRIM_SECS && !self.committed.is_empty()))
+    /// What to do about a cut in the speech server's buffer, `buffer_secs`
+    /// long. Pauses are tried when a committed word ends a sentence — after
+    /// a miss ([`Dictation::cut_missed`]) only once another one does, since
+    /// "Dr." ends no sentence and every try is a request — or when the
+    /// buffer is long, once more words are committed.
+    pub fn cut_plan(&self, buffer_secs: f32) -> CutPlan {
+        let last_end = self.committed.iter().rposition(|w| ends_sentence(w));
+        let (tried_end, tried_len) = self.cut_tried_at.unwrap_or((None, usize::MAX));
+        let long = buffer_secs > SERVER_TRIM_SECS;
+        let sentence = last_end.is_some() && last_end != tried_end;
+        let more = long && !self.committed.is_empty() && self.committed.len() != tried_len;
+        CutPlan { pauses: sentence || more, long, force: buffer_secs > SERVER_MAX_SECS }
     }
 
     /// No pause fitted this time.
     pub fn cut_missed(&mut self) {
-        self.cut_tried_at = Some(self.committed.len());
+        self.cut_tried_at = Some((self.committed.iter().rposition(|w| ends_sentence(w)), self.committed.len()));
     }
 
     /// Close a sentence at a pause `end` samples into the buffer, given the
@@ -217,8 +233,9 @@ impl Dictation {
         if fin.is_empty() || committed.is_empty() {
             return PauseCut::NoFit;
         }
+        // Not a word in common: an earlier pause won't fit either.
         let Some((matched, last_c, last_f)) = align(&committed[..committed.len().min(fin.len() + 3)], &fin) else {
-            return PauseCut::TooFar;
+            return PauseCut::NoFit;
         };
         // Its words after the last match stand for as many committed ones
         // (the final pass may hear the last word differently).
@@ -272,7 +289,7 @@ impl Dictation {
         let words: Vec<String> = self.committed.drain(..cut.words.min(self.committed.len())).collect();
         let before = words.join(" ");
         let text = if final_text.trim().is_empty() { before.clone() } else { final_text.trim().to_string() };
-        let changed = before.split_whitespace().map(key).ne(text.split_whitespace().map(key));
+        let changed = !same_words(&before, &text);
         if !text.is_empty() {
             self.done.push(text);
         }
@@ -481,7 +498,7 @@ mod tests {
         d.update_text("please fix the login timeout");
         assert_eq!(d.view().committed, "Please fix the");
         assert_eq!(d.view().tentative, "login timeout");
-        assert!(!d.wants_cut(3.0));
+        assert!(!d.cut_plan(3.0).pauses);
     }
 
     #[test]
@@ -489,7 +506,7 @@ mod tests {
         let mut d = Dictation::default();
         d.update_text("Fix the login. Then");
         d.update_text("Fix the login. Then open");
-        assert!(d.wants_cut(3.0));
+        assert!(d.cut_plan(3.0).pauses);
         // A pause after "Then": the text runs past the sentence end.
         assert_eq!(d.finish_at_pause(40_000, "Fix the login. Then.", false), PauseCut::TooFar);
         assert_eq!(d.view().done, "");
@@ -504,8 +521,8 @@ mod tests {
         let mut d = Dictation::default();
         d.update_text("and then we go on and on");
         d.update_text("and then we go on and on");
-        assert!(!d.wants_cut(10.0), "no sentence end committed");
-        assert!(d.wants_cut(21.0), "long buffer");
+        assert!(!d.cut_plan(10.0).pauses, "no sentence end committed");
+        assert_eq!(d.cut_plan(21.0), CutPlan { pauses: true, long: true, force: false }, "long buffer");
         // A short buffer: "we." ends mid-sentence.
         assert_eq!(d.finish_at_pause(16_000, "And then we.", false), PauseCut::NoFit);
         // A long one: cut anyway, the cut's full stop dropped.
@@ -552,11 +569,22 @@ mod tests {
         let mut d = Dictation::default();
         d.update_text("Ask Dr. Smith");
         d.update_text("Ask Dr. Smith about");
-        assert!(d.wants_cut(3.0));
+        assert!(d.cut_plan(3.0).pauses);
         d.cut_missed();
-        assert!(!d.wants_cut(4.0));
+        assert!(!d.cut_plan(4.0).pauses);
+        // More words, but no new sentence end: no new try.
         d.update_text("Ask Dr. Smith about it");
-        assert!(d.wants_cut(5.0));
+        d.update_text("Ask Dr. Smith about it now.");
+        assert!(!d.cut_plan(5.0).pauses);
+        d.update_text("Ask Dr. Smith about it now. Then");
+        assert!(d.cut_plan(6.0).pauses);
+        // Long: tried again once more words are committed.
+        d.cut_missed();
+        assert!(!d.cut_plan(21.0).pauses);
+        d.update_text("Ask Dr. Smith about it now. Then go");
+        assert!(d.cut_plan(22.0).pauses);
+        // Past the limit: forced, committed words or not.
+        assert!(Dictation::default().cut_plan(26.0).force);
     }
 
     #[test]
@@ -573,7 +601,7 @@ mod tests {
         let mut d = Dictation::default();
         d.update_text("Fix the login.");
         d.update_text("Fix the login.");
-        assert_eq!(d.finish_at_pause(8_000, "Something else entirely.", false), PauseCut::TooFar);
+        assert_eq!(d.finish_at_pause(8_000, "Something else entirely.", false), PauseCut::NoFit);
         assert_eq!(d.finish_at_pause(8_000, "", false), PauseCut::NoFit);
         assert_eq!(d.finish_at_pause(8_000, "Fix the login.", false), PauseCut::Done { changed: false });
         assert_eq!(d.finish(""), "Fix the login.");

@@ -18,7 +18,7 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 use anyhow::{bail, Context, Result};
-use tenx_core::dictation::{has_speech, prompt_tail, split_at_pauses};
+use tenx_core::dictation::{SERVER_MAX_SECS, has_speech, prompt_tail, split_at_pauses};
 use tenx_core::sttserver;
 use tenx_core::web;
 
@@ -157,10 +157,6 @@ impl<'a> Listener<'a> {
     }
 }
 
-/// The longest piece of a one-shot recording sent in one request: the
-/// server writes at most 256 tokens.
-const PIECE_SECS: f32 = 25.0;
-
 /// The text of one recording (`content_type` as the browser recorded it).
 pub(super) fn transcribe(content_type: &str, audio: &[u8], language: Option<&str>) -> Result<String> {
     match engine()? {
@@ -169,12 +165,17 @@ pub(super) fn transcribe(content_type: &str, audio: &[u8], language: Option<&str
             let samples = tenx_core::whisper::wav_samples(audio).map_err(anyhow::Error::msg)?;
             let mut ears = Listener::new(&server, language);
             let mut texts: Vec<String> = Vec::new();
-            for range in split_at_pauses(&samples, 0.01, PIECE_SECS) {
+            // In pieces the server can write out (256 tokens at most).
+            for range in split_at_pauses(&samples, 0.01, SERVER_MAX_SECS) {
                 let piece = &samples[range];
                 if !has_speech(piece, 0.01, 0.25) {
                     continue;
                 }
-                let text = match ears.ask(piece, &prompt_tail(&texts.join(" "))) {
+                let before = prompt_tail(&texts.join(" "));
+                // Without tenx-whisper a failed piece is asked once more:
+                // the rest of the recording hangs on it.
+                let heard = ears.ask(piece, &before).or_else(|| if ears.has_fallback() { None } else { ears.ask(piece, &before) });
+                let text = match heard {
                     Some(text) => text,
                     None => {
                         let (config, language) = ears.fallback()?;

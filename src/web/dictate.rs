@@ -19,9 +19,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use tenx_core::dictation::{
-    Dictation, PauseCut, SERVER_MAX_SECS, SERVER_TRIM_SECS, STEP_SECS, cut_candidates, forced_cut, has_speech, pauses, split_at_pauses,
-};
+use tenx_core::dictation::{Dictation, PauseCut, SERVER_MAX_SECS, STEP_SECS, cut_candidates, forced_cut, has_speech, pauses, split_at_pauses};
 use tenx_core::whisper::{self, RATE, Request};
 
 use crate::workspace::SpeechConfig;
@@ -110,6 +108,7 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
         let buffer = &audio[d.start.min(audio.len())..];
         // Only when something new was said: Whisper given silence invents text.
         let new = &audio[heard_at_last_run.min(audio.len())..];
+        let heard_before = heard_at_last_run;
         heard_at_last_run = audio.len();
         if buffer.len() < RATE as usize / 2 || !has_speech(new, 0.01, 0.1) {
             continue;
@@ -117,8 +116,12 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
         let corrected = match ears.as_mut() {
             Some(ears) => match server_run(ears, &mut d, buffer) {
                 Some(corrected) => corrected,
-                // Nobody else to ask: this run is lost, the next one asks again.
-                None if !ears.has_fallback() => continue,
+                // Nobody else to ask: this run is lost, and the next one
+                // asks again about the same speech, pause or not.
+                None if !ears.has_fallback() => {
+                    heard_at_last_run = heard_before;
+                    continue;
+                }
                 None => {
                     let (config, language) = ears.fallback()?;
                     whisper_run(config, &mut d, buffer, language.as_deref())?
@@ -151,6 +154,10 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
             // In pieces the server can write out (256 tokens at most).
             for range in split_at_pauses(tail, 0.01, SERVER_MAX_SECS) {
                 let piece = &tail[range];
+                // Given silence, a model makes text up.
+                if !has_speech(piece, 0.01, 0.25) {
+                    continue;
+                }
                 let before = tenx_core::dictation::prompt_tail(&[d.view().done, texts.join(" ")].join(" "));
                 match ears.ask(piece, &before) {
                     Some(text) => texts.push(text),
@@ -178,22 +185,23 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
 fn server_run(ears: &mut Listener, d: &mut Dictation, buffer: &[f32]) -> Option<bool> {
     let text = ears.ask(buffer, &d.prompt())?;
     d.update_text(&text);
-    let secs = buffer.len() as f32 / RATE as f32;
-    if !d.wants_cut(secs) {
+    let plan = d.cut_plan(buffer.len() as f32 / RATE as f32);
+    if !plan.pauses && !plan.force {
         return Some(false);
     }
-    let long = secs > SERVER_TRIM_SECS;
     let pauses = pauses(buffer, 0.01);
-    for end in cut_candidates(&pauses, buffer.len()) {
-        let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
-        match d.finish_at_pause(end, &text, long) {
-            PauseCut::Done { changed } => return Some(changed),
-            PauseCut::TooFar => continue,
-            PauseCut::NoFit => break,
+    if plan.pauses {
+        for end in cut_candidates(&pauses, buffer.len()) {
+            let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
+            match d.finish_at_pause(end, &text, plan.long) {
+                PauseCut::Done { changed } => return Some(changed),
+                PauseCut::TooFar => continue,
+                PauseCut::NoFit => break,
+            }
         }
+        d.cut_missed();
     }
-    d.cut_missed();
-    if secs > SERVER_MAX_SECS {
+    if plan.force {
         let end = forced_cut(&pauses, buffer.len());
         let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
         return Some(d.force_cut(end, &text));

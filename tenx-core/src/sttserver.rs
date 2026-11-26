@@ -132,6 +132,8 @@ pub fn outcome(answered: Result<(), String>, status: &str, body: &str) -> Result
     let short = || body.chars().take(200).collect::<String>();
     match status.trim().parse::<u16>() {
         Ok(200) => {}
+        // Busy, not wrong.
+        Ok(code @ (408 | 429)) => return Err(Failure::Down(format!("answered {code} {}", short()))),
         // A redirect too: curl doesn't follow one, so the url is wrong.
         Ok(code @ 300..=499) => return Err(Failure::Refused(format!("{code} {}", short()))),
         _ => return Err(Failure::Down(format!("answered {} {}", status.trim(), short()))),
@@ -190,6 +192,7 @@ mod tests {
         assert!(matches!(outcome(Ok(()), "400", "unknown language(s) xx"), Err(Failure::Refused(e)) if e.starts_with("400 unknown")));
         assert!(matches!(outcome(Ok(()), "500", "boom"), Err(Failure::Down(_))));
         assert!(matches!(outcome(Ok(()), "301", ""), Err(Failure::Refused(_))));
+        assert!(matches!(outcome(Ok(()), "429", "slow down"), Err(Failure::Down(_))));
         assert!(matches!(outcome(Ok(()), "200", "<html>"), Err(Failure::Down(e)) if e.starts_with("not JSON")));
         assert!(matches!(outcome(Err("timed out".into()), "000", ""), Err(Failure::Down(e)) if e.contains("timed out")));
         assert_eq!(outcome(Ok(()), "200", r#"{"text":"hi"}"#).unwrap().language, None);
