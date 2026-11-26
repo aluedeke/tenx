@@ -226,6 +226,7 @@ impl Tab {
             fitted: None,
             zoomed: None,
             tab_switch: None,
+            tab_next: None,
         };
         {
             let dead = dead.clone();
@@ -358,6 +359,9 @@ struct Driver {
     /// A switch the page's tab bar asked for, running on a thread of its
     /// own (`PageMsg::Tab`); its outcome is picked up with the next frame.
     tab_switch: Option<mpsc::Receiver<Result<(), String>>>,
+    /// The tab asked for while a switch ran: one switch at a time, in click
+    /// order, and only the last one waiting — quick clicks end on the last.
+    tab_next: Option<tenx_core::tabs::Tab>,
 }
 
 impl Driver {
@@ -481,6 +485,18 @@ impl Driver {
         true
     }
 
+    /// Show `tab` in the window in front, off this thread, as the TUI client
+    /// does: a first show starts the tab's program, and a switch from another
+    /// client holds the lock meanwhile — the terminal must keep flowing.
+    fn start_tab_switch(&mut self, tab: tenx_core::tabs::Tab) {
+        let Some(window) = crate::tmux::current_window_id_in(&self.session) else { return };
+        let (done, outcome) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(crate::tmux::switch_tab(&window, tab).map_err(|e| format!("{e:#}")));
+        });
+        self.tab_switch = Some(outcome);
+    }
+
     fn page(&mut self, msg: PageMsg) {
         match msg {
             PageMsg::Key(key) => {
@@ -510,15 +526,11 @@ impl Driver {
                     self.column.set_status(format!("no tab called '{tab}'"));
                     return;
                 };
-                let Some(window) = crate::tmux::current_window_id_in(&self.session) else { return };
-                // Off this thread, as the TUI client does: a first show starts
-                // the tab's program, and a switch from another client holds
-                // the lock meanwhile — the terminal must keep flowing.
-                let (done, outcome) = mpsc::channel();
-                std::thread::spawn(move || {
-                    let _ = done.send(crate::tmux::switch_tab(&window, tab).map_err(|e| format!("{e:#}")));
-                });
-                self.tab_switch = Some(outcome);
+                if self.tab_switch.is_some() {
+                    self.tab_next = Some(tab);
+                } else {
+                    self.start_tab_switch(tab);
+                }
             }
             PageMsg::Log { message } => {
                 let line: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
@@ -579,8 +591,16 @@ impl Driver {
                     if let Err(e) = result {
                         self.column.set_status(e);
                     }
+                    if let Some(tab) = self.tab_next.take() {
+                        self.start_tab_switch(tab);
+                    }
                 }
-                Err(mpsc::TryRecvError::Disconnected) => self.tab_switch = None,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.tab_switch = None;
+                    if let Some(tab) = self.tab_next.take() {
+                        self.start_tab_switch(tab);
+                    }
+                }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }

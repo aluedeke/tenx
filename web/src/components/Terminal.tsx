@@ -10,7 +10,6 @@ import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { TerminalClipboard, imagesIn } from '@/lib/clipboard';
 import { DragFilter } from '@/lib/dragfilter';
-import { TabClicks, tabAt } from '@/lib/tabclick';
 import { tabKey } from '@/lib/keys';
 import { VERSION as EMOJI_WIDTHS, widerEmoji } from '@/lib/emojiwidth';
 import { OBSIDIAN_TEXT_URL, isOpenableUrl, openExternal } from '@/lib/links';
@@ -249,15 +248,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       // A click that reports a drag without leaving its cell (iPad Safari)
       // would make tmux select and copy nothing over the clipboard.
       const drags = new DragFilter();
-      // A click on the tab strip (the top line of a tabbed task window) is
-      // the tab's Alt key: tmux binds no click there (lib/tabclick).
-      const tabs = new TabClicks();
-      const topLine = () => xterm?.buffer.active.getLine(xterm.buffer.active.viewportY)?.translateToString(false) ?? '';
+      // A tabbed window's tab strip, its top line, is under the page's own
+      // tab bar (TaskTabs): no click or tap reaches it here.
       xterm.onData((d) => {
-        let out = tabs.translate(d, topLine);
-        // A phone's tap is a tap and a click: one switch for the two.
-        if (out !== d && out && !tabSent.once(out)) out = '';
-        if (out && drags.pass(out)) propsRef.current.onData(out);
+        if (drags.pass(d)) propsRef.current.onData(d);
       });
       xterm.onBinary((d) => propsRef.current.onData(d));
       let last = '';
@@ -597,21 +591,6 @@ function rightClickLinks(xterm: XTerm, el: HTMLElement, onLink: (url: string, x:
   );
 }
 
-/** A tab's key sent for a tap or a click on the strip: a phone's tap arrives
- * as both, and each switch redraws the screen. */
-const tabSent = {
-  key: '',
-  at: 0,
-  /** Whether `key` goes out: not the same one again within half a second. */
-  once(key: string): boolean {
-    const now = performance.now();
-    if (key === this.key && now - this.at < 500) return false;
-    this.key = key;
-    this.at = now;
-    return true;
-  },
-};
-
 function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture) {
   let down: { x: number; y: number; t: number } | null = null;
   let moving = false;
@@ -639,13 +618,6 @@ function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) =>
     };
     if (tap.x < 0 || tap.y < 0 || tap.x >= xterm.cols || tap.y >= xterm.rows) return;
     const rows = screenRows(xterm);
-    // A tap on the tab strip shows that tab (its Alt key): a touch reaches
-    // tmux as no click at all (lib/tabclick).
-    const tab = tap.y === 0 ? tabAt(rows[0] ?? '', tap.x) : null;
-    if (tab !== null) {
-      if (tabSent.once(`\x1b${tab}`)) send(`\x1b${tab}`);
-      return;
-    }
     const plan = planTap(rows, cursorOf(xterm), tap);
     if (!plan) return;
     moving = true;

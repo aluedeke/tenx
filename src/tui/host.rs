@@ -208,6 +208,10 @@ impl Ticker {
                 if column.sections_stale() {
                     column.tidy();
                 }
+            } else {
+                // The tab bar of `tenx web` follows a switch made meanwhile
+                // (Alt+2 typed in the terminal, another client).
+                column.read_window_tab();
             }
         }
     }

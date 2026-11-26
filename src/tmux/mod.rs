@@ -1005,7 +1005,8 @@ pub fn popup_tenx(client: &str, cwd: &str, title: &str, tenx_bin: &str, args: &s
 /// against windows it already matched to task directories. A session, since
 /// a `tenx web` tab's grouped session has a current window of its own.
 pub fn current_window_id_in(session: &str) -> Option<String> {
-    current_window_in(session).map(|(id, _)| id)
+    let id = run(&["display-message", "-p", "-t", session, "#{window_id}"]).ok()?.trim().to_string();
+    (!id.is_empty()).then_some(id)
 }
 
 /// [`current_window_id_in`], and the tab that window shows when it is a

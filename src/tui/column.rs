@@ -893,6 +893,15 @@ impl Column {
         self.window_tab = tab.flatten();
     }
 
+    /// Only the tab the session's current window shows: after a switch this
+    /// column made itself (the row is known), and while a form or the
+    /// search field holds off the full refresh.
+    pub(crate) fn read_window_tab(&mut self) {
+        if !self.offline {
+            self.window_tab = crate::tmux::current_window_in(&self.session).and_then(|(_, tab)| tab);
+        }
+    }
+
     /// The directory of the task whose window is `window_id`, if any row
     /// holds it.
     fn current_from(&self, window_id: Option<String>) -> Option<PathBuf> {
@@ -1178,6 +1187,7 @@ impl Column {
                 }
             }
             self.current = Some(path);
+            self.read_window_tab();
         }
         self.follow_agent();
     }
@@ -1891,6 +1901,7 @@ impl Column {
             }
         }
         self.current = Some(path.clone());
+        self.read_window_tab();
         self.client_request = Some(ClientRequest::FocusTerminal);
         self.filter.clear();
         self.apply_filter();
