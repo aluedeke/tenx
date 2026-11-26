@@ -149,6 +149,23 @@ pub fn outcome(answered: Result<(), String>, status: &str, body: &str) -> Result
     Ok(Heard { text: text.trim().to_string(), language })
 }
 
+/// Glossary terms in a row, in the glossary's order, that make a reply an
+/// echo of the prompt rather than speech.
+const ECHO_TERMS: usize = 5;
+
+/// Whether the server wrote out the glossary instead of what was said: at
+/// least [`ECHO_TERMS`] of its comma-separated terms in a row, in its
+/// order. Seen once in the measurements, over a dictated list of terms.
+pub fn echoes_glossary(text: &str, glossary: &str) -> bool {
+    let norm = |t: &str| t.trim().trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+    let terms: Vec<String> = glossary.split(',').map(norm).filter(|t| !t.is_empty()).collect();
+    let said: Vec<String> = text.split(',').map(norm).collect();
+    if terms.len() < ECHO_TERMS {
+        return false;
+    }
+    terms.windows(ECHO_TERMS).any(|run| said.windows(ECHO_TERMS).any(|w| w == run))
+}
+
 /// The `prompt` field: the glossary, then what was said before this audio.
 pub fn prompt(glossary: &str, before: &str) -> String {
     match (glossary.trim(), before.trim()) {
@@ -231,6 +248,16 @@ mod tests {
         assert_eq!(start_language(Some("auto"), "de"), None);
         assert_eq!(start_language(None, "auto"), None);
         assert_eq!(start_language(None, ""), None);
+    }
+
+    #[test]
+    fn a_reply_that_writes_out_the_glossary_is_an_echo() {
+        let glossary = "app, PR, repo, tenx, API, DNS, CLI, config, MCP, Zellij, Checkly, VNC, UI, env, GitHub, VPN";
+        assert!(echoes_glossary("Flutter, Supabase, gh, VNC, UI, env, GitHub, VPN, and so on", glossary));
+        // Terms said in another order, or fewer in a row, are speech.
+        assert!(!echoes_glossary("I use GitHub, VPN, VNC, UI and env.", glossary));
+        assert!(!echoes_glossary("Check the app, PR, repo, tenx today.", glossary));
+        assert!(!echoes_glossary("anything", ""));
     }
 
     #[test]

@@ -135,7 +135,13 @@ impl<'a> Listener<'a> {
         }
         let field = sttserver::language_field(self.language.as_deref(), &self.server.languages);
         let prompt = sttserver::prompt(&self.server.glossary, before);
-        match super::sttserver::ask(&self.server.endpoint, audio, field, &prompt, self.has_fallback()) {
+        let mut result = super::sttserver::ask(&self.server.endpoint, audio, field.clone(), &prompt, self.has_fallback());
+        if result.as_ref().is_ok_and(|heard| sttserver::echoes_glossary(&heard.text, &self.server.glossary)) {
+            // It wrote out the glossary: once more without it.
+            eprintln!("tenx web: speech server wrote out the glossary; asked again without it");
+            result = super::sttserver::ask(&self.server.endpoint, audio, field, &prompt_tail(before), self.has_fallback());
+        }
+        match result {
             Ok(heard) => {
                 if self.language.is_none() {
                     self.language = heard.settled_language(&self.server.languages).map(str::to_string);
