@@ -1721,6 +1721,10 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     let serve = format!("cd {} && python3 -m http.server {dev} --bind 127.0.0.1", site.display());
     let shell = h.tmux().args(["split-window", "-d", "-t", "tenx:proxied", &serve]).status().unwrap();
     assert!(shell.success());
+    // A second one on IPv6 alone, as Vite listens on a Mac.
+    let dev6 = std::net::TcpListener::bind("[::1]:0").unwrap().local_addr().unwrap().port();
+    let serve6 = format!("cd {} && python3 -m http.server {dev6} --bind ::1", site.display());
+    assert!(h.tmux().args(["split-window", "-d", "-t", "tenx:proxied", &serve6]).status().unwrap().success());
     // A server in the home window: inside tenx's session, but no task's.
     let home = free();
     let at_home = format!("cd {} && python3 -m http.server {home} --bind 127.0.0.1", site.display());
@@ -1729,7 +1733,10 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     let stranger = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let stranger_port = stranger.local_addr().unwrap().port();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while std::net::TcpStream::connect(("127.0.0.1", dev)).is_err() || std::net::TcpStream::connect(("127.0.0.1", home)).is_err() {
+    while std::net::TcpStream::connect(("127.0.0.1", dev)).is_err()
+        || std::net::TcpStream::connect(("127.0.0.1", home)).is_err()
+        || std::net::TcpStream::connect(("::1", dev6)).is_err()
+    {
         assert!(std::time::Instant::now() < deadline, "the dev servers never listened");
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
@@ -1763,17 +1770,18 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
         let mut c = std::net::TcpStream::connect(("127.0.0.1", proxy)).unwrap();
         c.set_read_timeout(Some(std::time::Duration::from_secs(10))).unwrap();
         c.write_all(head.as_bytes()).unwrap();
-        if head.contains(&auth) && head.contains(&format!(":{dev} ")) {
+        if head.contains(&auth) && (head.contains(&format!(":{dev} ")) || head.contains(&format!(":{dev6} "))) {
             let mut answer = [0u8; 64];
             let n = c.read(&mut answer).unwrap();
             assert!(String::from_utf8_lossy(&answer[..n]).starts_with("HTTP/1.1 200"), "{}", String::from_utf8_lossy(&answer[..n]));
-            c.write_all(format!("GET / HTTP/1.0\r\nHost: localhost:{dev}\r\n\r\n").as_bytes()).unwrap();
+            c.write_all(b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n").unwrap();
         }
         let mut all = String::new();
         let _ = c.read_to_string(&mut all);
         all
     };
     let through = ask(format!("CONNECT localhost:{dev} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
+    let ipv6_only = ask(format!("CONNECT localhost:{dev6} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
     let no_token = ask(format!("CONNECT localhost:{dev} HTTP/1.1\r\n\r\n"));
     let not_a_task = ask(format!("CONNECT localhost:{stranger_port} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
     let home_window = ask(format!("CONNECT localhost:{home} HTTP/1.1\r\nProxy-Authorization: Basic {auth}\r\n\r\n"));
@@ -1782,6 +1790,7 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     let _ = server.wait();
     drop(stranger);
     assert!(through.contains("dev server of the task"), "{through}");
+    assert!(ipv6_only.contains("dev server of the task"), "localhost reaches a server on ::1 alone: {ipv6_only}");
     assert!(no_token.starts_with("HTTP/1.1 407"), "{no_token}");
     assert!(not_a_task.starts_with("HTTP/1.1 403"), "{not_a_task}");
     assert!(tenx_itself.starts_with("HTTP/1.1 403"), "{tenx_itself}");

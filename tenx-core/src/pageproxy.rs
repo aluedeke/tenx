@@ -65,6 +65,9 @@ pub fn head_complete(head: &[u8]) -> bool {
 pub struct Target {
     pub addr: std::net::IpAddr,
     pub port: u16,
+    /// Named `localhost`: IPv6's `::1` is tried when nothing answers on
+    /// IPv4's, as a browser does (Vite on a Mac listens on `::1` alone).
+    pub either: bool,
 }
 
 /// Decide on a request head: `CONNECT localhost:<port>`, with the page token
@@ -84,8 +87,8 @@ pub fn port_decision(target: Target, task_ports: &HashSet<u16>) -> Decision {
 }
 
 /// Everything `decide` checks before the port: the method, the token, a
-/// loopback name. `localhost` is IPv4's: the address a dev server most often
-/// listens on, and the one name the iOS app sends here.
+/// loopback name. `localhost` is IPv4's first, then IPv6's (`either`): the
+/// one name the iOS app sends here.
 pub fn request(head: &str, token: &str) -> Result<Target, Refusal> {
     let mut lines = head.split("\r\n");
     let Some((method, target)) = lines.next().and_then(|l| {
@@ -107,7 +110,7 @@ pub fn request(head: &str, token: &str) -> Result<Target, Refusal> {
     let Some((host, port)) = target.rsplit_once(':') else { return Err(Refusal::BadRequest) };
     let Ok(port) = port.parse::<u16>() else { return Err(Refusal::BadRequest) };
     let addr = loopback_addr(host).ok_or(Refusal::NotLocal)?;
-    Ok(Target { addr, port })
+    Ok(Target { addr, port, either: host.eq_ignore_ascii_case("localhost") })
 }
 
 /// `Basic base64(user:token)`, compared in constant time.
@@ -182,6 +185,9 @@ mod tests {
         }
         let head = format!("CONNECT LOCALHOST:3000 HTTP/1.1\r\nProxy-Authorization: {a}\r\n\r\n");
         assert_eq!(request(&head, "s3cret").unwrap().addr, std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        assert!(request(&head, "s3cret").unwrap().either, "localhost: IPv6 too");
+        let head = format!("CONNECT 127.0.0.1:3000 HTTP/1.1\r\nProxy-Authorization: {a}\r\n\r\n");
+        assert!(!request(&head, "s3cret").unwrap().either, "an address is that address");
         let head = format!("CONNECT [::1]:3000 HTTP/1.1\r\nProxy-Authorization: {a}\r\n\r\n");
         assert_eq!(request(&head, "s3cret").unwrap().addr, std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
     }

@@ -202,9 +202,12 @@ pub fn task_ports() -> std::collections::HashSet<u16> {
     ports
 }
 
-/// Every TCP listener (pid, port) and the process tree, or `None` when
-/// nothing listens: the two halves of a port scan.
-fn listeners_and_tree() -> Option<(Vec<(u32, u16)>, Vec<(u32, u32)>)> {
+/// Every TCP listener (pid, port) and the process tree (pid, parent).
+type Listeners = (Vec<(u32, u16)>, Vec<(u32, u32)>);
+
+/// Every TCP listener and the process tree, or `None` when nothing listens:
+/// the two halves of a port scan.
+fn listeners_and_tree() -> Option<Listeners> {
     let listeners = tenx_core::live::parse_lsof(&run_capture("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"]));
     if listeners.is_empty() {
         return None;

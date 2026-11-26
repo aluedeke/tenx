@@ -243,7 +243,9 @@ struct PageProxy {
         func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
         let what = url.host.map { "\($0):\(url.port ?? (url.scheme == "https" ? 443 : 80))" } ?? url.absoluteString
         let how: String
-        if let via {
+        if url.host?.lowercased() != "localhost" {
+            how = "Only <code>localhost</code> goes through tenx web's page proxy; this address is the device's own. Open it as <code>localhost:\(url.port ?? (url.scheme == "https" ? 443 : 80))</code> instead."
+        } else if let via {
             how = "It goes through tenx web's page proxy on \(esc(via.host)):\(via.port). Either no task listens on that port, or this device can't reach the proxy: on a tailnet the Mac needs <code>tailscale serve --bg --tls-terminated-tcp=\(via.port) tcp://127.0.0.1:\(via.port)</code>."
         } else {
             how = "tenx web runs without its page proxy, so this device can't reach the Mac's own addresses."

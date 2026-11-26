@@ -1383,9 +1383,13 @@ export function App() {
   const [appPages, setAppPages] = useState(false);
   // …and reaches the Mac's localhost through tenx web's page proxy.
   const [appProxy, setAppProxy] = useState(false);
+  // Both known before a page shows: a proxy learned later would make the app
+  // build every shown page's web view anew.
   useEffect(() => {
-    void nativePagesSupported().then(setAppPages);
-    void nativePageProxySupported().then(setAppProxy);
+    void Promise.all([nativePagesSupported(), nativePageProxySupported()]).then(([pages, proxy]) => {
+      setAppProxy(proxy);
+      setAppPages(pages);
+    });
   }, []);
   const shownPage =
     pages && pageShown && pageShown.task === barTask ? (pages.list.find((p) => p.id === pageShown.id) ?? null) : null;

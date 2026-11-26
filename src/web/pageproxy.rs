@@ -28,6 +28,10 @@ const IDLE: Duration = Duration::from_secs(2 * 60 * 60);
 /// A request head must arrive within this.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// A port scan taking longer (`lsof` stuck on a dead mount) is given up on:
+/// the last ports stand, and the lock is free for the next connection.
+const SCAN_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Default)]
 struct Ports {
     seen: HashSet<u16>,
@@ -40,14 +44,20 @@ pub(super) async fn serve(listener: std::net::TcpListener, token: String) {
     let ports = Arc::new(Mutex::new(Ports::default()));
     let slots = Arc::new(Semaphore::new(MAX_TUNNELS));
     loop {
-        let Ok(slot) = slots.clone().acquire_owned().await else { return };
-        let conn = match listener.accept().await {
+        let mut conn = match listener.accept().await {
             Ok((conn, _)) => conn,
             // Out of descriptors, say: not a busy loop.
             Err(_) => {
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
+        };
+        // Full: said at once, not left waiting in the backlog.
+        let Ok(slot) = slots.clone().try_acquire_owned() else {
+            tokio::spawn(async move {
+                let _ = conn.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+            });
+            continue;
         };
         let (token, ports) = (token.clone(), ports.clone());
         tokio::spawn(async move {
@@ -91,8 +101,12 @@ async fn handle(mut conn: TcpStream, token: &str, ports: &Mutex<Ports>) -> std::
     if let Decision::Refuse(why) = decision {
         return conn.write_all(why.response().as_bytes()).await;
     }
-    // The address asked for, never another family's listener on the port.
-    let Ok(mut server) = TcpStream::connect((target.addr, target.port)).await else {
+    // The address asked for; for `localhost`, IPv6's when IPv4's has nobody.
+    let mut server = TcpStream::connect((target.addr, target.port)).await;
+    if server.is_err() && target.either {
+        server = TcpStream::connect((std::net::Ipv6Addr::LOCALHOST, target.port)).await;
+    }
+    let Ok(mut server) = server else {
         return conn.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
     };
     conn.write_all(pageproxy::ESTABLISHED.as_bytes()).await?;
@@ -155,7 +169,9 @@ async fn task_ports(ports: &Mutex<Ports>, missed: bool) -> HashSet<u16> {
     if p.at.is_some_and(|at| at.elapsed() < limit) {
         return p.seen.clone();
     }
-    p.seen = tokio::task::spawn_blocking(crate::live::task_ports).await.unwrap_or_default();
+    if let Ok(Ok(seen)) = tokio::time::timeout(SCAN_TIMEOUT, tokio::task::spawn_blocking(crate::live::task_ports)).await {
+        p.seen = seen;
+    }
     p.at = Some(Instant::now());
     p.seen.clone()
 }
