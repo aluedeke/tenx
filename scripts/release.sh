@@ -56,6 +56,11 @@ if [ -n "$last_tag" ]; then
     since=$(git rev-list --count "$last_tag..HEAD")
     [ "$since" -gt 0 ] || { echo "release: no commits since $last_tag, nothing to release" >&2; exit 1; }
 fi
+# A release commit without its tag yet: release.yml is still building it, and
+# a second release now would repeat its changelog.
+case $(git log -1 --format=%s) in
+    "release v"*) echo "release: $(git log -1 --format=%s) is still being built (release.yml creates its tag); wait for it" >&2; exit 1 ;;
+esac
 
 if [ "$bump" = auto ]; then
     version=$(git cliff --bumped-version 2>/dev/null | tail -1)
@@ -133,18 +138,24 @@ echo "  ✓ committed release $tag"
 if [ "$push" -eq 1 ]; then
     # main takes only commits whose `pr-description` check passed, reported by
     # GitHub Actions (the "Require PR description" ruleset). A release commit
-    # has no PR, so bump.yml reports it itself: the commit goes to a ref of its
-    # own first (not a branch: no ruleset, no CI, nothing to clean up by hand),
-    # is marked there, and then main moves to it.
+    # has no PR, so bump.yml reports it itself: the commit goes to a branch of
+    # its own first, is marked there, and then main moves to it. (A push with
+    # GITHUB_TOKEN starts no workflow, so the branch gets no CI run; -f, since
+    # a cancelled run may have left it.)
+    #
+    # Only for a clearer message: the push to main below is not forced, so it
+    # is refused anyway if main moved in the meantime.
     git fetch -q origin "$branch"
     if [ "$(git rev-parse HEAD~1)" != "$(git rev-parse FETCH_HEAD)" ]; then
         echo "release: $branch moved while the release was prepared; run bump.yml again" >&2
         exit 1
     fi
     sha=$(git rev-parse HEAD)
-    staging="refs/release-staging/$tag"
-    git push -f origin "HEAD:$staging"
-    trap 'git push -q origin --delete "$staging" || true' EXIT INT TERM
+    staging="release-staging/$tag"
+    trap 'git push -q origin --delete "$staging" 2>/dev/null || true' EXIT
+    # A cancelled run stops here: a signal trap that returns would go on.
+    trap 'exit 130' INT TERM
+    git push -f origin "HEAD:refs/heads/$staging"
     gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state=success -f context=pr-description \
         -f description="Release commit, made by bump.yml" --silent
     git push origin "HEAD:$branch"
