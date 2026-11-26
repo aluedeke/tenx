@@ -30,6 +30,12 @@ pub(crate) struct ColumnView {
     /// its empty "⏎ open it here" screen instead of the session, as the TUI
     /// does (`Column::selected_closed`, `client::render_closed`).
     pub(crate) shown_closed: Option<ShownClosed>,
+    /// The tab (`agent`, `shell`, `nvim`) the session's current window shows
+    /// when it is a tabbed task window: the page draws the tab bar itself and
+    /// hides tmux's strip, the window's top line. `None` for any other
+    /// window. Also under `shown_closed`, which only covers the terminal: the
+    /// strip stays hidden, so the terminal keeps its size.
+    pub(crate) window_tab: Option<&'static str>,
     /// The active tab's list, top to bottom.
     pub(crate) items: Vec<Item>,
     pub(crate) mode: ModeView,
@@ -535,6 +541,12 @@ impl Column {
         // What the task area shows (`Column::is_shown`): the session's current
         // window, or a closed task's empty screen while the cursor is on it.
         let current = self.rows.iter().find(|r| self.is_shown(r)).map(row_id);
+        let shown_closed = self.selected_closed_row().map(|r| ShownClosed {
+            id: row_id(r),
+            title: r.title.clone(),
+            ws: r.ws_name.clone(),
+            ws_color: palette::workspace_color(&r.ws_name).hex(),
+        });
         ColumnView {
             tabs,
             focus: match self.focus {
@@ -543,12 +555,8 @@ impl Column {
             },
             filter: self.filter.clone(),
             current,
-            shown_closed: self.selected_closed_row().map(|r| ShownClosed {
-                id: row_id(r),
-                title: r.title.clone(),
-                ws: r.ws_name.clone(),
-                ws_color: palette::workspace_color(&r.ws_name).hex(),
-            }),
+            window_tab: self.window_tab.map(|t| t.name()),
+            shown_closed,
             items,
             mode: self.mode_view(),
             footer: footer(self),

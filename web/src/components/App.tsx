@@ -15,6 +15,7 @@ import { ATTACH_INPUT, KeyBar } from './KeyBar';
 import { PasteBox } from './PasteBox';
 import { SecretsForm } from './SecretsForm';
 import { Sidebar } from './Sidebar';
+import { TaskTabs } from './TaskTabs';
 import { Terminal, type TerminalHandle } from './Terminal';
 import { Connection, type Status } from '@/lib/connection';
 import { TERMINAL_BYTES, ctrlChar, tapTakesKeys, isFocusCycle, isIPad, isMac, isMicToggle, isModifierOnly, isSpeakerToggle, isNewTaskAlias, isNewTask, keyMessage, takesImagePaste, enterWhileDictating } from '@/lib/keys';
@@ -1367,6 +1368,8 @@ export function App() {
     [view, pending, ack],
   );
   const shown = predicted?.view ?? view;
+  // A tabbed task window: the page draws its tabs (TaskTabs, `view.window_tab`).
+  const windowTab = shown?.window_tab ?? null;
   // A predicted open hands the keyboard to the terminal now, as the server's
   // `focus_terminal` will once it has switched.
   const opened = useRef(0);
@@ -1530,7 +1533,13 @@ export function App() {
           </div>
         )}
         <div className="terminal-wrap" onMouseDown={() => setFocus('terminal')}>
+          {windowTab && !shown?.shown_closed && (
+            // One per task: a click still waiting for its view belongs to
+            // the window it was made in, not to the next one shown.
+            <TaskTabs key={shown?.current ?? ''} shown={windowTab} onSelect={(tab) => send({ type: 'tab', tab })} />
+          )}
           <Terminal
+            stripHidden={!!windowTab}
             ref={term}
             fontSize={fontSize}
             fontWeight={fontWeight}

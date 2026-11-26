@@ -61,7 +61,7 @@ export function isNewTask(ev: KeyboardEvent): boolean {
 }
 
 /** Ctrl+1/2/3: the tab (1-based) of a tabbed task window, by the physical
- * key. The page sends the tab's Alt key, which tmux binds (lib/tabclick). */
+ * key. The page sends the tab's Alt key, which tmux binds. */
 export function tabKey(ev: KeyboardEvent): number | null {
   if (!ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return null;
   const m = /^Digit([1-3])$/.exec(ev.code);

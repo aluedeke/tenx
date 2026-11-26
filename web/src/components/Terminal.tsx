@@ -10,7 +10,6 @@ import { palette } from '@/palette';
 import { arrow, planTap, type Cell } from '@/lib/tapcursor';
 import { TerminalClipboard, imagesIn } from '@/lib/clipboard';
 import { DragFilter } from '@/lib/dragfilter';
-import { TabClicks, tabAt } from '@/lib/tabclick';
 import { tabKey } from '@/lib/keys';
 import { VERSION as EMOJI_WIDTHS, widerEmoji } from '@/lib/emojiwidth';
 import { OBSIDIAN_TEXT_URL, isOpenableUrl, openExternal } from '@/lib/links';
@@ -66,6 +65,10 @@ interface Props {
   /** A paste is about to go to the terminal (the server takes the pane out
    * of copy-mode, where tmux would drop it). */
   onPasteStart(): void;
+  /** The window's top line is tmux's tab strip and the page draws the tabs
+   * itself (TaskTabs): lay the terminal out one row taller, starting a row
+   * higher, under the bar — tmux's grid is then the same, minus the strip. */
+  stripHidden?: boolean;
 }
 
 // The ANSI colours agg renders the demo with (Makefile `demo-gif`): the
@@ -245,21 +248,18 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       // A click that reports a drag without leaving its cell (iPad Safari)
       // would make tmux select and copy nothing over the clipboard.
       const drags = new DragFilter();
-      // A click on the tab strip (the top line of a tabbed task window) is
-      // the tab's Alt key: tmux binds no click there (lib/tabclick).
-      const tabs = new TabClicks();
-      const topLine = () => xterm?.buffer.active.getLine(xterm.buffer.active.viewportY)?.translateToString(false) ?? '';
+      // A tabbed window's tab strip, its top line, is under the page's own
+      // tab bar (TaskTabs): no click or tap reaches it here.
       xterm.onData((d) => {
-        let out = tabs.translate(d, topLine);
-        // A phone's tap is a tap and a click: one switch for the two.
-        if (out !== d && out && !tabSent.once(out)) out = '';
-        if (out && drags.pass(out)) propsRef.current.onData(out);
+        if (drags.pass(d)) propsRef.current.onData(d);
       });
       xterm.onBinary((d) => propsRef.current.onData(d));
       let last = '';
       reportRef.current = () => {
         if (!xterm) return;
         const size = sizeOf(xterm);
+        // One row's height, for the layout that hides the strip row.
+        if (size.rows && size.height) setCellHeight(host.current, size);
         const key = `${size.cols}x${size.rows}/${size.width}x${size.height}`;
         if (key === last) return;
         last = key;
@@ -283,6 +283,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       fitRef.current = fit;
       for (const b of pending.current) xterm.write(b);
       pending.current = [];
+      // The row height before the first fit: the layout that hides the
+      // strip row needs it, or the first fit is at another size than the next.
+      const before = sizeOf(xterm);
+      if (before.rows && before.height) setCellHeight(host.current, before);
       fit.fit();
       reportRef.current();
       observer = new ResizeObserver(() => {
@@ -322,7 +326,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
     });
   }, [props.fontSize, props.fontWeight]);
 
-  return <div className="xterm-host" ref={host} data-testid="terminal" />;
+  return <div className={props.stripHidden ? 'xterm-host strip-hidden' : 'xterm-host'} ref={host} data-testid="terminal" />;
 });
 
 /** A tap — or an Alt/Option-click — in the text being edited walks the
@@ -337,6 +341,12 @@ interface Gesture {
 
 /** The grid and the pixels it covers (the screen element is exactly the
  * cells: xterm sizes it to cols × cell width). */
+/** One row's height as `--cell-h`, on the terminal's parent (`.terminal-wrap`):
+ * the tab bar beside the terminal sizes itself by it too (globals.css). */
+function setCellHeight(host: HTMLElement | null, size: TermSize) {
+  host?.parentElement?.style.setProperty('--cell-h', `${size.height / size.rows}px`);
+}
+
 function sizeOf(xterm: XTerm): TermSize {
   const r = xterm.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
   return { cols: xterm.cols, rows: xterm.rows, width: Math.round(r?.width ?? 0), height: Math.round(r?.height ?? 0) };
@@ -587,21 +597,6 @@ function rightClickLinks(xterm: XTerm, el: HTMLElement, onLink: (url: string, x:
   );
 }
 
-/** A tab's key sent for a tap or a click on the strip: a phone's tap arrives
- * as both, and each switch redraws the screen. */
-const tabSent = {
-  key: '',
-  at: 0,
-  /** Whether `key` goes out: not the same one again within half a second. */
-  once(key: string): boolean {
-    const now = performance.now();
-    if (key === this.key && now - this.at < 500) return false;
-    this.key = key;
-    this.at = now;
-    return true;
-  },
-};
-
 function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) => void, gesture: Gesture) {
   let down: { x: number; y: number; t: number } | null = null;
   let moving = false;
@@ -629,13 +624,6 @@ function tapToPlaceCursor(xterm: XTerm, el: HTMLElement, send: (data: string) =>
     };
     if (tap.x < 0 || tap.y < 0 || tap.x >= xterm.cols || tap.y >= xterm.rows) return;
     const rows = screenRows(xterm);
-    // A tap on the tab strip shows that tab (its Alt key): a touch reaches
-    // tmux as no click at all (lib/tabclick).
-    const tab = tap.y === 0 ? tabAt(rows[0] ?? '', tap.x) : null;
-    if (tab !== null) {
-      if (tabSent.once(`\x1b${tab}`)) send(`\x1b${tab}`);
-      return;
-    }
     const plan = planTap(rows, cursorOf(xterm), tap);
     if (!plan) return;
     moving = true;

@@ -120,6 +120,58 @@ a:hover {
   touch-action: none;
 }
 
+/* A tabbed task window: the page's tab bar (TaskTabs) over the top, and the
+   terminal one row higher, so tmux's own strip — the window's top line — is
+   under the bar. --cell-h is one row (Terminal sets it on .terminal-wrap, so the bar sees it
+   too). */
+.terminal-wrap {
+  /* Never shorter than a row and a little: with a large font the strip row
+     must still fit under the bar, not stick out above the page. */
+  --tabs-h: max(32px, calc(var(--cell-h, 0px) + 4px));
+}
+.xterm-host.strip-hidden {
+  top: calc(var(--tabs-h) - var(--cell-h, 0px));
+  /* A stacking context of its own: xterm's layers carry z-indexes, which
+     would otherwise rise over the bar and take its clicks. */
+  z-index: 0;
+}
+.task-tabs {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--tabs-h);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--border);
+}
+.task-tabs-switch {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--hover-bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.task-tabs-switch button {
+  padding: 1px 10px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+.task-tabs-switch button:hover {
+  color: var(--text);
+}
+.task-tabs-switch button.on {
+  background: #2f3646;
+  color: var(--bright);
+}
+
 /* Press and hold selects through tmux (Terminal.tsx touchSelect), not with
    iOS's own selection, loupe or callout. The drawn screen only: on the
    hidden textarea this would stop typing on iOS. */

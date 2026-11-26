@@ -51,6 +51,12 @@ pub(super) enum PageMsg {
     /// What the page sends next on the terminal is a paste: out of copy-mode
     /// first, where tmux would drop it.
     Paste,
+    /// Show this tab (`agent`, `shell`, `nvim`) in the tabbed task window in
+    /// front: the page's tab bar. Switched here, as the TUI client does for a
+    /// click on the strip, and the next view says so at once — not through
+    /// tmux's Alt key binding, which starts a `tenx` of its own and leaves
+    /// the page to learn the outcome on the next refresh.
+    Tab { tab: String },
     /// A line for the server's log (`~/.config/tenx/web.log` under the
     /// service): what the page saw where only the device can see it — e.g.
     /// which clipboard types a paste found, or the error it got. Never
@@ -219,6 +225,8 @@ impl Tab {
             narrow: false,
             fitted: None,
             zoomed: None,
+            tab_switch: None,
+            tab_next: None,
         };
         {
             let dead = dead.clone();
@@ -348,6 +356,13 @@ struct Driver {
     /// The window this page zoomed, unzoomed again when it leaves it: the
     /// window is shared, and a wider screen showing it later wants every pane.
     zoomed: Option<String>,
+    /// A switch the page's tab bar asked for, running on a thread of its
+    /// own (`PageMsg::Tab`); its outcome is picked up with the next frame.
+    tab_switch: Option<mpsc::Receiver<Result<(), String>>>,
+    /// The tab asked for while a switch ran, and the window it was asked in:
+    /// one switch at a time, in click order, and only the last one waiting —
+    /// quick clicks end on the last.
+    tab_next: Option<(String, tenx_core::tabs::Tab)>,
 }
 
 impl Driver {
@@ -471,6 +486,17 @@ impl Driver {
         true
     }
 
+    /// Show `tab` in the window in front, off this thread, as the TUI client
+    /// does: a first show starts the tab's program, and a switch from another
+    /// client holds the lock meanwhile — the terminal must keep flowing.
+    fn start_tab_switch(&mut self, window: String, tab: tenx_core::tabs::Tab) {
+        let (done, outcome) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(crate::tmux::switch_tab(&window, tab).map_err(|e| format!("{e:#}")));
+        });
+        self.tab_switch = Some(outcome);
+    }
+
     fn page(&mut self, msg: PageMsg) {
         match msg {
             PageMsg::Key(key) => {
@@ -494,6 +520,19 @@ impl Driver {
             PageMsg::Visible => self.column.maybe_sweep(),
             PageMsg::Paste => {
                 let _ = crate::tmux::leave_mode_in(&self.session);
+            }
+            PageMsg::Tab { tab } => {
+                let Some(tab) = tenx_core::tabs::Tab::parse(&tab) else {
+                    self.column.set_status(format!("no tab called '{tab}'"));
+                    return;
+                };
+                // The window the click was made in, also for a click that waits.
+                let Some(window) = crate::tmux::current_window_id_in(&self.session) else { return };
+                if self.tab_switch.is_some() {
+                    self.tab_next = Some((window, tab));
+                } else {
+                    self.start_tab_switch(window, tab);
+                }
             }
             PageMsg::Log { message } => {
                 let line: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
@@ -544,6 +583,24 @@ impl Driver {
         }
         let req = self.views.poll(&mut self.column);
         self.request(req);
+        // The tab bar's switch ended: the view says the tab now, not on the
+        // next refresh — or why it didn't happen.
+        let ended = match self.tab_switch.as_ref().map(|o| o.try_recv()) {
+            Some(Ok(result)) => Some(result),
+            // The thread ended without a word (a panic): say so, and look.
+            Some(Err(mpsc::TryRecvError::Disconnected)) => Some(Err("the tab switch failed".to_string())),
+            Some(Err(mpsc::TryRecvError::Empty)) | None => None,
+        };
+        if let Some(result) = ended {
+            self.tab_switch = None;
+            self.column.read_current();
+            if let Err(e) = result {
+                self.column.set_status(e);
+            }
+            if let Some((window, tab)) = self.tab_next.take() {
+                self.start_tab_switch(window, tab);
+            }
+        }
         self.ticker.tick(&mut self.column);
         let req = self.column.take_request();
         self.request(req);
@@ -672,6 +729,7 @@ mod tests {
         assert!(matches!(pixels, PageMsg::Resize { width: 1000, height: 700, .. }));
         assert!(matches!(serde_json::from_str(r#"{"type":"visible"}"#).unwrap(), PageMsg::Visible));
         assert!(matches!(serde_json::from_str(r#"{"type":"paste"}"#).unwrap(), PageMsg::Paste));
+        assert!(matches!(serde_json::from_str(r#"{"type":"tab","tab":"shell"}"#).unwrap(), PageMsg::Tab { ref tab } if tab == "shell"));
         let set: PageMsg = serde_json::from_str(r#"{"type":"form","op":"set","field":"name","value":"Fix"}"#).unwrap();
         assert!(matches!(set, PageMsg::Form(crate::tui::column::view::FormOp::Set { ref field, ref value }) if field == "name" && value == "Fix"));
         let pick: PageMsg = serde_json::from_str(r#"{"type":"form","op":"pick","field":"agent","index":2}"#).unwrap();

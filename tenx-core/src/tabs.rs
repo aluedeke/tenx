@@ -117,6 +117,16 @@ pub fn on_screen(panes: &[(Tab, String)], shown: &[String]) -> Option<Tab> {
     panes.iter().find(|(_, p)| !p.is_empty() && shown.contains(p)).map(|(t, _)| *t)
 }
 
+/// The tab a window shows, as a client in front of it learns it: `None` for a
+/// window without tabs (`option`, its [`CURRENT_OPTION`], is empty);
+/// otherwise the tab whose pane is the window's active one ([`on_screen`]),
+/// and the option only when the active pane is none of them (a background
+/// agent's log below the tab).
+pub fn shown(option: &str, panes: &[(Tab, String)], active: &str) -> Option<Tab> {
+    let said = Tab::parse(option)?;
+    Some(on_screen(panes, &[active.to_string()]).unwrap_or(said))
+}
+
 /// What showing a tab takes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
@@ -210,6 +220,14 @@ mod tests {
         assert_eq!(on_screen(&panes, &["%9".into(), "%1".into()]), Some(Tab::Agent), "beside a background agent's log");
         assert_eq!(on_screen(&panes, &["%9".into()]), None);
         assert_eq!(on_screen(&panes, &["".into()]), None);
+    }
+
+    #[test]
+    fn the_tab_shown_is_the_active_panes_not_what_the_option_says() {
+        let panes = vec![(Tab::Agent, "%1".to_string()), (Tab::Shell, "%2".to_string()), (Tab::Nvim, String::new())];
+        assert_eq!(shown("agent", &panes, "%2"), Some(Tab::Shell), "an option two switches left behind");
+        assert_eq!(shown("shell", &panes, "%9"), Some(Tab::Shell), "a background agent's log is active");
+        assert_eq!(shown("", &panes, "%1"), None, "a window without tabs");
     }
 
     #[test]

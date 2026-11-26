@@ -26,7 +26,7 @@ Coding agents make it cheap to have several pieces of work in flight at once. Th
         └── web/                 worktree of web on branch fix-login-timeout
 ```
 
-Each task is a tmux window named after its slug. By default the agent fills the window, and a shell and nvim (opened on `TASK.md`) are tabs in a strip at the top of the window: `Alt+1` agent, `Alt+2` shell, `Alt+3` nvim (or `Ctrl+1/2/3`), or click or tap a tab in `tenx` and `tenx web`. A tab starts the first time you open it, and typing `exit` in the shell brings the agent back. `layout = "split"` keeps the older layout (`claude` on the left, `nvim TASK.md` top-right, a shell bottom-right), and a workspace can supply its own layout script instead.
+Each task is a tmux window named after its slug. By default the agent fills the window, and a shell and nvim (opened on `TASK.md`) are tabs in a strip at the top of the window: `Alt+1` agent, `Alt+2` shell, `Alt+3` nvim (or `Ctrl+1/2/3`), or click or tap a tab in `tenx`. `tenx web` shows the tabs as a bar of its own above the terminal, in place of the strip. A tab starts the first time you open it, and typing `exit` in the shell brings the agent back. `layout = "split"` keeps the older layout (`claude` on the left, `nvim TASK.md` top-right, a shell bottom-right), and a workspace can supply its own layout script instead.
 
 A task's state is derived live, never recorded:
 
