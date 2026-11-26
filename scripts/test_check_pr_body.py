@@ -86,8 +86,8 @@ class CheckPrBody(unittest.TestCase):
         self.assertEqual(errors(filled().replace("- [x]", "+ [x]")), [])
 
     def test_messages_show_the_item_as_written(self):
-        body = filled().replace("- [x] Tests cover", "- [ ] Tests cover")
-        self.assertIn("`make test`", errors(body)[0])
+        body = filled().replace("- [x] AI review", "- [ ] AI review")
+        self.assertIn("`/code-review`", errors(body)[0])
 
     def test_none_only_where_allowed(self):
         self.assertTrue(errors(filled(**{"What and why": "None"})))
