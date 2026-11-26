@@ -75,6 +75,10 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
         return;
       }
       hidden = false;
+      // The terminal under the page never keeps the keyboard (a drawer
+      // closing hands it back): iOS's bar over it would cover the page.
+      const typing = document.activeElement;
+      if (typing instanceof HTMLElement && typing.closest('.xterm-host')) typing.blur();
       // Where the hole is on the screen: the layout's place less how far iOS
       // panned the visible part (the keyboard).
       const vv = window.visualViewport;
