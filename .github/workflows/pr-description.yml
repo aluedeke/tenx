@@ -1,0 +1,24 @@
+# The PR description must follow .github/pull_request_template.md
+# (scripts/check-pr-body.py). The job's name, `pr-description`, is a required
+# status check of the "Protect Main" ruleset, so a PR can't be merged until
+# the description is complete. `edited` runs it again when the description
+# changes.
+name: pr-description
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-description:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      # The body goes through the environment, never into the script's text.
+      - name: Check the PR description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 scripts/check-pr-body.py
