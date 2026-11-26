@@ -289,6 +289,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(prop
       fitRef.current = fit;
       for (const b of pending.current) xterm.write(b);
       pending.current = [];
+      // The row height before the first fit: the layout that hides the
+      // strip row needs it, or the first fit is at another size than the next.
+      const before = sizeOf(xterm);
+      if (before.rows && before.height) host.current.style.setProperty('--cell-h', `${before.height / before.rows}px`);
       fit.fit();
       reportRef.current();
       observer = new ResizeObserver(() => {

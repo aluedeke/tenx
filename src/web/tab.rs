@@ -225,6 +225,7 @@ impl Tab {
             narrow: false,
             fitted: None,
             zoomed: None,
+            tab_switch: None,
         };
         {
             let dead = dead.clone();
@@ -354,6 +355,9 @@ struct Driver {
     /// The window this page zoomed, unzoomed again when it leaves it: the
     /// window is shared, and a wider screen showing it later wants every pane.
     zoomed: Option<String>,
+    /// A switch the page's tab bar asked for, running on a thread of its
+    /// own (`PageMsg::Tab`); its outcome is picked up with the next frame.
+    tab_switch: Option<mpsc::Receiver<Result<(), String>>>,
 }
 
 impl Driver {
@@ -502,10 +506,19 @@ impl Driver {
                 let _ = crate::tmux::leave_mode_in(&self.session);
             }
             PageMsg::Tab { tab } => {
-                if let Some(window) = crate::tmux::current_window_id_in(&self.session) {
-                    crate::tmux::tab_command(&tab, &window);
-                }
-                self.column.read_current();
+                let Some(tab) = tenx_core::tabs::Tab::parse(&tab) else {
+                    self.column.set_status(format!("no tab called '{tab}'"));
+                    return;
+                };
+                let Some(window) = crate::tmux::current_window_id_in(&self.session) else { return };
+                // Off this thread, as the TUI client does: a first show starts
+                // the tab's program, and a switch from another client holds
+                // the lock meanwhile — the terminal must keep flowing.
+                let (done, outcome) = mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = done.send(crate::tmux::switch_tab(&window, tab).map_err(|e| format!("{e:#}")));
+                });
+                self.tab_switch = Some(outcome);
             }
             PageMsg::Log { message } => {
                 let line: String = message.chars().filter(|c| !c.is_control()).take(300).collect();
@@ -556,6 +569,21 @@ impl Driver {
         }
         let req = self.views.poll(&mut self.column);
         self.request(req);
+        // The tab bar's switch ended: the view says the tab now, not on the
+        // next refresh — or why it didn't happen.
+        if let Some(outcome) = &self.tab_switch {
+            match outcome.try_recv() {
+                Ok(result) => {
+                    self.tab_switch = None;
+                    self.column.read_current();
+                    if let Err(e) = result {
+                        self.column.set_status(e);
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.tab_switch = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         self.ticker.tick(&mut self.column);
         let req = self.column.take_request();
         self.request(req);

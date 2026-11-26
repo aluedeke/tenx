@@ -1533,7 +1533,11 @@ export function App() {
           </div>
         )}
         <div className="terminal-wrap" onMouseDown={() => setFocus('terminal')}>
-          {windowTab && !shown?.shown_closed && <TaskTabs shown={windowTab} onSelect={(tab) => send({ type: 'tab', tab })} />}
+          {windowTab && !shown?.shown_closed && (
+            // One per task: a click still waiting for its view belongs to
+            // the window it was made in, not to the next one shown.
+            <TaskTabs key={shown?.current ?? ''} shown={windowTab} onSelect={(tab) => send({ type: 'tab', tab })} />
+          )}
           <Terminal
             stripHidden={!!windowTab}
             ref={term}

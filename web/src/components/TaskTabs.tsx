@@ -45,10 +45,13 @@ export function TaskTabs({ shown, onSelect }: Props) {
             aria-selected={tab === lit}
             className={tab === lit ? 'on' : undefined}
             title={`${tab} (Alt+${i + 1})`}
-            // The keyboard stays where it was (the terminal, usually).
+            // No focus on the button: the click hands the keyboard to the
+            // terminal, as a click on it does — after a switch to the shell
+            // you type there.
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              if (tab === lit) return;
+              // Lit but not shown yet: asking again is allowed.
+              if (tab === lit && tab === shown) return;
               const at = Date.now();
               setAsked({ tab, at });
               setNow(at);

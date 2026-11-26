@@ -289,9 +289,11 @@ with the current window by `tmux::current_window_in`). The page then draws the t
 terminal (`TaskTabs`) and hides tmux's own strip, the window's top line, under
 it: the terminal is laid out one row taller and starts one row higher, so the
 grid tmux draws is the same. A click on a tab sends `{type: "tab", tab}`: the
-server switches the window's tab (`tmux::tab_command`, what Alt+1/2/3 and a
-click on the TUI's strip run) and re-reads it at once, so the next view says
-so without waiting for the refresh. The clicked tab stays lit until a view
+server switches the window's tab (`tmux::switch_tab`, what Alt+1/2/3 and a
+click on the TUI's strip run) and re-reads it as soon as the switch ends, so
+the next view says so without waiting for the refresh; a failed switch is the
+view's `status`. The tab shown is the window's active pane's
+(`tenx_core::tabs::shown`). The clicked tab stays lit until a view
 confirms it (`lib/tasktabs`). The terminal client and SSH keep tmux's strip. Under a closed task's empty
 screen the bar goes but the strip stays hidden, so the terminal keeps its
 size while the cursor passes closed tasks.

@@ -30,7 +30,7 @@ use crate::palette;
 use tenx_core::tabs::Layout;
 
 mod tabs;
-pub use tabs::{close_orphans, mark_tabbed, show_agents, tab_command, tab_ended, TABS_SESSION};
+pub use tabs::{close_orphans, mark_tabbed, show_agents, switch_tab, tab_command, tab_ended, TABS_SESSION};
 
 /// The dedicated server socket name. Every tenx invocation passes `-L <socket>`.
 /// `TENX_TMUX_SOCKET` overrides it so tests (and a second, throwaway server)
@@ -1009,15 +1009,24 @@ pub fn current_window_id_in(session: &str) -> Option<String> {
 }
 
 /// [`current_window_id_in`], and the tab that window shows when it is a
-/// tabbed task window (`tenx_core::tabs::CURRENT_OPTION`) — in the same one
-/// `display-message`, so a front end that draws the tabs itself (`tenx web`)
-/// learns it at no extra cost.
+/// tabbed task window (`tenx_core::tabs::shown`: the active pane's tab, not
+/// only what the window's option says) — in the same one `display-message`,
+/// so a front end that draws the tabs itself (`tenx web`) learns it at no
+/// extra cost.
 pub fn current_window_in(session: &str) -> Option<(String, Option<tenx_core::tabs::Tab>)> {
-    let format = format!("#{{window_id}}\t#{{{}}}", tenx_core::tabs::CURRENT_OPTION);
+    use tenx_core::tabs::{self, Tab};
+    let options: Vec<String> = Tab::ALL.iter().map(|t| format!("#{{{}}}", t.pane_option())).collect();
+    let format = format!("#{{window_id}}\t#{{{}}}\t#{{pane_id}}\t{}", tabs::CURRENT_OPTION, options.join("\t"));
     let out = run(&["display-message", "-p", "-t", session, &format]).ok()?;
-    let (id, tab) = out.trim_end_matches('\n').split_once('\t').unwrap_or((out.trim(), ""));
-    let id = id.trim();
-    (!id.is_empty()).then(|| (id.to_string(), tenx_core::tabs::Tab::parse(tab)))
+    let fields: Vec<&str> = out.trim_end_matches('\n').split('\t').collect();
+    let id = fields.first()?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let option = fields.get(1).copied().unwrap_or("");
+    let active = fields.get(2).copied().unwrap_or("");
+    let panes: Vec<(Tab, String)> = Tab::ALL.iter().copied().zip(fields.iter().skip(3).map(|p| p.to_string())).collect();
+    Some((id.to_string(), tabs::shown(option, &panes, active)))
 }
 
 /// A window's panes in window order, and whether it is zoomed; `None` when
