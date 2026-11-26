@@ -813,6 +813,8 @@ test('unlock from the row menu opens the secrets form', async ({ page, isMobile 
 
 test('the secrets form grants, denies and asks again after a wrong passphrase', async ({ page, isMobile }) => {
   const tap = async (loc: import('@playwright/test').Locator) => (isMobile ? loc.tap() : loc.click());
+  // A Mac clipboard of its own: the clipboard tests change the shared one.
+  await page.context().addCookies([{ name: 'mockclip', value: `secrets-${isMobile ? 'phone' : 'desktop'}`, url: 'http://127.0.0.1:7071' }]);
   await page.goto('/?task=tenx/cloud-tasks&unlock=1');
   const form = page.getByTestId('secrets-form');
   await expect(form).toBeVisible();

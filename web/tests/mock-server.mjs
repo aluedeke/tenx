@@ -196,9 +196,16 @@ const SCREEN = [
   `${E}32mapi${E}0m ${E}35mfix-login-timeout${E}0m ❯ `,
 ].join('\r\n');
 
-let macClipboard = 'from the mac ✓';
-/** An image on the Mac's clipboard instead: `{type, bytes}`. */
-let macImage = null;
+/** The Mac's clipboard: `text`, or an image instead (`image`: `{type, bytes}`).
+ * One per `mockclip` cookie, so a test that needs the clipboard as every
+ * test starts with it isn't changed under it by another one running beside
+ * it; without the cookie, the shared one. */
+const clipboards = new Map();
+const clipboardOf = (req) => {
+  const slot = (req.headers.cookie ?? '').split(';').map((c) => c.trim().split('=')).find(([k]) => k === 'mockclip')?.[1] ?? '';
+  if (!clipboards.has(slot)) clipboards.set(slot, { text: 'from the mac ✓', image: null });
+  return clipboards.get(slot);
+};
 const imageId = (bytes) => createHash('sha256').update(bytes).digest('hex').slice(0, 32);
 let secretsAnswer = null;
 
@@ -262,24 +269,27 @@ const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const type = req.headers['content-type'] ?? '';
+    const clip = clipboardOf(req);
     if (type.startsWith('image/')) {
-      macImage = { type, bytes: Buffer.concat(chunks) };
-      macClipboard = '';
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, id: imageId(macImage.bytes) }));
+      clip.image = { type, bytes: Buffer.concat(chunks) };
+      clip.text = '';
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, id: imageId(clip.image.bytes) }));
       return;
     }
-    macImage = null;
-    macClipboard = Buffer.concat(chunks).toString('utf8');
+    clip.image = null;
+    clip.text = Buffer.concat(chunks).toString('utf8');
     res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
     return;
   }
   if (req.method === 'POST' && url.pathname === '/clipboard/get') {
-    const image = macImage && { id: imageId(macImage.bytes), type: macImage.type, bytes: macImage.bytes.length };
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(image ? { text: '', image } : { text: macClipboard }));
+    const { text, image: held } = clipboardOf(req);
+    const image = held && { id: imageId(held.bytes), type: held.type, bytes: held.bytes.length };
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(image ? { text: '', image } : { text }));
     return;
   }
   if (req.method === 'POST' && url.pathname === '/clipboard/image') {
-    if (macImage && imageId(macImage.bytes) === url.searchParams.get('id')) res.writeHead(200, { 'content-type': macImage.type }).end(macImage.bytes);
+    const { image } = clipboardOf(req);
+    if (image && imageId(image.bytes) === url.searchParams.get('id')) res.writeHead(200, { 'content-type': image.type }).end(image.bytes);
     else res.writeHead(404).end();
     return;
   }
