@@ -18,7 +18,7 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 use anyhow::{bail, Context, Result};
-use tenx_core::dictation::{has_speech, split_at_pauses};
+use tenx_core::dictation::{has_speech, prompt_tail, split_at_pauses};
 use tenx_core::sttserver;
 use tenx_core::web;
 
@@ -45,6 +45,8 @@ pub(super) enum Engine {
 pub(super) struct SpeechServer {
     endpoint: String,
     languages: Vec<String>,
+    /// `[speech] language`: the one to hear when the page names none.
+    language: String,
     /// `[speech] prompt_file`'s words, the `prompt` of every request.
     glossary: String,
     /// `tenx-whisper`, when this machine can run it and has a model.
@@ -73,6 +75,7 @@ pub(super) fn engine() -> Result<Engine> {
         return Ok(Engine::Speech(SpeechServer {
             endpoint: sttserver::endpoint(&speech.url),
             languages: speech.languages.clone(),
+            language: speech.language.clone(),
             glossary,
             fallback: (LOCAL && !speech.model.is_empty()).then(|| whisper_part(&speech)),
         }));
@@ -86,18 +89,13 @@ pub(super) fn engine() -> Result<Engine> {
     Ok(Engine::Local(whisper_part(&speech)))
 }
 
-impl SpeechServer {
-    /// Start `tenx-whisper` in the background, so it's ready if the server
-    /// fails.
-    pub(super) fn warm_fallback(&self) {
-        if let Some(config) = self.fallback.clone() {
-            std::thread::spawn(move || super::whisper::warm(&config));
-        }
-    }
-}
-
 /// One recording's ears: the speech server until it fails, then
-/// `tenx-whisper` for the rest of it.
+/// `tenx-whisper` for the rest of it. Without `tenx-whisper` the server is
+/// all there is: a failed run is only that, and it is asked again.
+///
+/// `tenx-whisper` isn't loaded while the server works — its model takes
+/// gigabytes — only when the server is down as a recording starts (in the
+/// background), or by the first run it hears.
 pub(super) struct Listener<'a> {
     server: &'a SpeechServer,
     on_server: bool,
@@ -109,12 +107,20 @@ pub(super) struct Listener<'a> {
 
 impl<'a> Listener<'a> {
     pub(super) fn new(server: &'a SpeechServer, page: Option<&str>) -> Self {
+        let on_server = server.fallback.is_none() || super::sttserver::available(&server.endpoint);
+        if !on_server && let Some(config) = server.fallback.clone() {
+            std::thread::spawn(move || super::whisper::warm(&config));
+        }
         Listener {
             server,
-            on_server: super::sttserver::available(&server.endpoint),
-            language: page.filter(|l| *l != "auto").map(str::to_string),
+            on_server,
+            language: sttserver::start_language(page, &server.language),
             page: page.map(str::to_string),
         }
+    }
+
+    pub(super) fn has_fallback(&self) -> bool {
+        self.server.fallback.is_some()
     }
 
     /// The server's text for `audio`, or `None` when it failed — and from
@@ -128,22 +134,22 @@ impl<'a> Listener<'a> {
         }
         let field = sttserver::language_field(self.language.as_deref(), &self.server.languages);
         let prompt = sttserver::prompt(&self.server.glossary, before);
-        match super::sttserver::ask(&self.server.endpoint, audio, field, &prompt) {
+        match super::sttserver::ask(&self.server.endpoint, audio, field, &prompt, self.has_fallback()) {
             Ok(heard) => {
                 if self.language.is_none() {
-                    self.language = heard.settled_language().map(str::to_string);
+                    self.language = heard.settled_language(&self.server.languages).map(str::to_string);
                 }
                 Some(heard.text)
             }
             Err(_) => {
-                self.on_server = false;
+                self.on_server = !self.has_fallback();
                 None
             }
         }
     }
 
-    /// `tenx-whisper` and the language for it: what the server heard, else
-    /// the page's.
+    /// `tenx-whisper` and the language for it: the recording's (the page's,
+    /// `[speech] language` or what the server heard), else the page's `auto`.
     pub(super) fn fallback(&self) -> Result<(&'a SpeechConfig, Option<String>)> {
         let config = self.server.fallback.as_ref().context("the speech server failed, and there is no [speech] model for tenx-whisper")?;
         Ok((config, self.language.clone().or_else(|| self.page.clone())))
@@ -167,7 +173,7 @@ pub(super) fn transcribe(content_type: &str, audio: &[u8], language: Option<&str
                 if !has_speech(piece, 0.01, 0.25) {
                     continue;
                 }
-                let text = match ears.ask(piece, &texts.join(" ")) {
+                let text = match ears.ask(piece, &prompt_tail(&texts.join(" "))) {
                     Some(text) => text,
                     None => {
                         let (config, language) = ears.fallback()?;

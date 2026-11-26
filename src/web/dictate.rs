@@ -19,15 +19,12 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use tenx_core::dictation::{Dictation, PauseCut, SERVER_TRIM_SECS, STEP_SECS, has_speech, pauses};
+use tenx_core::dictation::{Dictation, PauseCut, SERVER_TRIM_SECS, STEP_SECS, cut_candidates, has_speech, pauses};
 use tenx_core::whisper::{self, RATE, Request};
 
 use crate::workspace::SpeechConfig;
 
 use super::transcribe::{Engine, Listener, engine};
-
-/// Pauses tried per run for a cut, latest first: each is a request.
-const CUT_TRIES: usize = 2;
 
 /// The longest recording: what `/transcribe` takes, some 13 minutes.
 const MAX_SAMPLES: usize = tenx_core::web::STT_MAX_BYTES / 2;
@@ -81,10 +78,8 @@ pub(super) async fn session(mut socket: WebSocket, language: Option<String>) {
 /// page went away first.
 fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::UnboundedSender<serde_json::Value>, language: Option<&str>) -> Result<String> {
     let engine = engine()?;
-    match &engine {
-        Engine::Local(config) => super::whisper::warm(config),
-        Engine::Speech(server) => server.warm_fallback(),
-        Engine::Server(_) => {}
+    if let Engine::Local(config) = &engine {
+        super::whisper::warm(config);
     }
     let mut ears = match &engine {
         Engine::Speech(server) => Some(Listener::new(server, language)),
@@ -120,6 +115,8 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
         let corrected = match ears.as_mut() {
             Some(ears) => match server_run(ears, &mut d, buffer) {
                 Some(corrected) => corrected,
+                // Nobody else to ask: this run is lost, the next one asks again.
+                None if !ears.has_fallback() => continue,
                 None => {
                     let (config, language) = ears.fallback()?;
                     whisper_run(config, &mut d, buffer, language.as_deref())?
@@ -163,7 +160,9 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
 
 /// One run over the buffer by the speech server, and a cut at a pause when
 /// a committed sentence is over: whether the cut's final pass changed a
-/// word, or `None` when the server failed (now or before).
+/// word, or `None` when the server failed (now or before) before the run
+/// counted. A failed final pass only skips the cut: the run counted, and
+/// `tenx-whisper` over the same audio would count as a second one.
 fn server_run(ears: &mut Listener, d: &mut Dictation, buffer: &[f32]) -> Option<bool> {
     let text = ears.ask(buffer, &d.prompt())?;
     d.update_text(&text);
@@ -172,15 +171,15 @@ fn server_run(ears: &mut Listener, d: &mut Dictation, buffer: &[f32]) -> Option<
         return Some(false);
     }
     let long = secs > SERVER_TRIM_SECS;
-    // A pause too close to the start holds no sentence.
-    for end in pauses(buffer, 0.01).into_iter().rev().filter(|&p| p >= RATE as usize / 2).take(CUT_TRIES) {
-        let text = ears.ask(&buffer[..end], &d.prompt())?;
+    for end in cut_candidates(&pauses(buffer, 0.01), buffer.len()) {
+        let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
         match d.finish_at_pause(end, &text, long) {
             PauseCut::Done { changed } => return Some(changed),
             PauseCut::TooFar => continue,
             PauseCut::NoFit => break,
         }
     }
+    d.cut_missed();
     Some(false)
 }
 

@@ -28,13 +28,18 @@ fn mark_down(endpoint: &str) {
 }
 
 /// One request: `audio` (16 kHz mono), the language field
-/// (`sttserver::language_field`) and the prompt. A failure that isn't a
-/// refusal leaves the server alone for a while.
-pub(super) fn ask(endpoint: &str, audio: &[f32], language: Option<(&str, String)>, prompt: &str) -> Result<Heard, Failure> {
+/// (`sttserver::language_field`) and the prompt. With `tenx-whisper` to hear
+/// instead (`fallback`), a failure that isn't a refusal leaves the server
+/// alone for a while.
+pub(super) fn ask(endpoint: &str, audio: &[f32], language: Option<(&str, String)>, prompt: &str, fallback: bool) -> Result<Heard, Failure> {
     let result = request(endpoint, audio, language, prompt);
     if let Err(Failure::Down(e)) = &result {
-        eprintln!("tenx web: speech server {endpoint}: {e}; tenx-whisper hears for {} s", sttserver::PAUSE_SECS);
-        mark_down(endpoint);
+        if fallback {
+            eprintln!("tenx web: speech server {endpoint}: {e}; tenx-whisper hears for {} s", sttserver::PAUSE_SECS);
+            mark_down(endpoint);
+        } else {
+            eprintln!("tenx web: speech server {endpoint}: {e}");
+        }
     }
     if let Err(Failure::Refused(e)) = &result {
         eprintln!("tenx web: speech server {endpoint} refused: {e} — check [speech] url and languages");

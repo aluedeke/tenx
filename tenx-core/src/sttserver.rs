@@ -59,13 +59,24 @@ pub struct Heard {
 }
 
 impl Heard {
-    /// The language a dictation keeps from now on: this run's, once it has
-    /// enough words to tell.
-    pub fn settled_language(&self) -> Option<&str> {
-        (self.text.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count() >= LANGUAGE_MIN_WORDS)
-            .then_some(self.language.as_deref())
-            .flatten()
+    /// The language a recording keeps from now on: this run's, once it has
+    /// enough words to tell — and only a code it may send back (one of
+    /// `accepted`, or any code when that's empty), never a name.
+    pub fn settled_language(&self, accepted: &[String]) -> Option<&str> {
+        let words = self.text.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count();
+        let code = self.language.as_deref().filter(|l| is_code(l))?;
+        (words >= LANGUAGE_MIN_WORDS && (accepted.is_empty() || accepted.iter().any(|a| a == code))).then_some(code)
     }
+}
+
+fn is_code(lang: &str) -> bool {
+    (2..=3).contains(&lang.len()) && lang.bytes().all(|b| b.is_ascii_lowercase())
+}
+
+/// The language a recording starts with: the page's, else `[speech]
+/// language`; `auto` (or nothing) leaves it to the server.
+pub fn start_language(page: Option<&str>, config: &str) -> Option<String> {
+    [page.unwrap_or(""), config].into_iter().map(str::trim).find(|l| !l.is_empty()).filter(|l| *l != "auto").map(str::to_string)
 }
 
 /// Why the server gave no text.
@@ -155,12 +166,25 @@ mod tests {
     }
 
     #[test]
-    fn a_language_settles_on_two_words() {
-        let heard = |t: &str| Heard { text: t.into(), language: Some("de".into()) };
-        assert_eq!(heard("Super.").settled_language(), None);
-        assert_eq!(heard("Super, danke.").settled_language(), Some("de"));
-        assert_eq!(heard("Super - .").settled_language(), None);
-        assert_eq!(Heard { text: "a b".into(), language: None }.settled_language(), None);
+    fn a_language_settles_on_two_words_and_an_accepted_code() {
+        let langs = vec!["en".to_string(), "de".to_string()];
+        let heard = |t: &str, l: &str| Heard { text: t.into(), language: Some(l.into()) };
+        assert_eq!(heard("Super.", "de").settled_language(&langs), None);
+        assert_eq!(heard("Super, danke.", "de").settled_language(&langs), Some("de"));
+        assert_eq!(heard("Super - .", "de").settled_language(&langs), None);
+        assert_eq!(heard("Super, danke.", "nl").settled_language(&langs), None);
+        assert_eq!(heard("Super, danke.", "nl").settled_language(&[]), Some("nl"));
+        assert_eq!(heard("Super, danke.", "german").settled_language(&[]), None);
+        assert_eq!(Heard { text: "a b".into(), language: None }.settled_language(&langs), None);
+    }
+
+    #[test]
+    fn a_recording_starts_with_the_pages_language_else_the_configs() {
+        assert_eq!(start_language(Some("de"), "en"), Some("de".into()));
+        assert_eq!(start_language(None, "de"), Some("de".into()));
+        assert_eq!(start_language(Some("auto"), "de"), None);
+        assert_eq!(start_language(None, "auto"), None);
+        assert_eq!(start_language(None, ""), None);
     }
 
     #[test]

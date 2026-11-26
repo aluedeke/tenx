@@ -38,6 +38,8 @@ pub const TRIM_SECS: f32 = 25.0;
 /// not: every run takes longer with the buffer, and the server writes at
 /// most 256 tokens.
 pub const SERVER_TRIM_SECS: f32 = 20.0;
+/// Pauses tried per run for a cut ([`cut_candidates`]): each is a request.
+pub const CUT_TRIES: usize = 3;
 /// A quiet stretch at least this long is a place to cut.
 pub const PAUSE_SECS: f32 = 0.3;
 /// How much finished text goes into the prompt for what follows.
@@ -53,6 +55,9 @@ pub struct Dictation {
     tentative: Vec<String>,
     /// Where the buffer starts in the whole recording, in samples.
     pub start: usize,
+    /// How many words were committed when a cut at a pause last didn't
+    /// fit: no new try before more are committed.
+    cut_tried_at: Option<usize>,
 }
 
 /// Where to end a finished sentence: `end` samples into the buffer, taking
@@ -178,8 +183,17 @@ impl Dictation {
     /// Whether to look for a pause to cut at (the speech server's buffer,
     /// `buffer_secs` long): a committed word ends a sentence, or the buffer
     /// is long and something is committed.
+    /// Not again before more words are committed after a try that didn't
+    /// fit ([`Dictation::cut_missed`]): "Dr." ends no sentence, and every try
+    /// is a request.
     pub fn wants_cut(&self, buffer_secs: f32) -> bool {
-        self.committed.iter().any(|w| ends_sentence(w)) || (buffer_secs > SERVER_TRIM_SECS && !self.committed.is_empty())
+        self.cut_tried_at != Some(self.committed.len())
+            && (self.committed.iter().any(|w| ends_sentence(w)) || (buffer_secs > SERVER_TRIM_SECS && !self.committed.is_empty()))
+    }
+
+    /// No pause fitted this time.
+    pub fn cut_missed(&mut self) {
+        self.cut_tried_at = Some(self.committed.len());
     }
 
     /// Close a sentence at a pause `end` samples into the buffer, given the
@@ -196,14 +210,16 @@ impl Dictation {
         let Some((matched, last_c, last_f)) = align(&committed[..committed.len().min(fin.len() + 3)], &fin) else {
             return PauseCut::TooFar;
         };
-        if (matched as f32) < 0.5 * fin.len() as f32 {
-            return PauseCut::NoFit;
-        }
         // Its words after the last match stand for as many committed ones
         // (the final pass may hear the last word differently).
         let last = last_c + (fin.len() - 1 - last_f);
         if last >= self.committed.len() {
             return PauseCut::TooFar;
+        }
+        // Most of its words, and most of the committed ones it replaces,
+        // match: a pass that heard only "login." mustn't erase "Fix the".
+        if (matched as f32) < 0.6 * fin.len().max(last + 1) as f32 {
+            return PauseCut::NoFit;
         }
         let sentence_end = ends_sentence(&self.committed[last]);
         if !sentence_end && !long {
@@ -217,6 +233,7 @@ impl Dictation {
         let changed = words.iter().map(|w| key(w)).ne(text.split_whitespace().map(key));
         self.done.push(text);
         self.start += end;
+        self.cut_tried_at = None;
         PauseCut::Done { changed }
     }
 
@@ -244,9 +261,7 @@ impl Dictation {
 
     /// The prompt for the buffer: the end of what was said before it.
     pub fn prompt(&self) -> String {
-        let done = self.done.join(" ");
-        let skip = done.chars().count().saturating_sub(PROMPT_CHARS);
-        done.chars().skip(skip).collect()
+        prompt_tail(&self.done.join(" "))
     }
 
     pub fn view(&self) -> View {
@@ -259,6 +274,21 @@ impl Dictation {
 /// isn't transcribed (the page checks the same way, lib/stt.ts).
 pub fn has_speech(audio: &[f32], threshold: f32, min_secs: f32) -> bool {
     frame_levels(audio).into_iter().filter(|&l| l > threshold).count() as f32 * 0.03 >= min_secs
+}
+
+/// The end of what was said, as a prompt for what follows.
+pub fn prompt_tail(said: &str) -> String {
+    let skip = said.chars().count().saturating_sub(PROMPT_CHARS);
+    said.chars().skip(skip).collect()
+}
+
+/// The pauses worth a final pass for a cut, latest first, at most
+/// [`CUT_TRIES`]: not in the buffer's first half second (no sentence fits
+/// there), and not in its last [`STEP_SECS`], whose words the run before
+/// didn't hear, so none of them is committed yet.
+pub fn cut_candidates(pauses: &[usize], buffer_len: usize) -> Vec<usize> {
+    let latest = buffer_len.saturating_sub((STEP_SECS * RATE as f32) as usize);
+    pauses.iter().rev().copied().filter(|&p| p >= RATE as usize / 2 && p <= latest).take(CUT_TRIES).collect()
 }
 
 /// The 30 ms frames' loudness (RMS).
@@ -447,6 +477,36 @@ mod tests {
         assert_eq!(d.finish_at_pause(16_000, "And then we.", true), PauseCut::Done { changed: false });
         assert_eq!(d.view().done, "And then we");
         assert_eq!(d.view().committed, "go on and on");
+    }
+
+    #[test]
+    fn a_final_pass_that_heard_part_of_the_sentence_does_not_cut() {
+        let mut d = Dictation::default();
+        d.update_text("Fix the login. Then");
+        d.update_text("Fix the login. Then open");
+        assert_eq!(d.finish_at_pause(24_000, "login.", false), PauseCut::NoFit);
+        assert_eq!(d.view().committed, "Fix the login. Then");
+    }
+
+    #[test]
+    fn a_cut_that_did_not_fit_waits_for_more_committed_words() {
+        let mut d = Dictation::default();
+        d.update_text("Ask Dr. Smith");
+        d.update_text("Ask Dr. Smith about");
+        assert!(d.wants_cut(3.0));
+        d.cut_missed();
+        assert!(!d.wants_cut(4.0));
+        d.update_text("Ask Dr. Smith about it");
+        assert!(d.wants_cut(5.0));
+    }
+
+    #[test]
+    fn cut_candidates_skip_the_start_and_the_last_second() {
+        let s = RATE as usize;
+        let p = [s / 4, s, 2 * s, 3 * s, 4 * s, 5 * s + s / 2];
+        assert_eq!(cut_candidates(&p, 6 * s), vec![4 * s, 3 * s, 2 * s]);
+        assert_eq!(cut_candidates(&p, s), Vec::<usize>::new());
+        assert_eq!(prompt_tail(&"a".repeat(500)).len(), PROMPT_CHARS);
     }
 
     #[test]
