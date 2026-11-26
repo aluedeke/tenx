@@ -1672,11 +1672,32 @@ fn web_names_the_tab_a_tabbed_window_shows() {
         // The page's own tab bar: switched by tenx web.
         ws.send(Message::Text(r#"{"type":"tab","tab":"nvim"}"#.into())).await.unwrap();
         seen.extend(until(&mut ws, "nvim").await);
-        seen
+        // A page opened from the bar, by the task the bar was drawn for: the
+        // next views list it, with the workspace's cookie store.
+        let task = "e2e/tabbed";
+        let open = serde_json::json!({"type": "page", "task": task, "op": "open", "url": "https://linear.app/acme"});
+        ws.send(Message::Text(open.to_string().into())).await.unwrap();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+        let mut pages = serde_json::Value::Null;
+        while let Ok(Some(Ok(msg))) = tokio::time::timeout_at(deadline, ws.next()).await {
+            let Message::Text(t) = msg else { continue };
+            let v: serde_json::Value = serde_json::from_str(&t).unwrap();
+            if v["type"] == "view" && v["view"]["pages"]["list"].as_array().is_some_and(|l| !l.is_empty()) {
+                pages = v["view"]["pages"].clone();
+                break;
+            }
+        }
+        (seen, pages)
     });
+    let (seen, pages) = seen;
     let _ = server.kill();
     let _ = server.wait();
     assert!(seen.contains(&"\"agent\"".to_string()) && seen.contains(&"\"shell\"".to_string()) && seen.last().map(String::as_str) == Some("\"nvim\""), "window_tab in each view: {seen:?}");
+    assert_eq!(pages["list"][0]["url"], "https://linear.app/acme", "pages: {pages}");
+    assert_eq!(pages["list"][0]["id"], "p1");
+    assert_eq!(pages["store"].as_str().map(str::len), Some(36), "a UUID: {pages}");
+    let file = std::fs::read_to_string(std::path::Path::new(&h.ws()).join("tasks/tabbed/.tenx-pages.json")).unwrap();
+    assert!(file.contains("https://linear.app/acme"), "{file}");
 }
 
 /// The default layout: the agent over the whole window, the shell and

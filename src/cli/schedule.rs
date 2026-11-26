@@ -92,10 +92,7 @@ fn write_atomic(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, text).with_context(|| format!("write {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("rename to {}", path.display()))?;
-    Ok(())
+    crate::workspace::write_atomic(path, text)
 }
 
 pub fn read_state(ws: &Workspace, name: &str) -> ScheduleState {
