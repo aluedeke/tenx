@@ -95,11 +95,21 @@ fn is_zero_f32(n: &f32) -> bool {
 /// `model` the microphone says how to set one.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub struct SpeechConfig {
+    /// A speech server with OpenAI's transcription API (`…/v1`), asked
+    /// first; `tenx-whisper` with `model` hears when it fails. Empty: only
+    /// `tenx-whisper`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
+    /// The languages the speech server may hear (`["en", "de"]`); it says
+    /// which one it heard. Empty: the server's own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub languages: Vec<String>,
     /// A whisper.cpp `ggml-*.bin` model (`~` expanded).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub model: String,
     /// Words the model should expect — names, jargon — as Whisper's initial
-    /// prompt, from this file (`~` expanded).
+    /// prompt and the speech server's `prompt`, from this file (`~`
+    /// expanded).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub prompt_file: String,
     /// The language spoken when the page doesn't say: a Whisper code (`en`,

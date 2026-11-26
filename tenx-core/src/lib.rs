@@ -35,6 +35,7 @@ pub mod sidebar;
 pub mod skills;
 pub mod slug;
 pub mod status;
+pub mod sttserver;
 pub mod subagent;
 pub mod sweep;
 pub mod tabs;
