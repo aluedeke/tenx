@@ -30,13 +30,11 @@ export function isLocalUrl(url: string): boolean {
 }
 
 /** A `localhost` address the iOS app sends through `tenx web`'s page proxy:
- * the names its `ProxyConfiguration` matches (`localhost`, `127.0.0.1`).
- * Another loopback name (`[::1]`, `127.0.0.2`, `app.localhost`) would reach
- * the phone itself. */
+ * the one name its `ProxyConfiguration` matches. Another loopback name
+ * (`127.0.0.1`, `[::1]`, `app.localhost`) would reach the phone itself. */
 export function viaProxy(url: string): boolean {
   try {
-    const host = new URL(url).hostname;
-    return host === 'localhost' || host === '127.0.0.1';
+    return new URL(url).hostname === 'localhost';
   } catch {
     return false;
   }

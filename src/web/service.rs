@@ -117,9 +117,13 @@ fn reload_plist(path: &Path) -> Result<()> {
     }
 }
 
-pub fn install(listen: &str, port: u16, dev_origins: &[String]) -> Result<()> {
+pub fn install(listen: &str, port: u16, dev_origins: &[String], proxy_port: u16) -> Result<()> {
     let program = program()?;
     let mut args = vec!["web".to_string(), "--listen".into(), listen.to_string(), "--port".into(), port.to_string()];
+    if proxy_port != tenx_core::pageproxy::DEFAULT_PORT {
+        args.push("--proxy-port".into());
+        args.push(proxy_port.to_string());
+    }
     for o in dev_origins {
         args.push("--dev-origin".into());
         args.push(o.clone());

@@ -327,14 +327,16 @@ a page of the shown task; holding it still offers Safari. A `localhost`
 address is the Mac's own: the app reaches it through `tenx web`'s **page
 proxy** (`proxy`, the port; `null` with `--proxy-port 0` or the port taken,
 and then the app shows a note instead). `pageShow` carries `proxy`, and the
-app gives the page's web view a `ProxyConfiguration` for `localhost` and
-`127.0.0.1` only: `CONNECT` to the server's host on that port, with Tailscale's
+app gives the page's web view a `ProxyConfiguration` for `localhost` only
+(another loopback name gets the note): `CONNECT` to the server's host on that port, with Tailscale's
 TLS when the server is https, and the page token as `Proxy-Authorization:
 Basic` (any user name). The proxy (`tenx_core::pageproxy`, `web/pageproxy.rs`)
 listens on 127.0.0.1 only and tunnels only to a port a task's process listens
 on (its window's processes and its `tenx service`s, `live::task_ports`):
-`407` without the token, `403` for any other port or host, `502` when nothing
-answers. Tailscale's HTTP mode rewrites a proxy request, so it is published
+`407` without the token, `403` for any other port or host (only `localhost`,
+`127.0.0.1` and `::1`, connected to exactly that address; `localhost` is
+IPv4's), `502` when nothing answers. An older app announces no `pageProxy`
+action, and the page shows the note for it. Tailscale's HTTP mode rewrites a proxy request, so it is published
 with `tailscale serve --bg --tls-terminated-tcp=<port> tcp://127.0.0.1:<port>`
 (`tenx web` prints the line). A `localhost` page that doesn't load shows why in
 its place; reload tries the address again.

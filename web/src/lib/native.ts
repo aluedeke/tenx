@@ -188,6 +188,18 @@ export async function nativePagesSupported(): Promise<boolean> {
   }
 }
 
+/** Whether the app sends a page's `localhost` through `tenx web`'s page
+ * proxy: an app from before it answers no `pageProxy`. */
+export async function nativePageProxySupported(): Promise<boolean> {
+  const h = handler();
+  if (!h) return false;
+  try {
+    return (await h.postMessage({ action: 'pageProxy' })) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Hide the page shown, if any; it keeps its place for the next show. */
 export function nativePageHide(): void {
   void handler()

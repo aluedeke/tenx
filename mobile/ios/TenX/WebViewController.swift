@@ -253,6 +253,9 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             let proxy = (body?["proxy"] as? Int).flatMap(UInt16.init(exactly:))
             owner.pages.show(key: key, url: url, store: store, storeName: body?["storeName"] as? String ?? "", proxy: proxy, rect: CGRect(x: x, y: y, width: width, height: height))
             return (true, nil)
+        case "pageProxy":
+            // A page's `localhost` goes through tenx web's page proxy (PageProxy).
+            return (true, nil)
         case "pageHide":
             owner.pages.hide()
             return (true, nil)

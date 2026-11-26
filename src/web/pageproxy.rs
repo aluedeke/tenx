@@ -22,7 +22,8 @@ const MAX_TUNNELS: usize = 256;
 
 /// A tunnel with no byte either way for this long is closed: a phone that
 /// slept or left the tailnet may never say goodbye.
-const IDLE: Duration = Duration::from_secs(15 * 60);
+/// Long, so a quiet dev server's live-reload socket isn't cut.
+const IDLE: Duration = Duration::from_secs(2 * 60 * 60);
 
 /// A request head must arrive within this.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
@@ -58,31 +59,40 @@ pub(super) async fn serve(listener: std::net::TcpListener, token: String) {
 
 async fn handle(mut conn: TcpStream, token: &str, ports: &Mutex<Ports>) -> std::io::Result<()> {
     let mut head = Vec::with_capacity(512);
-    let mut buf = [0u8; 1024];
-    while !pageproxy::head_complete(&head) {
-        let n = tokio::time::timeout(HEAD_TIMEOUT, conn.read(&mut buf)).await.map_err(|_| std::io::ErrorKind::TimedOut)??;
-        if n == 0 {
-            return Ok(());
+    // The whole head within the limit, however slowly it trickles in.
+    let read = async {
+        let mut buf = [0u8; 1024];
+        while !pageproxy::head_complete(&head) {
+            let n = conn.read(&mut buf).await?;
+            if n == 0 || head.len() + n > pageproxy::MAX_HEAD {
+                return Ok::<bool, std::io::Error>(false);
+            }
+            head.extend_from_slice(&buf[..n]);
         }
-        head.extend_from_slice(&buf[..n]);
-        if head.len() > pageproxy::MAX_HEAD {
-            return conn.write_all(pageproxy::Refusal::BadRequest.response().as_bytes()).await;
-        }
+        Ok(true)
+    };
+    let complete = tokio::time::timeout(HEAD_TIMEOUT, read).await.map_err(|_| std::io::ErrorKind::TimedOut)??;
+    if !complete {
+        return conn.write_all(pageproxy::Refusal::BadRequest.response().as_bytes()).await;
     }
     // A client may send its first bytes right after the head: they belong to the tunnel.
     let end = head.windows(4).position(|w| w == b"\r\n\r\n").map_or(head.len(), |i| i + 4);
     let early = head.split_off(end);
     let text = String::from_utf8_lossy(&head);
-    let mut decision = pageproxy::decide(&text, token, &task_ports(ports, false).await);
-    if decision == Decision::Refuse(pageproxy::Refusal::NotATaskPort) {
-        decision = pageproxy::decide(&text, token, &task_ports(ports, true).await);
-    }
-    let port = match decision {
-        Decision::Tunnel(port) => port,
-        Decision::Refuse(why) => return conn.write_all(why.response().as_bytes()).await,
+    // Method, token and host first: only a request let through costs a scan.
+    let target = match pageproxy::request(&text, token) {
+        Ok(target) => target,
+        Err(why) => return conn.write_all(why.response().as_bytes()).await,
     };
-    // `localhost`: a dev server may listen on IPv4 or IPv6 only.
-    let Ok(mut server) = TcpStream::connect(("localhost", port)).await else {
+    let mut decision = pageproxy::port_decision(target, &task_ports(ports, false).await);
+    if decision == Decision::Refuse(pageproxy::Refusal::NotATaskPort) {
+        decision = pageproxy::port_decision(target, &task_ports(ports, true).await);
+    }
+    if let Decision::Refuse(why) = decision {
+        return conn.write_all(why.response().as_bytes()).await;
+    }
+    // The address asked for, never another family's listener on the port.
+    let Ok(mut server) = TcpStream::connect((target.addr, target.port)).await else {
         return conn.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
     };
     conn.write_all(pageproxy::ESTABLISHED.as_bytes()).await?;

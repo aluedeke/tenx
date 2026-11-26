@@ -166,7 +166,9 @@ export function PagePane({ task, pageKey, page, store, proxy, onRefused, onMoved
         <div className="page-note" data-testid="page-local">
           <strong>{url.replace(/^https?:\/\//, '')} is on the Mac</strong>
           <span>
-            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it: {proxy === null ? 'tenx web runs without its page proxy (`--proxy-port`).' : 'only localhost and 127.0.0.1 go through tenx web’s page proxy.'}
+            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it: {proxy === null
+              ? 'tenx web runs without its page proxy (`--proxy-port`), or this app is too old for it.'
+              : 'only localhost goes through tenx web’s page proxy: open it as localhost instead.'}
           </span>
         </div>
       ) : (

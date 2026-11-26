@@ -224,14 +224,15 @@ struct PageProxy {
         var proxy = ProxyConfiguration(httpCONNECTProxy: endpoint, tlsOptions: tls)
         proxy.applyCredential(username: "tenx", password: server.token)
         // Only the Mac's own addresses: every other site goes its own way.
-        proxy.matchDomains = ["localhost", "127.0.0.1"]
+        // `localhost` alone, as the page assumes (pages.ts `viaProxy`).
+        proxy.matchDomains = ["localhost"]
         return proxy
     }
 
     /// The Mac's own address as a page names it: every loopback name
-    /// (web/src/lib/pages.ts `isLocalUrl`). Only `localhost` and `127.0.0.1`
-    /// go through the proxy (`matchDomains`); the page shows a note for the
-    /// rest (`viaProxy`).
+    /// (web/src/lib/pages.ts `isLocalUrl`). Only `localhost` goes through
+    /// the proxy (`matchDomains`); the page shows a note for the rest
+    /// (`viaProxy`).
     static func isLocal(_ url: URL) -> Bool {
         let host = (url.host ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")

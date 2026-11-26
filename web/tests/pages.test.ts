@@ -42,9 +42,9 @@ test('a page is what it was opened with, wherever it went', () => {
   assert.equal(isPage(page, 'https://github.com/acme/shop/pull/2'), false);
 });
 
-test('only localhost and 127.0.0.1 go through the page proxy', () => {
+test('only localhost goes through the page proxy', () => {
   assert.equal(viaProxy('http://localhost:3000/x'), true);
-  assert.equal(viaProxy('http://127.0.0.1:8080'), true);
+  assert.equal(viaProxy('http://127.0.0.1:8080'), false);
   assert.equal(viaProxy('http://[::1]:5173'), false);
   assert.equal(viaProxy('http://127.0.0.2:3000'), false);
   assert.equal(viaProxy('http://app.localhost'), false);

@@ -1043,6 +1043,9 @@ pub enum WebServiceAction {
         /// Also accept the page from this origin — repeatable
         #[arg(long = "dev-origin", value_name = "URL")]
         dev_origin: Vec<String>,
+        /// The page proxy's port (see `tenx web --proxy-port`); 0 turns it off
+        #[arg(long, default_value_t = tenx_core::pageproxy::DEFAULT_PORT)]
+        proxy_port: u16,
     },
     /// Restart it, e.g. onto a new binary after an upgrade (no-op when not installed)
     Restart,
