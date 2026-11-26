@@ -26,6 +26,9 @@ on:
 permissions:
   contents: write
   actions: write
+  # The release commit's `pr-description` status (scripts/release.sh): main
+  # takes only commits that passed it.
+  statuses: write
 
 jobs:
   bump:

@@ -2,6 +2,8 @@ name: ci
 
 on:
   push:
+    # The release commit's way to main (scripts/release.sh): CI runs on main.
+    branches-ignore: ["release-staging/**"]
   pull_request:
 
 jobs:

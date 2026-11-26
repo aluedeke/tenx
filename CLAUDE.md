@@ -16,7 +16,7 @@ cargo run -- <args>            # e.g. `cargo run -- task list`
 make test                      # cargo test + clippy -D warnings, both crates
 make install                   # this checkout as a test version in place of the Homebrew release (scripts/test-version.sh); restarts tenx web + watcher
 make uninstall                 # back to the Homebrew release; `make installed` says which one runs
-make release auto              # version + CHANGELOG from commits (git-cliff); never pick a version or write changelog text by hand. Or: gh workflow run bump.yml
+make release auto              # starts bump.yml: version + CHANGELOG from commits (git-cliff); never pick a version or write changelog text by hand. Same as gh workflow run bump.yml
 make screenshot                # re-render docs/column.svg from fixtures (src/tui/column/screenshot.rs)
 make demo                      # re-render docs/demo.svg + .cast from a scripted client session (src/tui/column/demo.rs)
 make demo-gif                  # docs/demo.gif from the cast via agg; scripts/release.sh runs both at release time
@@ -72,7 +72,7 @@ Independent layers wired together by `main.rs`'s CLI dispatch; each layer only k
 
 ## Pull requests
 
-Every PR description follows `.github/pull_request_template.md`, and the `pr-description` check (`scripts/check-pr-body.py`, `.github/workflows/pr-description.yml`) is required for merging: each section filled in, every box ticked. `gh pr create --body` skips the template, so write the body from it and pass it with `--body-file`; check it locally with `scripts/check-pr-body.py <file>`. Before you open the PR, or tick a box:
+Every change reaches `main` through a PR (the "Require PR description" ruleset takes only commits whose `pr-description` check GitHub Actions passed; the release commit gets it from `scripts/release.sh`). Every PR description follows `.github/pull_request_template.md`, and the `pr-description` check (`scripts/check-pr-body.py`, `.github/workflows/pr-description.yml`) is required for merging: each section filled in, every box ticked. `gh pr create --body` skips the template, so write the body from it and pass it with `--body-file`; check it locally with `scripts/check-pr-body.py <file>`. Before you open the PR, or tick a box:
 
 - **Write for a reader who did not follow the work**: what the feature or fix is for, then what changed, in simple words.
 - **Contracts**: list every change to what other programs rely on — `docs/web-protocol.md`, the MCP tools (tenx-agent calls them), CLI commands, flags and `--json` output, config and on-disk files, hooks and skills. "None" only when there is none.

@@ -6,8 +6,10 @@
 # patch|minor|major bump that part of Cargo.toml's version instead. Then both
 # crates are bumped, the CHANGELOG section for the version is generated from
 # those same commits and inserted above the previous one, Cargo.lock is
-# refreshed, the dist config checked, and `release vX.Y.Z` committed. With `--push` the commit is pushed and the release
-# workflow is dispatched for that tag (`gh workflow run release.yml`); the
+# refreshed, the dist config checked, and `release vX.Y.Z` committed. With `--push` (GitHub Actions only: main takes
+# a commit only with a passed `pr-description` check that Actions reported) the
+# commit is marked and pushed and the release workflow is dispatched for that
+# tag (`gh workflow run release.yml`); the
 # workflow builds the binaries and creates the tag itself, so a version can
 # never be tagged without its release. Nothing here runs `git tag`.
 #
@@ -29,6 +31,12 @@ for arg in "$@"; do
     esac
 done
 [ -n "$bump" ] || usage
+# main takes a commit only with a `pr-description` check reported by GitHub
+# Actions (see the push below), so a push from anywhere else would be refused.
+if [ "$push" -eq 1 ] && [ "$dry" -eq 0 ] && [ "${GITHUB_ACTIONS:-}" != true ]; then
+    echo "release: main takes a release only from GitHub Actions: gh workflow run bump.yml -f bump=$bump" >&2
+    exit 1
+fi
 
 cd "$(dirname "$0")/.."
 
@@ -122,10 +130,20 @@ git commit -qam "release $tag"
 echo "  ✓ committed release $tag"
 
 if [ "$push" -eq 1 ]; then
+    # main takes only commits whose `pr-description` check passed, reported by
+    # GitHub Actions (the "Require PR description" ruleset). A release commit
+    # has no PR, so bump.yml reports it itself: the commit goes to a branch of
+    # its own first, is marked there, and then main moves to it.
+    sha=$(git rev-parse HEAD)
+    staging="release-staging/$tag"
+    git push origin "HEAD:refs/heads/$staging"
+    trap 'git push -q origin --delete "$staging" || true' EXIT
+    gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state=success -f context=pr-description \
+        -f description="Release commit, made by bump.yml" --silent
     git push origin "HEAD:$branch"
     gh workflow run release.yml --ref "$branch" -f "tag=$tag"
     echo "  ✓ release workflow dispatched for $tag — it builds, publishes and creates the tag"
     echo "    watch: gh run watch \$(gh run list --workflow=release.yml -L1 --json databaseId -q '.[0].databaseId')"
 else
-    echo "    to release: git push && gh workflow run release.yml --ref $branch -f tag=$tag"
+    echo "    to release: gh workflow run bump.yml -f bump=$bump (main takes a release only from GitHub Actions)"
 fi
