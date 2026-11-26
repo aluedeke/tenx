@@ -38,6 +38,10 @@ pub const TRIM_SECS: f32 = 25.0;
 /// not: every run takes longer with the buffer, and the server writes at
 /// most 256 tokens.
 pub const SERVER_TRIM_SECS: f32 = 20.0;
+/// Past this, the speech server's buffer is cut at its latest pause even
+/// when no final pass fits ([`Dictation::force_cut`]): the server writes at
+/// most 256 tokens, and a run over a long buffer nears its time limit.
+pub const SERVER_MAX_SECS: f32 = 25.0;
 /// Pauses tried per run for a cut ([`cut_candidates`]): each is a request.
 pub const CUT_TRIES: usize = 3;
 /// A quiet stretch at least this long is a place to cut.
@@ -88,6 +92,12 @@ pub struct View {
     pub done: String,
     pub committed: String,
     pub tentative: String,
+}
+
+/// Whether two texts have the same words, casing and punctuation aside.
+fn same_words(a: &str, b: &str) -> bool {
+    let words = |t: &str| t.split_whitespace().map(key).filter(|k| !k.is_empty()).collect::<Vec<_>>();
+    words(a) == words(b)
 }
 
 /// A word as compared between runs: casing and punctuation don't count.
@@ -227,14 +237,32 @@ impl Dictation {
         }
         let words: Vec<String> = self.committed.drain(..=last).collect();
         let mut text = final_text.trim().to_string();
-        if !sentence_end && text.ends_with('.') && !text.ends_with("..") {
+        if !sentence_end && text.ends_with(['.', '?', '!']) && !text.ends_with("..") {
             text.pop();
         }
-        let changed = words.iter().map(|w| key(w)).ne(text.split_whitespace().map(key));
+        let changed = !same_words(&words.join(" "), &text);
         self.done.push(text);
         self.start += end;
         self.cut_tried_at = None;
         PauseCut::Done { changed }
+    }
+
+    /// The buffer is past [`SERVER_MAX_SECS`] and no pause fitted: close
+    /// everything heard before `end` with the final pass over it (the
+    /// committed words when that came back empty), sentence or not, and
+    /// start the agreement over after it. Whether a shown word changed.
+    pub fn force_cut(&mut self, end: usize, final_text: &str) -> bool {
+        let before = self.committed.join(" ");
+        let text = if final_text.trim().is_empty() { before.clone() } else { final_text.trim().to_string() };
+        let changed = !same_words(&before, &text);
+        if !text.is_empty() {
+            self.done.push(text);
+        }
+        self.committed.clear();
+        self.tentative.clear();
+        self.start += end;
+        self.cut_tried_at = None;
+        changed
     }
 
     /// Close the sentence a cut ends with its final pass's text (its
@@ -289,6 +317,13 @@ pub fn prompt_tail(said: &str) -> String {
 pub fn cut_candidates(pauses: &[usize], buffer_len: usize) -> Vec<usize> {
     let latest = buffer_len.saturating_sub((STEP_SECS * RATE as f32) as usize);
     pauses.iter().rev().copied().filter(|&p| p >= RATE as usize / 2 && p <= latest).take(CUT_TRIES).collect()
+}
+
+/// Where to force a cut in a buffer of `buffer_len` samples: its latest
+/// pause in the cut candidates' range, else a second before its end.
+pub fn forced_cut(pauses: &[usize], buffer_len: usize) -> usize {
+    let latest = buffer_len.saturating_sub((STEP_SECS * RATE as f32) as usize);
+    pauses.iter().rev().copied().find(|&p| p >= RATE as usize / 2 && p <= latest).unwrap_or(latest)
 }
 
 /// The 30 ms frames' loudness (RMS).
@@ -477,6 +512,30 @@ mod tests {
         assert_eq!(d.finish_at_pause(16_000, "And then we.", true), PauseCut::Done { changed: false });
         assert_eq!(d.view().done, "And then we");
         assert_eq!(d.view().committed, "go on and on");
+    }
+
+    #[test]
+    fn a_forced_cut_closes_everything_before_it_and_starts_over() {
+        let mut d = Dictation::default();
+        d.update_text("and then we go on and on");
+        d.update_text("and then we go on and on and");
+        assert!(!d.force_cut(400_000, "and then we go on and on"));
+        assert_eq!(d.view(), View { done: "and then we go on and on".into(), committed: "".into(), tentative: "".into() });
+        assert_eq!(d.start, 400_000);
+        assert!(d.force_cut(10, "Und dann."));
+        let s = RATE as usize;
+        assert_eq!(forced_cut(&[2 * s, 20 * s, 26 * s], 26 * s), 20 * s);
+        assert_eq!(forced_cut(&[], 26 * s), 25 * s);
+    }
+
+    #[test]
+    fn a_long_cut_drops_any_end_mark_the_cut_put_there() {
+        let mut d = Dictation::default();
+        d.update_text("and then we go on and on");
+        d.update_text("and then we go on and on");
+        assert_eq!(d.finish_at_pause(16_000, "and then we?", true), PauseCut::Done { changed: false });
+        assert_eq!(d.view().done, "and then we");
+        assert!(same_words("a - b", "a b"));
     }
 
     #[test]

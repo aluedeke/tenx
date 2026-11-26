@@ -91,7 +91,8 @@ pub(super) fn engine() -> Result<Engine> {
 
 /// One recording's ears: the speech server until it fails, then
 /// `tenx-whisper` for the rest of it. Without `tenx-whisper` the server is
-/// all there is: a failed run is only that, and it is asked again.
+/// all there is: a failed run is only that, and it is asked again — unless
+/// it refused (`sttserver::after_failure`).
 ///
 /// `tenx-whisper` isn't loaded while the server works — its model takes
 /// gigabytes — only when the server is down as a recording starts (in the
@@ -107,7 +108,7 @@ pub(super) struct Listener<'a> {
 
 impl<'a> Listener<'a> {
     pub(super) fn new(server: &'a SpeechServer, page: Option<&str>) -> Self {
-        let on_server = server.fallback.is_none() || super::sttserver::available(&server.endpoint);
+        let on_server = sttserver::starts_on_server(server.fallback.is_some(), super::sttserver::available(&server.endpoint));
         if !on_server && let Some(config) = server.fallback.clone() {
             std::thread::spawn(move || super::whisper::warm(&config));
         }
@@ -141,8 +142,8 @@ impl<'a> Listener<'a> {
                 }
                 Some(heard.text)
             }
-            Err(_) => {
-                self.on_server = !self.has_fallback();
+            Err(next) => {
+                self.on_server = next == sttserver::AfterFailure::Retry;
                 None
             }
         }

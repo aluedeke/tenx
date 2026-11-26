@@ -9,8 +9,8 @@
 //! The rules are tenx-agent's (its `SpeechServerSTT`): a request gets a time
 //! limit that grows with the audio; a server that fails, times out or can't
 //! be reached is left alone for [`PAUSE_SECS`] and `tenx-whisper` hears in
-//! its place; a refusal (4xx) means a setting is wrong, so it isn't asked
-//! again for that recording, but nothing waits.
+//! its place; a refusal (3xx, 4xx) means a setting is wrong, so it isn't
+//! asked again for that recording, but nothing waits ([`after_failure`]).
 
 use serde::Deserialize;
 
@@ -20,7 +20,7 @@ pub const CONNECT_SECS: f32 = 1.5;
 /// audio, at most [`MAX_SECS`].
 pub const BASE_SECS: f32 = 1.0;
 pub const SECS_PER_AUDIO_SEC: f32 = 0.1;
-pub const MAX_SECS: f32 = 2.5;
+pub const MAX_SECS: f32 = 4.0;
 /// How long a server that failed is left alone.
 pub const PAUSE_SECS: u64 = 30;
 /// A dictation keeps the language of its first run with this many words.
@@ -70,7 +70,34 @@ impl Heard {
 }
 
 fn is_code(lang: &str) -> bool {
-    (2..=3).contains(&lang.len()) && lang.bytes().all(|b| b.is_ascii_lowercase())
+    crate::web::stt_language(lang).is_some_and(|l| l != "auto")
+}
+
+/// Whether a recording asks the server first: always when nobody else can
+/// hear; else unless it is left alone after a failure.
+pub fn starts_on_server(has_fallback: bool, available: bool) -> bool {
+    !has_fallback || available
+}
+
+/// What a recording does after the server failed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AfterFailure {
+    /// `tenx-whisper` hears the rest; `pause`: leave the server alone for
+    /// [`PAUSE_SECS`] (not for a refusal: a setting, not an outage).
+    Fallback { pause: bool },
+    /// Nobody else: this run is lost, the next one asks again.
+    Retry,
+    /// Nobody else, and the server refuses: stop asking for this recording.
+    GiveUp,
+}
+
+pub fn after_failure(failure: &Failure, has_fallback: bool) -> AfterFailure {
+    match (failure, has_fallback) {
+        (Failure::Refused(_), true) => AfterFailure::Fallback { pause: false },
+        (Failure::Down(_), true) => AfterFailure::Fallback { pause: true },
+        (Failure::Refused(_), false) => AfterFailure::GiveUp,
+        (Failure::Down(_), false) => AfterFailure::Retry,
+    }
 }
 
 /// The language a recording starts with: the page's, else `[speech]
@@ -105,7 +132,8 @@ pub fn outcome(answered: Result<(), String>, status: &str, body: &str) -> Result
     let short = || body.chars().take(200).collect::<String>();
     match status.trim().parse::<u16>() {
         Ok(200) => {}
-        Ok(code @ 400..=499) => return Err(Failure::Refused(format!("{code} {}", short()))),
+        // A redirect too: curl doesn't follow one, so the url is wrong.
+        Ok(code @ 300..=499) => return Err(Failure::Refused(format!("{code} {}", short()))),
         _ => return Err(Failure::Down(format!("answered {} {}", status.trim(), short()))),
     }
     #[derive(Deserialize)]
@@ -143,7 +171,8 @@ mod tests {
     fn the_time_limit_grows_with_the_audio_up_to_a_cap() {
         assert_eq!(timeout(0.0), (1.5, 2.5));
         assert_eq!(timeout(10.0), (1.5, 3.5));
-        assert_eq!(timeout(60.0), (1.5, 4.0));
+        assert_eq!(timeout(25.0), (1.5, 5.0));
+        assert_eq!(timeout(60.0), (1.5, 5.5));
     }
 
     #[test]
@@ -160,6 +189,7 @@ mod tests {
         assert_eq!(ok, Ok(Heard { text: "Wie geht's?".into(), language: Some("de".into()) }));
         assert!(matches!(outcome(Ok(()), "400", "unknown language(s) xx"), Err(Failure::Refused(e)) if e.starts_with("400 unknown")));
         assert!(matches!(outcome(Ok(()), "500", "boom"), Err(Failure::Down(_))));
+        assert!(matches!(outcome(Ok(()), "301", ""), Err(Failure::Refused(_))));
         assert!(matches!(outcome(Ok(()), "200", "<html>"), Err(Failure::Down(e)) if e.starts_with("not JSON")));
         assert!(matches!(outcome(Err("timed out".into()), "000", ""), Err(Failure::Down(e)) if e.contains("timed out")));
         assert_eq!(outcome(Ok(()), "200", r#"{"text":"hi"}"#).unwrap().language, None);
@@ -176,6 +206,19 @@ mod tests {
         assert_eq!(heard("Super, danke.", "nl").settled_language(&[]), Some("nl"));
         assert_eq!(heard("Super, danke.", "german").settled_language(&[]), None);
         assert_eq!(Heard { text: "a b".into(), language: None }.settled_language(&langs), None);
+    }
+
+    #[test]
+    fn what_a_recording_does_after_a_failure() {
+        let down = Failure::Down("x".into());
+        let refused = Failure::Refused("x".into());
+        assert_eq!(after_failure(&down, true), AfterFailure::Fallback { pause: true });
+        assert_eq!(after_failure(&refused, true), AfterFailure::Fallback { pause: false });
+        assert_eq!(after_failure(&down, false), AfterFailure::Retry);
+        assert_eq!(after_failure(&refused, false), AfterFailure::GiveUp);
+        assert!(starts_on_server(false, false));
+        assert!(!starts_on_server(true, false));
+        assert!(starts_on_server(true, true));
     }
 
     #[test]

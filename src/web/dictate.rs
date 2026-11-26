@@ -19,7 +19,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use tenx_core::dictation::{Dictation, PauseCut, SERVER_TRIM_SECS, STEP_SECS, cut_candidates, has_speech, pauses};
+use tenx_core::dictation::{
+    Dictation, PauseCut, SERVER_MAX_SECS, SERVER_TRIM_SECS, STEP_SECS, cut_candidates, forced_cut, has_speech, pauses, split_at_pauses,
+};
 use tenx_core::whisper::{self, RATE, Request};
 
 use crate::workspace::SpeechConfig;
@@ -145,13 +147,22 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
         _ if !has_speech(tail, 0.01, 0.25) => String::new(),
         Engine::Speech(_) => {
             let ears = ears.as_mut().expect("a speech server's listener");
-            match ears.ask(tail, &d.prompt()) {
-                Some(text) => text,
-                None => {
-                    let (config, language) = ears.fallback()?;
-                    whisper_final(config, &d, tail, language.as_deref())?
+            let mut texts: Vec<String> = Vec::new();
+            // In pieces the server can write out (256 tokens at most).
+            for range in split_at_pauses(tail, 0.01, SERVER_MAX_SECS) {
+                let piece = &tail[range];
+                let before = tenx_core::dictation::prompt_tail(&[d.view().done, texts.join(" ")].join(" "));
+                match ears.ask(piece, &before) {
+                    Some(text) => texts.push(text),
+                    // Nobody else to ask: the words shown live are the text.
+                    None if !ears.has_fallback() => return Ok(d.finish("")),
+                    None => {
+                        let (config, language) = ears.fallback()?;
+                        texts.push(whisper_final(config, &d, piece, language.as_deref())?);
+                    }
                 }
             }
+            whisper::join_segments(texts.iter().map(String::as_str))
         }
         Engine::Local(config) => whisper_final(config, &d, tail, language)?,
     };
@@ -159,10 +170,11 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
 }
 
 /// One run over the buffer by the speech server, and a cut at a pause when
-/// a committed sentence is over: whether the cut's final pass changed a
-/// word, or `None` when the server failed (now or before) before the run
-/// counted. A failed final pass only skips the cut: the run counted, and
-/// `tenx-whisper` over the same audio would count as a second one.
+/// a committed sentence is over — or, past `SERVER_MAX_SECS`, at its latest
+/// pause anyway: whether the cut's final pass changed a word, or `None` when
+/// the server failed (now or before) before the run counted. A failed final
+/// pass only skips the cut: the run counted, and `tenx-whisper` over the
+/// same audio would count as a second one.
 fn server_run(ears: &mut Listener, d: &mut Dictation, buffer: &[f32]) -> Option<bool> {
     let text = ears.ask(buffer, &d.prompt())?;
     d.update_text(&text);
@@ -171,7 +183,8 @@ fn server_run(ears: &mut Listener, d: &mut Dictation, buffer: &[f32]) -> Option<
         return Some(false);
     }
     let long = secs > SERVER_TRIM_SECS;
-    for end in cut_candidates(&pauses(buffer, 0.01), buffer.len()) {
+    let pauses = pauses(buffer, 0.01);
+    for end in cut_candidates(&pauses, buffer.len()) {
         let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
         match d.finish_at_pause(end, &text, long) {
             PauseCut::Done { changed } => return Some(changed),
@@ -180,6 +193,11 @@ fn server_run(ears: &mut Listener, d: &mut Dictation, buffer: &[f32]) -> Option<
         }
     }
     d.cut_missed();
+    if secs > SERVER_MAX_SECS {
+        let end = forced_cut(&pauses, buffer.len());
+        let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
+        return Some(d.force_cut(end, &text));
+    }
     Some(false)
 }
 

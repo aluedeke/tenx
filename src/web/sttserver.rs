@@ -5,11 +5,14 @@
 //! meanwhile.
 
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use tenx_core::sttserver::{self, Failure, Heard};
+use tenx_core::sttserver::{self, AfterFailure, Failure, Heard};
 use tenx_core::whisper::{self, RATE};
 
 /// Until when a failed server is left alone, by endpoint.
@@ -28,23 +31,45 @@ fn mark_down(endpoint: &str) {
 }
 
 /// One request: `audio` (16 kHz mono), the language field
-/// (`sttserver::language_field`) and the prompt. With `tenx-whisper` to hear
-/// instead (`fallback`), a failure that isn't a refusal leaves the server
-/// alone for a while.
-pub(super) fn ask(endpoint: &str, audio: &[f32], language: Option<(&str, String)>, prompt: &str, fallback: bool) -> Result<Heard, Failure> {
-    let result = request(endpoint, audio, language, prompt);
-    if let Err(Failure::Down(e)) = &result {
-        if fallback {
-            eprintln!("tenx web: speech server {endpoint}: {e}; tenx-whisper hears for {} s", sttserver::PAUSE_SECS);
+/// (`sttserver::language_field`) and the prompt. A failure is logged, and
+/// handled as `sttserver::after_failure` says for a recording with
+/// `tenx-whisper` (`fallback`) or without: its outcome comes back with it.
+pub(super) fn ask(endpoint: &str, audio: &[f32], language: Option<(&str, String)>, prompt: &str, fallback: bool) -> Result<Heard, AfterFailure> {
+    request(endpoint, audio, language, prompt).map_err(|failure| {
+        let next = sttserver::after_failure(&failure, fallback);
+        let then = match next {
+            AfterFailure::Fallback { pause: true } => format!("; tenx-whisper hears for {} s", sttserver::PAUSE_SECS),
+            AfterFailure::Fallback { pause: false } => "; tenx-whisper hears this recording".to_string(),
+            AfterFailure::Retry => "; asked again".to_string(),
+            AfterFailure::GiveUp => "; not asked again for this recording".to_string(),
+        };
+        eprintln!("tenx web: speech server {endpoint}: {failure}{then}");
+        if next == (AfterFailure::Fallback { pause: true }) {
             mark_down(endpoint);
-        } else {
-            eprintln!("tenx web: speech server {endpoint}: {e}");
         }
+        next
+    })
+}
+
+/// A file only this user can read, removed when dropped: the prompt holds
+/// what was said, and curl's arguments are anybody's to read in `ps`.
+struct PrivateFile(PathBuf);
+
+impl PrivateFile {
+    fn new(text: &str) -> std::io::Result<Self> {
+        static N: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!("tenx-stt-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path)?;
+        let file = PrivateFile(path);
+        f.write_all(text.as_bytes())?;
+        Ok(file)
     }
-    if let Err(Failure::Refused(e)) = &result {
-        eprintln!("tenx web: speech server {endpoint} refused: {e} — check [speech] url and languages");
+}
+
+impl Drop for PrivateFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
-    result
 }
 
 fn request(endpoint: &str, audio: &[f32], language: Option<(&str, String)>, prompt: &str) -> Result<Heard, Failure> {
@@ -56,8 +81,10 @@ fn request(endpoint: &str, audio: &[f32], language: Option<(&str, String)>, prom
     if let Some((name, value)) = language {
         cmd.args(["--form-string", &format!("{name}={value}")]);
     }
-    if !prompt.is_empty() {
-        cmd.args(["--form-string", &format!("prompt={prompt}")]);
+    // The prompt from a file (`<`: its text as the field's value).
+    let prompt_file = if prompt.is_empty() { None } else { Some(PrivateFile::new(prompt).map_err(|e| Failure::Down(format!("prompt file: {e}")))?) };
+    if let Some(file) = &prompt_file {
+        cmd.args(["-F", &format!("prompt=<{}", file.0.display())]);
     }
     let child = cmd.arg(endpoint).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
     let mut child = child.map_err(|e| Failure::Down(format!("run curl: {e}")))?;
