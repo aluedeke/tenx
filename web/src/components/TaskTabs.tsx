@@ -67,13 +67,10 @@ export function TaskTabs({ shown, onSelect, pages, pageShown, onPage, onClosePag
             // you type there.
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              // Lit but not shown yet: asking again is allowed. Under a page,
-              // the tab shown is a click away too: the page goes.
+              // Lit but not shown yet: asking again is allowed. Under a page
+              // nothing is lit, so the tab shown is a click away too: the
+              // page goes (App sends no switch for it).
               if (tab === lit && tab === shown) return;
-              if (tab === shown) {
-                onSelect(tab);
-                return;
-              }
               const at = Date.now();
               setAsked({ tab, at });
               setNow(at);

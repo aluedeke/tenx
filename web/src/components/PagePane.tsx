@@ -41,26 +41,39 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const el = hole.current;
     if (!el || local) return;
+    let gaveUp = false;
     const show = () => {
       const r = el.getBoundingClientRect();
-      if (r.width < 1 || r.height < 1) return;
+      if (gaveUp || r.width < 1 || r.height < 1) return;
+      // Where the hole is on the screen: the layout's place less how far iOS
+      // panned the visible part (the keyboard).
+      const vv = window.visualViewport;
+      const x = r.left - (vv?.offsetLeft ?? 0);
+      const y = r.top - (vv?.offsetTop ?? 0);
       nativePageShow({
         key: pageKey,
         url: page.url,
         store,
         storeName: workspaceOf(task),
-        rect: { x: r.left, y: r.top, width: r.width, height: r.height },
-      }).catch(() => refused.current());
+        rect: { x, y, width: r.width, height: r.height },
+      }).catch(() => {
+        // Once: the observer's first call would ask again.
+        if (gaveUp) return;
+        gaveUp = true;
+        refused.current();
+      });
     };
     show();
     const watch = new ResizeObserver(show);
     watch.observe(el);
     window.addEventListener('resize', show);
     window.visualViewport?.addEventListener('resize', show);
+    window.visualViewport?.addEventListener('scroll', show);
     return () => {
       watch.disconnect();
       window.removeEventListener('resize', show);
       window.visualViewport?.removeEventListener('resize', show);
+      window.visualViewport?.removeEventListener('scroll', show);
       nativePageHide();
     };
     // The address only matters for a web view the app makes now: a page it

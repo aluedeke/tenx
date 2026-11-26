@@ -35,7 +35,6 @@ export interface ColumnView {
   sidebar: SidebarView | null;
 }
 
-/** A tabbed task window's tabs, in key order (Alt+1/2/3): `tenx_core::tabs::Tab`. */
 /** One of a task's pages (`tenx_core::pages::Page`). */
 export interface PageView {
   /** `p1`, `p2`, …: unique within the task. */
@@ -51,6 +50,7 @@ export interface PagesView {
   list: PageView[];
 }
 
+/** A tabbed task window's tabs, in key order (Alt+1/2/3): `tenx_core::tabs::Tab`. */
 export const WINDOW_TABS = ['agent', 'shell', 'nvim'] as const;
 export type WindowTab = (typeof WINDOW_TABS)[number];
 

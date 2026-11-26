@@ -1392,12 +1392,32 @@ export function App() {
   const openPage = useCallback(
     (url: string) => {
       if (!barTask) return;
+      // Already one of the task's pages: that page, no new one.
+      const known = nativeApp() ? pages?.list.find((p) => p.url === url) : undefined;
+      if (known) {
+        setPageShown({ task: barTask, id: known.id });
+        return;
+      }
       wantPage.current = nativeApp() ? { task: barTask, url } : null;
       send({ type: 'page', task: barTask, op: 'open', url });
       if (!nativeApp()) openExternal(url);
     },
-    [barTask, send],
+    [barTask, pages, send],
   );
+  // A page closed (on any device) is dropped from the app, not just hidden:
+  // its sound and scripts stop with it.
+  const listed = useRef(new Set<string>());
+  useEffect(() => {
+    if (!barTask || !pages || !nativeApp()) return;
+    const now = new Set(pages.list.map((p) => pageKey(barTask, p.id)));
+    for (const key of [...listed.current]) {
+      if (key.startsWith(`${barTask}#`) && !now.has(key)) {
+        nativePageClose(key);
+        listed.current.delete(key);
+      }
+    }
+    for (const key of now) listed.current.add(key);
+  }, [barTask, pages]);
   // In the app, a web link (the terminal's, the sidebar's, the links box)
   // opens as one of the shown task's pages; holding it still offers Safari.
   useEffect(() => {

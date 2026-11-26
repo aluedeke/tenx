@@ -944,11 +944,15 @@ impl Column {
         task: &str,
         edit: impl FnOnce(&mut tenx_core::pages::Pages) -> Result<bool, String>,
     ) -> Result<(), String> {
+        // Every `tenx web` tab edits from this one process: one edit at a
+        // time, so two devices' edits never undo each other.
+        static EDITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let dir = self.rows.iter().find(|r| view::row_id(r) == task).map(|r| r.path.clone()).ok_or("no such task")?;
+        let _one = EDITING.lock().unwrap_or_else(|e| e.into_inner());
         let mut pages = read_pages_in(&dir);
         if edit(&mut pages)? {
             let path = dir.join(tenx_core::pages::FILE);
-            let tmp = path.with_extension("tmp");
+            let tmp = path.with_extension(format!("tmp{}", std::process::id()));
             std::fs::write(&tmp, pages.render())
                 .and_then(|()| std::fs::rename(&tmp, &path))
                 .map_err(|e| format!("couldn't save the pages: {e}"))?;

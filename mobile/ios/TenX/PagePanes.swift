@@ -40,10 +40,11 @@ final class PagePanes: NSObject {
         }
         order.removeAll { $0 == key }
         order.append(key)
-        for (other, view) in views where other != key { view.isHidden = true }
+        for (other, view) in views where other != key { view.park() }
         if page.superview == nil { host.addSubview(page) }
         page.frame = rect
         page.isHidden = false
+        page.setAllMediaPlaybackSuspended(false)
         page.reportState()
         while order.count > Self.keep {
             let old = order.removeFirst()
@@ -52,10 +53,7 @@ final class PagePanes: NSObject {
     }
 
     func hide() {
-        for view in views.values {
-            view.isHidden = true
-            view.resignFirstResponder()
-        }
+        for view in views.values { view.park() }
     }
 
     func perform(key: String, what: String) {
@@ -118,6 +116,16 @@ private final class PageWebView: WKWebView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Out of sight: the keyboard goes with it (its first responder is
+    /// WebKit's own view inside), and so does its sound.
+    func park() {
+        guard !isHidden else { return }
+        endEditing(true)
+        isHidden = true
+        pauseAllMediaPlayback()
+        setAllMediaPlaybackSuspended(true)
+    }
+
     /// Where the page is, for the tenx page's bar and the task's list
     /// (web/src/lib/native.ts `PAGE_EVENT`). Only while it's shown.
     func reportState() {
@@ -139,20 +147,70 @@ extension PageWebView: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url, let scheme = url.scheme?.lowercased() else { return .cancel }
         if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
-        // mailto:, tel:, another app's link: iOS's.
-        await UIApplication.shared.open(url)
+        // mailto:, tel:, another app's link: iOS's, when the page itself goes
+        // there; a frame (an ad, an embed) never switches apps.
+        if action.targetFrame?.isMainFrame ?? true { await UIApplication.shared.open(url) }
         return .cancel
     }
 
-    /// `target=_blank` and `window.open`: in this page, which has no tabs of
-    /// its own (the task's bar is the tabs).
+    /// `target=_blank` and `window.open`: a window over the page, with the
+    /// same cookies and `window.opener` — what a sign-in popup (GitHub,
+    /// Google, Microsoft) needs to hand its result back. It closes itself
+    /// (`window.close()`) or with Done.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        webView.load(action.request)
-        return nil
+        guard let owner = window?.rootViewController.map(Self.topmost) else {
+            webView.load(action.request)
+            return nil
+        }
+        let popup = PopupController(configuration: configuration)
+        owner.present(UINavigationController(rootViewController: popup), animated: true)
+        return popup.webView
+    }
+
+    private static func topmost(_ vc: UIViewController) -> UIViewController {
+        var top = vc
+        while let next = top.presentedViewController { top = next }
+        return top
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
+    }
+}
+
+/// A page's popup window (`createWebViewWith`), as a sheet.
+@MainActor
+private final class PopupController: UIViewController, WKUIDelegate, WKNavigationDelegate {
+    let webView: WKWebView
+
+    init(configuration: WKWebViewConfiguration) {
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init(nibName: nil, bundle: nil)
+        webView.uiDelegate = self
+        webView.navigationDelegate = self
+        #if DEBUG
+        webView.isInspectable = true
+        #endif
+        navigationItem.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() { view = webView }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        title = webView.url?.host
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        dismiss(animated: true)
+    }
+
+    /// A popup's own popup: in the popup.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        webView.load(action.request)
+        return nil
     }
 }
 
