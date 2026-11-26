@@ -147,9 +147,9 @@ extension PageWebView: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url, let scheme = url.scheme?.lowercased() else { return .cancel }
         if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
-        // mailto:, tel:, another app's link: iOS's, when the page itself goes
-        // there; a frame (an ad, an embed) never switches apps.
-        if action.targetFrame?.isMainFrame ?? true { await UIApplication.shared.open(url) }
+        // mailto:, tel:, another app's link: iOS's, for a link tapped in the
+        // page itself; a script or a frame (an ad, an embed) never switches apps.
+        if action.navigationType == .linkActivated, action.targetFrame?.isMainFrame ?? true { await UIApplication.shared.open(url) }
         return .cancel
     }
 

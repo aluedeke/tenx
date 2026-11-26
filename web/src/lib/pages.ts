@@ -9,6 +9,9 @@
 
 import type { PageView } from '@/protocol';
 
+/** Pages a task keeps at most (`tenx_core::pages::MAX_PAGES`). */
+export const MAX_PAGES = 12;
+
 /** The web view's name in the app: page ids are per task. */
 export function pageKey(task: string, id: string): string {
   return `${task}#${id}`;

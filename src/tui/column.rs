@@ -525,6 +525,10 @@ pub(crate) struct Column {
     /// for `tenx web`'s tab bar. Read with `window_tab`, so another device's
     /// open or close shows within a tick.
     pages: tenx_core::pages::Pages,
+    /// What `pages` was read from: the task directory and the file's time,
+    /// so a tick reads it again only when it changed. With it, the pages'
+    /// cookie store (`tenx_core::pages::store_id`), worked out once.
+    pages_read: Option<(PathBuf, Option<std::time::SystemTime>, String)>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
 }
@@ -725,6 +729,7 @@ impl Column {
             current: None,
             window_tab: None,
             pages: Default::default(),
+            pages_read: None,
             slow_refreshed: None,
         }
     }
@@ -928,12 +933,25 @@ impl Column {
         }
     }
 
-    /// The current task's pages, while its window is tabbed.
+    /// The current task's pages, while its window is tabbed: read again
+    /// when the task or the file's time changed.
     fn read_pages(&mut self) {
-        self.pages = match (&self.current, self.window_tab) {
-            (Some(dir), Some(_)) => read_pages_in(dir),
-            _ => Default::default(),
+        let (Some(dir), Some(_)) = (self.current.clone(), self.window_tab) else {
+            self.pages = Default::default();
+            self.pages_read = None;
+            return;
         };
+        let time = std::fs::metadata(dir.join(tenx_core::pages::FILE)).and_then(|m| m.modified()).ok();
+        if self.pages_read.as_ref().is_some_and(|(d, t, _)| *d == dir && *t == time) {
+            return;
+        }
+        let Some(store) = self.store_of(&dir) else {
+            self.pages = Default::default();
+            self.pages_read = None;
+            return;
+        };
+        self.pages = read_pages_in(&dir);
+        self.pages_read = Some((dir, time, store));
     }
 
     /// Change the pages of the task with row id `task` (`view::row_id`; the
@@ -951,24 +969,27 @@ impl Column {
         let _one = EDITING.lock().unwrap_or_else(|e| e.into_inner());
         let mut pages = read_pages_in(&dir);
         if edit(&mut pages)? {
-            let path = dir.join(tenx_core::pages::FILE);
-            let tmp = path.with_extension(format!("tmp{}", std::process::id()));
-            std::fs::write(&tmp, pages.render())
-                .and_then(|()| std::fs::rename(&tmp, &path))
-                .map_err(|e| format!("couldn't save the pages: {e}"))?;
+            crate::cli::schedule::write_atomic(&dir.join(tenx_core::pages::FILE), &pages.render())
+                .map_err(|e| format!("couldn't save the pages: {e:#}"))?;
         }
         if self.current.as_ref() == Some(&dir) && self.window_tab.is_some() {
-            self.pages = pages;
+            self.pages_read = None;
+            self.read_pages();
         }
         Ok(())
     }
 
-    /// The pages' cookie store: the current task's workspace's.
-    pub(crate) fn pages_store(&self) -> Option<String> {
-        let dir = self.current.as_ref()?;
-        let row = self.rows.iter().find(|r| &r.path == dir)?;
+    /// The cookie store of a task's pages: its workspace's.
+    fn store_of(&self, task_dir: &std::path::Path) -> Option<String> {
+        let row = self.rows.iter().find(|r| r.path == task_dir)?;
         let ws = self.workspaces.get(row.ws_idx)?;
         Some(tenx_core::pages::store_id(&ws.dir.to_string_lossy()))
+    }
+
+    /// The current task's pages and their cookie store, for the view.
+    pub(crate) fn pages_view(&self) -> Option<(&str, &[tenx_core::pages::Page])> {
+        let (_, _, store) = self.pages_read.as_ref()?;
+        Some((store, &self.pages.pages))
     }
 
     /// `tenx web`'s window and tab while a form or the search field holds off

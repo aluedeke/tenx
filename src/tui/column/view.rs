@@ -568,7 +568,10 @@ impl Column {
             filter: self.filter.clone(),
             current,
             window_tab: self.window_tab.map(|t| t.name()),
-            pages: self.window_tab.and(self.pages_store()).map(|store| PagesView { store, list: self.pages.pages.clone() }),
+            pages: self
+                .window_tab
+                .and(self.pages_view())
+                .map(|(store, list)| PagesView { store: store.to_string(), list: list.to_vec() }),
             shown_closed,
             items,
             mode: self.mode_view(),

@@ -88,7 +88,7 @@ fn write_file(ws: &Workspace, name: &str, file: &ScheduleFile) -> Result<()> {
     write_atomic(&file_path(ws, name), &toml::to_string_pretty(file)?)
 }
 
-fn write_atomic(path: &Path, text: &str) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

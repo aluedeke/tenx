@@ -27,6 +27,23 @@ interface Props {
   onSafari(url: string): void;
 }
 
+/** Whether something the page drew lies over the hole: a point inside it
+ * (the middle and near each corner) whose topmost element isn't the hole. */
+function covered(hole: HTMLElement, r: DOMRect): boolean {
+  const inset = 8;
+  const points: [number, number][] = [
+    [r.left + r.width / 2, r.top + r.height / 2],
+    [r.left + inset, r.top + inset],
+    [r.right - inset, r.top + inset],
+    [r.left + inset, r.bottom - inset],
+    [r.right - inset, r.bottom - inset],
+  ];
+  return points.some(([x, y]) => {
+    const top = document.elementFromPoint(x, y);
+    return top !== null && top !== hole && !hole.contains(top);
+  });
+}
+
 export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSafari }: Props) {
   const hole = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<NativePageState | null>(null);
@@ -42,9 +59,18 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
     const el = hole.current;
     if (!el || local) return;
     let gaveUp = false;
+    let hidden = false;
     const show = () => {
       const r = el.getBoundingClientRect();
       if (gaveUp || r.width < 1 || r.height < 1) return;
+      // The app's web view sits over the whole page: under a drawer, a
+      // menu or a form the page drew over the hole, it steps aside.
+      if (covered(el, r)) {
+        if (!hidden) nativePageHide();
+        hidden = true;
+        return;
+      }
+      hidden = false;
       // Where the hole is on the screen: the layout's place less how far iOS
       // panned the visible part (the keyboard).
       const vv = window.visualViewport;
@@ -66,11 +92,21 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
     show();
     const watch = new ResizeObserver(show);
     watch.observe(el);
+    // Overlays come and go without the hole moving.
+    let queued = 0;
+    const later = () => {
+      cancelAnimationFrame(queued);
+      queued = requestAnimationFrame(show);
+    };
+    const overlays = new MutationObserver(later);
+    overlays.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
     window.addEventListener('resize', show);
     window.visualViewport?.addEventListener('resize', show);
     window.visualViewport?.addEventListener('scroll', show);
     return () => {
       watch.disconnect();
+      overlays.disconnect();
+      cancelAnimationFrame(queued);
       window.removeEventListener('resize', show);
       window.visualViewport?.removeEventListener('resize', show);
       window.visualViewport?.removeEventListener('scroll', show);

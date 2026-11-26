@@ -122,6 +122,7 @@ export function TaskTabs({ shown, onSelect, pages, pageShown, onPage, onClosePag
         ) : (
           <form
             className="page-field"
+            data-own-keys
             onSubmit={(e) => {
               e.preventDefault();
               const url = typedUrl(typing);

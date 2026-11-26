@@ -98,7 +98,7 @@ test('a task keeps pages in its tab bar; in a browser a page opens in a tab of i
   await expect(chip).toHaveCount(0);
 });
 
-test('in the iOS app a page shows over the terminal and follows where it goes', async ({ page }) => {
+test('in the iOS app a page shows over the terminal and follows where it goes', async ({ page, isMobile }) => {
   // The app's message handler, faked: what the page asks of it.
   await page.addInitScript(() => {
     const calls: unknown[] = [];
@@ -149,6 +149,16 @@ test('in the iOS app a page shows over the terminal and follows where it goes', 
   await expect.poll(() => sent().some((m) => m.type === 'page' && m.op === 'navigated' && m.title === 'Pull requests')).toBe(true);
   await expect(tabs.getByTestId('page-p1')).toHaveText('Pull requests');
   await expect(pane.getByRole('button', { name: 'back' })).toBeEnabled();
+
+  // On a phone the task list is a drawer over the page: the app's web view,
+  // which lies over everything the page draws, steps aside for it.
+  if (isMobile) {
+    const hides = async () => (await calls()).filter((c) => c.action === 'pageHide').length;
+    const before = await hides();
+    await page.getByTestId('toggle').tap();
+    await expect.poll(hides).toBeGreaterThan(before);
+    await page.getByTestId('toggle').tap();
+  }
 
   // A terminal tab puts the terminal back.
   await tabs.getByRole('tab', { name: 'agent' }).click();

@@ -173,6 +173,18 @@ export async function nativePageShow(page: NativePage): Promise<void> {
   await h.postMessage({ action: 'pageShow', ...page });
 }
 
+/** Whether the app shows pages: an app too old to answers no action of
+ * theirs. */
+export async function nativePagesSupported(): Promise<boolean> {
+  const h = handler();
+  if (!h) return false;
+  try {
+    return (await h.postMessage({ action: 'pageHide' })) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Hide the page shown, if any; it keeps its place for the next show. */
 export function nativePageHide(): void {
   void handler()

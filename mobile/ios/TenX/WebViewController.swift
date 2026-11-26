@@ -164,6 +164,8 @@ extension WebViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // A new document shows no page yet: none of the app's may be left over it.
+        pages.hide()
         loaded = true
         ShortcutBar.hide(in: webView)
         windowControls = nil
@@ -179,6 +181,7 @@ extension WebViewController: WKNavigationDelegate {
 
     // iOS ends a web view's process while the app is away; start again.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        pages.hide()
         webView.load(URLRequest(url: server.signInURL))
     }
 }

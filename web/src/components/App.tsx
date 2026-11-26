@@ -26,7 +26,7 @@ import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { ClipSync } from '@/lib/clipsync';
 import { EmptyClipboard, OtherKind, copyFromMac, copyImageFromMac, fetchMacImage, peekMac, sendImageToMac, sendToMac, toPng, type MacKind } from '@/lib/macclip';
-import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativePageClose, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
+import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativePageClose, nativePagesSupported, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -35,7 +35,7 @@ import { predict, unacked, type Pending } from '@/lib/predict';
 import { applyPatch } from '@/lib/viewpatch';
 import { describe, failure as failed, pageState, trackShown } from '@/lib/clipdiag';
 import { OBSIDIAN_URL, copyText, linkHref, linkKey, openExternal, routeLinks } from '@/lib/links';
-import { pageKey } from '@/lib/pages';
+import { MAX_PAGES, pageKey } from '@/lib/pages';
 import { palette } from '@/palette';
 import {
   DRAWER_MARGIN,
@@ -703,6 +703,8 @@ export function App() {
       // A row's menu or sheet is open: it takes Escape itself, and nothing
       // else should reach the column or the terminal behind it.
       if (document.querySelector('[data-popup]')) return;
+      // A field that takes every key itself (the tab bar's address field).
+      if ((ev.target as Element | null)?.closest?.('[data-own-keys]')) return;
       if (isFocusCycle(ev, mac.current)) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -1377,6 +1379,11 @@ export function App() {
   const barTask = windowTab && !shown?.shown_closed ? (shown?.current ?? null) : null;
   const pages = barTask ? (shown?.pages ?? null) : null;
   const [pageShown, setPageShown] = useState<{ task: string; id: string } | null>(null);
+  // The app shows pages (an older one doesn't: pages open in Safari there).
+  const [appPages, setAppPages] = useState(false);
+  useEffect(() => {
+    void nativePagesSupported().then(setAppPages);
+  }, []);
   const shownPage =
     pages && pageShown && pageShown.task === barTask ? (pages.list.find((p) => p.id === pageShown.id) ?? null) : null;
   // A page just asked for: shown once the view lists it.
@@ -1393,22 +1400,22 @@ export function App() {
     (url: string) => {
       if (!barTask) return;
       // Already one of the task's pages: that page, no new one.
-      const known = nativeApp() ? pages?.list.find((p) => p.url === url) : undefined;
+      const known = appPages ? pages?.list.find((p) => p.url === url) : undefined;
       if (known) {
         setPageShown({ task: barTask, id: known.id });
         return;
       }
-      wantPage.current = nativeApp() ? { task: barTask, url } : null;
+      wantPage.current = appPages ? { task: barTask, url } : null;
       send({ type: 'page', task: barTask, op: 'open', url });
-      if (!nativeApp()) openExternal(url);
+      if (!appPages) window.open(url, '_blank', 'noopener,noreferrer');
     },
-    [barTask, pages, send],
+    [barTask, pages, send, appPages],
   );
   // A page closed (on any device) is dropped from the app, not just hidden:
   // its sound and scripts stop with it.
   const listed = useRef(new Set<string>());
   useEffect(() => {
-    if (!barTask || !pages || !nativeApp()) return;
+    if (!barTask || !pages || !appPages) return;
     const now = new Set(pages.list.map((p) => pageKey(barTask, p.id)));
     for (const key of [...listed.current]) {
       if (key.startsWith(`${barTask}#`) && !now.has(key)) {
@@ -1417,16 +1424,19 @@ export function App() {
       }
     }
     for (const key of now) listed.current.add(key);
-  }, [barTask, pages]);
+  }, [barTask, pages, appPages]);
   // In the app, a web link (the terminal's, the sidebar's, the links box)
   // opens as one of the shown task's pages; holding it still offers Safari.
+  // Not once the task has as many pages as it keeps: Safari then.
   useEffect(() => {
-    if (!barTask || !nativeApp()) return;
+    if (!barTask || !appPages) return;
     return routeLinks((url) => {
+      const list = pages?.list ?? [];
+      if (list.length >= MAX_PAGES && !list.some((p) => p.url === url)) return false;
       openPage(url);
       return true;
     });
-  }, [barTask, openPage]);
+  }, [barTask, openPage, appPages, pages]);
   // A predicted open hands the keyboard to the terminal now, as the server's
   // `focus_terminal` will once it has switched.
   const opened = useRef(0);
@@ -1604,8 +1614,8 @@ export function App() {
               pageShown={shownPage?.id ?? null}
               onPage={(page) => {
                 if (!barTask) return;
-                if (nativeApp()) setPageShown({ task: barTask, id: page.id });
-                else openExternal(page.url);
+                if (appPages) setPageShown({ task: barTask, id: page.id });
+                else window.open(page.url, '_blank', 'noopener,noreferrer');
               }}
               onClosePage={(page) => {
                 if (!barTask) return;
