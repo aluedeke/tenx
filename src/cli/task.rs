@@ -684,7 +684,8 @@ fn trust_task_dir(task_dir: &Path) {
 
 /// Seed Claude Code's trust for everything a Claude launch names
 /// (`tenx_core::trust::launch_dirs`): the task directory, each `--add-dir`
-/// directory ([`readable_dirs`]) and each worktree's bare repo. Claude Code
+/// directory outside it ([`readable_dirs`]) and each worktree's bare repo, as
+/// its `.git` file names it (`tenx_core::trust::worktree_bare_repo`). Claude Code
 /// asks "Adding a new directory … Is this a directory you created or one you
 /// trust?" for every added directory it doesn't trust, and the answer lasts
 /// only for that session — so every reopen, restart and scheduled run would
@@ -699,7 +700,15 @@ pub(crate) fn trust_launch(
     add_dirs: &[PathBuf],
 ) {
     let bare_dir = ws.bare_dir(global);
-    let bares: Vec<PathBuf> = task.repos.iter().map(|r| crate::git::bare_repo_path(&bare_dir, r)).collect();
+    let bares: Vec<PathBuf> = task
+        .repos
+        .iter()
+        .filter_map(|r| {
+            let wt = task.path.join(r);
+            let text = std::fs::read_to_string(wt.join(".git")).ok()?;
+            tenx_core::trust::worktree_bare_repo(&text, &wt, &bare_dir)
+        })
+        .collect();
     let claude = agent == crate::agent::AgentKind::Claude;
     let dirs = tenx_core::trust::launch_dirs(claude, &task.path, add_dirs, &bares);
     if let Err(e) = crate::workspace::sessions::trust_dirs(&dirs) {

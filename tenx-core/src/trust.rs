@@ -38,18 +38,36 @@ use std::path::{Path, PathBuf};
 /// meant to trust.
 ///
 /// Only a Claude launch gets `--add-dir`; for any other agent (`claude` false)
-/// it is the task directory alone.
+/// it is the task directory alone. An added directory inside the task
+/// directory (a worktree) needs no entry of its own: the task directory's
+/// covers it, and Claude Code asks about its repository instead.
 pub fn launch_dirs(claude: bool, task_dir: &Path, add_dirs: &[PathBuf], bare_repos: &[PathBuf]) -> Vec<PathBuf> {
     if !claude {
         return vec![task_dir.to_path_buf()];
     }
+    let outside = add_dirs.iter().map(PathBuf::as_path).filter(|d| !d.starts_with(task_dir));
     let mut out: Vec<PathBuf> = Vec::new();
-    for d in std::iter::once(task_dir).chain(add_dirs.iter().map(PathBuf::as_path)).chain(bare_repos.iter().map(PathBuf::as_path)) {
+    for d in std::iter::once(task_dir).chain(outside).chain(bare_repos.iter().map(PathBuf::as_path)) {
         if !out.iter().any(|o| o == d) {
             out.push(d.to_path_buf());
         }
     }
     out
+}
+
+/// The bare repo a worktree belongs to, from the text of its `.git` file
+/// (`gitdir: <bare>/worktrees/<name>`), if that repo lies inside `bare_dir` —
+/// tenx's own clones, never another repository. A relative `gitdir` is read
+/// against `worktree`.
+pub fn worktree_bare_repo(git_file: &str, worktree: &Path, bare_dir: &Path) -> Option<PathBuf> {
+    let gitdir = git_file.lines().find_map(|l| l.strip_prefix("gitdir:"))?.trim();
+    let gitdir = worktree.join(gitdir);
+    let worktrees = gitdir.parent()?;
+    if worktrees.file_name()? != "worktrees" {
+        return None;
+    }
+    let bare = worktrees.parent()?;
+    (bare.starts_with(bare_dir) && !bare.components().any(|c| c == std::path::Component::ParentDir)).then(|| bare.to_path_buf())
 }
 
 /// Mark every key in `dirs` as trusted, preserving everything else in the
@@ -97,13 +115,24 @@ mod tests {
             &[p("/ws/tasks/a/app"), p("/ws/tasks/a/lib"), p("/ws/tasks/a")],
             &[p("/ws/.bare/app.git"), p("/ws/.bare/lib.git")],
         );
-        assert_eq!(got, vec![p("/ws/tasks/a"), p("/ws/tasks/a/app"), p("/ws/tasks/a/lib"), p("/ws/.bare/app.git"), p("/ws/.bare/lib.git")]);
+        assert_eq!(got, vec![p("/ws/tasks/a"), p("/ws/.bare/app.git"), p("/ws/.bare/lib.git")]);
     }
 
     #[test]
     fn launch_dirs_of_a_repo_less_task_add_only_the_workspace() {
         let got = launch_dirs(true, Path::new("/ws/tasks/a"), &[PathBuf::from("/ws")], &[]);
         assert_eq!(got, vec![PathBuf::from("/ws/tasks/a"), PathBuf::from("/ws")]);
+    }
+
+    #[test]
+    fn a_worktree_names_its_bare_repo_only_inside_bare_dir() {
+        let wt = Path::new("/ws/tasks/a/app");
+        let bare = Path::new("/ws/.bare");
+        assert_eq!(worktree_bare_repo("gitdir: /ws/.bare/app.git/worktrees/app2\n", wt, bare), Some(PathBuf::from("/ws/.bare/app.git")));
+        assert_eq!(worktree_bare_repo("gitdir: /elsewhere/app.git/worktrees/app\n", wt, bare), None);
+        assert_eq!(worktree_bare_repo("gitdir: /ws/.bare/../x.git/worktrees/app\n", wt, bare), None);
+        assert_eq!(worktree_bare_repo("gitdir: /ws/.bare/app.git\n", wt, bare), None);
+        assert_eq!(worktree_bare_repo("not a git file", wt, bare), None);
     }
 
     #[test]
