@@ -174,6 +174,46 @@ test('in the iOS app a page shows over the terminal and follows where it goes', 
   await expect.poll(async () => (await calls()).some((c) => c.action === 'pageShow' && (c as { url?: string }).url === 'http://localhost:3000')).toBe(true);
 });
 
+test('in the iOS app a link opens in its installed app first, else as a page', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'one run is enough');
+  // The app's message handler, faked: GitHub's app is installed, Linear's isn't.
+  await page.addInitScript(() => {
+    const calls: { action: string; url?: string }[] = [];
+    (window as unknown as { __calls: unknown[] }).__calls = calls;
+    (window as unknown as { webkit: unknown }).webkit = {
+      messageHandlers: {
+        tenx: {
+          postMessage: async (m: { action: string; url?: string }) => {
+            calls.push(m);
+            if (m.action === 'clipboardPeek') return { count: 0 };
+            if (m.action === 'pushState') return { permission: 'denied', env: 'sandbox' };
+            if (m.action === 'openApp') return String(m.url).startsWith('https://github.com/');
+            return m.action.startsWith('page') ? true : null;
+          },
+        },
+      },
+    };
+  });
+  const calls = async () => page.evaluate(() => (window as unknown as { __calls: { action: string; url?: string }[] }).__calls);
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  const sidebar = page.getByTestId('sidebar');
+  await sidebar.getByRole('link', { name: /#33/ }).click();
+  await expect.poll(async () => (await calls()).some((c) => c.action === 'openApp' && c.url === 'https://github.com/acme/api/pull/33')).toBe(true);
+  await sidebar.getByRole('link', { name: /ACME-12/ }).click();
+  await expect(tabs.getByRole('tab', { selected: true })).toHaveText(/linear\.app/);
+  await expect(tabs.getByRole('tab', { name: /github\.com/ })).toHaveCount(0);
+  // A link that is already one of the task's pages shows that page, not the app.
+  await tabs.getByTestId('page-add').click();
+  await page.getByTestId('page-url').fill('github.com/acme/api/pull/33');
+  await page.getByTestId('page-url').press('Enter');
+  await tabs.getByRole('tab', { name: 'agent' }).click();
+  const asked = (await calls()).filter((c) => c.action === 'openApp').length;
+  await sidebar.getByRole('link', { name: /#33/ }).click();
+  await expect(tabs.getByRole('tab', { selected: true })).toHaveText(/github\.com/);
+  expect((await calls()).filter((c) => c.action === 'openApp').length).toBe(asked);
+});
+
 test('on a phone the + stays in reach however many pages the bar lists', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'a phone-width bar');
   await page.goto('/');

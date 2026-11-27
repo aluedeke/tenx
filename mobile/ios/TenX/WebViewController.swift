@@ -243,6 +243,12 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
                   let x = body?["x"] as? Double, let y = body?["y"] as? Double else { return (nil, "no link") }
             owner.showLinkMenu(url, at: CGPoint(x: x, y: y))
             return (true, nil)
+        case "openApp":
+            // A web link in the app it belongs to, when one is installed
+            // (a universal link); false leaves it to the page.
+            guard let text = body?["url"] as? String, let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+            else { return (false, nil) }
+            return (await UIApplication.shared.open(url, options: [.universalLinksOnly: true]), nil)
         case "pageShow":
             guard let key = body?["key"] as? String,
                   let text = body?["url"] as? String, let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),

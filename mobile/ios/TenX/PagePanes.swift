@@ -156,6 +156,13 @@ private final class PageWebView: WKWebView {
 extension PageWebView: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url, let scheme = url.scheme?.lowercased() else { return .cancel }
+        // A tapped link to another site opens in that site's app when one is
+        // installed (a universal link); within the site the page goes on.
+        if scheme == "http" || scheme == "https", action.navigationType == .linkActivated, action.targetFrame?.isMainFrame ?? true,
+           let here = webView.url?.host ?? failed?.host, !Self.sameSite(url.host, here), !Self.signIn(url),
+           await UIApplication.shared.open(url, options: [.universalLinksOnly: true]) {
+            return .cancel
+        }
         if action.targetFrame?.isMainFrame ?? true, scheme == "http" || scheme == "https" { failed = nil }
         if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
         // mailto:, tel:, another app's link: iOS's, for a link tapped in the
@@ -182,6 +189,27 @@ extension PageWebView: WKNavigationDelegate, WKUIDelegate {
         var top = vc
         while let next = top.presentedViewController { top = next }
         return top
+    }
+
+    /// One site: the same last two name parts (`app.linear.app` and
+    /// `uploads.linear.app`, `www.example.com` and `example.com`), or the
+    /// same IP address. Two-part country suffixes (`co.uk`) count as wider.
+    static func sameSite(_ a: String?, _ b: String) -> Bool {
+        guard let a = a?.lowercased() else { return false }
+        let b = b.lowercased()
+        func site(_ h: String) -> String {
+            if h.contains(":") || h.allSatisfy({ $0.isNumber || $0 == "." }) { return h }
+            return h.split(separator: ".").suffix(2).joined(separator: ".")
+        }
+        return site(a) == site(b)
+    }
+
+    /// A sign-in step (`/login/oauth/authorize`, `/signin`, `/sso`): it stays
+    /// in the page, or its answer would never come back to the page's cookies.
+    /// Whole path parts only: `/authorjane` or `LOGIN-12` is no sign-in.
+    static func signIn(_ url: URL) -> Bool {
+        let steps: Set<String> = ["oauth", "oauth2", "authorize", "login", "signin", "sign-in", "sso", "auth"]
+        return url.pathComponents.contains { steps.contains($0.lowercased()) }
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
