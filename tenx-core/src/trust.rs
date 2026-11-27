@@ -17,7 +17,7 @@
 //! `--add-dir` (a task's worktrees, its workspace, or every workspace for an
 //! adhoc session): Claude Code asks about each untrusted one at every start,
 //! and keys one inside a git repository by that repository — for a worktree,
-//! its bare repo (`cli::task::trust_launch` in the binary).
+//! its bare repo. [`launch_dirs`] is that set.
 //!
 //! The key is the directory's absolute path as Claude Code computes it:
 //! `path.resolve(cwd)` — no symlink resolution — so a workspace reached
@@ -25,6 +25,26 @@
 //! real path too when it differs; seeding both is what the runner does.
 
 use serde_json::{Map, Value};
+use std::path::{Path, PathBuf};
+
+/// The directories to trust before a Claude launch: the task directory, each
+/// `--add-dir` directory, and the bare repo of each of the task's worktrees —
+/// Claude Code names a worktree by its repository ("This directory is part of
+/// the repository at …/.bare/<name>.git"). In that order, each once.
+///
+/// The bare repos are the ones tenx cloned, handed in by the caller from the
+/// workspace's own layout — never a repository found by walking up from a
+/// directory, which could be one enclosing a workspace that the user never
+/// meant to trust.
+pub fn launch_dirs(task_dir: &Path, add_dirs: &[PathBuf], bare_repos: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for d in std::iter::once(task_dir).chain(add_dirs.iter().map(PathBuf::as_path)).chain(bare_repos.iter().map(PathBuf::as_path)) {
+        if !out.iter().any(|o| o == d) {
+            out.push(d.to_path_buf());
+        }
+    }
+    out
+}
 
 /// Mark every key in `dirs` as trusted, preserving everything else in the
 /// config. Returns `true` if the config changed — a caller writes the file
@@ -61,6 +81,23 @@ pub fn grant_trust(config: &mut Value, dirs: &[String]) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn launch_dirs_are_task_add_dirs_and_bare_repos_once_each() {
+        let p = PathBuf::from;
+        let got = launch_dirs(
+            Path::new("/ws/tasks/a"),
+            &[p("/ws/tasks/a/app"), p("/ws/tasks/a/lib"), p("/ws/tasks/a")],
+            &[p("/ws/.bare/app.git"), p("/ws/.bare/lib.git")],
+        );
+        assert_eq!(got, vec![p("/ws/tasks/a"), p("/ws/tasks/a/app"), p("/ws/tasks/a/lib"), p("/ws/.bare/app.git"), p("/ws/.bare/lib.git")]);
+    }
+
+    #[test]
+    fn launch_dirs_of_a_repo_less_task_add_only_the_workspace() {
+        let got = launch_dirs(Path::new("/ws/tasks/a"), &[PathBuf::from("/ws")], &[]);
+        assert_eq!(got, vec![PathBuf::from("/ws/tasks/a"), PathBuf::from("/ws")]);
+    }
 
     #[test]
     fn adds_entry_and_map_when_missing() {

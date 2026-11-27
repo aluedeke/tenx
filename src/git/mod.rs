@@ -489,25 +489,6 @@ pub fn delete_branch(bare_repo_path: &Path, branch_name: &str) -> Result<()> {
     bail!("git branch -D {branch_name} failed: {}", stderr.trim());
 }
 
-/// The repository a working directory belongs to, as git's absolute common
-/// directory: for a task's worktree, its bare repo (`.bare/<name>.git`). `None`
-/// when `dir` is not inside a git repository.
-///
-/// Claude Code keys its trust for an `--add-dir` directory by this repository,
-/// not by the directory itself (`cli::task::trust_launch`).
-pub fn common_dir(dir: &Path) -> Option<std::path::PathBuf> {
-    let out = Command::new("git")
-        .args(["-C", &dir.to_string_lossy(), "rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!path.is_empty()).then(|| std::path::PathBuf::from(path))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -732,25 +713,4 @@ mod tests {
         assert_eq!(git(&wt, &["rev-parse", "HEAD"]), first);
         let _ = std::fs::remove_dir_all(&dir);
     }
-    #[test]
-    fn common_dir_of_a_worktree_is_its_bare_repo() {
-        let d = tmpdir("common-dir");
-        let git = |args: &[&str]| {
-            let ok = Command::new("git").args(args).current_dir(&d).output().unwrap().status.success();
-            assert!(ok, "git {args:?}");
-        };
-        git(&["init", "-q", "src"]);
-        git(&["-C", "src", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"]);
-        git(&["clone", "-q", "--bare", "src", "repo.git"]);
-        git(&["-C", "repo.git", "worktree", "add", "-q", "../wt"]);
-        let bare = std::fs::canonicalize(d.join("repo.git")).unwrap();
-        let got = common_dir(&d.join("wt")).map(|p| std::fs::canonicalize(p).unwrap());
-        assert_eq!(got, Some(bare));
-        std::fs::create_dir_all(d.join("plain")).unwrap();
-        // A temp dir can itself sit inside some repository; only check that a
-        // plain directory doesn't report the worktree's repo.
-        assert_ne!(common_dir(&d.join("plain")).map(|p| std::fs::canonicalize(p).unwrap()), got);
-        let _ = std::fs::remove_dir_all(&d);
-    }
-
 }
