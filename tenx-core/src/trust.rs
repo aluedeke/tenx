@@ -13,6 +13,12 @@
 //! tenx does the same for a task it creates, since the task directory is
 //! tenx's own, symlinked to a `.claude/` the user already trusted.
 //!
+//! The same grant also covers the directories a launch passes with
+//! `--add-dir` (a task's worktrees, its workspace, or every workspace for an
+//! adhoc session): Claude Code asks about each untrusted one at every start,
+//! and keys one inside a git repository by that repository — for a worktree,
+//! its bare repo (`cli::task::trust_launch` in the binary).
+//!
 //! The key is the directory's absolute path as Claude Code computes it:
 //! `path.resolve(cwd)` — no symlink resolution — so a workspace reached
 //! through a symlink is keyed by the path the shell is in. Callers pass the

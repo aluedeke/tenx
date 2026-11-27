@@ -221,6 +221,7 @@ fn snapshot() -> Result<(Snapshot, Vec<String>)> {
                     (None, Some((i, t)), Some(kind)) => {
                         let ws = &workspaces[*i];
                         let dirs = crate::cli::task::readable_dirs(ws, t);
+                        crate::cli::task::trust_launch(&t.path, &dirs);
                         (start_path.clone(), Some(crate::agent::launch(ws, kind, &t.name, &t.path, &dirs, None)), None)
                     }
                     _ => (start_path.clone(), Some(start.clone()), None),

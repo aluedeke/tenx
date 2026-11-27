@@ -596,7 +596,8 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
     // Not open — create it (named by slug) and record the new id. Tasks that
     // predate trust seeding get it here on reopen; the agent (workspace default
     // or the task's `.tenx-agent`) decides the launch command.
-    trust_task_dir(&task.path);
+    let add_dirs = readable_dirs(ws, &task);
+    trust_launch(&task.path, &add_dirs);
     let global_layout = crate::workspace::load_global().map(|g| g.layout).unwrap_or_default();
     let layout = tenx_core::tabs::layout(&ws.config.layout, &global_layout);
     let agent = crate::agent::agent_for(ws, &task.path);
@@ -606,7 +607,7 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
     // failed open keeps it for the next try.
     let prompt_file = task.path.join(PROMPT_FILE);
     let prompt = std::fs::read_to_string(&prompt_file).ok().filter(|p| !p.trim().is_empty());
-    let agent_cmd = crate::agent::launch(ws, agent, slug, &task.path, &readable_dirs(ws, &task), prompt.as_deref());
+    let agent_cmd = crate::agent::launch(ws, agent, slug, &task.path, &add_dirs, prompt.as_deref());
     let opts = crate::tmux::TaskWindow {
         slug,
         title: &task.display_name,
@@ -677,6 +678,28 @@ pub fn ensure_window_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<
 /// the dialog is an annoyance, a task that can't be created is not.
 fn trust_task_dir(task_dir: &Path) {
     if let Err(e) = crate::workspace::sessions::trust_dir(task_dir) {
+        eprintln!("! couldn't pre-approve Claude Code's trust dialog for {}: {e:#}", task_dir.display());
+    }
+}
+
+/// Seed Claude Code's trust for everything an agent launch names: the task
+/// directory and each `--add-dir` directory ([`readable_dirs`]). Claude Code
+/// asks "Adding a new directory … Is this a directory you created or one you
+/// trust?" for every added directory it doesn't trust, and the answer lasts
+/// only for that session — so every reopen, restart and scheduled run would
+/// stop on it, once per repo. An added directory inside a git repository is
+/// trusted through that repository: for a task's worktree that is its bare
+/// repo (`git::common_dir`), which Claude Code names in the prompt ("This
+/// directory is part of the repository at …/.bare/<name>.git"). Every one of
+/// these is the task's own folder or a workspace the user registered. Never
+/// fatal, like [`trust_task_dir`].
+pub(crate) fn trust_launch(task_dir: &Path, add_dirs: &[PathBuf]) {
+    let mut dirs = vec![task_dir.to_path_buf()];
+    for d in add_dirs {
+        dirs.push(d.clone());
+        dirs.extend(crate::git::common_dir(d));
+    }
+    if let Err(e) = crate::workspace::sessions::trust_dirs(&dirs) {
         eprintln!("! couldn't pre-approve Claude Code's trust dialog for {}: {e:#}", task_dir.display());
     }
 }
