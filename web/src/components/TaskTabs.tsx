@@ -107,49 +107,50 @@ export function TaskTabs({ shown, onSelect, pages, pageShown, onPage, onClosePag
             </button>
           </span>
         ))}
-        {typing === null ? (
-          <button
-            type="button"
-            className="page-add"
-            title="open a page in this task"
-            aria-label="open a page"
-            data-testid="page-add"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setTyping('')}
-          >
-            +
-          </button>
-        ) : (
-          <form
-            className="page-field"
-            data-own-keys
-            onSubmit={(e) => {
-              e.preventDefault();
-              const url = typedUrl(typing);
-              if (url) onOpenPage(url);
-              setTyping(null);
-            }}
-          >
-            <input
-              ref={field}
-              value={typing}
-              data-testid="page-url"
-              placeholder="address"
-              inputMode="url"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="go"
-              onChange={(e) => setTyping(e.target.value)}
-              onBlur={() => setTyping(null)}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === 'Escape') setTyping(null);
-              }}
-            />
-          </form>
-        )}
       </div>
+      {/* Outside the scrolling chips: always in reach, however many pages. */}
+      {typing === null ? (
+        <button
+          type="button"
+          className="page-add"
+          title="open a page in this task"
+          aria-label="open a page"
+          data-testid="page-add"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setTyping('')}
+        >
+          +
+        </button>
+      ) : (
+        <form
+          className="page-field"
+          data-own-keys
+          onSubmit={(e) => {
+            e.preventDefault();
+            const url = typedUrl(typing);
+            if (url) onOpenPage(url);
+            setTyping(null);
+          }}
+        >
+          <input
+            ref={field}
+            value={typing}
+            data-testid="page-url"
+            placeholder="address"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            onChange={(e) => setTyping(e.target.value)}
+            onBlur={() => setTyping(null)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Escape') setTyping(null);
+            }}
+          />
+        </form>
+      )}
     </div>
   );
 }

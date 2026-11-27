@@ -8,7 +8,7 @@ members = ["tenx-core"]
 
 [package]
 name = "tenx-cli"
-version = "0.45.0"
+version = "0.48.0"
 edition = "2024"
 rust-version = "1.87"
 description = "Work on many tasks in parallel, each with its own git worktrees and its own Claude Code agent, and always know which one needs you"
@@ -44,7 +44,7 @@ name = "tenx-tts"
 path = "src/bin/tenx-tts.rs"
 
 [dependencies]
-tenx-core = { version = "0.45.0", path = "tenx-core" }
+tenx-core = { version = "0.48.0", path = "tenx-core" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
@@ -72,7 +72,7 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "ws",
 # points it at a stub page when the frontend hasn't been built.
 rust-embed = { version = "8.12.0", features = ["interpolate-folder-path", "mime-guess"] }
 # `/mcp`'s event stream (axum's `Sse` takes a `Stream`).
-futures-util = { version = "0.3.34", default-features = false }
+futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 
 # tenx-whisper only (the `tenx` binary doesn't use it, so doesn't link it).
 # whisper.cpp is C++: building it needs cmake and a C/C++ compiler.

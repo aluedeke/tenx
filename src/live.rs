@@ -178,6 +178,43 @@ pub fn ports_by_window() -> HashMap<String, Vec<u16>> {
     port_scan().by_window
 }
 
+/// Every port a task's process listens on: the processes of task windows
+/// (never the home window's, or another window opened for no task) and the
+/// `tenx service`s started in a task with an open window — what `tenx web`'s
+/// page tunnel may reach. Reads only: no record is pruned here.
+pub fn task_ports() -> std::collections::HashSet<u16> {
+    let panes = crate::tmux::task_pane_pids().unwrap_or_default();
+    if panes.is_empty() {
+        return Default::default();
+    }
+    let Some((listeners, tree)) = listeners_and_tree() else { return Default::default() };
+    let pids: Vec<u32> = panes.iter().map(|(_, pid)| *pid).collect();
+    let mut ports: std::collections::HashSet<u16> = tenx_core::live::ports_for(&pids, &listeners, &tree).into_iter().collect();
+    let mut dirs: Vec<PathBuf> = panes.into_iter().map(|(d, _)| d.canonicalize().unwrap_or(d)).collect();
+    dirs.sort();
+    dirs.dedup();
+    let services = crate::cli::service::running();
+    for dir in &dirs {
+        for r in tenx_core::taskservice::in_task(&services, dir) {
+            ports.extend(tenx_core::live::ports_for(&[r.child], &listeners, &tree));
+        }
+    }
+    ports
+}
+
+/// Every TCP listener (pid, port) and the process tree (pid, parent).
+type Listeners = (Vec<(u32, u16)>, Vec<(u32, u32)>);
+
+/// Every TCP listener and the process tree, or `None` when nothing listens:
+/// the two halves of a port scan.
+fn listeners_and_tree() -> Option<Listeners> {
+    let listeners = tenx_core::live::parse_lsof(&run_capture("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"]));
+    if listeners.is_empty() {
+        return None;
+    }
+    Some((listeners, tenx_core::live::parse_ps(&run_capture("ps", &["-axo", "pid=,ppid="]))))
+}
+
 /// One port scan: the ports per task window, and what they came from — every
 /// listener (pid, port) and the process tree — for the ports of processes
 /// outside a window's own tree (`cli::service::shown_in`).
@@ -193,11 +230,9 @@ pub fn port_scan() -> PortScan {
     if panes.is_empty() {
         return PortScan::default();
     }
-    let listeners = tenx_core::live::parse_lsof(&run_capture("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"]));
-    if listeners.is_empty() {
+    let Some((listeners, tree)) = listeners_and_tree() else {
         return PortScan { by_window: panes.into_iter().map(|(w, _)| (w, vec![])).collect(), ..Default::default() };
-    }
-    let tree = tenx_core::live::parse_ps(&run_capture("ps", &["-axo", "pid=,ppid="]));
+    };
     let mut roots: HashMap<String, Vec<u32>> = HashMap::new();
     for (window, pid) in panes {
         roots.entry(window).or_default().push(pid);

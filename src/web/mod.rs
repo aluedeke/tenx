@@ -14,6 +14,7 @@ mod assets;
 mod clipboard;
 mod events;
 mod mcp;
+mod pagetunnel;
 mod paste;
 mod secrets;
 mod server;
@@ -76,7 +77,6 @@ pub fn run(o: Options) -> Result<()> {
         Err(e) => return Err(e).with_context(|| format!("listen on {addr}")),
     };
     listener.set_nonblocking(true)?;
-
     // Sessions an earlier run left behind (it was killed): nobody can come
     // back to them, since the tabs they belonged to were this process's.
     for (name, attached) in crate::tmux::sessions_with_prefix(tenx_core::web::SESSION_PREFIX) {
@@ -117,6 +117,7 @@ pub fn run(o: Options) -> Result<()> {
         tabs: Arc::new(tab::Tabs::new(grace(), hub.clone())),
         push,
         hub,
+        tunnels: pagetunnel::Tunnels::default(),
     });
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().context("start the async runtime")?;
     runtime.block_on(server::serve(listener, app))

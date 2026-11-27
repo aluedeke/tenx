@@ -515,6 +515,11 @@ pub fn global_config_path() -> Option<PathBuf> {
 /// the canonical path. Returns whether the config was changed; best-effort and
 /// never fatal (see `tenx_core::trust::grant_trust`).
 pub fn trust_dir(dir: &std::path::Path) -> Result<bool> {
+    trust_dirs(&[dir.to_path_buf()])
+}
+
+/// [`trust_dir`] for several directories, in one read and at most one write.
+pub fn trust_dirs(dirs: &[PathBuf]) -> Result<bool> {
     let Some(path) = global_config_path() else {
         return Ok(false);
     };
@@ -526,12 +531,14 @@ pub fn trust_dir(dir: &std::path::Path) -> Result<bool> {
     let mut config: serde_json::Value =
         serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
 
-    let given = dir.to_string_lossy().into_owned();
-    let mut keys = vec![given.clone()];
-    if let Ok(real) = fs::canonicalize(dir) {
-        let real = real.to_string_lossy().into_owned();
-        if real != given {
-            keys.push(real);
+    let mut keys: Vec<String> = Vec::new();
+    for dir in dirs {
+        let given = dir.to_string_lossy().into_owned();
+        let real = fs::canonicalize(dir).ok().map(|r| r.to_string_lossy().into_owned());
+        for key in std::iter::once(given).chain(real) {
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
         }
     }
     if !tenx_core::trust::grant_trust(&mut config, &keys) {

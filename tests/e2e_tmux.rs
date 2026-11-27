@@ -1700,6 +1700,129 @@ fn web_names_the_tab_a_tabbed_window_shows() {
     assert!(file.contains("https://linear.app/acme"), "{file}");
 }
 
+/// `tenx web`'s page tunnel (`tenx_core::pagetunnel`): a `/pagetunnel`
+/// WebSocket with the page token reaches a port a task's process listens
+/// on, and nothing else.
+#[test]
+fn web_page_tunnel_reaches_only_a_tasks_own_port() {
+    use std::io::BufRead;
+    use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
+
+    let Some(h) = Harness::named("-proxy") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Proxied", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let free = || std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let site = h.root.join("site");
+    fs::create_dir_all(&site).unwrap();
+    fs::write(site.join("index.html"), "dev server of the task").unwrap();
+    // Each server takes a free port itself and writes it to a file: a port
+    // picked here and closed again can be taken by another test running at
+    // the same time before the server binds it.
+    fs::write(
+        site.join("serve.py"),
+        r#"import functools, http.server, os, socket, socketserver, sys
+host, out, root = sys.argv[1:4]
+class Server(http.server.ThreadingHTTPServer):
+    address_family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    # HTTPServer's own server_bind looks its address up in DNS
+    # (getfqdn), which for ::1 hung past the wait on a CI Mac.
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "localhost", self.server_address[1]
+s = Server((host, 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=root))
+open(out + ".tmp", "w").write(str(s.server_address[1]))
+os.rename(out + ".tmp", out)
+s.serve_forever()
+"#,
+    )
+    .unwrap();
+    let start = |window: &str, host: &str, name: &str| {
+        let cmd = format!("python3 {0}/serve.py {host} {0}/{name}.port {0} 2>{0}/{name}.log", site.display());
+        assert!(h.tmux().args(["split-window", "-d", "-t", window, &cmd]).status().unwrap().success());
+    };
+    // The task's dev server, started in its window.
+    start("tenx:proxied", "127.0.0.1", "dev");
+    // A second one on IPv6 alone, as Vite listens on a Mac.
+    start("tenx:proxied", "::1", "dev6");
+    // A server in the home window: inside tenx's session, but no task's.
+    start("tenx:home", "127.0.0.1", "home");
+    let port_of = |name: &str| -> u16 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            if let Ok(p) = fs::read_to_string(site.join(format!("{name}.port"))) {
+                return p.trim().parse().unwrap();
+            }
+            let log = fs::read_to_string(site.join(format!("{name}.log"))).unwrap_or_default();
+            assert!(std::time::Instant::now() < deadline, "the {name} server never listened: {log}");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    };
+    let (dev, dev6, home) = (port_of("dev"), port_of("dev6"), port_of("home"));
+    // A listener no task owns: this test's own.
+    let stranger = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let stranger_port = stranger.local_addr().unwrap().port();
+
+    let port = free();
+    let mut server = h.tenx().args(["web", "--port", &port.to_string()]).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+    let lines: Vec<String> = std::io::BufReader::new(server.stdout.take().unwrap()).lines().map_while(Result::ok).take(2).collect();
+    let token = lines.iter().find_map(|l| l.split_once("?token=").map(|(_, t)| t.trim().to_string())).expect("tenx web printed its address");
+
+    // One tunnel: the upgrade's status, and with 101 the page through it.
+    let ask = |host: &str, to: u16, bearer: Option<&str>, origin: Option<&str>| -> (u16, String) {
+        let mut req = format!("ws://127.0.0.1:{port}/pagetunnel?host={host}&port={to}").into_client_request().unwrap();
+        if let Some(b) = bearer {
+            req.headers_mut().insert("Authorization", format!("Bearer {b}").parse().unwrap());
+        }
+        if let Some(o) = origin {
+            req.headers_mut().insert("Origin", o.parse().unwrap());
+        }
+        let stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(10))).unwrap();
+        match tokio_tungstenite::tungstenite::client(req, stream) {
+            Err(tokio_tungstenite::tungstenite::HandshakeError::Failure(tokio_tungstenite::tungstenite::Error::Http(r))) => (r.status().as_u16(), String::new()),
+            Err(e) => panic!("{e}"),
+            Ok((mut ws, r)) => {
+                ws.send(Message::Binary(b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n".to_vec().into())).unwrap();
+                let mut all = Vec::new();
+                while let Ok(m) = ws.read() {
+                    match m {
+                        Message::Binary(b) => all.extend_from_slice(&b),
+                        Message::Close(_) => break,
+                        _ => {}
+                    }
+                }
+                (r.status().as_u16(), String::from_utf8_lossy(&all).into_owned())
+            }
+        }
+    };
+    let t = Some(token.as_str());
+    let through = ask("localhost", dev, t, None);
+    let ipv6_only = ask("localhost", dev6, t, None);
+    let no_token = ask("localhost", dev, None, None);
+    let wrong_token = ask("localhost", dev, Some("guess"), None);
+    let from_a_page = ask("localhost", dev, t, Some(&format!("http://127.0.0.1:{port}")));
+    let not_a_task = ask("localhost", stranger_port, t, None);
+    let home_window = ask("localhost", home, t, None);
+    let tenx_itself = ask("localhost", port, t, None);
+    let elsewhere = ask("example.com", dev, t, None);
+    let _ = server.kill();
+    let _ = server.wait();
+    drop(stranger);
+    assert_eq!(through.0, 101);
+    assert!(through.1.contains("dev server of the task"), "{through:?}");
+    assert!(ipv6_only.1.contains("dev server of the task"), "localhost reaches a server on ::1 alone: {ipv6_only:?}");
+    assert_eq!(no_token.0, 401);
+    assert_eq!(wrong_token.0, 401);
+    assert_eq!(from_a_page.0, 401, "a web page's script may not open one");
+    assert_eq!(not_a_task.0, 403);
+    assert_eq!(tenx_itself.0, 403);
+    assert_eq!(home_window.0, 403, "the home window is no task");
+    assert_eq!(elsewhere.0, 403);
+}
+
 /// The default layout: the agent over the whole window, the shell and
 /// nvim as tabs that wait in a session of their own while hidden.
 #[test]

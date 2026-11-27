@@ -63,7 +63,7 @@ final class WebViewController: UIViewController {
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(webView)
         view = container
-        pages = PagePanes(over: container) { [weak self] js in self?.webView.evaluateJavaScript(js) }
+        pages = PagePanes(over: container, server: server) { [weak self] js in self?.webView.evaluateJavaScript(js) }
 
         // Settings without a menu in the way: hold two fingers for a second.
         let hold = UILongPressGestureRecognizer(target: self, action: #selector(openSettings))
@@ -250,7 +250,15 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
                   let rect = body?["rect"] as? [String: Double],
                   let x = rect["x"], let y = rect["y"], let width = rect["width"], let height = rect["height"]
             else { return (nil, "no page") }
-            owner.pages.show(key: key, url: url, store: store, storeName: body?["storeName"] as? String ?? "", rect: CGRect(x: x, y: y, width: width, height: height))
+            // Every page's `localhost` goes to the Mac (PageTunnel). Hidden or
+            // closed meanwhile: stays so.
+            let marked = owner.pages.mark(key)
+            let proxy = await owner.pages.tunnel.configuration()
+            guard owner.pages.still(key, marked) else { return (true, nil) }
+            owner.pages.show(key: key, url: url, store: store, storeName: body?["storeName"] as? String ?? "", proxy: proxy, rect: CGRect(x: x, y: y, width: width, height: height))
+            return (true, nil)
+        case "pageTunnel":
+            // A page's `localhost` goes to the Mac through tenx web (PageTunnel).
             return (true, nil)
         case "pageHide":
             owner.pages.hide()

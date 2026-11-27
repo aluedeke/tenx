@@ -117,10 +117,8 @@ fn register(rec: &ServiceRecord) -> Option<Registered> {
 /// longer a `tenx service`, its pid reused — is deleted on the way, and the
 /// group it left behind is stopped.
 pub fn services() -> Vec<ServiceRecord> {
-    let Some(entries) = services_dir().and_then(|d| std::fs::read_dir(d).ok()) else { return Vec::new() };
     let mut out = Vec::new();
-    for path in entries.flatten().map(|e| e.path()) {
-        let rec: Option<ServiceRecord> = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok());
+    for (path, rec) in records() {
         match rec {
             Some(rec) if is_wrapper(rec.pid) => out.push(rec),
             found => {
@@ -135,6 +133,26 @@ pub fn services() -> Vec<ServiceRecord> {
     }
     out.sort_by_key(|r| r.started);
     out
+}
+
+/// Every service whose wrapper still runs, without touching the records of
+/// the others (`services` prunes those): for readers that must not stop
+/// anything, like `tenx web`'s page tunnel.
+pub fn running() -> Vec<ServiceRecord> {
+    records().into_iter().filter_map(|(_, r)| r).filter(|r| is_wrapper(r.pid)).collect()
+}
+
+/// Every record file and what it holds (`None`: unreadable).
+fn records() -> Vec<(PathBuf, Option<ServiceRecord>)> {
+    let Some(entries) = services_dir().and_then(|d| std::fs::read_dir(d).ok()) else { return Vec::new() };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .map(|path| {
+            let rec = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok());
+            (path, rec)
+        })
+        .collect()
 }
 
 fn is_wrapper(pid: u32) -> bool {

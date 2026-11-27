@@ -117,6 +117,10 @@ pub enum Commands {
         /// http://localhost:3000 — repeatable
         #[arg(long = "dev-origin", value_name = "URL")]
         dev_origin: Vec<String>,
+        /// Gone (the page tunnel needs no port of its own): accepted and
+        /// ignored, so a service installed with it still starts.
+        #[arg(long, hide = true)]
+        proxy_port: Option<u16>,
     },
     /// Generate a daily standup from recent activity and task files
     Standup {
@@ -1038,6 +1042,9 @@ pub enum WebServiceAction {
         /// Also accept the page from this origin — repeatable
         #[arg(long = "dev-origin", value_name = "URL")]
         dev_origin: Vec<String>,
+        /// Gone, as on `tenx web`: accepted and ignored.
+        #[arg(long, hide = true)]
+        proxy_port: Option<u16>,
     },
     /// Restart it, e.g. onto a new binary after an upgrade (no-op when not installed)
     Restart,

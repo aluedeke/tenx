@@ -7,13 +7,13 @@
 // where the page went (`PAGE_EVENT`), and the page tells tenx (`onMoved`), so
 // every device lists it where it is now.
 //
-// A `localhost` page is the Mac's own, which the phone can't reach: a note
-// instead.
+// A `localhost` page is the Mac's own: the app reaches it through `tenx web`'s
+// page tunnel (`tunnel`, tenx_core::pagetunnel). An app without it: a note.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PageView } from '@/protocol';
 import { PAGE_EVENT, nativePageDo, nativePageHide, nativePageShow, type NativePageState } from '@/lib/native';
-import { isLocalUrl, workspaceOf } from '@/lib/pages';
+import { isLocalUrl, viaTunnel, workspaceOf } from '@/lib/pages';
 
 interface Props {
   task: string;
@@ -21,6 +21,8 @@ interface Props {
   pageKey: string;
   page: PageView;
   store: string;
+  /** The app reaches the Mac's `localhost` (`nativePageTunnelSupported`). */
+  tunnel: boolean;
   /** The app couldn't show it (too old): the page leaves it to Safari. */
   onRefused(): void;
   onMoved(url: string, title: string): void;
@@ -45,10 +47,11 @@ function covered(hole: HTMLElement, r: DOMRect): boolean {
   });
 }
 
-export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSafari }: Props) {
+export function PagePane({ task, pageKey, page, store, tunnel, onRefused, onMoved, onSafari }: Props) {
   const hole = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<NativePageState | null>(null);
-  const local = isLocalUrl(page.url);
+  // The Mac's own address with no way to it.
+  const local = isLocalUrl(page.url) && (!tunnel || !viaTunnel(page.url));
   // Shown where the hole is, again whenever the hole moves (a resize, the
   // keyboard, the sidebar); hidden when the pane goes.
   const refused = useRef(onRefused);
@@ -162,7 +165,9 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
         <div className="page-note" data-testid="page-local">
           <strong>{url.replace(/^https?:\/\//, '')} is on the Mac</strong>
           <span>
-            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it. tenx can&apos;t show it here yet.
+            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it: {!tunnel
+              ? 'this app is too old for it. Update the app.'
+              : 'only localhost goes through to the Mac: open it as localhost instead.'}
           </span>
         </div>
       ) : (
