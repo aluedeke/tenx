@@ -156,16 +156,14 @@ export async function nativeTakeTap(): Promise<string | null> {
  * never zoomed). `key` names the web view (task and page id), so a page
  * shown again comes back as it was left; `store` is the workspace's cookie
  * store (`tenx_core::pages::store_id`), `storeName` what the app's settings
- * call it, `proxy` the page proxy (`tenx_core::pageproxy`) a `localhost`
- * address goes through. */
+ * call it. The app sends a `localhost` address to the Mac itself, through
+ * `tenx web`'s page tunnel (`tenx_core::pagetunnel`). */
 export interface NativePage {
   key: string;
   url: string;
   store: string;
   storeName: string;
   rect: { x: number; y: number; width: number; height: number };
-  /** `tenx web`'s page proxy port, for the page's `localhost` connections. */
-  proxy: number | null;
 }
 
 /** Show (or move) a page. Rejects outside the app and in an app too old to
@@ -188,13 +186,14 @@ export async function nativePagesSupported(): Promise<boolean> {
   }
 }
 
-/** Whether the app sends a page's `localhost` through `tenx web`'s page
- * proxy: an app from before it answers no `pageProxy`. */
-export async function nativePageProxySupported(): Promise<boolean> {
+/** Whether the app sends a page's `localhost` to the Mac through `tenx
+ * web`'s page tunnel: an app from before it answers no `pageTunnel` (one
+ * that answers `pageProxy` used a proxy port `tenx web` no longer has). */
+export async function nativePageTunnelSupported(): Promise<boolean> {
   const h = handler();
   if (!h) return false;
   try {
-    return (await h.postMessage({ action: 'pageProxy' })) === true;
+    return (await h.postMessage({ action: 'pageTunnel' })) === true;
   } catch {
     return false;
   }

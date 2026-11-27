@@ -14,7 +14,7 @@ mod assets;
 mod clipboard;
 mod events;
 mod mcp;
-mod pageproxy;
+mod pagetunnel;
 mod paste;
 mod secrets;
 mod server;
@@ -39,8 +39,6 @@ pub struct Options {
     pub open: bool,
     pub rotate_token: bool,
     pub dev_origins: Vec<String>,
-    /// The page proxy's port on loopback (`tenx_core::pageproxy`); 0: none.
-    pub proxy_port: u16,
 }
 
 /// How long a tab outlives its socket: long enough for a reload or a phone
@@ -78,26 +76,6 @@ pub fn run(o: Options) -> Result<()> {
         Err(e) => return Err(e).with_context(|| format!("listen on {addr}")),
     };
     listener.set_nonblocking(true)?;
-    // The page proxy: a phone's way to a task's dev server. Not starting it
-    // (its port taken) leaves the page as it was, a note for localhost pages.
-    // It listens on loopback only, for `tailscale serve` to publish: a
-    // `--listen` beyond this machine would advertise a port nobody reaches.
-    let proxy = match o.proxy_port {
-        0 => None,
-        _ if !tenx_core::web::is_loopback(&o.listen) => {
-            eprintln!("  page proxy: off, since --listen {} isn't loopback; tasks' localhost pages stay on the Mac", o.listen);
-            None
-        }
-        port => match std::net::TcpListener::bind(("127.0.0.1", port)) {
-            Ok(l) if l.set_nonblocking(true).is_ok() => Some((l, port)),
-            Ok(_) => None,
-            Err(e) => {
-                eprintln!("  page proxy: port {port} is not free ({e}); tasks' localhost pages stay on the Mac");
-                None
-            }
-        },
-    };
-
     // Sessions an earlier run left behind (it was killed): nobody can come
     // back to them, since the tabs they belonged to were this process's.
     for (name, attached) in crate::tmux::sessions_with_prefix(tenx_core::web::SESSION_PREFIX) {
@@ -117,9 +95,6 @@ pub fn run(o: Options) -> Result<()> {
             o.port
         );
     }
-    if let Some((_, port)) = &proxy {
-        println!("  page proxy on 127.0.0.1:{port} — for the iOS app on your tailnet: tailscale serve --bg --tls-terminated-tcp={port} tcp://127.0.0.1:{port}");
-    }
     if o.open {
         let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
         let _ = std::process::Command::new(opener).arg(&url).spawn();
@@ -138,14 +113,12 @@ pub fn run(o: Options) -> Result<()> {
         token,
         mcp_token,
         dev_origins: o.dev_origins,
-        tabs: Arc::new(tab::Tabs::new(grace(), hub.clone(), proxy.as_ref().map(|(_, port)| *port))),
+        tabs: Arc::new(tab::Tabs::new(grace(), hub.clone())),
         push,
         hub,
+        tunnels: pagetunnel::Tunnels::default(),
     });
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().context("start the async runtime")?;
-    if let Some((l, _)) = proxy {
-        runtime.spawn(pageproxy::serve(l, app.token.clone()));
-    }
     runtime.block_on(server::serve(listener, app))
 }
 

@@ -159,13 +159,11 @@ pub(super) struct Tabs {
     pub(super) grace: Duration,
     /// Where each tab reports the task it shows (`/mcp`'s `focus`).
     hub: Arc<super::events::Hub>,
-    /// The page proxy's port, when it runs (`super::pageproxy`).
-    proxy: Option<u16>,
 }
 
 impl Tabs {
-    pub(super) fn new(grace: Duration, hub: Arc<super::events::Hub>, proxy: Option<u16>) -> Tabs {
-        Tabs { map: Mutex::new(HashMap::new()), jobs: crate::tui::Jobs::default(), grace, hub, proxy }
+    pub(super) fn new(grace: Duration, hub: Arc<super::events::Hub>) -> Tabs {
+        Tabs { map: Mutex::new(HashMap::new()), jobs: crate::tui::Jobs::default(), grace, hub }
     }
 
     /// The tab `want` names, if it is still here and free, else a new one;
@@ -184,7 +182,7 @@ impl Tabs {
                 return Ok((tab, guard));
             }
         }
-        let tab = Arc::new(Tab::spawn(&super::token::random_hex(8)?, self.jobs.clone(), self.hub.clone(), self.proxy)?);
+        let tab = Arc::new(Tab::spawn(&super::token::random_hex(8)?, self.jobs.clone(), self.hub.clone())?);
         let guard = tab.output.clone().try_lock_owned().expect("a new tab's output is free");
         self.map.lock().unwrap().insert(tab.id.clone(), tab.clone());
         Ok((tab, guard))
@@ -223,7 +221,7 @@ impl Tabs {
 impl Tab {
     /// A new tab `id`: its grouped session, and the driver thread that will
     /// attach to it once the page says how big its terminal is.
-    fn spawn(id: &str, jobs: crate::tui::Jobs, hub: Arc<super::events::Hub>, proxy: Option<u16>) -> Result<Tab> {
+    fn spawn(id: &str, jobs: crate::tui::Jobs, hub: Arc<super::events::Hub>) -> Result<Tab> {
         let session = tenx_core::web::session_name(id);
         if !crate::tmux::has_session(&session) {
             crate::tmux::new_grouped_session(&session).context("create the tab's tmux session")?;
@@ -232,7 +230,7 @@ impl Tab {
         let (out, output) = unbounded_channel();
         let dead = Arc::new(AtomicBool::new(false));
         let driver = Driver {
-            column: Column::in_session(&session).with_jobs(jobs).with_pages_proxy(proxy),
+            column: Column::in_session(&session).with_jobs(jobs),
             session,
             views: Views::default(),
             ticker: Ticker::default(),

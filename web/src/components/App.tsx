@@ -26,7 +26,7 @@ import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { ClipSync } from '@/lib/clipsync';
 import { EmptyClipboard, OtherKind, copyFromMac, copyImageFromMac, fetchMacImage, peekMac, sendImageToMac, sendToMac, toPng, type MacKind } from '@/lib/macclip';
-import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativePageClose, nativePageProxySupported, nativePagesSupported, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
+import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativePageClose, nativePageTunnelSupported, nativePagesSupported, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -1381,13 +1381,13 @@ export function App() {
   const [pageShown, setPageShown] = useState<{ task: string; id: string } | null>(null);
   // The app shows pages (an older one doesn't: pages open in Safari there).
   const [appPages, setAppPages] = useState(false);
-  // …and reaches the Mac's localhost through tenx web's page proxy.
-  const [appProxy, setAppProxy] = useState(false);
-  // Both known before a page shows: a proxy learned later would make the app
-  // build every shown page's web view anew.
+  // …and reaches the Mac's localhost through tenx web's page tunnel.
+  const [appTunnel, setAppTunnel] = useState(false);
+  // Both known before a page shows: a tunnel learned later would show a
+  // localhost page as a note first.
   useEffect(() => {
-    void Promise.all([nativePagesSupported(), nativePageProxySupported()]).then(([pages, proxy]) => {
-      setAppProxy(proxy);
+    void Promise.all([nativePagesSupported(), nativePageTunnelSupported()]).then(([pages, tunnel]) => {
+      setAppTunnel(tunnel);
       setAppPages(pages);
     });
   }, []);
@@ -1645,7 +1645,7 @@ export function App() {
               pageKey={pageKey(barTask, shownPage.id)}
               page={shownPage}
               store={pages.store}
-              proxy={appProxy ? pages.proxy : null}
+              tunnel={appTunnel}
               onRefused={() => {
                 setPageShown(null);
                 window.open(shownPage.url, '_blank', 'noopener,noreferrer');

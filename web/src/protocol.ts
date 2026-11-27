@@ -52,9 +52,6 @@ export interface PagesView {
   list: PageView[];
   /** How many pages a task keeps. */
   max: number;
-  /** `tenx web`'s page proxy port: the iOS app reaches a `localhost` page
-   * through it, on the server's host. Null while it doesn't run. */
-  proxy: number | null;
 }
 
 /** A tabbed task window's tabs, in key order (Alt+1/2/3): `tenx_core::tabs::Tab`. */

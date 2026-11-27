@@ -137,7 +137,7 @@ pub fn services() -> Vec<ServiceRecord> {
 
 /// Every service whose wrapper still runs, without touching the records of
 /// the others (`services` prunes those): for readers that must not stop
-/// anything, like `tenx web`'s page proxy.
+/// anything, like `tenx web`'s page tunnel.
 pub fn running() -> Vec<ServiceRecord> {
     records().into_iter().filter_map(|(_, r)| r).filter(|r| is_wrapper(r.pid)).collect()
 }

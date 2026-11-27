@@ -29,6 +29,8 @@ pub(super) struct App {
     pub(super) push: Arc<crate::push::Push>,
     /// `/mcp`'s sessions and their event streams.
     pub(super) hub: Arc<super::events::Hub>,
+    /// `/pagetunnel`'s port scan and open slots.
+    pub(super) tunnels: super::pagetunnel::Tunnels,
 }
 
 pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Result<()> {
@@ -36,6 +38,7 @@ pub(super) async fn serve(listener: std::net::TcpListener, app: Arc<App>) -> Res
     let router = Router::new()
         .route("/ws", get(ws))
         .route("/speech", get(speech))
+        .route("/pagetunnel", get(pagetunnel))
         .route("/paste", post(paste).layer(DefaultBodyLimit::max(web::PASTE_MAX_BYTES)))
         .route("/clipboard/get", post(clipboard_get))
         .route("/clipboard/image", post(clipboard_image))
@@ -170,6 +173,22 @@ async fn speech(State(app): State<Arc<App>>, Query(q): Query<WsQuery>, headers: 
     }
     let language = q.language.as_deref().and_then(web::stt_language).map(str::to_string);
     upgrade.on_upgrade(move |socket| super::dictate::session(socket, language))
+}
+
+#[derive(Deserialize)]
+struct TunnelQuery {
+    host: Option<String>,
+    port: Option<String>,
+}
+
+/// `/pagetunnel?host=&port=`: one connection of an iOS app page to a task's
+/// `localhost` port (`pagetunnel.rs`). The page token as `Authorization:
+/// Bearer` and no `Origin`: the app's own requests, never a web page's.
+async fn pagetunnel(State(app): State<Arc<App>>, Query(q): Query<TunnelQuery>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
+    if !tenx_core::pagetunnel::authorized(header_str(&headers, header::ORIGIN), header_str(&headers, header::AUTHORIZATION), &app.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    super::pagetunnel::open(&app.tunnels, q.host.as_deref(), q.port.as_deref(), upgrade).await
 }
 
 /// `POST /paste[?token=]`: an image for the agent (`paste.rs`). Guarded like
