@@ -163,7 +163,8 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
         guard auth == expected else {
             return answer(conn, "407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"tenx\"")
         }
-        guard let url = tunnelURL(host: host, port: port) else { return answer(conn, "502 Bad Gateway") }
+        // Closed meanwhile: its session takes no more tasks.
+        guard started, let url = tunnelURL(host: host, port: port) else { return answer(conn, "502 Bad Gateway") }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(server.token)", forHTTPHeaderField: "Authorization")
         let socket = session.webSocketTask(with: request)
