@@ -1713,33 +1713,55 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     let out = h.tenx().args(["task", "new", "Proxied", "--ws-dir", &h.ws()]).output().unwrap();
     assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
     let free = || std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-    // The task's dev server, started in its window.
-    let dev = free();
     let site = h.root.join("site");
     fs::create_dir_all(&site).unwrap();
     fs::write(site.join("index.html"), "dev server of the task").unwrap();
-    let serve = format!("cd {} && python3 -m http.server {dev} --bind 127.0.0.1", site.display());
-    let shell = h.tmux().args(["split-window", "-d", "-t", "tenx:proxied", &serve]).status().unwrap();
-    assert!(shell.success());
+    // Each server takes a free port itself and writes it to a file: a port
+    // picked here and closed again can be taken by another test running at
+    // the same time before the server binds it.
+    fs::write(
+        site.join("serve.py"),
+        r#"import functools, http.server, os, socket, socketserver, sys
+host, out, root = sys.argv[1:4]
+class Server(http.server.ThreadingHTTPServer):
+    address_family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    # HTTPServer's own server_bind looks its address up in DNS
+    # (getfqdn), which for ::1 hung past the wait on a CI Mac.
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "localhost", self.server_address[1]
+s = Server((host, 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=root))
+open(out + ".tmp", "w").write(str(s.server_address[1]))
+os.rename(out + ".tmp", out)
+s.serve_forever()
+"#,
+    )
+    .unwrap();
+    let start = |window: &str, host: &str, name: &str| {
+        let cmd = format!("python3 {0}/serve.py {host} {0}/{name}.port {0} 2>{0}/{name}.log", site.display());
+        assert!(h.tmux().args(["split-window", "-d", "-t", window, &cmd]).status().unwrap().success());
+    };
+    // The task's dev server, started in its window.
+    start("tenx:proxied", "127.0.0.1", "dev");
     // A second one on IPv6 alone, as Vite listens on a Mac.
-    let dev6 = std::net::TcpListener::bind("[::1]:0").unwrap().local_addr().unwrap().port();
-    let serve6 = format!("cd {} && python3 -m http.server {dev6} --bind ::1", site.display());
-    assert!(h.tmux().args(["split-window", "-d", "-t", "tenx:proxied", &serve6]).status().unwrap().success());
+    start("tenx:proxied", "::1", "dev6");
     // A server in the home window: inside tenx's session, but no task's.
-    let home = free();
-    let at_home = format!("cd {} && python3 -m http.server {home} --bind 127.0.0.1", site.display());
-    assert!(h.tmux().args(["split-window", "-d", "-t", "tenx:home", &at_home]).status().unwrap().success());
+    start("tenx:home", "127.0.0.1", "home");
+    let port_of = |name: &str| -> u16 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            if let Ok(p) = fs::read_to_string(site.join(format!("{name}.port"))) {
+                return p.trim().parse().unwrap();
+            }
+            let log = fs::read_to_string(site.join(format!("{name}.log"))).unwrap_or_default();
+            assert!(std::time::Instant::now() < deadline, "the {name} server never listened: {log}");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    };
+    let (dev, dev6, home) = (port_of("dev"), port_of("dev6"), port_of("home"));
     // A listener no task owns: this test's own.
     let stranger = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let stranger_port = stranger.local_addr().unwrap().port();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while std::net::TcpStream::connect(("127.0.0.1", dev)).is_err()
-        || std::net::TcpStream::connect(("127.0.0.1", home)).is_err()
-        || std::net::TcpStream::connect(("::1", dev6)).is_err()
-    {
-        assert!(std::time::Instant::now() < deadline, "the dev servers never listened");
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
 
     let (port, proxy) = (free(), free());
     let mut server = h
