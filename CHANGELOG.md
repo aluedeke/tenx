@@ -5,6 +5,14 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.46.1] - 2026-11-27
+
+### Fixed
+
+- **task:** Stop Claude asking to trust each repo folder at every start (#71)
+
+[0.46.1]: https://github.com/aluedeke/tenx/compare/v0.46.0...v0.46.1
+
 ## [0.46.0] - 2026-11-27
 
 ### Added
