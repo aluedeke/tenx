@@ -14,7 +14,6 @@ mod assets;
 mod clipboard;
 mod events;
 mod mcp;
-mod pagetunnel;
 mod paste;
 mod secrets;
 mod server;
@@ -117,7 +116,6 @@ pub fn run(o: Options) -> Result<()> {
         tabs: Arc::new(tab::Tabs::new(grace(), hub.clone())),
         push,
         hub,
-        tunnels: pagetunnel::Tunnels::default(),
     });
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().context("start the async runtime")?;
     runtime.block_on(server::serve(listener, app))

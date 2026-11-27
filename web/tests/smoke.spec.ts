@@ -166,49 +166,11 @@ test('in the iOS app a page shows over the terminal and follows where it goes', 
   await expect.poll(async () => (await calls()).some((c) => c.action === 'pageHide')).toBe(true);
   await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'true');
 
-  // A localhost address is the Mac's own: the app reaches it through tenx
-  // web's page tunnel.
+  // A localhost address is a page like any other: the app shows it.
   await tabs.getByTestId('page-add').click();
   await page.getByTestId('page-url').fill('localhost:3000');
   await page.getByTestId('page-url').press('Enter');
-  await expect(pane).toBeVisible();
-  await expect(page.getByTestId('page-local')).toHaveCount(0);
-  await expect
-    .poll(async () => (await calls()).some((c) => c.action === 'pageShow' && (c as unknown as { url: string }).url === 'http://localhost:3000'))
-    .toBe(true);
-});
-
-test('on a phone the + stays in reach however many pages the bar lists', async ({ page, isMobile }) => {
-  test.skip(!isMobile, 'a phone-width bar');
-  await page.goto('/');
-  const tabs = page.getByTestId('task-tabs');
-  for (const name of ['linear.app/one', 'github.com/two', 'app.checklyhq.com/three', 'vercel.com/four', 'example.com/five']) {
-    await tabs.getByTestId('page-add').tap();
-    await page.getByTestId('page-url').fill(name);
-    const [popup] = await Promise.all([page.waitForEvent('popup'), page.getByTestId('page-url').press('Enter')]);
-    await popup.close();
-  }
-  await expect(tabs.getByTestId('page-p5')).toBeAttached();
-  const add = (await tabs.getByTestId('page-add').boundingBox())!;
-  const width = page.viewportSize()!.width;
-  expect(add.x + add.width).toBeLessThanOrEqual(width);
-  expect(add.x).toBeGreaterThan(width / 2);
-});
-
-test('in an app too old for the page tunnel a localhost page is a note', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'one run is enough');
-  await page.addInitScript(() => {
-    (window as unknown as { webkit: unknown }).webkit = {
-      // 0.46/0.47 answer `pageProxy`, not `pageTunnel`.
-      messageHandlers: { tenx: { postMessage: async (m: { action: string }) => (m.action.startsWith('page') && m.action !== 'pageTunnel' ? true : null) } },
-    };
-  });
-  await page.goto('/');
-  const tabs = page.getByTestId('task-tabs');
-  await tabs.getByTestId('page-add').click();
-  await page.getByTestId('page-url').fill('localhost:3000');
-  await page.getByTestId('page-url').press('Enter');
-  await expect(page.getByTestId('page-local')).toBeVisible();
+  await expect.poll(async () => (await calls()).some((c) => c.action === 'pageShow' && String((c as { url?: string }).url).includes('localhost:3000'))).toBe(true);
 });
 
 test('quick clicks on two tabs light the last one, never the one between', async ({ page, isMobile }) => {

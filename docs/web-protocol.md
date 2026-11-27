@@ -323,31 +323,9 @@ own address bar in CSS pixels —, `pageHide`, `pageDo {key, what: back |
 forward | reload}`, `pageClose {key}`) and the app reports where a shown page
 went as a `tenx-page` window event, which the page passes on as `navigated`.
 In the app a web link (the terminal's, the sidebar's, the links box's) opens as
-a page of the shown task; holding it still offers Safari. A `localhost`
-address is the Mac's own: the app reaches it through `tenx web`'s **page
-tunnel**. The app announces it with the `pageTunnel` action (an app that
-answers only the older `pageProxy` used a proxy port `tenx web` no longer
-has, and gets the note, as does an app with neither). The app gives the
-page's web view a `ProxyConfiguration` for `localhost` only (another loopback
-name gets the note): an HTTP `CONNECT` proxy on the phone's own loopback,
-with a password made at launch, since another app on the phone could reach
-that port. Each connection it gets is a WebSocket to `tenx web`,
-`GET /pagetunnel?host=<host>&port=<port>` on the server's own address
-(`wss://` for an https server), with the page token as `Authorization:
-Bearer` and no `Origin` — a browser always sends one and lets no script set
-`Authorization`, so no web page can open one. `tenx web`
-(`tenx_core::pagetunnel`, `web/pagetunnel.rs`) checks it, connects, and only
-then upgrades, so a refusal is a plain status: `401` without the token or with
-an `Origin`, `400` without a host or a port, `403` for any other host (only
-`localhost`, `127.0.0.1` and `::1`, connected to exactly that address;
-`localhost` is IPv4's, then IPv6's) or a port no task's process listens on
-(its window's processes and its `tenx service`s, `live::task_ports`), `502`
-when nothing answers, `503` with 256 tunnels open. After the upgrade, binary
-frames carry the connection's bytes both ways; either side's end closes the
-other, and a tunnel quiet for 2 hours is closed. It needs nothing beyond what
-reaches the page: `tailscale serve`'s HTTPS mode passes a WebSocket on.
-A `localhost` page that doesn't load shows why in
-its place; reload tries the address again.
+a page of the shown task; holding it still offers Safari. A page opens its
+address as it is, so a dev server on the Mac is opened by its tailnet
+address, not `localhost`, which on a phone is the phone itself.
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

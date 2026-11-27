@@ -649,23 +649,6 @@ pub fn list_pane_pids() -> Result<Vec<(String, u32)>> {
         .collect())
 }
 
-/// Every pane of a task window (waiting tabs too) as (its task directory,
-/// pane pid): the home window and other windows opened for no task are left
-/// out. Empty when the server is down.
-pub fn task_pane_pids() -> Result<Vec<(PathBuf, u32)>> {
-    if !server_running() {
-        return Ok(vec![]);
-    }
-    let format = format!("#{{{TASK_DIR_OPTION}}}\t#{{pane_pid}}");
-    Ok(task_panes(&format)?
-        .iter()
-        .filter_map(|l| {
-            let (dir, pid) = l.split_once('\t')?;
-            (!dir.is_empty()).then_some((PathBuf::from(dir), pid.trim().parse().ok()?))
-        })
-        .collect())
-}
-
 /// Every pane of the tasks (waiting tabs too) mapped to the task its window
 /// was opened for (`TASK_DIR_OPTION`), keyed by pane id (`%40`). Panes of
 /// untagged windows are left out. Empty when the server is down.

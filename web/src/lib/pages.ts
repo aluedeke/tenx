@@ -19,28 +19,6 @@ export function pageKey(task: string, id: string): string {
   return `${task}#${id}`;
 }
 
-/** A `localhost` address: the Mac's own, which a phone can't reach. */
-export function isLocalUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
-    return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127\./.test(host);
-  } catch {
-    return false;
-  }
-}
-
-/** A `localhost` address the iOS app sends to the Mac through `tenx web`'s
- * page tunnel: the one name its `ProxyConfiguration` matches. Another
- * loopback name (`127.0.0.1`, `[::1]`, `app.localhost`) would reach the
- * phone itself. */
-export function viaTunnel(url: string): boolean {
-  try {
-    return new URL(url).hostname === 'localhost';
-  } catch {
-    return false;
-  }
-}
-
 /** What a chip says: the page's title, else its host and path. */
 export function chipLabel(page: PageView): string {
   if (page.title.trim()) return page.title.trim();
