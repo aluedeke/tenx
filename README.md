@@ -202,7 +202,7 @@ tenx schedule list|runs [NAME]|run <NAME>|pause|resume|rm <NAME>   see Scheduled
 tenx secrets ...         per-task encrypted secrets, see below
 ```
 
-Every mutating command accepts `--ws-dir` (a workspace directory, or a registered workspace's name) so scripts and other front ends can run it from anywhere. `tenx task list --json` is the same data the column renders.
+Every mutating command accepts `--ws-dir` (a workspace directory, or a registered workspace's name) so scripts and other front ends can run it from anywhere. `tenx task rm --ws-dir` asks "delete task '<name>'? [y/N]" only when its input is a terminal (`--force` skips it); a script is not asked. Any answer but `y` or `yes` keeps the task and exits 1. `tenx task list --json` is the same data the column renders.
 
 ## Sessions outside a repo
 

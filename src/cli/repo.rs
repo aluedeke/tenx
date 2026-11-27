@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use std::env;
-use std::path::Path;
 
 pub(crate) fn infer_name(url: &str) -> String {
     url.rsplit('/')
@@ -16,7 +15,7 @@ pub(crate) fn infer_name(url: &str) -> String {
 /// other bare `tenx` invocation.
 pub fn add(url: &str, name: Option<&str>, ws_dir: Option<&str>) -> Result<()> {
     let mut ws = match ws_dir {
-        Some(dir) => crate::workspace::load(Path::new(dir))?,
+        Some(dir) => crate::cli::task::load_ws_arg(dir)?,
         None => crate::workspace::find(&env::current_dir()?)?,
     };
     add_in(&mut ws, url, name, crate::progress::for_cli().as_ref())

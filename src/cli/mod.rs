@@ -729,7 +729,7 @@ pub enum RepoCommands {
         /// Override the repo name (default: inferred from URL)
         #[arg(long)]
         name: Option<String>,
-        /// Resolve the workspace from this directory instead of cwd (for
+        /// The workspace (directory or registered name) instead of cwd's (for
         /// scripts and front ends that don't run inside the workspace).
         #[arg(long)]
         ws_dir: Option<String>,
@@ -809,14 +809,14 @@ pub enum TaskCommands {
         name: String,
         /// New display title
         title: String,
-        /// Resolve the task in this workspace directory instead of cwd.
+        /// The task's workspace (directory or registered name) instead of cwd's.
         #[arg(long)]
         ws_dir: Option<String>,
     },
     /// Open a task's window in the tenx session (or switch to it if already open)
     Open {
         name: String,
-        /// Resolve the task in this workspace directory instead of cwd. `name`
+        /// The task's workspace (directory or registered name) instead of cwd's. `name`
         /// is treated as an exact slug (not slugified).
         #[arg(long)]
         ws_dir: Option<String>,
@@ -883,7 +883,7 @@ pub enum TaskCommands {
         /// Repo names to add (must already be in the workspace)
         #[arg(required = true)]
         repos: Vec<String>,
-        /// Resolve the task in this workspace directory instead of cwd.
+        /// The task's workspace (directory or registered name) instead of cwd's.
         #[arg(long)]
         ws_dir: Option<String>,
     },
@@ -897,7 +897,7 @@ pub enum TaskCommands {
         /// Discard uncommitted changes in the worktree (git refuses otherwise)
         #[arg(long)]
         force: bool,
-        /// Resolve the task in this workspace directory instead of cwd.
+        /// The task's workspace (directory or registered name) instead of cwd's.
         #[arg(long)]
         ws_dir: Option<String>,
     },
@@ -912,17 +912,19 @@ pub enum TaskCommands {
         /// Discard uncommitted changes in worktrees being detached
         #[arg(long)]
         force: bool,
-        /// Resolve the task in this workspace directory instead of cwd.
+        /// The task's workspace (directory or registered name) instead of cwd's.
         #[arg(long)]
         ws_dir: Option<String>,
     },
     /// Delete a task and its worktrees
     Rm {
         name: String,
-        /// Skip confirmation prompt
+        /// Skip the confirmation question. With `--ws-dir` it is asked only when
+        /// stdin is a terminal; otherwise the task is deleted unasked. A "no"
+        /// keeps the task and exits 1.
         #[arg(long)]
         force: bool,
-        /// Resolve the task in this workspace directory instead of cwd. `name`
+        /// The task's workspace (directory or registered name) instead of cwd's. `name`
         /// is treated as an exact slug.
         #[arg(long)]
         ws_dir: Option<String>,
@@ -956,7 +958,7 @@ pub enum TaskCommands {
         /// Stop confirming that warning for this task.
         #[arg(long)]
         no_confirm_dev_channels: bool,
-        /// Resolve the task in this workspace directory instead of cwd.
+        /// The task's workspace (directory or registered name) instead of cwd's.
         #[arg(long)]
         ws_dir: Option<String>,
     },
