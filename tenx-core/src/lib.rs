@@ -29,6 +29,7 @@ pub mod restart;
 pub mod prwatch;
 pub mod agent_panel;
 pub mod apns;
+pub mod branch;
 pub mod column;
 pub mod schedule;
 pub mod secrets;

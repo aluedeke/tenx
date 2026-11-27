@@ -27,7 +27,7 @@ live.rs      the per-task cache of external facts (ports, PRs)
 
 A **workspace** is a directory with a `config.toml` and a `tasks/` subdirectory. `workspace::find()` walks up from the current directory looking for the config. Bare clones live under `<workspace>/.bare/<name>.git` by default.
 
-A **task** is a subdirectory under `tasks/`. Its repo set is never recorded: `discover_task` scans for subdirectories containing a `.git` *file*, which is what a worktree has. The set may be empty: a task without worktrees is a session in the bare task directory. The task's display name is the first heading of `TASK.md`; its slug is the directory, branch and tmux window name.
+A **task** is a subdirectory under `tasks/`. Its repo set is never recorded: `discover_task` scans for subdirectories containing a `.git` *file*, which is what a worktree has. The set may be empty: a task without worktrees is a session in the bare task directory. The task's display name is the first heading of `TASK.md`; its slug is the directory and tmux window name, and the branch name too unless the workspace (or the global config) sets a `branch` pattern such as `andreas/{slug}` (`tenx_core::branch`).
 
 The only per-task files tenx owns:
 
@@ -133,7 +133,7 @@ Runs are hidden from the Tasks tab, the status bar's corner and `task list` unle
 **Create** slugifies the title (counting up in the adhoc workspace), writes `TASK.md` (and `.tenx-prompt` when given a first message), symlinks `.claude` (and `AGENTS.md`, when present) to the workspace's shared ones, pre-approves Claude Code's trust dialog for the task directory in `~/.claude.json`, then for each repo fetches the bare clone and adds a worktree on a fresh branch off the default branch. Then, if the server is running, it opens the window.
 **Open** looks the window up by slug and selects it, or creates it. The window runs the task's agent (`AgentKind::launch`), which supplies any resume flag itself — `--continue` for Claude only when a transcript for that exact directory exists (it exits otherwise), `codex resume --last` when a Codex thread for the cwd exists, `pi -c` always.
 
-**Repo changes** share one function with creation. Detaching removes the worktree and its branch and does not force unless asked, so git's refusal to drop a dirty worktree is the safety net.
+**Repo changes** share one function with creation. Detaching removes the worktree and its branch, if tenx made that branch (`tenx_core::branch::owns`), and does not force unless asked, so git's refusal to drop a dirty worktree is the safety net.
 
 **Sweep** closes windows nobody is waiting on. The rule is a pure function in `tenx_core::sweep`: never the current window, a pinned task, or a Blocked or Working task; Idle once the window has been quiet for the idle grace (default 15m); Done after the configured age. Which window belongs to a task is decided by the `@tenx_task_dir` window option tenx stamps on it when it opens (falling back to its panes' paths for a window opened by an older tenx), not by the window's name — names are slugs, and a slug is only unique within one workspace. `tmux::find_task_window` is that correlation, and everything that selects, closes or sweeps a task's window goes through it.
 

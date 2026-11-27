@@ -747,8 +747,9 @@ pub enum RepoCommands {
 pub enum TaskCommands {
     /// Create a new task
     New {
-        /// Task name — the display title; its slug is the directory, branch
-        /// and window name
+        /// Task name — the display title; its slug is the directory and
+        /// window name, and the branch name (or its `{slug}`, with a
+        /// `branch` pattern in config.toml)
         name: String,
         /// Comma-separated repo names to include (default: all workspace repos)
         #[arg(long, value_delimiter = ',')]

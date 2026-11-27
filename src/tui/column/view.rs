@@ -485,9 +485,8 @@ pub(super) fn footer(column: &Column) -> Footer {
         Mode::EditRepos(form) if form.confirm => Footer::new(
             FooterKind::Confirm,
             format!(
-                "detach {} — removes the worktree AND its '{}' branch.   y = apply   esc = back",
+                "detach {} — removes the worktree AND the task's branch.   y = apply   esc = back",
                 form.removed().join(", "),
-                form.slug
             ),
         ),
         Mode::EditRepos(_) => form_footer(EDIT_REPOS_HINT),
