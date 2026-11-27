@@ -117,8 +117,8 @@ pub enum Commands {
         /// http://localhost:3000 — repeatable
         #[arg(long = "dev-origin", value_name = "URL")]
         dev_origin: Vec<String>,
-        /// Gone (the page tunnel needs no port of its own): accepted and
-        /// ignored, so a service installed with it still starts.
+        /// Gone (the page proxy of 0.46/0.47): accepted and ignored, so a
+        /// service installed with it still starts.
         #[arg(long, hide = true)]
         proxy_port: Option<u16>,
     },

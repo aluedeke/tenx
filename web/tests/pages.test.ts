@@ -2,20 +2,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chipLabel, isLocalUrl, isPage, pageKey, typedUrl, viaTunnel, workspaceOf } from '../src/lib/pages.ts';
+import { chipLabel, isPage, pageKey, typedUrl, workspaceOf } from '../src/lib/pages.ts';
 
 test('names a web view by task and page', () => {
   assert.equal(pageKey('acme/fix-login', 'p2'), 'acme/fix-login#p2');
   assert.equal(workspaceOf('acme/fix-login'), 'acme');
-});
-
-test('knows the Mac-only addresses', () => {
-  for (const u of ['http://localhost:3000/x', 'http://127.0.0.1:8080', 'http://app.localhost', 'http://[::1]:5173']) {
-    assert.equal(isLocalUrl(u), true, u);
-  }
-  for (const u of ['https://linear.app', 'http://mac.tailnet.ts.net:3000', 'not a url']) {
-    assert.equal(isLocalUrl(u), false, u);
-  }
 });
 
 test('labels a chip by title, else host and path', () => {
@@ -40,13 +31,4 @@ test('a page is what it was opened with, wherever it went', () => {
   assert.equal(isPage(page, 'https://github.com/acme/shop/pull/1'), true);
   assert.equal(isPage(page, 'https://github.com/acme/shop/pull/1#issuecomment-9'), true);
   assert.equal(isPage(page, 'https://github.com/acme/shop/pull/2'), false);
-});
-
-test('only localhost goes through the page tunnel', () => {
-  assert.equal(viaTunnel('http://localhost:3000/x'), true);
-  assert.equal(viaTunnel('http://127.0.0.1:8080'), false);
-  assert.equal(viaTunnel('http://[::1]:5173'), false);
-  assert.equal(viaTunnel('http://127.0.0.2:3000'), false);
-  assert.equal(viaTunnel('http://app.localhost'), false);
-  assert.equal(viaTunnel('https://linear.app'), false);
 });
