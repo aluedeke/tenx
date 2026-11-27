@@ -166,7 +166,45 @@ test('in the iOS app a page shows over the terminal and follows where it goes', 
   await expect.poll(async () => (await calls()).some((c) => c.action === 'pageHide')).toBe(true);
   await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'true');
 
-  // A localhost address is the Mac's own: a note, no web view.
+  // A localhost address is the Mac's own: the app reaches it through tenx
+  // web's page proxy.
+  await tabs.getByTestId('page-add').click();
+  await page.getByTestId('page-url').fill('localhost:3000');
+  await page.getByTestId('page-url').press('Enter');
+  await expect(pane).toBeVisible();
+  await expect(page.getByTestId('page-local')).toHaveCount(0);
+  await expect
+    .poll(async () => (await calls()).some((c) => c.action === 'pageShow' && (c as unknown as { url: string; proxy: number }).url === 'http://localhost:3000' && (c as unknown as { proxy: number }).proxy === 7075))
+    .toBe(true);
+});
+
+test('on a phone the + stays in reach however many pages the bar lists', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'a phone-width bar');
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  for (const name of ['linear.app/one', 'github.com/two', 'app.checklyhq.com/three', 'vercel.com/four', 'example.com/five']) {
+    await tabs.getByTestId('page-add').tap();
+    await page.getByTestId('page-url').fill(name);
+    const [popup] = await Promise.all([page.waitForEvent('popup'), page.getByTestId('page-url').press('Enter')]);
+    await popup.close();
+  }
+  await expect(tabs.getByTestId('page-p5')).toBeAttached();
+  const add = (await tabs.getByTestId('page-add').boundingBox())!;
+  const width = page.viewportSize()!.width;
+  expect(add.x + add.width).toBeLessThanOrEqual(width);
+  expect(add.x).toBeGreaterThan(width / 2);
+});
+
+test('without the page proxy a localhost page is a note in the app', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'one run is enough');
+  await page.context().addCookies([{ name: 'mocknoproxy', value: '1', url: 'http://127.0.0.1:7071' }]);
+  await page.addInitScript(() => {
+    (window as unknown as { webkit: unknown }).webkit = {
+      messageHandlers: { tenx: { postMessage: async (m: { action: string }) => (m.action.startsWith('page') ? true : null) } },
+    };
+  });
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
   await tabs.getByTestId('page-add').click();
   await page.getByTestId('page-url').fill('localhost:3000');
   await page.getByTestId('page-url').press('Enter');

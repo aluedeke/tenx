@@ -66,6 +66,10 @@ pub(crate) struct PagesView {
     pub(crate) list: Vec<tenx_core::pages::Page>,
     /// How many pages a task keeps (`tenx_core::pages::MAX_PAGES`).
     pub(crate) max: usize,
+    /// `tenx web`'s page proxy port (`tenx_core::pageproxy`): the iOS app
+    /// sends a page's `localhost` connections there, on the server's host.
+    /// `None` while it doesn't run: a `localhost` page stays on the Mac.
+    pub(crate) proxy: Option<u16>,
 }
 
 /// The sidebar beside a task: its title, then its sections
@@ -573,7 +577,7 @@ impl Column {
             pages: self
                 .window_tab
                 .and(self.pages_view())
-                .map(|(store, list)| PagesView { store: store.to_string(), list: list.to_vec(), max: tenx_core::pages::MAX_PAGES }),
+                .map(|(store, list, proxy)| PagesView { store: store.to_string(), list: list.to_vec(), max: tenx_core::pages::MAX_PAGES, proxy }),
             shown_closed,
             items,
             mode: self.mode_view(),
