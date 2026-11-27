@@ -199,6 +199,13 @@ pub struct WorkspaceConfig {
     /// instead and leaves this unset. See `cli::secrets::resolve_identity_path`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub age_identity: Option<String>,
+    /// Web pages every task of the workspace opens with one tap from the page
+    /// bar's `+`, kept as written: they are read and changed on the file
+    /// itself (`tenx_core::bookmarks`, `Column::edit_bookmarks`), so an entry
+    /// tenx can't use never fails a load, and a save carries over what the
+    /// file holds then (`write_config`), not what it held at load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmarks: Option<toml::Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -524,7 +531,7 @@ pub fn load(dir: &Path) -> Result<Workspace> {
     if migrate_config(&mut config, &ws_name) {
         // Best-effort: a read-only checkout still loads, it just migrates
         // again next time.
-        let _ = atomic_write_toml(&cfg_path, &config);
+        let _ = write_config(&cfg_path, &config);
     }
     Ok(Workspace { dir: dir.to_path_buf(), config })
 }
@@ -597,7 +604,7 @@ impl Workspace {
     }
 
     pub fn save_config(&self) -> Result<()> {
-        atomic_write_toml(&self.dir.join("config.toml"), &self.config)
+        write_config(&self.dir.join("config.toml"), &self.config)
     }
 
     pub fn add_repo(&mut self, repo: RepoConfig) -> Result<()> {
@@ -910,6 +917,28 @@ pub fn read_branch(worktree_dir: &Path) -> Option<String> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Writers of a workspace's `config.toml` that read it first take turns:
+/// a save (`write_config`) and a bookmark edit (`Column::edit_bookmarks`),
+/// in this process or another. An `flock` beside it, held while the value
+/// lives.
+pub(crate) fn lock_config(path: &Path) -> Result<crate::git::RepoLock> {
+    crate::git::lock_file(&path.with_file_name(".tenx-config.lock"))
+}
+
+/// Save a workspace's config, with the bookmarks its file holds now: the page
+/// may have changed them since `config` was loaded (a clone can take
+/// minutes), and only `Column::edit_bookmarks` writes them.
+fn write_config(path: &Path, config: &WorkspaceConfig) -> Result<()> {
+    let _lock = lock_config(path)?;
+    // A file that can't be read or parsed: the ones loaded, all we know.
+    let now = match fs::read_to_string(path).ok().and_then(|t| t.parse::<toml::Table>().ok()) {
+        Some(mut file) => file.remove("bookmarks"),
+        None => config.bookmarks.clone(),
+    };
+    let config = WorkspaceConfig { bookmarks: now, ..config.clone() };
+    atomic_write_toml(path, &config)
+}
+
 fn atomic_write_toml<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     write_atomic(path, &toml::to_string_pretty(value).context("serialize toml")?)
 }
@@ -956,6 +985,32 @@ pub fn cloned_repos(bare_dir: &Path, repos: &[RepoConfig]) -> HashSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_save_keeps_the_bookmarks_the_file_holds_now() {
+        let dir = std::env::temp_dir().join(format!("tenx-bookmarks-save-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("tasks")).unwrap();
+        let file = dir.join("config.toml");
+        // A bookmark without a name (and one with a bad name) still loads.
+        fs::write(&file, "name = \"w\"\n\n[[bookmarks]]\nurl = \"https://a.example\"\n\n[[bookmarks]]\nname = 3\nurl = \"https://b.example\"\n").unwrap();
+        let mut ws = load(&dir).unwrap();
+        // The page adds one while the workspace is loaded (a long clone).
+        let text = fs::read_to_string(&file).unwrap();
+        let edit = tenx_core::bookmarks::Edit::Add { url: "https://c.example".into(), name: "C".into() };
+        fs::write(&file, tenx_core::bookmarks::apply(&text, &edit).unwrap().unwrap()).unwrap();
+        ws.config.repos.push(RepoConfig { name: "api".into(), url: "git@x:api".into() });
+        ws.save_config().unwrap();
+        let after = fs::read_to_string(&file).unwrap();
+        let list = tenx_core::bookmarks::read(&after).unwrap();
+        assert_eq!(list.iter().map(|b| b.url.as_str()).collect::<Vec<_>>(), ["https://a.example", "https://b.example", "https://c.example"], "{after}");
+        assert!(after.contains("[[repos]]"), "{after}");
+        // All of them removed meanwhile: a save brings none back.
+        fs::write(&file, "name = \"w\"\n").unwrap();
+        ws.save_config().unwrap();
+        assert!(!fs::read_to_string(&file).unwrap().contains("bookmarks"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_config_that_never_opens_is_skipped_not_waited_for() {

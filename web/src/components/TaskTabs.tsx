@@ -12,9 +12,9 @@
 // the switch.
 
 import { useEffect, useRef, useState } from 'react';
-import { WINDOW_TABS, type PageView, type WindowTab } from '@/protocol';
+import { WINDOW_TABS, type Bookmark, type PageView, type WindowTab } from '@/protocol';
 import { GIVE_UP_MS, litTab, type Asked } from '@/lib/tasktabs';
-import { chipLabel, typedUrl } from '@/lib/pages';
+import { chipLabel, matchesBookmark, plusTarget } from '@/lib/pages';
 
 interface Props {
   /** The tab the window shows (`view.window_tab`). */
@@ -26,9 +26,12 @@ interface Props {
   onPage(page: PageView): void;
   onClosePage(page: PageView): void;
   onOpenPage(url: string): void;
+  /** The workspace's bookmarks, listed under the `+` field. */
+  bookmarks: Bookmark[];
+  onUnbookmark(url: string): void;
 }
 
-export function TaskTabs({ shown, onSelect, pages, pageShown, onPage, onClosePage, onOpenPage }: Props) {
+export function TaskTabs({ shown, onSelect, pages, pageShown, onPage, onClosePage, onOpenPage, bookmarks, onUnbookmark }: Props) {
   // The last tab clicked, lit until the view shows it (lib/tasktabs).
   const [asked, setAsked] = useState<Asked | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -51,6 +54,8 @@ export function TaskTabs({ shown, onSelect, pages, pageShown, onPage, onClosePag
     const t = setTimeout(() => setNow(Date.now()), Math.max(0, asked.at + GIVE_UP_MS - Date.now()) + 10);
     return () => clearTimeout(t);
   }, [asked, lit]);
+  // The bookmarks the + field's text fits, listed under it while it's open.
+  const listed = typing === null ? [] : bookmarks.filter((b) => matchesBookmark(b, typing));
   return (
     <div className="task-tabs" data-testid="task-tabs">
       <div className="task-tabs-switch" role="tablist" aria-label="task window">
@@ -127,11 +132,42 @@ export function TaskTabs({ shown, onSelect, pages, pageShown, onPage, onClosePag
           data-own-keys
           onSubmit={(e) => {
             e.preventDefault();
-            const url = typedUrl(typing);
+            const url = plusTarget(typing, bookmarks);
             if (url) onOpenPage(url);
             setTyping(null);
           }}
         >
+          {listed.length > 0 && (
+            <ul className="bookmarks" data-testid="bookmarks">
+              {listed.map((b) => (
+                  <li key={b.url}>
+                    {/* The press keeps the field's focus (or its blur would close
+                        the list first); the finished tap acts. */}
+                    <button
+                      type="button"
+                      className="bookmark-open"
+                      title={b.url}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        onOpenPage(b.url);
+                        setTyping(null);
+                      }}
+                    >
+                      {b.name}
+                    </button>
+                    <button
+                      type="button"
+                      className="bookmark-remove"
+                      aria-label={`remove the bookmark ${b.name}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => onUnbookmark(b.url)}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
           <input
             ref={field}
             value={typing}

@@ -97,6 +97,7 @@ impl Scene {
                     .map(|n| crate::workspace::RepoConfig { name: n.to_string(), url: format!("git@github.com:acme/{n}.git") })
                     .collect(),
                 age_identity: None,
+                bookmarks: None,
                 agent: String::new(),
                 branch: String::new(),
                 agents: std::collections::HashMap::new(),

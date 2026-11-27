@@ -85,6 +85,15 @@ pub(super) enum PageOp {
         #[serde(default)]
         title: String,
     },
+    /// Keep `url` as one of the workspace's bookmarks, named `name`
+    /// (`tenx_core::bookmarks`).
+    Bookmark {
+        url: String,
+        #[serde(default)]
+        name: String,
+    },
+    /// Drop the workspace's bookmark for `url`.
+    Unbookmark { url: String },
 }
 
 /// A page message and its `seq`, if the page numbered it: inputs that change
@@ -545,14 +554,17 @@ impl Driver {
                 let _ = crate::tmux::leave_mode_in(&self.session);
             }
             PageMsg::Page { task, op } => {
-                let done = self.column.edit_pages(&task, |pages| match op {
-                    PageOp::Open { url } => {
+                use tenx_core::bookmarks::Edit;
+                let done = match op {
+                    PageOp::Bookmark { url, name } => self.column.edit_bookmarks(&task, &Edit::Add { url, name }),
+                    PageOp::Unbookmark { url } => self.column.edit_bookmarks(&task, &Edit::Remove { url }),
+                    PageOp::Open { url } => self.column.edit_pages(&task, |pages| {
                         let before = pages.pages.len();
                         pages.open(&url).map(|_| pages.pages.len() != before).map_err(|e| e.to_string())
-                    }
-                    PageOp::Close { id } => Ok(pages.close(&id)),
-                    PageOp::Navigated { id, url, title } => Ok(pages.navigated(&id, &url, &title)),
-                });
+                    }),
+                    PageOp::Close { id } => self.column.edit_pages(&task, |pages| Ok(pages.close(&id))),
+                    PageOp::Navigated { id, url, title } => self.column.edit_pages(&task, |pages| Ok(pages.navigated(&id, &url, &title))),
+                };
                 if let Err(e) = done {
                     self.column.set_status(e);
                 }
@@ -770,6 +782,10 @@ mod tests {
         assert!(matches!(open, PageMsg::Page { ref task, op: PageOp::Open { ref url } } if task == "acme/fix" && url == "https://linear.app"));
         let moved: PageMsg = serde_json::from_str(r#"{"type":"page","task":"acme/fix","op":"navigated","id":"p1","url":"https://x.dev"}"#).unwrap();
         assert!(matches!(moved, PageMsg::Page { op: PageOp::Navigated { ref id, ref title, .. }, .. } if id == "p1" && title.is_empty()));
+        let kept: PageMsg = serde_json::from_str(r#"{"type":"page","task":"acme/fix","op":"bookmark","url":"https://linear.app"}"#).unwrap();
+        assert!(matches!(kept, PageMsg::Page { op: PageOp::Bookmark { ref url, ref name }, .. } if url == "https://linear.app" && name.is_empty()));
+        let dropped: PageMsg = serde_json::from_str(r#"{"type":"page","task":"acme/fix","op":"unbookmark","url":"https://linear.app"}"#).unwrap();
+        assert!(matches!(dropped, PageMsg::Page { op: PageOp::Unbookmark { ref url }, .. } if url == "https://linear.app"));
         let set: PageMsg = serde_json::from_str(r#"{"type":"form","op":"set","field":"name","value":"Fix"}"#).unwrap();
         assert!(matches!(set, PageMsg::Form(crate::tui::column::view::FormOp::Set { ref field, ref value }) if field == "name" && value == "Fix"));
         let pick: PageMsg = serde_json::from_str(r#"{"type":"form","op":"pick","field":"agent","index":2}"#).unwrap();

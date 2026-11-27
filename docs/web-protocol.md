@@ -338,6 +338,16 @@ serve`; iOS loads plain `http` only from an IP address, a short name or a
 that doesn't load says why in its place; reload tries it again. The page bar's
 address can be changed: `pageDo` `go` with a web `url` (refused without one).
 
+**Bookmarks.** A workspace keeps web pages every task opens with one tap:
+`[[bookmarks]]` in its `config.toml`, each a `name` and a `url`
+(`tenx_core::bookmarks`; at most 40, web addresses only).
+`view.pages.bookmarks` lists the shown task's workspace's (missing from an
+older `tenx web`); the page bar's `+` lists them under its field, narrowed by
+the words typed, and a tap opens one as a page (so does Enter, for the first
+one listed, when the text has no `.`, `:` or `/` to make it an address). `{type: "page", task, op:
+"bookmark", url, name}` keeps one (an address already there is renamed), `op:
+"unbookmark", url` drops it; in the app the shown page's star does both.
+
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).
 

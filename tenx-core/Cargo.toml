@@ -37,3 +37,6 @@ base64 = "0.22"
 # civil and timestamp arithmetic here; the caller hands in the time zone
 # (the binary reads the system one), so nothing in this crate touches tzdb files.
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
+# `bookmarks`: a workspace's `[[bookmarks]]` in its `config.toml`, changed
+# without touching the rest of the file (comments, key order, unknown keys).
+toml_edit = { version = "0.22", default-features = false, features = ["parse", "display"] }

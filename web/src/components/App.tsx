@@ -1660,6 +1660,8 @@ export function App() {
                 send({ type: 'page', task: barTask, op: 'close', id: page.id });
               }}
               onOpenPage={openPage}
+              bookmarks={pages?.bookmarks ?? []}
+              onUnbookmark={(url) => barTask && send({ type: 'page', task: barTask, op: 'unbookmark', url })}
             />
           )}
           {barTask && pages && shownPage && (
@@ -1678,6 +1680,9 @@ export function App() {
                 send({ type: 'page', task: barTask, op: 'navigated', id: shownPage.id, url, title });
               }}
               onSafari={(url) => window.open(url, '_blank', 'noopener,noreferrer')}
+              bookmarks={pages.bookmarks}
+              onBookmark={(url, name) => send({ type: 'page', task: barTask, op: 'bookmark', url, name })}
+              onUnbookmark={(url) => send({ type: 'page', task: barTask, op: 'unbookmark', url })}
             />
           )}
           <Terminal

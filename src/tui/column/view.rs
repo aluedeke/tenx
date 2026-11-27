@@ -66,6 +66,8 @@ pub(crate) struct PagesView {
     pub(crate) list: Vec<tenx_core::pages::Page>,
     /// How many pages a task keeps (`tenx_core::pages::MAX_PAGES`).
     pub(crate) max: usize,
+    /// The workspace's bookmarks (`tenx_core::bookmarks`), for the `+`.
+    pub(crate) bookmarks: Vec<tenx_core::bookmarks::Bookmark>,
 }
 
 /// The sidebar beside a task: its title, then its sections
@@ -572,7 +574,12 @@ impl Column {
             pages: self
                 .window_tab
                 .and(self.pages_view())
-                .map(|(store, list)| PagesView { store: store.to_string(), list: list.to_vec(), max: tenx_core::pages::MAX_PAGES }),
+                .map(|(store, list)| PagesView {
+                    store: store.to_string(),
+                    list: list.to_vec(),
+                    max: tenx_core::pages::MAX_PAGES,
+                    bookmarks: self.bookmarks_view().to_vec(),
+                }),
             shown_closed,
             items,
             mode: self.mode_view(),
