@@ -596,17 +596,18 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
     // Not open — create it (named by slug) and record the new id. Tasks that
     // predate trust seeding get it here on reopen; the agent (workspace default
     // or the task's `.tenx-agent`) decides the launch command.
-    trust_task_dir(&task.path);
-    let global_layout = crate::workspace::load_global().map(|g| g.layout).unwrap_or_default();
-    let layout = tenx_core::tabs::layout(&ws.config.layout, &global_layout);
+    let global = crate::workspace::load_global().unwrap_or_default();
+    let layout = tenx_core::tabs::layout(&ws.config.layout, &global.layout);
     let agent = crate::agent::agent_for(ws, &task.path);
+    let add_dirs = readable_dirs(ws, &task);
+    trust_launch(ws, &global, agent, &task, &add_dirs);
     agent.prepare(&task.path);
     // A first message left by `--prompt`/`tenx ask`/`task send` rides in on
     // the launch, once: read now, removed only after the window exists, so a
     // failed open keeps it for the next try.
     let prompt_file = task.path.join(PROMPT_FILE);
     let prompt = std::fs::read_to_string(&prompt_file).ok().filter(|p| !p.trim().is_empty());
-    let agent_cmd = crate::agent::launch(ws, agent, slug, &task.path, &readable_dirs(ws, &task), prompt.as_deref());
+    let agent_cmd = crate::agent::launch(ws, agent, slug, &task.path, &add_dirs, prompt.as_deref());
     let opts = crate::tmux::TaskWindow {
         slug,
         title: &task.display_name,
@@ -678,6 +679,40 @@ pub fn ensure_window_in(ws: &crate::workspace::Workspace, slug: &str) -> Result<
 fn trust_task_dir(task_dir: &Path) {
     if let Err(e) = crate::workspace::sessions::trust_dir(task_dir) {
         eprintln!("! couldn't pre-approve Claude Code's trust dialog for {}: {e:#}", task_dir.display());
+    }
+}
+
+/// Seed Claude Code's trust for everything a Claude launch names
+/// (`tenx_core::trust::launch_dirs`): the task directory, each `--add-dir`
+/// directory outside it ([`readable_dirs`]) and each worktree's bare repo, as
+/// its `.git` file names it (`tenx_core::trust::worktree_bare_repo`). Claude Code
+/// asks "Adding a new directory … Is this a directory you created or one you
+/// trust?" for every added directory it doesn't trust, and the answer lasts
+/// only for that session — so every reopen, restart and scheduled run would
+/// stop on it, once per repo. Only Claude gets `--add-dir`: for another agent
+/// it is the task directory alone, as before. Never fatal, like
+/// [`trust_task_dir`].
+pub(crate) fn trust_launch(
+    ws: &crate::workspace::Workspace,
+    global: &crate::workspace::GlobalConfig,
+    agent: crate::agent::AgentKind,
+    task: &crate::workspace::Task,
+    add_dirs: &[PathBuf],
+) {
+    let bare_dir = ws.bare_dir(global);
+    let bares: Vec<PathBuf> = task
+        .repos
+        .iter()
+        .filter_map(|r| {
+            let wt = task.path.join(r);
+            let text = std::fs::read_to_string(wt.join(".git")).ok()?;
+            tenx_core::trust::worktree_bare_repo(&text, &wt, &bare_dir)
+        })
+        .collect();
+    let claude = agent == crate::agent::AgentKind::Claude;
+    let dirs = tenx_core::trust::launch_dirs(claude, &task.path, add_dirs, &bares);
+    if let Err(e) = crate::workspace::sessions::trust_dirs(&dirs) {
+        eprintln!("! couldn't pre-approve Claude Code's trust dialog for {}: {e:#}", task.path.display());
     }
 }
 

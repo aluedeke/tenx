@@ -166,6 +166,7 @@ fn snapshot() -> Result<(Snapshot, Vec<String>)> {
     let pfmt = "#{window_id}\t#{pane_active}\t#{pane_current_path}\t#{pane_start_path}\t#{pane_current_command}\t#{pane_id}\t#{pane_start_command}";
     let session = crate::tmux::SESSION;
     let mut panes: HashMap<String, Vec<Vec<String>>> = HashMap::new();
+    let global = crate::workspace::load_global().unwrap_or_default();
     for line in crate::tmux::run(&["list-panes", "-s", "-t", session, "-F", pfmt])?.lines() {
         let f: Vec<String> = line.splitn(7, '\t').map(str::to_string).collect();
         if f.len() == 7 {
@@ -221,6 +222,7 @@ fn snapshot() -> Result<(Snapshot, Vec<String>)> {
                     (None, Some((i, t)), Some(kind)) => {
                         let ws = &workspaces[*i];
                         let dirs = crate::cli::task::readable_dirs(ws, t);
+                        crate::cli::task::trust_launch(ws, &global, kind, t, &dirs);
                         (start_path.clone(), Some(crate::agent::launch(ws, kind, &t.name, &t.path, &dirs, None)), None)
                     }
                     _ => (start_path.clone(), Some(start.clone()), None),

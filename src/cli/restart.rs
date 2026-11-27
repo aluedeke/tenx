@@ -177,7 +177,15 @@ fn command(workspaces: &[Workspace], t: &Target) -> String {
     let ws = &workspaces[t.ws];
     let transcript = t.transcript.as_deref().filter(|p| Path::new(p).is_file());
     let session_id = t.session_id.as_deref().filter(|_| transcript.is_some());
-    let add_dirs = ws.find_task(&t.slug).map(|task| crate::cli::task::readable_dirs(ws, &task)).unwrap_or_default();
+    let add_dirs = match ws.find_task(&t.slug) {
+        Ok(task) => {
+            let dirs = crate::cli::task::readable_dirs(ws, &task);
+            let global = crate::workspace::load_global().unwrap_or_default();
+            crate::cli::task::trust_launch(ws, &global, t.agent, &task, &dirs);
+            dirs
+        }
+        Err(_) => Vec::new(),
+    };
     crate::agent::launch_resume(ws, t.agent, &t.slug, &t.task_dir, &add_dirs, session_id, transcript)
 }
 
