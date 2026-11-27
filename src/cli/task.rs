@@ -552,15 +552,15 @@ pub fn open_by_dir(ws_dir: &str, slug: &str, detached: bool) -> Result<()> {
 /// Delete a task by explicit workspace (directory or registered name) and
 /// exact slug: `tenx task rm --ws-dir`. A person at a terminal is asked
 /// first, unless `force`; a script or front end is not, since it has no one
-/// to answer (`tenx_core::confirm::ask_before_delete`). (The column calls
-/// [`rm_in`] itself.)
+/// to answer. (The column calls [`rm_in`] itself.)
 pub fn rm_by_dir(ws_dir: &str, slug: &str, force: bool) -> Result<()> {
     use std::io::IsTerminal;
     // Resolved, not as typed: `rm_in` hands the worktree's path to `git -C
     // <bare repo>`, which would read a relative one inside the bare repo.
     let ws = load_ws_arg(ws_dir)?;
-    let ask = tenx_core::confirm::ask_before_delete(force, io::stdin().is_terminal(), io::stderr().is_terminal());
-    rm_in(&ws, slug, !ask)
+    // Only stdin decides: with stderr sent to a file the question can't be
+    // seen and the command waits, which is safer than deleting unasked.
+    rm_in(&ws, slug, force || !io::stdin().is_terminal())
 }
 
 /// Rename a task's display title. Only rewrites TASK.md — the zellij tab is

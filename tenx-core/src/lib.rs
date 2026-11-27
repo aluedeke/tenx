@@ -8,7 +8,6 @@
 
 pub mod claude_agent;
 pub mod codex;
-pub mod confirm;
 pub mod dictation;
 pub mod dialog;
 pub mod edge;
