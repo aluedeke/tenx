@@ -322,8 +322,12 @@ storeName, rect}` — `key` is `<task>#<id>`, `rect` the hole under the page's
 own address bar in CSS pixels —, `pageHide`, `pageDo {key, what: back |
 forward | reload}`, `pageClose {key}`) and the app reports where a shown page
 went as a `tenx-page` window event, which the page passes on as `navigated`.
-In the app a web link (the terminal's, the sidebar's, the links box's) opens as
-a page of the shown task; holding it still offers Safari. A page opens its
+In the app a web link (the terminal's, the sidebar's, the links box's) first
+goes to the app it belongs to: the page asks `openApp {url}`, and the app hands
+it to iOS as a universal link only (`true` when an installed app took it).
+Otherwise it opens as a page of the shown task; holding it still offers
+Safari. A link tapped inside a page to another site does the same; within the
+site the page goes on. A page opens its
 address as it is, so a dev server on the Mac is opened by its tailnet
 `https` address (`tailscale serve`; iOS loads plain `http` only from an IP
 address, a short name or a `.local` name), not `localhost`, which on a phone is the phone itself. A

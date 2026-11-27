@@ -26,7 +26,7 @@ import { asTyped, upload } from '@/lib/paste';
 import { choose, htmlText, images, pasteOf } from '@/lib/clipboard';
 import { ClipSync } from '@/lib/clipsync';
 import { EmptyClipboard, OtherKind, copyFromMac, copyImageFromMac, fetchMacImage, peekMac, sendImageToMac, sendToMac, toPng, type MacKind } from '@/lib/macclip';
-import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativePageClose, nativePagesSupported, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
+import { HARDWARE_KEYBOARD_EVENT, OPEN_TASK_EVENT, nativeApp, nativeLinkMenu, nativeOpenApp, nativePageClose, nativePagesSupported, nativeTakeTap, nativeClipboard, nativeHardwareKeyboard, nativePeek, nativeWrite } from '@/lib/native';
 import { applyEdit, keptEdit, textEdit } from '@/lib/textdiff';
 import * as push from '@/lib/push';
 import { Dictation, type LiveText, sttUnsupported } from '@/lib/stt';
@@ -1416,6 +1416,8 @@ export function App() {
     },
     [barTask, pages, send, appPages],
   );
+  // Links waiting on the app's answer: a second tap meanwhile opens no copy.
+  const askingApp = useRef(new Set<string>());
   // A page closed (on any device) is dropped from the app, not just hidden:
   // its sound and scripts stop with it.
   const listed = useRef(new Set<string>());
@@ -1431,14 +1433,27 @@ export function App() {
     for (const key of now) listed.current.add(key);
   }, [barTask, pages, appPages]);
   // In the app, a web link (the terminal's, the sidebar's, the links box)
-  // opens as one of the shown task's pages; holding it still offers Safari.
+  // opens in its installed app (`nativeOpenApp`), else as one of the shown
+  // task's pages; holding it still offers Safari.
   // Not once the task has as many pages as it keeps: Safari then.
   useEffect(() => {
     if (!barTask || !appPages) return;
     return routeLinks((url) => {
       const list = pages?.list ?? [];
-      if (list.length >= (pages?.max ?? 0) && !list.some((p) => isPage(p, url))) return false;
-      openPage(url);
+      // Already one of the task's pages: that page.
+      if (list.some((p) => isPage(p, url))) {
+        openPage(url);
+        return true;
+      }
+      if (list.length >= (pages?.max ?? 0)) return false;
+      // The app it belongs to first (Slack, Linear, GitHub…), else a page.
+      if (askingApp.current.has(url)) return true;
+      askingApp.current.add(url);
+      void nativeOpenApp(url).then((opened) => {
+        askingApp.current.delete(url);
+        // As a page of the task the link was tapped in.
+        if (!opened) openPage(url);
+      });
       return true;
     });
   }, [barTask, openPage, appPages, pages]);

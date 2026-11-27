@@ -185,6 +185,19 @@ export async function nativePagesSupported(): Promise<boolean> {
   }
 }
 
+/** Open a web link in the app it belongs to, when one is installed (iOS's
+ * universal links). False when none took it, outside the app, and in an
+ * app too old to try: the caller opens it as a page then. */
+export async function nativeOpenApp(url: string): Promise<boolean> {
+  const h = handler();
+  if (!h) return false;
+  try {
+    return (await h.postMessage({ action: 'openApp', url })) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Hide the page shown, if any; it keeps its place for the next show. */
 export function nativePageHide(): void {
   void handler()
