@@ -250,8 +250,11 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
                   let rect = body?["rect"] as? [String: Double],
                   let x = rect["x"], let y = rect["y"], let width = rect["width"], let height = rect["height"]
             else { return (nil, "no page") }
-            // Every page's `localhost` goes to the Mac (PageTunnel).
+            // Every page's `localhost` goes to the Mac (PageTunnel). Hidden
+            // meanwhile (another tab): stays hidden.
+            let hides = owner.pages.hides
             let proxy = await owner.pages.tunnel.configuration()
+            guard owner.pages.hides == hides else { return (true, nil) }
             owner.pages.show(key: key, url: url, store: store, storeName: body?["storeName"] as? String ?? "", proxy: proxy, rect: CGRect(x: x, y: y, width: width, height: height))
             return (true, nil)
         case "pageTunnel":

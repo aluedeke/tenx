@@ -1042,6 +1042,9 @@ pub enum WebServiceAction {
         /// Also accept the page from this origin — repeatable
         #[arg(long = "dev-origin", value_name = "URL")]
         dev_origin: Vec<String>,
+        /// Gone, as on `tenx web`: accepted and ignored.
+        #[arg(long, hide = true)]
+        proxy_port: Option<u16>,
     },
     /// Restart it, e.g. onto a new binary after an upgrade (no-op when not installed)
     Restart,

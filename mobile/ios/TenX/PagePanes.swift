@@ -16,6 +16,9 @@ final class PagePanes: NSObject {
     /// Runs a script in the tenx page: where a page went (`tenx-page`).
     private let report: (String) -> Void
     private var views: [String: PageWebView] = [:]
+    /// Counts `hide`s: a `pageShow` that waited for the tunnel while the
+    /// page was hidden shows nothing (`WebViewController`).
+    private(set) var hides = 0
     /// Keys, the last shown last: the first ones go when there are too many.
     private var order: [String] = []
     private static let keep = 6
@@ -31,18 +34,20 @@ final class PagePanes: NSObject {
 
     @objc private func wake() { tunnel.wake() }
 
+    deinit { tunnel.close() }
+
     /// Show page `key` over `rect` (the tenx page's CSS pixels, which are the
     /// host's points), loading `url` only into a web view made now. `proxy`:
-    /// the tunnel's, for its `localhost`.
-    func show(key: String, url: URL, store: UUID, storeName: String, proxy: ProxyConfiguration?, rect: CGRect) {
+    /// the tunnel's, for its `localhost`, and the port it names.
+    func show(key: String, url: URL, store: UUID, storeName: String, proxy: (proxy: ProxyConfiguration, port: UInt16)?, rect: CGRect) {
         guard let host else { return }
         PageStores.remember(store, as: storeName)
         let page: PageWebView
-        if let known = views[key], known.store == store, known.tunneled == (proxy != nil) {
+        if let known = views[key], known.store == store, known.tunnelPort == proxy?.port {
             page = known
         } else {
             views[key]?.removeFromSuperview()
-            page = PageWebView(key: key, store: store, proxy: proxy, report: report)
+            page = PageWebView(key: key, store: store, proxy: proxy?.proxy, port: proxy?.port, report: report)
             views[key] = page
             page.load(URLRequest(url: url))
         }
@@ -61,6 +66,7 @@ final class PagePanes: NSObject {
     }
 
     func hide() {
+        hides += 1
         for view in views.values { view.park() }
     }
 
@@ -98,18 +104,18 @@ final class PagePanes: NSObject {
 private final class PageWebView: WKWebView {
     let key: String
     let store: UUID
-    /// Its `localhost` goes to the Mac (`PageTunnel`).
-    let tunneled: Bool
+    /// The tunnel's port its `localhost` goes to (`PageTunnel`).
+    let tunnelPort: UInt16?
     private let report: (String) -> Void
     /// The `localhost` address whose failure the page shows: what the bar
     /// says and what reload tries again.
     private(set) var failed: URL?
     private var watching: [NSKeyValueObservation] = []
 
-    init(key: String, store: UUID, proxy: ProxyConfiguration?, report: @escaping (String) -> Void) {
+    init(key: String, store: UUID, proxy: ProxyConfiguration?, port: UInt16?, report: @escaping (String) -> Void) {
         self.key = key
         self.store = store
-        self.tunneled = proxy != nil
+        self.tunnelPort = port
         self.report = report
         let config = WKWebViewConfiguration()
         config.websiteDataStore = WKWebsiteDataStore(forIdentifier: store)
@@ -207,7 +213,7 @@ extension PageWebView: WKNavigationDelegate, WKUIDelegate {
               let url = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL, LocalPage.isLocal(url)
         else { return }
         failed = url
-        webView.loadHTMLString(LocalPage.failure(url: url, tunneled: tunneled, error: e.localizedDescription), baseURL: nil)
+        webView.loadHTMLString(LocalPage.failure(url: url, tunneled: tunnelPort != nil, error: e.localizedDescription), baseURL: nil)
     }
 }
 

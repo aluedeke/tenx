@@ -18,8 +18,9 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
     private let queue = DispatchQueue(label: "tenx.pagetunnel")
     private var listener: NWListener?
     /// The port the web views were given: a listener started again (after
-    /// the app was in the background) asks for the same one.
+    /// the app was in the background) asks for the same one first.
     private var port: NWEndpoint.Port?
+    private var started = false
     private var waiting: [(NWEndpoint.Port?) -> Void] = []
     /// A socket's answer to its upgrade, by task id.
     private var opening: [Int: (Bool) -> Void] = [:]
@@ -34,20 +35,34 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
         session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
     }
 
-    /// The proxy for a page's web view, once it listens; `nil` when it can't.
-    func configuration() async -> ProxyConfiguration? {
+    /// The proxy for a page's web view and the port it names, once it
+    /// listens; `nil` when it can't. A web view made for another port is
+    /// made again (`PagePanes.show`).
+    func configuration() async -> (proxy: ProxyConfiguration, port: UInt16)? {
         guard let port = await ready() else { return nil }
         var proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: .ipv4(.loopback), port: port), tlsOptions: nil)
         proxy.applyCredential(username: "tenx", password: secret)
         // `localhost` alone, as the page assumes (pages.ts `viaTunnel`):
         // every other site goes its own way.
         proxy.matchDomains = ["localhost"]
-        return proxy
+        return (proxy, port.rawValue)
     }
 
     /// The app is back in front: a listener iOS closed meanwhile starts again.
     func wake() {
-        queue.async { if self.listener == nil, self.port != nil { self.start() } }
+        queue.async { if self.listener == nil, self.started { self.start() } }
+    }
+
+    /// No more pages from this one (the app's view is made anew): the
+    /// listener, its tunnels and the session go. The session holds its
+    /// delegate, this, until then.
+    func close() {
+        queue.async {
+            self.started = false
+            self.listener?.cancel()
+            self.listener = nil
+            self.session.invalidateAndCancel()
+        }
     }
 
     private func ready() async -> NWEndpoint.Port? {
@@ -64,20 +79,28 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
     }
 
     private func start() {
+        started = true
+        let pinned = port
         let params = NWParameters.tcp
-        params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: port ?? .any)
+        params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: pinned ?? .any)
         params.allowLocalEndpointReuse = true
-        guard let l = try? NWListener(using: params) else { return settle(nil) }
+        guard let l = try? NWListener(using: params) else {
+            port = nil
+            return settle(nil)
+        }
         listener = l
         l.stateUpdateHandler = { [weak self, weak l] state in
-            guard let self, let l else { return }
+            guard let self, let l, self.listener === l else { return }
             switch state {
             case .ready:
                 self.port = l.port
                 self.settle(l.port)
-            case .failed, .cancelled:
+            // `.waiting` too: it may never end, and a page waits on this.
+            case .failed, .waiting, .cancelled:
                 l.cancel()
-                if self.listener === l { self.listener = nil }
+                self.listener = nil
+                // The old port is taken: the next start takes any.
+                if pinned != nil { self.port = nil }
                 self.settle(nil)
             default: break
             }
@@ -171,10 +194,12 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
     private func up(_ conn: NWConnection, _ socket: URLSessionWebSocketTask) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, done, error in
             guard let self else { return conn.cancel() }
-            let last = done || error != nil
-            guard let data, !data.isEmpty else { return last ? self.end(conn, socket) : self.up(conn, socket) }
+            // The page is done sending: its answer may still come (`down`
+            // ends the connection then). A WebSocket has no half-close.
+            if error != nil { return self.end(conn, socket) }
+            guard let data, !data.isEmpty else { return done ? () : self.up(conn, socket) }
             socket.send(.data(data)) { error in
-                self.queue.async { error != nil || last ? self.end(conn, socket) : self.up(conn, socket) }
+                self.queue.async { error != nil ? self.end(conn, socket) : done ? () : self.up(conn, socket) }
             }
         }
     }
