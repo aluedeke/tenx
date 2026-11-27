@@ -1732,7 +1732,8 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     // A listener no task owns: this test's own.
     let stranger = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let stranger_port = stranger.local_addr().unwrap().port();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    // Three Pythons starting at once took over 10 s on a CI Mac.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while std::net::TcpStream::connect(("127.0.0.1", dev)).is_err()
         || std::net::TcpStream::connect(("127.0.0.1", home)).is_err()
         || std::net::TcpStream::connect(("::1", dev6)).is_err()
