@@ -325,7 +325,9 @@ went as a `tenx-page` window event, which the page passes on as `navigated`.
 In the app a web link (the terminal's, the sidebar's, the links box's) opens as
 a page of the shown task; holding it still offers Safari. A page opens its
 address as it is, so a dev server on the Mac is opened by its tailnet
-address, not `localhost`, which on a phone is the phone itself.
+`https` address (`tailscale serve`; iOS loads plain `http` only from an IP
+address, a short name or a `.local` name), not `localhost`, which on a phone is the phone itself. A
+page that doesn't load says why in its place; reload tries it again.
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

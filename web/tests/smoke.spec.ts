@@ -170,7 +170,25 @@ test('in the iOS app a page shows over the terminal and follows where it goes', 
   await tabs.getByTestId('page-add').click();
   await page.getByTestId('page-url').fill('localhost:3000');
   await page.getByTestId('page-url').press('Enter');
-  await expect.poll(async () => (await calls()).some((c) => c.action === 'pageShow' && String((c as { url?: string }).url).includes('localhost:3000'))).toBe(true);
+  await expect(pane).toBeVisible();
+  await expect.poll(async () => (await calls()).some((c) => c.action === 'pageShow' && (c as { url?: string }).url === 'http://localhost:3000')).toBe(true);
+});
+
+test('on a phone the + stays in reach however many pages the bar lists', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'a phone-width bar');
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  for (const name of ['linear.app/one', 'github.com/two', 'app.checklyhq.com/three', 'vercel.com/four', 'example.com/five']) {
+    await tabs.getByTestId('page-add').tap();
+    await page.getByTestId('page-url').fill(name);
+    const [popup] = await Promise.all([page.waitForEvent('popup'), page.getByTestId('page-url').press('Enter')]);
+    await popup.close();
+  }
+  await expect(tabs.getByTestId('page-p5')).toBeAttached();
+  const add = (await tabs.getByTestId('page-add').boundingBox())!;
+  const width = page.viewportSize()!.width;
+  expect(add.x + add.width).toBeLessThanOrEqual(width);
+  expect(add.x).toBeGreaterThan(width / 2);
 });
 
 test('quick clicks on two tabs light the last one, never the one between', async ({ page, isMobile }) => {

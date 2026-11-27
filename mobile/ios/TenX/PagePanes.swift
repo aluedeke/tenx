@@ -61,7 +61,14 @@ final class PagePanes: NSObject {
         switch what {
         case "back": page.goBack()
         case "forward": page.goForward()
-        case "reload": if page.isLoading { page.stopLoading() } else { page.reload() }
+        case "reload":
+            if page.isLoading {
+                page.stopLoading()
+            } else if let failed = page.failed {
+                page.load(URLRequest(url: failed))
+            } else {
+                page.reload()
+            }
         default: break
         }
     }
@@ -84,6 +91,9 @@ private final class PageWebView: WKWebView {
     let key: String
     let store: UUID
     private let report: (String) -> Void
+    /// The address whose failure the page shows (`FailedPage`): what the
+    /// bar says and what reload tries again.
+    private(set) var failed: URL?
     private var watching: [NSKeyValueObservation] = []
 
     init(key: String, store: UUID, report: @escaping (String) -> Void) {
@@ -132,7 +142,7 @@ private final class PageWebView: WKWebView {
         guard !isHidden else { return }
         let state: [String: Any] = [
             "key": key,
-            "url": url?.absoluteString ?? "",
+            "url": failed?.absoluteString ?? url?.absoluteString ?? "",
             "title": title ?? "",
             "canGoBack": canGoBack,
             "canGoForward": canGoForward,
@@ -146,6 +156,7 @@ private final class PageWebView: WKWebView {
 extension PageWebView: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         guard let url = action.request.url, let scheme = url.scheme?.lowercased() else { return .cancel }
+        if action.targetFrame?.isMainFrame ?? true, scheme == "http" || scheme == "https" { failed = nil }
         if ["http", "https", "about", "blob", "data"].contains(scheme) { return .allow }
         // mailto:, tel:, another app's link: iOS's, for a link tapped in the
         // page itself; a script or a frame (an ad, an embed) never switches apps.
@@ -175,6 +186,37 @@ extension PageWebView: WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
+    }
+
+    /// A page that didn't load: say why, in its place. Only a network
+    /// error on a web address: WebKit's own stops (a download, a link
+    /// another app took) leave the page as it was.
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        let e = error as NSError
+        guard e.domain == NSURLErrorDomain, e.code != NSURLErrorCancelled,
+              let url = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        else { return }
+        failed = url
+        webView.loadHTMLString(FailedPage.html(url: url, code: e.code, error: e.localizedDescription), baseURL: nil)
+    }
+}
+
+/// What a page shows when its address didn't load.
+enum FailedPage {
+    static func html(url: URL, code: Int, error: String) -> String {
+        func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
+        let host = (url.host ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        let local = host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.") || host == "0.0.0.0"
+        let how: String
+        if local {
+            how = "On this device <code>localhost</code> is the device itself, not the Mac. Open the Mac's dev server by its tailnet https address (<code>tailscale serve</code>) instead."
+        } else if code == NSURLErrorAppTransportSecurityRequiresSecureConnection {
+            how = "iOS loads plain <code>http</code> only from an IP address, a short name (<code>http://mac:3000</code>) or a <code>.local</code> name. Use one of those, or the server's <code>https</code> address (for a dev server on the Mac: <code>tailscale serve</code>)."
+        } else {
+            how = "Check the address and that the server is up, then reload."
+        }
+        return "<!doctype html><meta name=viewport content=\"width=device-width\"><body style=\"font:15px -apple-system;background:#171820;color:#c8ccd4;padding:24px;line-height:1.45\"><h3 style=\"color:#fff\">\(esc(url.absoluteString)) didn't load</h3><p>\(how)</p><p style=\"opacity:.6\">\(esc(error))</p>"
     }
 }
 
