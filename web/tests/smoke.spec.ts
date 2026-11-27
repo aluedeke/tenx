@@ -167,14 +167,14 @@ test('in the iOS app a page shows over the terminal and follows where it goes', 
   await expect(tabs.getByRole('tab', { name: 'agent' })).toHaveAttribute('aria-selected', 'true');
 
   // A localhost address is the Mac's own: the app reaches it through tenx
-  // web's page proxy.
+  // web's page tunnel.
   await tabs.getByTestId('page-add').click();
   await page.getByTestId('page-url').fill('localhost:3000');
   await page.getByTestId('page-url').press('Enter');
   await expect(pane).toBeVisible();
   await expect(page.getByTestId('page-local')).toHaveCount(0);
   await expect
-    .poll(async () => (await calls()).some((c) => c.action === 'pageShow' && (c as unknown as { url: string; proxy: number }).url === 'http://localhost:3000' && (c as unknown as { proxy: number }).proxy === 7075))
+    .poll(async () => (await calls()).some((c) => c.action === 'pageShow' && (c as unknown as { url: string }).url === 'http://localhost:3000'))
     .toBe(true);
 });
 
@@ -195,12 +195,12 @@ test('on a phone the + stays in reach however many pages the bar lists', async (
   expect(add.x).toBeGreaterThan(width / 2);
 });
 
-test('without the page proxy a localhost page is a note in the app', async ({ page, isMobile }) => {
+test('in an app too old for the page tunnel a localhost page is a note', async ({ page, isMobile }) => {
   test.skip(isMobile, 'one run is enough');
-  await page.context().addCookies([{ name: 'mocknoproxy', value: '1', url: 'http://127.0.0.1:7071' }]);
   await page.addInitScript(() => {
     (window as unknown as { webkit: unknown }).webkit = {
-      messageHandlers: { tenx: { postMessage: async (m: { action: string }) => (m.action.startsWith('page') ? true : null) } },
+      // 0.46/0.47 answer `pageProxy`, not `pageTunnel`.
+      messageHandlers: { tenx: { postMessage: async (m: { action: string }) => (m.action.startsWith('page') && m.action !== 'pageTunnel' ? true : null) } },
     };
   });
   await page.goto('/');

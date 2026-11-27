@@ -181,7 +181,7 @@ pub fn ports_by_window() -> HashMap<String, Vec<u16>> {
 /// Every port a task's process listens on: the processes of task windows
 /// (never the home window's, or another window opened for no task) and the
 /// `tenx service`s started in a task with an open window — what `tenx web`'s
-/// page proxy may reach. Reads only: no record is pruned here.
+/// page tunnel may reach. Reads only: no record is pruned here.
 pub fn task_ports() -> std::collections::HashSet<u16> {
     let panes = crate::tmux::task_pane_pids().unwrap_or_default();
     if panes.is_empty() {

@@ -8,12 +8,12 @@
 // every device lists it where it is now.
 //
 // A `localhost` page is the Mac's own: the app reaches it through `tenx web`'s
-// page proxy (`proxy`, tenx_core::pageproxy). Without one, a note instead.
+// page tunnel (`tunnel`, tenx_core::pagetunnel). An app without it: a note.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PageView } from '@/protocol';
 import { PAGE_EVENT, nativePageDo, nativePageHide, nativePageShow, type NativePageState } from '@/lib/native';
-import { isLocalUrl, viaProxy, workspaceOf } from '@/lib/pages';
+import { isLocalUrl, viaTunnel, workspaceOf } from '@/lib/pages';
 
 interface Props {
   task: string;
@@ -21,8 +21,8 @@ interface Props {
   pageKey: string;
   page: PageView;
   store: string;
-  /** `view.pages.proxy`. */
-  proxy: number | null;
+  /** The app reaches the Mac's `localhost` (`nativePageTunnelSupported`). */
+  tunnel: boolean;
   /** The app couldn't show it (too old): the page leaves it to Safari. */
   onRefused(): void;
   onMoved(url: string, title: string): void;
@@ -47,11 +47,11 @@ function covered(hole: HTMLElement, r: DOMRect): boolean {
   });
 }
 
-export function PagePane({ task, pageKey, page, store, proxy, onRefused, onMoved, onSafari }: Props) {
+export function PagePane({ task, pageKey, page, store, tunnel, onRefused, onMoved, onSafari }: Props) {
   const hole = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<NativePageState | null>(null);
   // The Mac's own address with no way to it.
-  const local = isLocalUrl(page.url) && (proxy === null || !viaProxy(page.url));
+  const local = isLocalUrl(page.url) && (!tunnel || !viaTunnel(page.url));
   // Shown where the hole is, again whenever the hole moves (a resize, the
   // keyboard, the sidebar); hidden when the pane goes.
   const refused = useRef(onRefused);
@@ -96,7 +96,6 @@ export function PagePane({ task, pageKey, page, store, proxy, onRefused, onMoved
         store,
         storeName: workspaceOf(task),
         rect: { x, y, width: r.width, height: r.height },
-        proxy,
       }).catch(() => {
         // Once: the observer's first call would ask again.
         if (gaveUp) return;
@@ -129,7 +128,7 @@ export function PagePane({ task, pageKey, page, store, proxy, onRefused, onMoved
     };
     // The address only matters for a web view the app makes now: a page it
     // already has stays where it went.
-  }, [pageKey, store, task, local, proxy]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pageKey, store, task, local]); // eslint-disable-line react-hooks/exhaustive-deps
   const moved = useRef(onMoved);
   moved.current = onMoved;
   useEffect(() => {
@@ -166,9 +165,9 @@ export function PagePane({ task, pageKey, page, store, proxy, onRefused, onMoved
         <div className="page-note" data-testid="page-local">
           <strong>{url.replace(/^https?:\/\//, '')} is on the Mac</strong>
           <span>
-            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it: {proxy === null
-              ? 'tenx web runs without its page proxy (--proxy-port), or this app is too old for it.'
-              : 'only localhost goes through tenx web’s page proxy: open it as localhost instead.'}
+            A localhost address is the Mac&apos;s own, and this device can&apos;t reach it: {!tunnel
+              ? 'this app is too old for it. Update the app.'
+              : 'only localhost goes through to the Mac: open it as localhost instead.'}
           </span>
         </div>
       ) : (

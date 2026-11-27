@@ -11,35 +11,44 @@ import WebKit
 @MainActor
 final class PagePanes: NSObject {
     private weak var host: UIView?
-    /// The tenx server: its host and token reach a page's `localhost`
-    /// through `tenx web`'s page proxy.
-    private let server: Server
+    /// A page's `localhost`, carried to the Mac through `tenx web`.
+    let tunnel: PageTunnel
     /// Runs a script in the tenx page: where a page went (`tenx-page`).
     private let report: (String) -> Void
     private var views: [String: PageWebView] = [:]
+    /// Counts `hide`s and `close`s: a `pageShow` that waited for the tunnel
+    /// while the page was hidden or closed shows nothing (`still`).
+    private var hides = 0
+    private var closes: [String: Int] = [:]
     /// Keys, the last shown last: the first ones go when there are too many.
     private var order: [String] = []
     private static let keep = 6
 
     init(over host: UIView, server: Server, report: @escaping (String) -> Void) {
         self.host = host
-        self.server = server
+        self.tunnel = PageTunnel(server: server)
         self.report = report
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(storeForgotten(_:)), name: PageStores.forgetting, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(wake), name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
+    @objc private func wake() { tunnel.wake() }
+
+    deinit { tunnel.close() }
+
     /// Show page `key` over `rect` (the tenx page's CSS pixels, which are the
-    /// host's points), loading `url` only into a web view made now.
-    func show(key: String, url: URL, store: UUID, storeName: String, proxy: UInt16?, rect: CGRect) {
+    /// host's points), loading `url` only into a web view made now. `proxy`:
+    /// the tunnel's, for its `localhost`, and the port it names.
+    func show(key: String, url: URL, store: UUID, storeName: String, proxy: (proxy: ProxyConfiguration, port: UInt16)?, rect: CGRect) {
         guard let host else { return }
         PageStores.remember(store, as: storeName)
         let page: PageWebView
-        if let known = views[key], known.store == store, known.proxy == proxy {
+        if let known = views[key], known.store == store, known.tunnelPort == proxy?.port {
             page = known
         } else {
             views[key]?.removeFromSuperview()
-            page = PageWebView(key: key, store: store, proxy: proxy.map { PageProxy(server: server, port: $0) }, report: report)
+            page = PageWebView(key: key, store: store, proxy: proxy?.proxy, port: proxy?.port, report: report)
             views[key] = page
             page.load(URLRequest(url: url))
         }
@@ -57,7 +66,14 @@ final class PagePanes: NSObject {
         }
     }
 
+    /// Where hides and closes of `key` stand, for `still`.
+    func mark(_ key: String) -> (Int, Int) { (hides, closes[key, default: 0]) }
+
+    /// No hide, and no close of `key`, since `mark`.
+    func still(_ key: String, _ marked: (Int, Int)) -> Bool { mark(key) == marked }
+
     func hide() {
+        hides += 1
         for view in views.values { view.park() }
     }
 
@@ -79,6 +95,7 @@ final class PagePanes: NSObject {
     }
 
     func close(key: String) {
+        closes[key, default: 0] += 1
         views.removeValue(forKey: key)?.removeFromSuperview()
         order.removeAll { $0 == key }
     }
@@ -95,23 +112,22 @@ final class PagePanes: NSObject {
 private final class PageWebView: WKWebView {
     let key: String
     let store: UUID
-    let proxy: UInt16?
-    private let via: PageProxy?
+    /// The tunnel's port its `localhost` goes to (`PageTunnel`).
+    let tunnelPort: UInt16?
     private let report: (String) -> Void
     /// The `localhost` address whose failure the page shows: what the bar
     /// says and what reload tries again.
     private(set) var failed: URL?
     private var watching: [NSKeyValueObservation] = []
 
-    init(key: String, store: UUID, proxy: PageProxy?, report: @escaping (String) -> Void) {
+    init(key: String, store: UUID, proxy: ProxyConfiguration?, port: UInt16?, report: @escaping (String) -> Void) {
         self.key = key
         self.store = store
-        self.proxy = proxy?.port
-        self.via = proxy
+        self.tunnelPort = port
         self.report = report
         let config = WKWebViewConfiguration()
         config.websiteDataStore = WKWebsiteDataStore(forIdentifier: store)
-        if let proxy { config.websiteDataStore.proxyConfigurations = [proxy.configuration] }
+        if let proxy { config.websiteDataStore.proxyConfigurations = [proxy] }
         config.allowsInlineMediaPlayback = true
         super.init(frame: .zero, configuration: config)
         navigationDelegate = self
@@ -202,53 +218,36 @@ extension PageWebView: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let e = error as NSError
         guard !(e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled),
-              let url = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL, PageProxy.isLocal(url)
+              let url = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL, LocalPage.isLocal(url)
         else { return }
         failed = url
-        webView.loadHTMLString(PageProxy.failure(url: url, via: via, error: e.localizedDescription), baseURL: nil)
+        webView.loadHTMLString(LocalPage.failure(url: url, tunneled: tunnelPort != nil, error: e.localizedDescription), baseURL: nil)
     }
 }
 
-/// `tenx web`'s page proxy (`tenx_core::pageproxy`) as the server's host
-/// sees it: a page's `localhost` connections go there, the Mac's own ports
-/// instead of the phone's. Through Tailscale's TLS for an https server.
-struct PageProxy {
-    let server: Server
-    let port: UInt16
-
-    var host: String { server.base.host ?? "localhost" }
-
-    var configuration: ProxyConfiguration {
-        let endpoint = NWEndpoint.hostPort(host: .init(host), port: .init(rawValue: port) ?? 7075)
-        let tls = server.base.scheme?.lowercased() == "https" ? NWProtocolTLS.Options() : nil
-        var proxy = ProxyConfiguration(httpCONNECTProxy: endpoint, tlsOptions: tls)
-        proxy.applyCredential(username: "tenx", password: server.token)
-        // Only the Mac's own addresses: every other site goes its own way.
-        // `localhost` alone, as the page assumes (pages.ts `viaProxy`).
-        proxy.matchDomains = ["localhost"]
-        return proxy
-    }
-
+/// A `localhost` address, and what a page shows when one didn't load.
+enum LocalPage {
     /// The Mac's own address as a page names it: every loopback name
     /// (web/src/lib/pages.ts `isLocalUrl`). Only `localhost` goes through
-    /// the proxy (`matchDomains`); the page shows a note for the rest
-    /// (`viaProxy`).
+    /// the page tunnel (`PageTunnel`, `matchDomains`); the page shows a note
+    /// for the rest (`viaTunnel`).
     static func isLocal(_ url: URL) -> Bool {
         let host = (url.host ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
     }
 
     /// The page shown when a `localhost` page didn't load.
-    static func failure(url: URL, via: PageProxy?, error: String) -> String {
+    static func failure(url: URL, tunneled: Bool, error: String) -> String {
         func esc(_ s: String) -> String { s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
-        let what = url.host.map { "\($0):\(url.port ?? (url.scheme == "https" ? 443 : 80))" } ?? url.absoluteString
+        let port = url.port ?? (url.scheme == "https" ? 443 : 80)
+        let what = url.host.map { "\($0):\(port)" } ?? url.absoluteString
         let how: String
         if url.host?.lowercased() != "localhost" {
-            how = "Only <code>localhost</code> goes through tenx web's page proxy; this address is the device's own. Open it as <code>localhost:\(url.port ?? (url.scheme == "https" ? 443 : 80))</code> instead."
-        } else if let via {
-            how = "It goes through tenx web's page proxy on \(esc(via.host)):\(via.port). Either no task listens on that port, or this device can't reach the proxy: on a tailnet the Mac needs <code>tailscale serve --bg --tls-terminated-tcp=\(via.port) tcp://127.0.0.1:\(via.port)</code>."
+            how = "Only <code>localhost</code> goes through to the Mac; this address is the device's own. Open it as <code>localhost:\(port)</code> instead."
+        } else if tunneled {
+            how = "It goes through tenx web to the Mac's port \(port). Either no task listens there (start the task's dev server, in its window or with <code>tenx service</code>), or tenx web can't be reached right now, or its token changed (sign in again in the settings). Then reload."
         } else {
-            how = "tenx web runs without its page proxy, so this device can't reach the Mac's own addresses."
+            how = "This device couldn't start the page's way to the Mac. Close the app and open it again."
         }
         return "<!doctype html><meta name=viewport content=\"width=device-width\"><body style=\"font:15px -apple-system;background:#171820;color:#c8ccd4;padding:24px;line-height:1.45\"><h3 style=\"color:#fff\">\(esc(what)) didn't load</h3><p>\(how)</p><p style=\"opacity:.6\">\(esc(error))</p>"
     }
