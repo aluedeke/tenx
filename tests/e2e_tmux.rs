@@ -2017,3 +2017,48 @@ fn task_rm_reports_a_branch_it_could_not_delete() {
     assert!(String::from_utf8_lossy(&branches.stdout).contains("locked-rm"), "the branch really is still there");
     assert!(!h.root.join("ws/tasks/locked-rm").exists(), "the task directory is gone all the same");
 }
+
+/// `task rm --ws-dir` typed at a terminal asks first, as `task rm` does: "n"
+/// keeps the task, "y" deletes it. (Without a terminal it does not ask, which
+/// the tests above rely on.)
+#[test]
+fn task_rm_with_ws_dir_asks_at_a_terminal() {
+    let Some(h) = Harness::named("-rmask") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Ask Rm", "--ws-dir", &h.ws(), "--no-open"]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let task = h.root.join("ws/tasks/ask-rm");
+    let run = |window: &str, answer: &str| {
+        let cmd = format!(
+            "env TENX_TMUX_SOCKET={} HOME={} {} task rm ask-rm --ws-dir {}; echo EXIT=$?; sleep 600",
+            h.socket,
+            h.root.join("home").display(),
+            env!("CARGO_BIN_EXE_tenx"),
+            h.ws()
+        );
+        h.tmux_out(&["new-window", "-d", "-n", window, &cmd]);
+        let target = format!("tenx:{window}");
+        let until = |want: &str| {
+            for _ in 0..100 {
+                let screen = h.tmux_out(&["capture-pane", "-p", "-t", &target]);
+                if screen.contains(want) {
+                    return screen;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            panic!("never saw {want:?}: {}", h.tmux_out(&["capture-pane", "-p", "-t", &target]));
+        };
+        until("delete task 'ask-rm'? [y/N]");
+        h.tmux_out(&["send-keys", "-t", &target, answer, "Enter"]);
+        until("EXIT=")
+    };
+
+    let screen = run("ask-n", "n");
+    assert!(screen.contains("aborted"), "a no keeps the task: {screen}");
+    assert!(task.is_dir(), "the task is still there after a no");
+
+    run("ask-y", "y");
+    assert!(!task.exists(), "a yes deletes the task");
+}

@@ -550,13 +550,15 @@ pub fn open_by_dir(ws_dir: &str, slug: &str, detached: bool) -> Result<()> {
 }
 
 /// Delete a task by explicit workspace (directory or registered name) and
-/// exact slug, without a prompt: `tenx task rm --ws-dir`, for scripts and
-/// front ends. (The column calls [`rm_in`] itself.)
-pub fn rm_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
+/// exact slug: `tenx task rm --ws-dir`. A person at a terminal is asked
+/// first, unless `force`; a script or front end (stdin no terminal) is not,
+/// since it has no one to answer. (The column calls [`rm_in`] itself.)
+pub fn rm_by_dir(ws_dir: &str, slug: &str, force: bool) -> Result<()> {
+    use std::io::IsTerminal;
     // Resolved, not as typed: `rm_in` hands the worktree's path to `git -C
     // <bare repo>`, which would read a relative one inside the bare repo.
     let ws = load_ws_arg(ws_dir)?;
-    rm_in(&ws, slug, true)
+    rm_in(&ws, slug, force || !io::stdin().is_terminal())
 }
 
 /// Rename a task's display title. Only rewrites TASK.md — the zellij tab is
@@ -1069,7 +1071,7 @@ pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Resul
 
     if !force {
         eprint!("delete task '{}'? [y/N] ", name);
-        io::stdout().flush()?;
+        io::stderr().flush()?;
         let mut line = String::new();
         io::stdin().lock().read_line(&mut line)?;
         if !line.trim().eq_ignore_ascii_case("y") {

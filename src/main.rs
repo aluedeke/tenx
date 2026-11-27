@@ -322,7 +322,7 @@ fn run() -> Result<()> {
                 }
             }
             TaskCommands::Rm { name, force, ws_dir } => match ws_dir {
-                Some(dir) => cli::task::rm_by_dir(&dir, &name)?,
+                Some(dir) => cli::task::rm_by_dir(&dir, &name, force)?,
                 None => cli::task::rm(&name, force)?,
             },
             TaskCommands::Agent {
