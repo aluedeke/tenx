@@ -1935,3 +1935,85 @@ fn scheduled_runs_start_end_time_out_and_stay_off_the_task_list() {
     tick();
     assert_eq!(runs("hourly").len(), 1, "the same slot never runs twice");
 }
+
+/// `task rm --ws-dir .` once left the worktree registered in the bare repo and
+/// the task branch behind: the relative path reached `git -C <bare repo>
+/// worktree remove`, which resolved it inside the bare repo and failed, and the
+/// error was ignored. A relative `--ws-dir` must delete as cleanly as an
+/// absolute one.
+#[test]
+fn task_rm_with_a_relative_ws_dir_removes_the_worktree_and_branch() {
+    let Some(h) = Harness::named("-rmrel") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Rel Rm", "--ws-dir", &h.ws(), "--no-open"]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let bare = h.root.join("ws/.bare/origin.git");
+    let git = |args: &[&str]| {
+        let out = Command::new("git").arg("-C").arg(&bare).args(args).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    assert!(git(&["worktree", "list"]).contains("tasks/rel-rm"), "the task has a worktree to begin with");
+    assert!(git(&["branch", "--list", "rel-rm"]).contains("rel-rm"), "the task has a branch to begin with");
+
+    let out = h.tenx().current_dir(h.root.join("ws")).args(["task", "rm", "rel-rm", "--ws-dir", "."]).output().unwrap();
+    assert!(out.status.success(), "task rm: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(!h.root.join("ws/tasks/rel-rm").exists(), "the task directory is gone");
+    let worktrees = git(&["worktree", "list"]);
+    assert!(!worktrees.contains("rel-rm"), "the worktree is no longer registered: {worktrees}");
+    let branches = git(&["branch", "--list", "rel-rm"]);
+    assert!(branches.trim().is_empty(), "the task branch is gone: {branches}");
+}
+
+/// When `git worktree remove` fails anyway, the record stays in the bare repo.
+/// `task rm` deletes the folder and then prunes the record, so nothing is left
+/// registered. The branch is kept here by design: with a broken `.git` file
+/// tenx can't tell which branch the folder was on.
+#[test]
+fn task_rm_prunes_a_worktree_it_could_not_remove() {
+    let Some(h) = Harness::named("-rmprune") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Broken Rm", "--ws-dir", &h.ws(), "--no-open"]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let bare = h.root.join("ws/.bare/origin.git");
+    let git = |args: &[&str]| {
+        let out = Command::new("git").arg("-C").arg(&bare).args(args).output().unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    // A `.git` file pointing nowhere: the folder is no worktree to git, so
+    // `worktree remove` refuses it, while the bare repo still has it
+    // registered. (tenx still counts the repo: it looks for the file.)
+    fs::write(h.root.join("ws/tasks/broken-rm/origin/.git"), "gitdir: /nonexistent\n").unwrap();
+
+    let out = h.tenx().args(["task", "rm", "broken-rm", "--ws-dir", &h.ws()]).output().unwrap();
+    assert!(out.status.success(), "task rm: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(!h.root.join("ws/tasks/broken-rm").exists(), "the task directory is gone");
+    let worktrees = git(&["worktree", "list"]);
+    assert!(!worktrees.contains("broken-rm"), "the worktree record is pruned: {worktrees}");
+}
+
+/// A branch `task rm` can't delete even after the prune (a locked worktree:
+/// git neither removes nor prunes it) is reported, not left behind silently.
+#[test]
+fn task_rm_reports_a_branch_it_could_not_delete() {
+    let Some(h) = Harness::named("-rmlock") else {
+        eprintln!("tmux not installed — skipping e2e");
+        return;
+    };
+    let out = h.tenx().args(["task", "new", "Locked Rm", "--ws-dir", &h.ws(), "--no-open"]).output().unwrap();
+    assert!(out.status.success(), "task new: {}", String::from_utf8_lossy(&out.stderr));
+    let bare = h.root.join("ws/.bare/origin.git");
+    let wt = h.root.join("ws/tasks/locked-rm/origin");
+    sh(&["git", "-C", s(&bare), "worktree", "lock", s(&wt)]);
+
+    let out = h.tenx().args(["task", "rm", "locked-rm", "--ws-dir", &h.ws()]).output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "task rm says something was left behind");
+    assert!(err.contains("git branch -D locked-rm"), "the message names the branch: {err}");
+    let branches = Command::new("git").arg("-C").arg(&bare).args(["branch", "--list", "locked-rm"]).output().unwrap();
+    assert!(String::from_utf8_lossy(&branches.stdout).contains("locked-rm"), "the branch really is still there");
+    assert!(!h.root.join("ws/tasks/locked-rm").exists(), "the task directory is gone all the same");
+}

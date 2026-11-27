@@ -421,6 +421,9 @@ pub fn add_worktree(
     on: OnProgress,
 ) -> Result<()> {
     let bare = bare_repo_path.to_string_lossy();
+    // Absolute: git runs in the bare repo (`-C`) and would read a relative
+    // path from there, putting the worktree inside the bare repo.
+    let worktree_path = std::path::absolute(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
     let wt = worktree_path.to_string_lossy();
     let base = base_ref(bare_repo_path)?;
     // Drop admin entries for worktrees whose directories are gone: a job
@@ -428,11 +431,7 @@ pub fn add_worktree(
     // directory deleted from outside tenx, and `worktree add` then refuses
     // the path it thinks is still registered. Only entries with no working
     // tree on disk are removed, so live worktrees are untouched.
-    let _ = Command::new("git")
-        .args(["-C", &bare, "worktree", "prune"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    prune_worktrees(bare_repo_path);
     let mut cmd = Command::new("git");
     cmd.args(["-C", &bare, "worktree", "add", "--no-track", "-B", branch_name, &wt, &base]);
     let (status, stderr) = run_streaming(&mut cmd, on).context("run git worktree add")?;
@@ -441,6 +440,18 @@ pub fn add_worktree(
         bail!("git worktree add failed: {}", last_error(&stderr));
     }
     Ok(())
+}
+
+/// Drop the bare repo's records of worktrees whose directory is gone.
+/// Best-effort; live worktrees are untouched.
+pub fn prune_worktrees(bare_repo_path: &Path) {
+    let _ = Command::new("git")
+        .arg("-C")
+        .arg(bare_repo_path)
+        .args(["worktree", "prune"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 /// Remove a git worktree from the bare repo.
@@ -454,8 +465,11 @@ pub fn remove_worktree(bare_repo_path: &Path, worktree_path: &Path, force: bool)
     if force {
         cmd.arg("--force");
     }
+    // Made absolute here: git runs in the bare repo (`-C`) and would read a
+    // relative path from there, not from our cwd.
+    let worktree_path = std::path::absolute(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
     let out = cmd
-        .arg(worktree_path)
+        .arg(&worktree_path)
         .output()
         .context("run git worktree remove")?;
 

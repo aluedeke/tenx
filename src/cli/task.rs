@@ -549,10 +549,13 @@ pub fn open_by_dir(ws_dir: &str, slug: &str, detached: bool) -> Result<()> {
     open_window(&ws, slug, detached)
 }
 
-/// Delete a task by explicit workspace directory and exact slug (no prompt).
-/// Used by the column, which does its own confirmation.
+/// Delete a task by explicit workspace (directory or registered name) and
+/// exact slug, without a prompt: `tenx task rm --ws-dir`, for scripts and
+/// front ends. (The column calls [`rm_in`] itself.)
 pub fn rm_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
-    let ws = crate::workspace::load(Path::new(ws_dir))?;
+    // Resolved, not as typed: `rm_in` hands the worktree's path to `git -C
+    // <bare repo>`, which would read a relative one inside the bare repo.
+    let ws = load_ws_arg(ws_dir)?;
     rm_in(&ws, slug, true)
 }
 
@@ -562,7 +565,7 @@ pub fn rm_by_dir(ws_dir: &str, slug: &str) -> Result<()> {
 /// column both read the title from TASK.md, so the new title shows up at once.
 pub fn rename(ws_dir: Option<&str>, slug: &str, title: &str) -> Result<()> {
     let ws = match ws_dir {
-        Some(dir) => crate::workspace::load(Path::new(dir))?,
+        Some(dir) => load_ws_arg(dir)?,
         None => crate::workspace::find(&env::current_dir()?)?,
     };
     let task = ws.find_task(slug)?;
@@ -1077,6 +1080,9 @@ pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Resul
 
     // Its services run in the directories about to go.
     crate::cli::service::stop_in(&task.path);
+    // Repos whose worktree `worktree remove` may have left registered, each
+    // with the branch that registration kept `branch -D` from deleting.
+    let mut leftovers = Vec::new();
     for repo_name in &task.repos {
         let bare_path = crate::git::bare_repo_path(&bare_dir, repo_name);
         let worktree_path = task.path.join(repo_name);
@@ -1084,19 +1090,39 @@ pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Resul
             // Best-effort: if the worktree was never registered (e.g. creation
             // failed mid-way), git remove will error but we still clean the dir.
             let branch = branch_to_delete(ws, &global, &worktree_path, &task.name);
-            if worktree_path.exists() {
-                let _ = crate::git::remove_worktree(&bare_path, &worktree_path, true);
-            }
+            let removed = !worktree_path.exists()
+                || crate::git::remove_worktree(&bare_path, &worktree_path, true).is_ok();
             // Remove the task branch too so it doesn't linger and shadow a
             // future task of the same name with a stale tip.
-            if let Some(b) = branch {
-                let _ = crate::git::delete_branch(&bare_path, &b);
+            if !removed {
+                // Still registered, so it still holds the branch: both wait
+                // for the prune below.
+                leftovers.push((repo_name, bare_path, branch));
+            } else if let Some(b) = branch
+                && crate::git::delete_branch(&bare_path, &b).is_err()
+            {
+                leftovers.push((repo_name, bare_path, Some(b)));
             }
         }
     }
 
     std::fs::remove_dir_all(&task.path)
         .with_context(|| format!("remove task directory {}", task.path.display()))?;
+    // With the directories gone, a prune drops any worktree record left
+    // behind, and the branch it held can go too. Every repo is tried; what
+    // still fails is reported, so nothing is left behind silently.
+    let mut errors = Vec::new();
+    for (repo_name, bare_path, held) in leftovers {
+        crate::git::prune_worktrees(&bare_path);
+        if let Some(branch) = held
+            && let Err(e) = crate::git::delete_branch(&bare_path, &branch)
+        {
+            errors.push(format!("{repo_name}: {e}"));
+        }
+    }
+    if !errors.is_empty() {
+        bail!("task '{}' deleted, but its branch is left: {}", task.name, errors.join("; "));
+    }
     Ok(())
 }
 
