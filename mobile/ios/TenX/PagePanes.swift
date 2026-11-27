@@ -56,9 +56,10 @@ final class PagePanes: NSObject {
         for view in views.values { view.park() }
     }
 
-    func perform(key: String, what: String) {
+    func perform(key: String, what: String, url: URL? = nil) {
         guard let page = views[key] else { return }
         switch what {
+        case "go": if let url { page.load(URLRequest(url: url)) }
         case "back": page.goBack()
         case "forward": page.goForward()
         case "reload":

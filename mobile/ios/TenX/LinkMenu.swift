@@ -1,7 +1,7 @@
 import UIKit
 
 /// A link held in the terminal (web/src/lib/native.ts `nativeLinkMenu`):
-/// iOS's own edit menu at the finger — Copy, Open, Share. The terminal's
+/// iOS's own edit menu at the finger — Open as page, Copy, Open, Share. The terminal's
 /// links are text it draws, not anchors, so WebKit offers no menu of its
 /// own for them; in Safari the page shows its menu instead.
 @MainActor
@@ -10,9 +10,11 @@ final class LinkMenu: NSObject, @MainActor UIEditMenuInteractionDelegate {
     private var interaction: UIEditMenuInteraction!
     private var url: URL?
     private var point = CGPoint.zero
+    private let openPage: (URL) -> Void
 
-    init(over owner: UIViewController) {
+    init(over owner: UIViewController, openPage: @escaping (URL) -> Void) {
         self.owner = owner
+        self.openPage = openPage
         super.init()
         interaction = UIEditMenuInteraction(delegate: self)
         owner.view.addInteraction(interaction)
@@ -28,7 +30,12 @@ final class LinkMenu: NSObject, @MainActor UIEditMenuInteractionDelegate {
 
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]) -> UIMenu? {
         guard let url else { return nil }
-        return UIMenu(children: [
+        let web = ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        // A page of the task even when the site's app is installed.
+        let asPage = UIAction(title: "Open as page", image: UIImage(systemName: "rectangle.on.rectangle")) { [weak self] _ in
+            self?.openPage(url)
+        }
+        return UIMenu(children: (web ? [asPage] : []) + [
             UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
                 // As text: pasted into the terminal (or carried to the Mac by
                 // the clipboard sync) it is the address, not a file promise.

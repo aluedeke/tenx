@@ -71,7 +71,16 @@ final class WebViewController: UIViewController {
         hold.minimumPressDuration = 1
         hold.cancelsTouchesInView = false
         webView.addGestureRecognizer(hold)
-        linkMenu = LinkMenu(over: self)
+        linkMenu = LinkMenu(over: self) { [weak self] url in
+            // One of the shown task's pages (web/src/components/App.tsx
+            // `tenxOpenPage`); when the page can't (no task bar, or the task
+            // is full), iOS opens the link.
+            guard let self else { return }
+            self.webView.callAsyncJavaScript("return window.tenxOpenPage ? window.tenxOpenPage(url) : false", arguments: ["url": url.absoluteString], in: nil, in: .page) { result in
+                if case .success(let opened) = result, opened as? Bool == true { return }
+                UIApplication.shared.open(url)
+            }
+        }
 
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(hardwareKeyboardChanged), name: .GCKeyboardDidConnect, object: nil)
@@ -263,7 +272,9 @@ private final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             return (true, nil)
         case "pageDo":
             guard let key = body?["key"] as? String, let what = body?["what"] as? String else { return (nil, "no page") }
-            owner.pages.perform(key: key, what: what)
+            let url = (body?["url"] as? String).flatMap(URL.init(string:)).flatMap { ["http", "https"].contains($0.scheme?.lowercased() ?? "") ? $0 : nil }
+            if what == "go", url == nil { return (nil, "no web address") }
+            owner.pages.perform(key: key, what: what, url: url)
             return (true, nil)
         case "pageClose":
             guard let key = body?["key"] as? String else { return (nil, "no page") }

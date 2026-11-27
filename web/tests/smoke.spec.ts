@@ -172,6 +172,15 @@ test('in the iOS app a page shows over the terminal and follows where it goes', 
   await page.getByTestId('page-url').press('Enter');
   await expect(pane).toBeVisible();
   await expect.poll(async () => (await calls()).some((c) => c.action === 'pageShow' && (c as { url?: string }).url === 'http://localhost:3000')).toBe(true);
+
+  // The bar's address can be changed: the same page goes there.
+  await page.getByTestId('page-address').click();
+  await page.getByTestId('page-address-field').fill('example.com/docs');
+  await page.getByTestId('page-address-field').press('Enter');
+  await expect
+    .poll(async () => (await calls()).some((c) => c.action === 'pageDo' && (c as { what?: string; url?: string }).what === 'go' && (c as { url?: string }).url === 'https://example.com/docs'))
+    .toBe(true);
+  await expect(page.getByTestId('page-address')).toBeVisible();
 });
 
 test('in the iOS app a link opens in its installed app first, else as a page', async ({ page, isMobile }) => {
@@ -212,6 +221,10 @@ test('in the iOS app a link opens in its installed app first, else as a page', a
   await sidebar.getByRole('link', { name: /#33/ }).click();
   await expect(tabs.getByRole('tab', { selected: true })).toHaveText(/github\.com/);
   expect((await calls()).filter((c) => c.action === 'openApp').length).toBe(asked);
+  // The link menu's "Open as page": a page even though GitHub's app is installed.
+  const took = await page.evaluate(() => (window as unknown as { tenxOpenPage(u: string): boolean }).tenxOpenPage('https://github.com/acme/api/pull/30'));
+  expect(took).toBe(true);
+  await expect(tabs.getByRole('tab', { selected: true })).toHaveText(/pull\/30/);
 });
 
 test('on a phone the + stays in reach however many pages the bar lists', async ({ page, isMobile }) => {

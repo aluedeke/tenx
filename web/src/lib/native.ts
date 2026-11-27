@@ -212,6 +212,15 @@ export function nativePageDo(key: string, what: 'back' | 'forward' | 'reload'): 
     .catch(() => {});
 }
 
+/** Take the page `key` to `url`; false when the app refused it. */
+export async function nativePageGo(key: string, url: string): Promise<boolean> {
+  try {
+    return (await handler()?.postMessage({ action: 'pageDo', key, what: 'go', url })) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** The page `key` was closed: the app drops its web view. */
 export function nativePageClose(key: string): void {
   void handler()
