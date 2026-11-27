@@ -6,6 +6,11 @@
 //! what's settled), then `{"type":"text","text":…}` — what to type — or
 //! `{"type":"error","error":…}`, and closes.
 //!
+//! With `[speech] url` the speech server hears each run (`Listener`): its
+//! text alone, cut at pauses (`Dictation::finish_at_pause`), in the language
+//! the page set or the first run heard clearly. When it fails, `tenx-whisper`
+//! hears the rest of the recording, with its segments.
+//!
 //! With `TENX_WEB_STT_URL` (a `whisper-server`) there is no live text: the
 //! whole recording goes there on stop, as `/transcribe` does.
 
@@ -14,10 +19,12 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use axum::extract::ws::{Message, WebSocket};
-use tenx_core::dictation::{Dictation, STEP_SECS, has_speech};
+use tenx_core::dictation::{Dictation, PauseCut, SERVER_MAX_SECS, STEP_SECS, cut_candidates, forced_cut, has_speech, pauses, split_at_pauses};
 use tenx_core::whisper::{self, RATE, Request};
 
-use super::transcribe::{Engine, engine};
+use crate::workspace::SpeechConfig;
+
+use super::transcribe::{Engine, Listener, engine};
 
 /// The longest recording: what `/transcribe` takes, some 13 minutes.
 const MAX_SAMPLES: usize = tenx_core::web::STT_MAX_BYTES / 2;
@@ -74,6 +81,10 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
     if let Engine::Local(config) = &engine {
         super::whisper::warm(config);
     }
+    let mut ears = match &engine {
+        Engine::Speech(server) => Some(Listener::new(server, language)),
+        _ => None,
+    };
     let mut audio: Vec<f32> = Vec::new();
     let mut d = Dictation::default();
     let step = Duration::from_secs_f32(STEP_SECS);
@@ -91,23 +102,36 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
         next = Instant::now() + step;
-        let Engine::Local(config) = &engine else { continue };
+        if matches!(engine, Engine::Server(_)) {
+            continue;
+        }
         let buffer = &audio[d.start.min(audio.len())..];
         // Only when something new was said: Whisper given silence invents text.
         let new = &audio[heard_at_last_run.min(audio.len())..];
+        let heard_before = heard_at_last_run;
         heard_at_last_run = audio.len();
         if buffer.len() < RATE as usize / 2 || !has_speech(new, 0.01, 0.1) {
             continue;
         }
-        let prompt = d.prompt();
-        let req = |fallback| Request { samples: 0, language: language.map(str::to_string), prompt: Some(prompt.clone()), fallback, segments: true };
-        let (_, segments) = super::whisper::run(config, buffer, req(None))?;
-        let mut corrected = false;
-        if let Some(cut) = d.update(&segments, buffer.len() as f32 / RATE as f32) {
-            let sentence = &buffer[..cut.end.min(buffer.len())];
-            let (text, _) = super::whisper::run(config, sentence, Request { segments: false, ..req(Some(false)) })?;
-            corrected = d.finish_sentence(cut, &text);
-        }
+        let corrected = match ears.as_mut() {
+            Some(ears) => match server_run(ears, &mut d, buffer) {
+                Some(corrected) => corrected,
+                // Nobody else to ask: this run is lost, and the next one
+                // asks again about the same speech, pause or not.
+                None if !ears.has_fallback() => {
+                    heard_at_last_run = heard_before;
+                    continue;
+                }
+                None => {
+                    let (config, language) = ears.fallback()?;
+                    whisper_run(config, &mut d, buffer, language.as_deref())?
+                }
+            },
+            None => {
+                let Engine::Local(config) = &engine else { unreachable!("a whisper-server has no live runs") };
+                whisper_run(config, &mut d, buffer, language)?
+            }
+        };
         let v = d.view();
         let _ = to_page.send(serde_json::json!({
             "type": "live", "done": v.done, "committed": v.committed, "tentative": v.tentative, "corrected": corrected,
@@ -120,17 +144,85 @@ fn listen(from_page: &mpsc::Receiver<FromPage>, to_page: &tokio::sync::mpsc::Unb
     if !has_speech(&audio, 0.01, 0.25) {
         return Ok(String::new());
     }
-    match engine {
-        Engine::Server(url) => super::transcribe::from_server(&url, "audio/wav", &whisper::wav(&audio), language),
-        Engine::Local(config) => {
-            let tail = &audio[d.start.min(audio.len())..];
-            let text = if has_speech(tail, 0.01, 0.25) {
-                let req = Request { samples: 0, language: language.map(str::to_string), prompt: Some(d.prompt()), fallback: Some(false), segments: false };
-                super::whisper::run(&config, tail, req)?.0
-            } else {
-                String::new()
-            };
-            Ok(d.finish(&text))
+    let tail = &audio[d.start.min(audio.len())..];
+    let text = match &engine {
+        Engine::Server(url) => return super::transcribe::from_server(url, "audio/wav", &whisper::wav(&audio), language),
+        _ if !has_speech(tail, 0.01, 0.25) => String::new(),
+        Engine::Speech(_) => {
+            let ears = ears.as_mut().expect("a speech server's listener");
+            let mut texts: Vec<String> = Vec::new();
+            // In pieces the server can write out (256 tokens at most).
+            for range in split_at_pauses(tail, 0.01, SERVER_MAX_SECS) {
+                let piece = &tail[range];
+                // Given silence, a model makes text up.
+                if !has_speech(piece, 0.01, 0.25) {
+                    continue;
+                }
+                let before = tenx_core::dictation::prompt_tail(&[d.view().done, texts.join(" ")].join(" "));
+                match ears.ask(piece, &before) {
+                    Some(text) => texts.push(text),
+                    // Nobody else to ask: the words shown live are the text.
+                    None if !ears.has_fallback() => return Ok(d.finish("")),
+                    None => {
+                        let (config, language) = ears.fallback()?;
+                        texts.push(whisper_final(config, &d, piece, language.as_deref())?);
+                    }
+                }
+            }
+            whisper::join_segments(texts.iter().map(String::as_str))
         }
+        Engine::Local(config) => whisper_final(config, &d, tail, language)?,
+    };
+    Ok(d.finish(&text))
+}
+
+/// One run over the buffer by the speech server, and a cut at a pause when
+/// a committed sentence is over — or, past `SERVER_MAX_SECS`, at its latest
+/// pause anyway: whether the cut's final pass changed a word, or `None` when
+/// the server failed (now or before) before the run counted. A failed final
+/// pass only skips the cut: the run counted, and `tenx-whisper` over the
+/// same audio would count as a second one.
+fn server_run(ears: &mut Listener, d: &mut Dictation, buffer: &[f32]) -> Option<bool> {
+    let text = ears.ask(buffer, &d.prompt())?;
+    d.update_text(&text);
+    let plan = d.cut_plan(buffer.len() as f32 / RATE as f32);
+    if !plan.pauses && !plan.force {
+        return Some(false);
     }
+    let pauses = pauses(buffer, 0.01);
+    if plan.pauses {
+        for end in cut_candidates(&pauses, buffer.len()) {
+            let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
+            match d.finish_at_pause(end, &text, plan.long) {
+                PauseCut::Done { changed } => return Some(changed),
+                PauseCut::TooFar => continue,
+                PauseCut::NoFit => break,
+            }
+        }
+        d.cut_missed();
+    }
+    if plan.force {
+        let end = forced_cut(&pauses, buffer.len());
+        let Some(text) = ears.ask(&buffer[..end], &d.prompt()) else { return Some(false) };
+        return Some(d.force_cut(end, &text));
+    }
+    Some(false)
+}
+
+/// One run over the buffer by `tenx-whisper`, cut where a committed segment
+/// ends a sentence: whether the cut's final pass changed a word.
+fn whisper_run(config: &SpeechConfig, d: &mut Dictation, buffer: &[f32], language: Option<&str>) -> Result<bool> {
+    let prompt = d.prompt();
+    let req = |fallback| Request { samples: 0, language: language.map(str::to_string), prompt: Some(prompt.clone()), fallback, segments: true };
+    let (_, segments) = super::whisper::run(config, buffer, req(None))?;
+    let Some(cut) = d.update(&segments, buffer.len() as f32 / RATE as f32) else { return Ok(false) };
+    let sentence = &buffer[..cut.end.min(buffer.len())];
+    let (text, _) = super::whisper::run(config, sentence, Request { segments: false, ..req(Some(false)) })?;
+    Ok(d.finish_sentence(cut, &text))
+}
+
+/// `tenx-whisper`'s final pass over what follows the last cut.
+fn whisper_final(config: &SpeechConfig, d: &Dictation, tail: &[f32], language: Option<&str>) -> Result<String> {
+    let req = Request { samples: 0, language: language.map(str::to_string), prompt: Some(d.prompt()), fallback: Some(false), segments: false };
+    Ok(super::whisper::run(config, tail, req)?.0)
 }

@@ -23,6 +23,7 @@ mod speak;
 mod tts;
 mod tab;
 pub(crate) mod token;
+mod sttserver;
 mod transcribe;
 mod dictate;
 mod whisper;

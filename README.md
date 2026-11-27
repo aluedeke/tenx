@@ -332,7 +332,19 @@ language = "auto"                            # optional: a code (en, de) or auto
 idle_minutes = 10                            # optional: unload the model after this long unused
 ```
 
-Download a model from [ggerganov/whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (`ggml-large-v3-turbo.bin` is a good start). `tenx web` starts `tenx-whisper` on the first recording (loading a large model takes a few seconds), restarts it if it dies, and stops it after `idle_minutes`, which gives its memory back; a changed `[speech]` applies to the next recording. Without a model the microphone says how to set one; nothing is transcribed in the browser. On Linux and Intel Macs `tenx-whisper` isn't included; there, and to use a `whisper-server` instead on any machine, set `TENX_WEB_STT_URL` (e.g. `http://127.0.0.1:8178/inference`). A recording without speech is not sent, since Whisper invents text for silence. The microphone needs HTTPS (`tailscale serve`). To choose the language on one device, set `localStorage['tenx.stt.language']` to a code (`de`) or `auto`.
+To hear with a speech server instead — another machine with a GPU, say — add its address. It must speak OpenAI's transcription API (`POST …/audio/transcriptions`, a WAV file) and may take `languages`, the languages it should tell apart, and say which one it heard (`{"text": …, "language": "de"}`) (for example a small server around [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR)):
+
+```toml
+[speech]
+url = "http://gpu-box:8890/v1"         # asked first
+languages = ["en", "de"]               # optional: what it may hear; one recording stays in one language
+model = "~/models/ggml-large-v3-turbo.bin"   # optional: tenx-whisper hears when the server fails
+prompt_file = "~/models/glossary.txt"        # sent to the server as its prompt too
+```
+
+The first words of a recording decide its language (unless the page or `language` sets one), and the rest of it is heard in that language. When the server fails, is unreachable or takes longer than a few seconds, `tenx-whisper` hears the rest of the recording, in the language the server heard, and the server is left alone for 30 s; `tenx-whisper` loads its model only then. Without a `model`, a failed moment of live text is skipped and the server asked again. The server gives text without times, so live text is cut into sentences at your pauses.
+
+Download a model from [ggerganov/whisper.cpp on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) (`ggml-large-v3-turbo.bin` is a good start). `tenx web` starts `tenx-whisper` on the first recording (loading a large model takes a few seconds), restarts it if it dies, and stops it after `idle_minutes`, which gives its memory back; a changed `[speech]` applies to the next recording. Without a model the microphone says how to set one; nothing is transcribed in the browser. On Linux and Intel Macs `tenx-whisper` isn't included; there, use a speech server (`url`), or set `TENX_WEB_STT_URL` to a `whisper-server` (e.g. `http://127.0.0.1:8178/inference`). A recording without speech is not sent, since Whisper invents text for silence. The microphone needs HTTPS (`tailscale serve`). To choose the language on one device, set `localStorage['tenx.stt.language']` to a code (`de`) or `auto`.
 
 ### Hearing the agent's reply
 
@@ -440,6 +452,7 @@ adhoc_dir = ""       # where the adhoc workspace lives; default ~/.local/share/t
 # [agents.pi]        # optional global per-agent launch override (a workspace's wins)
 # args = ["--provider", "openai"]
 # [speech]           # tenx web's microphone, see Speaking instead of typing
+# url = "http://gpu-box:8890/v1"   # optional speech server, tenx-whisper as its fallback
 # model = "~/models/ggml-large-v3-turbo.bin"
 # [read_aloud]       # tenx web's speaker, see Hearing the agent's reply
 # model = "~/.local/share/tenx/models/kokoro-multi-lang-v1_0"
