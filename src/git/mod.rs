@@ -468,6 +468,18 @@ pub fn remove_worktree(bare_repo_path: &Path, worktree_path: &Path, force: bool)
     Ok(())
 }
 
+/// Fail unless `name` is a valid branch name, as git judges it.
+pub fn check_branch_name(name: &str) -> Result<()> {
+    let out = Command::new("git")
+        .args(["check-ref-format", "--branch", name])
+        .output()
+        .context("run git check-ref-format")?;
+    if !out.status.success() {
+        bail!("{name:?} is not a valid branch name (check the `branch` pattern in config.toml)");
+    }
+    Ok(())
+}
+
 /// Force-delete a local branch from the bare repo, if it exists.
 ///
 /// Called after the worktree is removed so leftover task branches don't
@@ -652,6 +664,30 @@ mod tests {
         let upstream_cfg = Command::new("git").arg("-C").arg(&bare).args(["config", "branch.task.merge"]).output().unwrap();
         assert!(!upstream_cfg.status.success(), "the task branch must not track origin/main");
         assert!(last_commit(&bare).unwrap().ends_with("second"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A `branch` pattern makes names with a `/` (`andreas/cors-config`):
+    /// the worktree is made on it and task deletion removes it again.
+    #[test]
+    fn a_task_branch_from_a_pattern_is_made_and_deleted() {
+        let (dir, up) = upstream("pattern");
+        let bare_dir = dir.join(".bare");
+        bare_clone(&up.to_string_lossy(), &bare_dir, "acme", &mut |_| {}).unwrap();
+        let bare = bare_repo_path(&bare_dir, "acme");
+        let branch = tenx_core::branch::render("andreas/{slug}", "cors-config").unwrap();
+        check_branch_name(&branch).unwrap();
+        let wt = dir.join("task/acme");
+        add_worktree(&bare, &wt, &branch, &mut |_| {}).unwrap();
+        assert_eq!(git(&wt, &["branch", "--show-current"]), "andreas/cors-config");
+        let current = crate::workspace::read_branch(&wt).unwrap();
+        assert!(tenx_core::branch::owns(&current, "andreas/{slug}", "cors-config"));
+        remove_worktree(&bare, &wt, false).unwrap();
+        delete_branch(&bare, &current).unwrap();
+        let left = Command::new("git").arg("-C").arg(&bare).args(["rev-parse", "--verify", "-q", "refs/heads/andreas/cors-config"]).output().unwrap();
+        assert!(!left.status.success(), "the pattern's branch must be deleted with the task");
+        assert!(check_branch_name("andreas/bad..name").is_err());
+        assert!(check_branch_name("andreas/ space").is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

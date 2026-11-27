@@ -98,6 +98,7 @@ impl Scene {
                     .collect(),
                 age_identity: None,
                 agent: String::new(),
+                branch: String::new(),
                 agents: std::collections::HashMap::new(),
             },
         }];

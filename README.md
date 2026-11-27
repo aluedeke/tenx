@@ -429,6 +429,7 @@ schema_version = 1
 name = "work"
 layout = ""                  # "tabs" (empty), "split", or a path to a layout script, see below
 agent = "codex"              # optional default agent for this workspace's tasks
+branch = "andreas/{slug}"    # optional: how a new task's branch is named; empty = the global one, else the slug
 
 [[repos]]
 name = "api"
@@ -448,6 +449,7 @@ bare_dir = ""        # optional override for where bare clones live
 column_width = 0     # the task column, in cells; 0 = a fifth of the terminal, between 30 and 48
 agent = "codex"      # optional default agent for every workspace
 layout = ""          # "tabs" (empty) or "split", for workspaces that don't set one
+branch = ""          # task branch pattern with {slug}, for workspaces that don't set one; empty = the slug
 adhoc_dir = ""       # where the adhoc workspace lives; default ~/.local/share/tenx/adhoc
 # [agents.pi]        # optional global per-agent launch override (a workspace's wins)
 # args = ["--provider", "openai"]

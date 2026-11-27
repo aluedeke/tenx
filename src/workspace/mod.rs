@@ -44,6 +44,11 @@ pub struct GlobalConfig {
     /// `tabs` (empty) or `split`; see `WorkspaceConfig::layout`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub layout: String,
+    /// How a new task's branch is named when a workspace doesn't say:
+    /// a pattern with `{slug}` (`andreas/{slug}`); empty = the slug.
+    /// See `WorkspaceConfig::branch`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch: String,
     /// Per-agent launch overrides, keyed by agent token (`claude`/`codex`/`pi`).
     /// A workspace's `[agents.<kind>]` overrides the same key here.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -176,6 +181,11 @@ pub struct WorkspaceConfig {
     /// (`agent::agent_for`).
     #[serde(default)]
     pub agent: String,
+    /// How a new task's branch is named in every repo: a pattern with
+    /// `{slug}` once (`andreas/{slug}`). Empty = the global `branch`, else
+    /// the slug (`tenx_core::branch`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch: String,
     /// Per-agent launch overrides (`[agents.codex] command = …, args = […]`),
     /// keyed by agent token; overrides the global config's same key.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -617,6 +627,23 @@ impl Workspace {
         self.dir.join(".bare")
     }
 
+    /// The branch pattern in force: this workspace's `branch`, else the
+    /// global one, else `{slug}` (`tenx_core::branch::pattern`).
+    pub fn branch_pattern<'a>(&'a self, global: &'a GlobalConfig) -> &'a str {
+        tenx_core::branch::pattern(&self.config.branch, &global.branch)
+    }
+
+    /// The branch a task named `slug` gets in every repo, checked by git.
+    pub fn branch_for(&self, global: &GlobalConfig, slug: &str) -> Result<String> {
+        let pattern = self.branch_pattern(global);
+        let name = tenx_core::branch::render(pattern, slug).map_err(anyhow::Error::msg)?;
+        // A slug alone is `[a-z0-9-]` and always valid; only a pattern needs git's word.
+        if pattern != tenx_core::branch::SLUG {
+            crate::git::check_branch_name(&name)?;
+        }
+        Ok(name)
+    }
+
     /// Discover all tasks from the filesystem.
     pub fn tasks(&self) -> Result<Vec<Task>> {
         let tasks_dir = self.tasks_dir();
@@ -868,7 +895,8 @@ fn read_name_list(path: &Path) -> Vec<String> {
         .collect()
 }
 
-fn read_branch(worktree_dir: &Path) -> Option<String> {
+/// The branch a worktree is on, read from its files (no `git` process).
+pub fn read_branch(worktree_dir: &Path) -> Option<String> {
     let content = fs::read_to_string(worktree_dir.join(".git")).ok()?;
     let gitdir_path = content.strip_prefix("gitdir: ")?.trim();
     let gitdir = if Path::new(gitdir_path).is_absolute() {

@@ -71,8 +71,8 @@ pub fn new_steps(ws: &crate::workspace::Workspace, repos: Option<&[String]>) -> 
 
 /// The slug a new task called `name` gets in `ws`, or why it can't be made.
 ///
-/// In an ordinary workspace the slug is a branch name, so a taken one is an
-/// error the user should see. In the adhoc workspace nothing is a branch
+/// In an ordinary workspace the slug is (or is in) the branch name, so a
+/// taken one is an error the user should see. In the adhoc workspace nothing is a branch
 /// and titles repeat ("question"), so a taken slug just counts up
 /// (`tenx_core::slug::unique_slug`). The column calls this before starting
 /// its job, so its ghost row and the task the job creates agree.
@@ -208,6 +208,9 @@ pub fn new_with(
     }
 
     let bare_dir = ws.bare_dir(&global);
+    // Checked before anything is on disk too: a bad `branch` pattern must not
+    // leave a task without its worktrees.
+    let branch = if repo_names.is_empty() { String::new() } else { ws.branch_for(&global, slug)? };
     let task_dir = ws.tasks_dir().join(slug);
     std::fs::create_dir_all(&task_dir)?;
     if let Some(run) = md.run {
@@ -235,7 +238,7 @@ pub fn new_with(
     }
 
     for (step, repo_name) in repo_names.iter().enumerate() {
-        ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, slug, rep, step)?;
+        ensure_repo_worktree(ws, &bare_dir, &task_dir, repo_name, &branch, rep, step)?;
     }
 
     if open != OpenMode::Closed {
@@ -249,8 +252,9 @@ pub fn new_with(
     Ok(slug.to_string())
 }
 
-/// Clone-or-fetch one repo and create the task's worktree for it, on a branch
-/// named after the task slug.
+/// Clone-or-fetch one repo and create the task's worktree for it, on
+/// `branch` (the workspace's `branch` pattern over the slug,
+/// `Workspace::branch_for`).
 ///
 /// Shared by task creation and `task add-repo`, so a repo that joins a task
 /// later is set up exactly like one that was there from the start: a fresh
@@ -261,7 +265,7 @@ fn ensure_repo_worktree(
     bare_dir: &Path,
     task_dir: &Path,
     repo_name: &str,
-    slug: &str,
+    branch: &str,
     rep: &dyn crate::progress::Reporter,
     step: usize,
 ) -> Result<()> {
@@ -303,7 +307,7 @@ fn ensure_repo_worktree(
     };
 
     let worktree_path = task_dir.join(&repo.name);
-    if let Err(e) = crate::git::add_worktree(&bare_path, &worktree_path, slug, &mut on) {
+    if let Err(e) = crate::git::add_worktree(&bare_path, &worktree_path, branch, &mut on) {
         rep.emit(Event::Failed { step, err: e.to_string() });
         return Err(e);
     }
@@ -329,6 +333,24 @@ pub fn add_repo_in(
     add_repo_from(ws, slug, repos, rep, 0)
 }
 
+/// The branch to delete with task `slug`'s worktree in one repo — read
+/// before the worktree goes (`tenx_core::branch::to_delete`).
+fn branch_to_delete(
+    ws: &crate::workspace::Workspace,
+    global: &crate::workspace::GlobalConfig,
+    worktree: &Path,
+    slug: &str,
+) -> Option<String> {
+    use tenx_core::branch::Head;
+    let current = crate::workspace::read_branch(worktree);
+    let head = match &current {
+        Some(b) => Head::Branch(b),
+        None if worktree.join(".git").exists() => Head::Detached,
+        None => Head::Missing,
+    };
+    tenx_core::branch::to_delete(head, ws.branch_pattern(global), slug)
+}
+
 /// [`add_repo_in`] numbering its steps from `base`, so `set_repos_in` can run
 /// additions and removals into one plan without their indices colliding.
 fn add_repo_from(
@@ -341,12 +363,19 @@ fn add_repo_from(
     let global = crate::workspace::load_global()?;
     let task = ws.find_task(slug)?;
     let bare_dir = ws.bare_dir(&global);
-    for (i, name) in repos.iter().enumerate() {
-        if task.repos.iter().any(|r| r == name) {
-            continue;
-        }
-        // task.name is the slug, i.e. the branch name the other worktrees use.
-        ensure_repo_worktree(ws, &bare_dir, &task.path, name, &task.name, rep, base + i)?;
+    let add: Vec<(usize, &String)> = repos.iter().enumerate().filter(|(_, n)| !task.repos.contains(n)).collect();
+    if add.is_empty() {
+        return Ok(());
+    }
+    // A repo that joins later goes on the task's own branch, so one task is
+    // one branch name; else the branch a new task would get.
+    let current: Vec<String> = task.repos.iter().filter_map(|r| crate::workspace::read_branch(&task.path.join(r))).collect();
+    let branch = match tenx_core::branch::for_added_repo(&current, ws.branch_pattern(&global), &task.name) {
+        Some(b) => b,
+        None => ws.branch_for(&global, &task.name)?,
+    };
+    for (i, name) in add {
+        ensure_repo_worktree(ws, &bare_dir, &task.path, name, &branch, rep, base + i)?;
     }
     Ok(())
 }
@@ -399,8 +428,9 @@ fn rm_repo_from(
         let _lock = crate::git::lock_repo(&bare_dir, name)?;
         let bare_path = crate::git::bare_repo_path(&bare_dir, name);
         let worktree_path = task.path.join(name);
+        let branch = branch_to_delete(ws, &global, &worktree_path, &task.name);
         let res = crate::git::remove_worktree(&bare_path, &worktree_path, force)
-            .and_then(|()| crate::git::delete_branch(&bare_path, &task.name));
+            .and_then(|()| branch.map_or(Ok(()), |b| crate::git::delete_branch(&bare_path, &b)));
         match res {
             Ok(()) => rep.emit(Event::Done { step, note: "detached".into() }),
             Err(e) => {
@@ -1053,13 +1083,15 @@ pub fn rm_in(ws: &crate::workspace::Workspace, name: &str, force: bool) -> Resul
         if bare_path.exists() {
             // Best-effort: if the worktree was never registered (e.g. creation
             // failed mid-way), git remove will error but we still clean the dir.
+            let branch = branch_to_delete(ws, &global, &worktree_path, &task.name);
             if worktree_path.exists() {
                 let _ = crate::git::remove_worktree(&bare_path, &worktree_path, true);
             }
             // Remove the task branch too so it doesn't linger and shadow a
-            // future task of the same name with a stale tip. (task.name is the
-            // slug, i.e. the branch name used at creation.)
-            let _ = crate::git::delete_branch(&bare_path, &task.name);
+            // future task of the same name with a stale tip.
+            if let Some(b) = branch {
+                let _ = crate::git::delete_branch(&bare_path, &b);
+            }
         }
     }
 
