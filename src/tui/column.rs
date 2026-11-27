@@ -529,6 +529,12 @@ pub(crate) struct Column {
     /// so a tick reads it again only when it changed. With it, the pages'
     /// cookie store (`tenx_core::pages::store_id`), worked out once.
     pages_read: Option<PagesRead>,
+    /// The current task's workspace's bookmarks (`tenx_core::bookmarks`),
+    /// read with `pages` from its `config.toml`.
+    bookmarks: Vec<tenx_core::bookmarks::Bookmark>,
+    /// What `bookmarks` was read from: the workspace's `config.toml` and its
+    /// time and length.
+    bookmarks_read: Option<(PathBuf, Option<(std::time::SystemTime, u64)>)>,
     /// When the slow inputs (tmux, per-task cache files) were last re-read.
     slow_refreshed: Option<Instant>,
 }
@@ -536,6 +542,12 @@ pub(crate) struct Column {
 /// `Column::pages_read`: the task directory, the file's time and length
 /// (none while there's no file), and the pages' cookie store.
 type PagesRead = (PathBuf, Option<(std::time::SystemTime, u64)>, String);
+
+/// A file's time and length, to tell whether it changed: two edits within a
+/// coarse clock's tick rarely leave the same length.
+fn file_stamp(path: &std::path::Path) -> Option<(std::time::SystemTime, u64)> {
+    std::fs::metadata(path).ok().and_then(|m| Some((m.modified().ok()?, m.len())))
+}
 
 fn read_pages_in(task_dir: &std::path::Path) -> tenx_core::pages::Pages {
     std::fs::read_to_string(task_dir.join(tenx_core::pages::FILE))
@@ -734,6 +746,8 @@ impl Column {
             window_tab: None,
             pages: Default::default(),
             pages_read: None,
+            bookmarks: vec![],
+            bookmarks_read: None,
             slow_refreshed: None,
         }
     }
@@ -943,11 +957,14 @@ impl Column {
         let (Some(dir), Some(_)) = (self.current.clone(), self.window_tab) else {
             self.pages = Default::default();
             self.pages_read = None;
+            self.bookmarks.clear();
+            self.bookmarks_read = None;
             return;
         };
+        self.read_bookmarks(&dir);
         // The time and the length: two edits within a coarse clock's tick
         // rarely leave the same length.
-        let time = std::fs::metadata(dir.join(tenx_core::pages::FILE)).ok().and_then(|m| Some((m.modified().ok()?, m.len())));
+        let time = file_stamp(&dir.join(tenx_core::pages::FILE));
         if self.pages_read.as_ref().is_some_and(|(d, t, _)| *d == dir && *t == time) {
             return;
         }
@@ -958,6 +975,62 @@ impl Column {
         };
         self.pages = read_pages_in(&dir);
         self.pages_read = Some((dir, time, store));
+    }
+
+    /// The bookmarks of the workspace that holds `task_dir`: read again when
+    /// its `config.toml` changed (another tab, another device, an editor).
+    fn read_bookmarks(&mut self, task_dir: &std::path::Path) {
+        let Some(ws_dir) = self.ws_dir_of(task_dir) else {
+            self.bookmarks.clear();
+            self.bookmarks_read = None;
+            return;
+        };
+        let file = ws_dir.join("config.toml");
+        let time = file_stamp(&file);
+        if self.bookmarks_read.as_ref().is_some_and(|(f, t)| *f == file && *t == time) {
+            return;
+        }
+        // Read only (`workspace::load` may migrate and write the file). A
+        // file that doesn't parse now — an editor half-way through a save —
+        // keeps the list we had and isn't marked read, so the next tick
+        // tries again.
+        let read = std::fs::read_to_string(&file).ok().and_then(|t| tenx_core::bookmarks::read(&t));
+        let same_file = self.bookmarks_read.as_ref().is_some_and(|(f, _)| *f == file);
+        let parsed = read.is_some();
+        self.bookmarks = tenx_core::bookmarks::reread(std::mem::take(&mut self.bookmarks), same_file, read);
+        self.bookmarks_read = Some((file, if parsed { time } else { None }));
+    }
+
+    fn ws_dir_of(&self, task_dir: &std::path::Path) -> Option<PathBuf> {
+        let row = self.rows.iter().find(|r| r.path == task_dir)?;
+        Some(self.workspaces.get(row.ws_idx)?.dir.clone())
+    }
+
+    /// Make `edit` to the bookmarks of the workspace of the task with row id
+    /// `task`, and save its `config.toml` if that changed it.
+    pub(crate) fn edit_bookmarks(&mut self, task: &str, edit: &tenx_core::bookmarks::Edit) -> Result<(), String> {
+        let dir = self.rows.iter().find(|r| view::row_id(r) == task).map(|r| r.path.clone()).ok_or("no such task")?;
+        let ws_dir = self.ws_dir_of(&dir).ok_or("no workspace for this task")?;
+        // Read now, not the copy loaded at start: another tab or an editor
+        // may have changed the file since. Only the one bookmark is
+        // written; the rest of the file stays as the user wrote it.
+        let file = ws_dir.join("config.toml");
+        // One edit or save of the file at a time, every tab and process.
+        let _lock = crate::workspace::lock_config(&file).map_err(|e| format!("{e:#}"))?;
+        let text = std::fs::read_to_string(&file).map_err(|e| format!("couldn't read {}: {e}", file.display()))?;
+        if let Some(out) = tenx_core::bookmarks::apply(&text, edit)? {
+            crate::workspace::write_atomic(&file, &out).map_err(|e| format!("couldn't save the bookmarks: {e:#}"))?;
+        }
+        self.bookmarks_read = None;
+        if self.current.as_ref() == Some(&dir) && self.window_tab.is_some() {
+            self.read_bookmarks(&dir);
+        }
+        Ok(())
+    }
+
+    /// The current task's workspace's bookmarks, for the view.
+    pub(crate) fn bookmarks_view(&self) -> &[tenx_core::bookmarks::Bookmark] {
+        &self.bookmarks
     }
 
     /// Change the pages of the task with row id `task` (`view::row_id`; the
@@ -4914,6 +4987,7 @@ mod tests {
                     .map(|n| crate::workspace::RepoConfig { name: n.to_string(), url: format!("git@github.com:acme/{n}.git") })
                     .collect(),
                 age_identity: None,
+                bookmarks: None,
                 agent: String::new(),
                 branch: String::new(),
                 agents: std::collections::HashMap::new(),

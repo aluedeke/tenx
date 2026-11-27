@@ -227,6 +227,50 @@ test('in the iOS app a link opens in its installed app first, else as a page', a
   await expect(tabs.getByRole('tab', { selected: true })).toHaveText(/pull\/30/);
 });
 
+test("the + lists the workspace's bookmarks and the page's star keeps one", async ({ page, isMobile }) => {
+  test.skip(isMobile, 'one run is enough');
+  // The app's message handler, faked: it shows pages.
+  await page.addInitScript(() => {
+    (window as unknown as { webkit: unknown }).webkit = {
+      messageHandlers: {
+        tenx: {
+          postMessage: async (m: { action: string }) => {
+            if (m.action === 'clipboardPeek') return { count: 0 };
+            if (m.action === 'pushState') return { permission: 'denied', env: 'sandbox' };
+            if (m.action === 'openApp') return false;
+            return m.action.startsWith('page') ? true : null;
+          },
+        },
+      },
+    };
+  });
+  await page.goto('/');
+  const tabs = page.getByTestId('task-tabs');
+  // One tap on a bookmark opens it as a page.
+  await tabs.getByTestId('page-add').click();
+  const list = page.getByTestId('bookmarks');
+  await expect(list).toContainText('Checkly staging');
+  // Typed words narrow the list.
+  await page.getByTestId('page-url').fill('prod');
+  await expect(list.getByRole('button', { name: 'Checkly staging', exact: true })).toHaveCount(0);
+  await page.getByTestId('page-url').fill('stag');
+  await list.getByRole('button', { name: 'Checkly staging', exact: true }).click();
+  await expect(tabs.getByRole('tab', { selected: true })).toHaveText(/checklyhq/);
+  // The star keeps the page shown as a bookmark, and takes it away again.
+  await tabs.getByTestId('page-add').click();
+  await page.getByTestId('page-url').fill('linear.app/acme');
+  await page.getByTestId('page-url').press('Enter');
+  const star = page.getByTestId('page-star');
+  await expect(star).toHaveText('☆');
+  await star.click();
+  await expect(star).toHaveText('★');
+  await tabs.getByTestId('page-add').click();
+  await expect(page.getByTestId('bookmarks')).toContainText('linear.app/acme');
+  await page.getByTestId('page-url').press('Escape');
+  await star.click();
+  await expect(star).toHaveText('☆');
+});
+
 test('on a phone the + stays in reach however many pages the bar lists', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'a phone-width bar');
   await page.goto('/');

@@ -52,6 +52,15 @@ export interface PagesView {
   list: PageView[];
   /** How many pages a task keeps. */
   max: number;
+  /** The workspace's bookmarks (`tenx_core::bookmarks`), offered by `+`.
+   * Missing from an older `tenx web`. */
+  bookmarks?: Bookmark[];
+}
+
+/** A web page every task of the workspace opens with one tap. */
+export interface Bookmark {
+  name: string;
+  url: string;
 }
 
 /** A tabbed task window's tabs, in key order (Alt+1/2/3): `tenx_core::tabs::Tab`. */
@@ -366,6 +375,9 @@ export type ClientMessage =
   | { type: 'page'; task: string; op: 'open'; url: string }
   | { type: 'page'; task: string; op: 'close'; id: string }
   | { type: 'page'; task: string; op: 'navigated'; id: string; url: string; title: string }
+  /** Keep or drop one of the task's workspace's bookmarks (`tenx_core::bookmarks`). */
+  | { type: 'page'; task: string; op: 'bookmark'; url: string; name: string }
+  | { type: 'page'; task: string; op: 'unbookmark'; url: string }
   /** A diagnostic line for the server's log (never content). */
   | { type: 'log'; message: string };
 

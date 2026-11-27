@@ -8,9 +8,9 @@
 // every device lists it where it is now.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { PageView } from '@/protocol';
+import type { Bookmark, PageView } from '@/protocol';
 import { PAGE_EVENT, nativePageDo, nativePageGo, nativePageHide, nativePageShow, type NativePageState } from '@/lib/native';
-import { typedUrl, workspaceOf } from '@/lib/pages';
+import { sameAddress, typedUrl, workspaceOf } from '@/lib/pages';
 
 interface Props {
   task: string;
@@ -22,6 +22,11 @@ interface Props {
   onRefused(): void;
   onMoved(url: string, title: string): void;
   onSafari(url: string): void;
+  /** The workspace's bookmarks; missing from an older `tenx web`, and then
+   * the bar has no star. */
+  bookmarks?: Bookmark[];
+  onBookmark(url: string, name: string): void;
+  onUnbookmark(url: string): void;
 }
 
 /** Whether something the page drew lies over the hole: a point inside it
@@ -31,6 +36,8 @@ function covered(hole: HTMLElement, r: DOMRect): boolean {
   const inset = 24;
   const points: [number, number][] = [
     [r.left + r.width / 2, r.top + r.height / 2],
+    // Just under the top edge: a short list dropping from the tab bar.
+    [r.left + r.width / 2, r.top + 2],
     [r.left + inset, r.top + inset],
     [r.right - inset, r.top + inset],
     [r.left + inset, r.bottom - inset],
@@ -42,7 +49,7 @@ function covered(hole: HTMLElement, r: DOMRect): boolean {
   });
 }
 
-export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSafari }: Props) {
+export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSafari, bookmarks, onBookmark, onUnbookmark }: Props) {
   const hole = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<NativePageState | null>(null);
   // The address being typed over the bar's, or null.
@@ -137,6 +144,9 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
     return () => window.removeEventListener(PAGE_EVENT, on);
   }, [pageKey]);
   const url = state?.url || page.url;
+  // The bookmark of the address shown now: a page moved on from a bookmark
+  // isn't that bookmark, and its star saves where it is.
+  const starred = bookmarks?.find((b) => sameAddress(b.url, url));
   return (
     <div className="page-pane" data-testid="page-pane" onMouseDown={(e) => e.stopPropagation()}>
       <div className="page-bar">
@@ -186,6 +196,18 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
               enterKeyHint="go"
             />
           </form>
+        )}
+        {bookmarks && (
+          <button
+            type="button"
+            className={starred ? 'page-star on' : 'page-star'}
+            aria-label={starred ? 'remove the bookmark' : 'bookmark this page for the workspace'}
+            title={starred ? 'remove the bookmark' : 'bookmark this page for the workspace'}
+            data-testid="page-star"
+            onClick={() => (starred ? onUnbookmark(starred.url) : onBookmark(url, state?.title || page.title))}
+          >
+            {starred ? '★' : '☆'}
+          </button>
         )}
         <button type="button" aria-label="open in Safari" title="open in Safari" onClick={() => onSafari(url)}>
           ↗

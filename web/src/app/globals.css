@@ -144,7 +144,10 @@ a:hover {
   left: 0;
   right: 0;
   height: var(--tabs-h);
-  z-index: 1;
+  /* Over the page pane (z-index 1, after it in the page): the bookmarks
+     list drops down over the page, and the pane's `covered` check then
+     moves the app's web view aside. */
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -277,6 +280,49 @@ a:hover {
   text-align: left;
   color: var(--muted);
   font-size: inherit;
+}
+.page-bar .page-star.on {
+  color: var(--accent);
+}
+/* The workspace's bookmarks, under the + field while it is open. */
+.bookmarks {
+  position: absolute;
+  top: 100%;
+  right: 6px;
+  z-index: 30;
+  width: min(320px, calc(100vw - 12px));
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bar-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+.bookmarks li {
+  display: flex;
+  align-items: center;
+}
+.bookmark-open {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--text);
+  border-radius: 6px;
+}
+.bookmark-open:hover {
+  background: var(--hover-bg);
+}
+.bookmark-remove {
+  flex: none;
+  padding: 7px 9px;
+  color: var(--muted);
 }
 .page-address {
   flex: 1;
@@ -2318,7 +2364,7 @@ a:hover {
   top: 0;
   bottom: 0;
   width: 8px;
-  z-index: 2;
+  z-index: 3; /* over the tab bar (2), as it was over it at 1 */
   cursor: col-resize;
   touch-action: none;
 }

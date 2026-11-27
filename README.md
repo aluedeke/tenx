@@ -437,6 +437,10 @@ url = "git@github.com:org/api.git"
 
 # age_identity = "~/.config/age/work.txt"   # optional, for tenx secrets
 
+[[bookmarks]]                # optional: pages every task opens with one tap from the page bar's +
+name = "Checkly staging"     #   (the app's star on a page adds and removes them too)
+url = "https://app.checklyhq.com/accounts/stg"
+
 # [agents.codex]                            # optional per-agent launch override
 # command = "codex"                         #   a wrapper binary instead of the default
 # args = ["--model", "o3"]                  #   extra args, around tenx's own session flags

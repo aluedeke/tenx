@@ -48,3 +48,34 @@ export function workspaceOf(task: string): string {
   const i = task.lastIndexOf('/');
   return i < 0 ? task : task.slice(0, i);
 }
+
+/** Whether a bookmark fits what is typed in the `+` field: every word in
+ * its name or address, case aside. Nothing typed: every bookmark. */
+export function matchesBookmark(b: { name: string; url: string }, typed: string): boolean {
+  const hay = `${b.name} ${b.url}`.toLowerCase();
+  return typed
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => hay.includes(w));
+}
+
+/** What Enter in the `+` field opens: an address when what is typed looks
+ * like one (a dot, a colon or a slash), else the first bookmark it matches,
+ * else what `typedUrl` makes of it. */
+export function plusTarget(typed: string, bookmarks: { name: string; url: string }[]): string | null {
+  const t = typed.trim();
+  if (!t) return null;
+  if (!/[.:/]/.test(t)) {
+    const hit = bookmarks.find((b) => matchesBookmark(b, t));
+    if (hit) return hit.url;
+  }
+  return typedUrl(t);
+}
+
+/** Whether two addresses are the same page: a trailing slash aside, which
+ * the app's web view adds (`https://linear.app` → `https://linear.app/`). */
+export function sameAddress(a: string, b: string): boolean {
+  const bare = (u: string) => u.trim().replace(/\/+$/, '');
+  return bare(a) === bare(b);
+}
