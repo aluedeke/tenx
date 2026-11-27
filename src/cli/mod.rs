@@ -919,7 +919,8 @@ pub enum TaskCommands {
     /// Delete a task and its worktrees
     Rm {
         name: String,
-        /// Skip confirmation prompt (with `--ws-dir`, only a terminal is asked)
+        /// Skip the confirmation question. With `--ws-dir` it is asked only at a
+        /// terminal; a script is not asked and the task is deleted.
         #[arg(long)]
         force: bool,
         /// The task's workspace (directory or registered name) instead of cwd's. `name`

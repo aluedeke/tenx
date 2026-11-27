@@ -2032,7 +2032,7 @@ fn task_rm_with_ws_dir_asks_at_a_terminal() {
     let task = h.root.join("ws/tasks/ask-rm");
     let run = |window: &str, answer: &str| {
         let cmd = format!(
-            "env TENX_TMUX_SOCKET={} HOME={} {} task rm ask-rm --ws-dir {}; echo EXIT=$?; sleep 600",
+            "env TENX_TMUX_SOCKET='{}' HOME='{}' '{}' task rm ask-rm --ws-dir '{}'; echo EXIT=$?; sleep 600",
             h.socket,
             h.root.join("home").display(),
             env!("CARGO_BIN_EXE_tenx"),
@@ -2056,9 +2056,10 @@ fn task_rm_with_ws_dir_asks_at_a_terminal() {
     };
 
     let screen = run("ask-n", "n");
-    assert!(screen.contains("aborted"), "a no keeps the task: {screen}");
+    assert!(screen.contains("aborted") && screen.contains("EXIT=1"), "a no keeps the task and says so: {screen}");
     assert!(task.is_dir(), "the task is still there after a no");
 
-    run("ask-y", "y");
+    let screen = run("ask-y", "y");
+    assert!(screen.contains("EXIT=0"), "a yes succeeds: {screen}");
     assert!(!task.exists(), "a yes deletes the task");
 }
