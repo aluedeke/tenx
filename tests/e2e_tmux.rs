@@ -1721,10 +1721,15 @@ fn web_page_proxy_reaches_only_a_tasks_own_port() {
     // the same time before the server binds it.
     fs::write(
         site.join("serve.py"),
-        r#"import functools, http.server, os, socket, sys
+        r#"import functools, http.server, os, socket, socketserver, sys
 host, out, root = sys.argv[1:4]
 class Server(http.server.ThreadingHTTPServer):
     address_family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    # HTTPServer's own server_bind looks its address up in DNS
+    # (getfqdn), which for ::1 hung past the wait on a CI Mac.
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "localhost", self.server_address[1]
 s = Server((host, 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=root))
 open(out + ".tmp", "w").write(str(s.server_address[1]))
 os.rename(out + ".tmp", out)
