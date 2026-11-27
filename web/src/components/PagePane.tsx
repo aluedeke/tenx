@@ -9,8 +9,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { PageView } from '@/protocol';
-import { PAGE_EVENT, nativePageDo, nativePageHide, nativePageShow, type NativePageState } from '@/lib/native';
-import { workspaceOf } from '@/lib/pages';
+import { PAGE_EVENT, nativePageDo, nativePageGo, nativePageHide, nativePageShow, type NativePageState } from '@/lib/native';
+import { typedUrl, workspaceOf } from '@/lib/pages';
 
 interface Props {
   task: string;
@@ -45,6 +45,8 @@ function covered(hole: HTMLElement, r: DOMRect): boolean {
 export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSafari }: Props) {
   const hole = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<NativePageState | null>(null);
+  // The address being typed over the bar's, or null.
+  const [editing, setEditing] = useState<string | null>(null);
   // Shown where the hole is, again whenever the hole moves (a resize, the
   // keyboard, the sidebar); hidden when the pane goes.
   const refused = useRef(onRefused);
@@ -147,9 +149,44 @@ export function PagePane({ task, pageKey, page, store, onRefused, onMoved, onSaf
         <button type="button" aria-label="reload" onClick={() => nativePageDo(pageKey, 'reload')}>
           {state?.loading ? '×' : '↻'}
         </button>
-        <span className="page-url" title={url}>
-          {url.replace(/^https?:\/\//, '')}
-        </span>
+        {editing === null ? (
+          <button type="button" className="page-url" title={url} aria-label="change the address" data-testid="page-address" onClick={() => setEditing(url)}>
+            {url.replace(/^https?:\/\//, '')}
+          </button>
+        ) : (
+          <form
+            className="page-address"
+            data-own-keys
+            onSubmit={(e) => {
+              e.preventDefault();
+              // Not an address (words, another scheme): the field stays.
+              const to = typedUrl(editing);
+              if (!to) return;
+              // Closed once the app took it; a refused address stays to fix.
+              void nativePageGo(pageKey, to).then((went) => {
+                if (went) setEditing(null);
+              });
+            }}
+          >
+            <input
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              value={editing}
+              onChange={(e) => setEditing(e.target.value)}
+              onBlur={() => setEditing(null)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setEditing(null);
+              }}
+              aria-label="address"
+              data-testid="page-address-field"
+              inputMode="url"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="go"
+            />
+          </form>
+        )}
         <button type="button" aria-label="open in Safari" title="open in Safari" onClick={() => onSafari(url)}>
           ↗
         </button>

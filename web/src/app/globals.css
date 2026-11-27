@@ -266,13 +266,37 @@ a:hover {
 .page-bar button:disabled {
   opacity: 0.35;
 }
-.page-url {
+.page-bar .page-url {
   flex: 1;
   min-width: 0;
+  height: 30px;
+  padding: 0 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
   color: var(--muted);
+  font-size: inherit;
+}
+.page-address {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.page-address input {
+  flex: 1;
+  min-width: 0;
+  /* As tall as the address it replaces: the page under the bar stays put. */
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 6px;
+  background: var(--hover-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  /* iOS zooms into a field with a smaller font. */
+  font-size: max(16px, 1em);
 }
 .page-hole {
   flex: 1;

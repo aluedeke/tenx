@@ -320,18 +320,23 @@ workspace shares its logins and no other workspace sees them. The page asks
 the app through the `tenx` message handler (`pageShow {key, url, store,
 storeName, rect}` — `key` is `<task>#<id>`, `rect` the hole under the page's
 own address bar in CSS pixels —, `pageHide`, `pageDo {key, what: back |
-forward | reload}`, `pageClose {key}`) and the app reports where a shown page
+forward | reload | go, url}` — `go` takes the page to `url`, typed into its
+address bar —, `pageClose {key}`) and the app reports where a shown page
 went as a `tenx-page` window event, which the page passes on as `navigated`.
 In the app a web link (the terminal's, the sidebar's, the links box's) first
 goes to the app it belongs to: the page asks `openApp {url}`, and the app hands
 it to iOS as a universal link only (`true` when an installed app took it).
-Otherwise it opens as a page of the shown task; holding it still offers
-Safari. A link tapped inside a page to another site does the same; within the
-site the page goes on. A page opens its
-address as it is, so a dev server on the Mac is opened by its tailnet
-`https` address (`tailscale serve`; iOS loads plain `http` only from an IP
-address, a short name or a `.local` name), not `localhost`, which on a phone is the phone itself. A
-page that doesn't load says why in its place; reload tries it again.
+Otherwise it opens as a page of the shown task. A link tapped inside a page to
+another site does the same; within the site the page goes on. Holding a
+terminal link offers Safari and "Open as page", for which the app calls the
+page's `window.tenxOpenPage(url)`: `true` when it opened the link as a page
+(even for a site whose app is installed), `false` (no task bar, or the task is
+full) and the app opens the link itself. A page opens its address as it is, so
+a dev server on the Mac is opened by its tailnet `https` address (`tailscale
+serve`; iOS loads plain `http` only from an IP address, a short name or a
+`.local` name), not `localhost`, which on a phone is the phone itself. A page
+that doesn't load says why in its place; reload tries it again. The page bar's
+address can be changed: `pageDo` `go` with a web `url` (refused without one).
 
 Bell (`\a`) and OSC 52 are handled in the browser by xterm.js (title/favicon
 flash, clipboard addon).

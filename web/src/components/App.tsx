@@ -1457,6 +1457,22 @@ export function App() {
       return true;
     });
   }, [barTask, openPage, appPages, pages]);
+  // The app's link menu: "Open as page", also for a site whose app is
+  // installed. The app calls `tenxOpenPage(url)` and opens the link itself
+  // when it answers false: no task bar, or as many pages as the task keeps.
+  useEffect(() => {
+    const w = window as Window & { tenxOpenPage?: (url: string) => boolean };
+    w.tenxOpenPage = (url: string) => {
+      if (!barTask || !appPages || !url) return false;
+      const list = pages?.list ?? [];
+      if (list.length >= (pages?.max ?? 0) && !list.some((p) => isPage(p, url))) return false;
+      openPage(url);
+      return true;
+    };
+    return () => {
+      delete w.tenxOpenPage;
+    };
+  }, [barTask, appPages, openPage, pages]);
   // A predicted open hands the keyboard to the terminal now, as the server's
   // `focus_terminal` will once it has switched.
   const opened = useRef(0);
