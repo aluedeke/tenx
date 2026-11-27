@@ -5,6 +5,16 @@ from commit messages by [git-cliff](https://git-cliff.org) when a release is cut
 (`scripts/release.sh`, see `cliff.toml`); nothing here is written by hand.
 Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.50.0] - 2026-11-27
+
+### Added
+
+- **web:** Drop the localhost page tunnel, open addresses as given (#75) (breaking)
+- **web:** Open links in their installed app first, else as a page (#76)
+- **web:** Edit a page's address, open a held link as a page (#77)
+
+[0.50.0]: https://github.com/aluedeke/tenx/compare/v0.49.0...v0.50.0
+
 ## [0.49.0] - 2026-11-27
 
 ### Added
