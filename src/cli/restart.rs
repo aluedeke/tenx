@@ -180,7 +180,8 @@ fn command(workspaces: &[Workspace], t: &Target) -> String {
     let add_dirs = match ws.find_task(&t.slug) {
         Ok(task) => {
             let dirs = crate::cli::task::readable_dirs(ws, &task);
-            crate::cli::task::trust_launch(ws, t.agent, &task, &dirs);
+            let global = crate::workspace::load_global().unwrap_or_default();
+            crate::cli::task::trust_launch(ws, &global, t.agent, &task, &dirs);
             dirs
         }
         Err(_) => Vec::new(),

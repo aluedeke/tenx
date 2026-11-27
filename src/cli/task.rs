@@ -596,12 +596,11 @@ pub(crate) fn open_window(ws: &crate::workspace::Workspace, slug: &str, detached
     // Not open — create it (named by slug) and record the new id. Tasks that
     // predate trust seeding get it here on reopen; the agent (workspace default
     // or the task's `.tenx-agent`) decides the launch command.
-    trust_task_dir(&task.path);
-    let global_layout = crate::workspace::load_global().map(|g| g.layout).unwrap_or_default();
-    let layout = tenx_core::tabs::layout(&ws.config.layout, &global_layout);
+    let global = crate::workspace::load_global().unwrap_or_default();
+    let layout = tenx_core::tabs::layout(&ws.config.layout, &global.layout);
     let agent = crate::agent::agent_for(ws, &task.path);
     let add_dirs = readable_dirs(ws, &task);
-    trust_launch(ws, agent, &task, &add_dirs);
+    trust_launch(ws, &global, agent, &task, &add_dirs);
     agent.prepare(&task.path);
     // A first message left by `--prompt`/`tenx ask`/`task send` rides in on
     // the launch, once: read now, removed only after the window exists, so a
@@ -689,20 +688,20 @@ fn trust_task_dir(task_dir: &Path) {
 /// asks "Adding a new directory … Is this a directory you created or one you
 /// trust?" for every added directory it doesn't trust, and the answer lasts
 /// only for that session — so every reopen, restart and scheduled run would
-/// stop on it, once per repo. Only Claude gets `--add-dir`; other agents are
-/// left alone. Never fatal, like [`trust_task_dir`].
+/// stop on it, once per repo. Only Claude gets `--add-dir`: for another agent
+/// it is the task directory alone, as before. Never fatal, like
+/// [`trust_task_dir`].
 pub(crate) fn trust_launch(
     ws: &crate::workspace::Workspace,
+    global: &crate::workspace::GlobalConfig,
     agent: crate::agent::AgentKind,
     task: &crate::workspace::Task,
     add_dirs: &[PathBuf],
 ) {
-    if agent != crate::agent::AgentKind::Claude {
-        return;
-    }
-    let bare_dir = ws.bare_dir(&crate::workspace::load_global().unwrap_or_default());
+    let bare_dir = ws.bare_dir(global);
     let bares: Vec<PathBuf> = task.repos.iter().map(|r| crate::git::bare_repo_path(&bare_dir, r)).collect();
-    let dirs = tenx_core::trust::launch_dirs(&task.path, add_dirs, &bares);
+    let claude = agent == crate::agent::AgentKind::Claude;
+    let dirs = tenx_core::trust::launch_dirs(claude, &task.path, add_dirs, &bares);
     if let Err(e) = crate::workspace::sessions::trust_dirs(&dirs) {
         eprintln!("! couldn't pre-approve Claude Code's trust dialog for {}: {e:#}", task.path.display());
     }

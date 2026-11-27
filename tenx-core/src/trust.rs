@@ -36,7 +36,13 @@ use std::path::{Path, PathBuf};
 /// workspace's own layout — never a repository found by walking up from a
 /// directory, which could be one enclosing a workspace that the user never
 /// meant to trust.
-pub fn launch_dirs(task_dir: &Path, add_dirs: &[PathBuf], bare_repos: &[PathBuf]) -> Vec<PathBuf> {
+///
+/// Only a Claude launch gets `--add-dir`; for any other agent (`claude` false)
+/// it is the task directory alone.
+pub fn launch_dirs(claude: bool, task_dir: &Path, add_dirs: &[PathBuf], bare_repos: &[PathBuf]) -> Vec<PathBuf> {
+    if !claude {
+        return vec![task_dir.to_path_buf()];
+    }
     let mut out: Vec<PathBuf> = Vec::new();
     for d in std::iter::once(task_dir).chain(add_dirs.iter().map(PathBuf::as_path)).chain(bare_repos.iter().map(PathBuf::as_path)) {
         if !out.iter().any(|o| o == d) {
@@ -86,6 +92,7 @@ mod tests {
     fn launch_dirs_are_task_add_dirs_and_bare_repos_once_each() {
         let p = PathBuf::from;
         let got = launch_dirs(
+            true,
             Path::new("/ws/tasks/a"),
             &[p("/ws/tasks/a/app"), p("/ws/tasks/a/lib"), p("/ws/tasks/a")],
             &[p("/ws/.bare/app.git"), p("/ws/.bare/lib.git")],
@@ -95,8 +102,14 @@ mod tests {
 
     #[test]
     fn launch_dirs_of_a_repo_less_task_add_only_the_workspace() {
-        let got = launch_dirs(Path::new("/ws/tasks/a"), &[PathBuf::from("/ws")], &[]);
+        let got = launch_dirs(true, Path::new("/ws/tasks/a"), &[PathBuf::from("/ws")], &[]);
         assert_eq!(got, vec![PathBuf::from("/ws/tasks/a"), PathBuf::from("/ws")]);
+    }
+
+    #[test]
+    fn launch_dirs_for_another_agent_are_the_task_dir_alone() {
+        let got = launch_dirs(false, Path::new("/ws/tasks/a"), &[PathBuf::from("/ws/tasks/a/app")], &[PathBuf::from("/ws/.bare/app.git")]);
+        assert_eq!(got, vec![PathBuf::from("/ws/tasks/a")]);
     }
 
     #[test]
