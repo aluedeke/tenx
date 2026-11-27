@@ -63,18 +63,14 @@ pub struct Target {
 /// one served by `tenx web` itself — can't open a tunnel; the app's own
 /// `URLSession` can.
 pub fn authorized(origin: Option<&str>, authorization: Option<&str>, token: &str) -> bool {
-    if origin.is_some() {
-        return false;
-    }
-    let Some(given) = authorization.map(str::trim).and_then(|a| a.strip_prefix("Bearer ").or_else(|| a.strip_prefix("bearer "))) else {
-        return false;
-    };
-    crate::web::token_matches(given.trim(), token)
+    crate::mcp::origin_ok(origin) && crate::mcp::bearer_ok(authorization.map(str::trim), token)
 }
 
 /// Decide on a request let through by `authorized`: the host and port of
-/// `?host=&port=`, to a port in `task_ports`.
-pub fn decide(host: Option<&str>, port: Option<&str>, task_ports: &HashSet<u16>) -> Decision {
+/// `?host=&port=`, to a port in `task_ports`. The server runs its two steps
+/// itself (`target`, then `port_decision` with a scan only when needed).
+#[cfg(test)]
+fn decide(host: Option<&str>, port: Option<&str>, task_ports: &HashSet<u16>) -> Decision {
     match target(host, port) {
         Err(why) => Decision::Refuse(why),
         Ok(t) => port_decision(t, task_ports),

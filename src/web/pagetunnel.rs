@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -86,37 +87,59 @@ fn refused(why: Refusal) -> Response {
     StatusCode::from_u16(why.status()).unwrap_or(StatusCode::FORBIDDEN).into_response()
 }
 
-/// Copy both ways until either side ends, or neither has said anything for
-/// `IDLE`.
-async fn join(mut socket: WebSocket, server: TcpStream, _slot: OwnedSemaphorePermit) {
+/// Copy both ways at once until either side ends, or neither has said
+/// anything for `IDLE`. Each direction runs on its own, so a full buffer
+/// one way never stops the other.
+async fn join(socket: WebSocket, server: TcpStream, _slot: OwnedSemaphorePermit) {
+    use futures_util::{SinkExt, StreamExt};
+    let started = Instant::now();
+    let last = AtomicU64::new(0);
     let (mut from_server, mut to_server) = server.into_split();
-    let mut buf = vec![0u8; 16 * 1024];
-    loop {
-        tokio::select! {
-            msg = socket.recv() => match msg {
-                Some(Ok(Message::Binary(bytes))) => {
+    let (mut to_page, mut from_page) = socket.split();
+    let up = async {
+        while let Some(Ok(msg)) = from_page.next().await {
+            match msg {
+                Message::Binary(bytes) => {
+                    last.store(started.elapsed().as_secs(), Ordering::Relaxed);
                     if to_server.write_all(&bytes).await.is_err() {
                         break;
                     }
                 }
-                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                Message::Close(_) => break,
                 // Pings are answered by axum; text is no part of this.
-                Some(Ok(_)) => {}
-            },
-            read = from_server.read(&mut buf) => match read {
+                _ => {}
+            }
+        }
+    };
+    let down = async {
+        let mut buf = vec![0u8; 16 * 1024];
+        loop {
+            match from_server.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if socket.send(Message::Binary(buf[..n].to_vec().into())).await.is_err() {
-                        break;
+                    last.store(started.elapsed().as_secs(), Ordering::Relaxed);
+                    if to_page.send(Message::Binary(buf[..n].to_vec().into())).await.is_err() {
+                        return;
                     }
                 }
-            },
-            // Started again every round: the time since the last byte.
-            _ = tokio::time::sleep(IDLE) => break,
+            }
         }
+        let _ = to_page.send(Message::Close(None)).await;
+    };
+    let idle = async {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            if started.elapsed().as_secs().saturating_sub(last.load(Ordering::Relaxed)) >= IDLE.as_secs() {
+                return;
+            }
+        }
+    };
+    tokio::select! {
+        _ = up => {}
+        _ = down => {}
+        _ = idle => {}
     }
     let _ = to_server.shutdown().await;
-    let _ = socket.send(Message::Close(None)).await;
 }
 
 /// The ports tasks listen on: scanned again when the last scan is old, or,

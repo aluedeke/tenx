@@ -21,6 +21,8 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
     /// the app was in the background) asks for the same one first.
     private var port: NWEndpoint.Port?
     private var started = false
+    /// The listener now running reached `.ready` once.
+    private var listened = false
     private var waiting: [(NWEndpoint.Port?) -> Void] = []
     /// A socket's answer to its upgrade, by task id.
     private var opening: [Int: (Bool) -> Void] = [:]
@@ -83,25 +85,35 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
         let pinned = port
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: pinned ?? .any)
-        params.allowLocalEndpointReuse = true
         guard let l = try? NWListener(using: params) else {
             port = nil
             return settle(nil)
         }
         listener = l
+        listened = false
         l.stateUpdateHandler = { [weak self, weak l] state in
             guard let self, let l, self.listener === l else { return }
             switch state {
             case .ready:
+                self.listened = true
                 self.port = l.port
                 self.settle(l.port)
             // `.waiting` too: it may never end, and a page waits on this.
             case .failed, .waiting, .cancelled:
                 l.cancel()
                 self.listener = nil
-                // The old port is taken: the next start takes any.
-                if pinned != nil { self.port = nil }
                 self.settle(nil)
+                if self.listened {
+                    // It worked, then went (iOS closes it now and then): the
+                    // pages on screen use this port, so it starts again on it.
+                    self.queue.asyncAfter(deadline: .now() + 1) {
+                        if self.started, self.listener == nil { self.start() }
+                    }
+                } else if pinned != nil {
+                    // The old port is taken: the next start takes any, and
+                    // the pages are made anew for it (`PagePanes.show`).
+                    self.port = nil
+                }
             default: break
             }
         }
@@ -194,12 +206,10 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
     private func up(_ conn: NWConnection, _ socket: URLSessionWebSocketTask) {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, done, error in
             guard let self else { return conn.cancel() }
-            // The page is done sending: its answer may still come (`down`
-            // ends the connection then). A WebSocket has no half-close.
             if error != nil { return self.end(conn, socket) }
-            guard let data, !data.isEmpty else { return done ? () : self.up(conn, socket) }
+            guard let data, !data.isEmpty else { return done ? self.drain(conn, socket) : self.up(conn, socket) }
             socket.send(.data(data)) { error in
-                self.queue.async { error != nil ? self.end(conn, socket) : done ? () : self.up(conn, socket) }
+                self.queue.async { error != nil ? self.end(conn, socket) : done ? self.drain(conn, socket) : self.up(conn, socket) }
             }
         }
     }
@@ -221,6 +231,14 @@ final class PageTunnel: NSObject, URLSessionWebSocketDelegate, @unchecked Sendab
                 }
             }
         }
+    }
+
+    /// The page is done sending. A WebSocket has no half-close, so its
+    /// answer gets a while to come (`down` ends the connection when the Mac's
+    /// side ends); then the tunnel goes, so a page that went away (its socket
+    /// closed) never holds one open on the Mac.
+    private func drain(_ conn: NWConnection, _ socket: URLSessionWebSocketTask) {
+        queue.asyncAfter(deadline: .now() + 10) { self.end(conn, socket) }
     }
 
     private func end(_ conn: NWConnection, _ socket: URLSessionWebSocketTask) {

@@ -16,9 +16,10 @@ final class PagePanes: NSObject {
     /// Runs a script in the tenx page: where a page went (`tenx-page`).
     private let report: (String) -> Void
     private var views: [String: PageWebView] = [:]
-    /// Counts `hide`s: a `pageShow` that waited for the tunnel while the
-    /// page was hidden shows nothing (`WebViewController`).
-    private(set) var hides = 0
+    /// Counts `hide`s and `close`s: a `pageShow` that waited for the tunnel
+    /// while the page was hidden or closed shows nothing (`still`).
+    private var hides = 0
+    private var closes: [String: Int] = [:]
     /// Keys, the last shown last: the first ones go when there are too many.
     private var order: [String] = []
     private static let keep = 6
@@ -65,6 +66,12 @@ final class PagePanes: NSObject {
         }
     }
 
+    /// Where hides and closes of `key` stand, for `still`.
+    func mark(_ key: String) -> (Int, Int) { (hides, closes[key, default: 0]) }
+
+    /// No hide, and no close of `key`, since `mark`.
+    func still(_ key: String, _ marked: (Int, Int)) -> Bool { mark(key) == marked }
+
     func hide() {
         hides += 1
         for view in views.values { view.park() }
@@ -88,6 +95,7 @@ final class PagePanes: NSObject {
     }
 
     func close(key: String) {
+        closes[key, default: 0] += 1
         views.removeValue(forKey: key)?.removeFromSuperview()
         order.removeAll { $0 == key }
     }
@@ -237,7 +245,7 @@ enum LocalPage {
         if url.host?.lowercased() != "localhost" {
             how = "Only <code>localhost</code> goes through to the Mac; this address is the device's own. Open it as <code>localhost:\(port)</code> instead."
         } else if tunneled {
-            how = "It goes through tenx web to the Mac's port \(port). Either no task listens there (start the task's dev server, in its window or with <code>tenx service</code>), or tenx web can't be reached right now. Then reload."
+            how = "It goes through tenx web to the Mac's port \(port). Either no task listens there (start the task's dev server, in its window or with <code>tenx service</code>), or tenx web can't be reached right now, or its token changed (sign in again in the settings). Then reload."
         } else {
             how = "This device couldn't start the page's way to the Mac. Close the app and open it again."
         }
